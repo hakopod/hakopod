@@ -14,6 +14,7 @@ export const engineLabels: Record<string, string> = {
   mysql: 'MySQL',
   clickhouse: 'ClickHouse',
   oracle: 'Oracle Database',
+  vitess: 'Vitess',
 }
 export const engineLabel = (engine: string) => engineLabels[engine] || engine
 // The server writes this format prefix only for a backup the database engine

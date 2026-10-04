@@ -51,6 +51,7 @@ function Recover({ id }: { id: string }) {
   const eligible = artifacts.data.items.filter(
     (a) =>
       a.source.engine === d.spec.engine &&
+      (d.spec.engine !== 'vitess' || a.source_version === d.spec.version) &&
       a.source.managed_database_id !== id &&
       !a.deletion_pending,
   )
@@ -116,7 +117,7 @@ function Recover({ id }: { id: string }) {
           {!eligible.length && (
             <Empty
               title="No eligible archives"
-              description="Create a backup from another database with a compatible engine and version before recovering into this target."
+              description={d.spec.engine === 'vitess' ? 'Create a verified Vitess 23 backup from another database. The server also requires the same shard count, table routing schema and approved native backup destination before it creates a recovery plan.' : 'Create a backup from another database with a compatible engine and version before recovering into this target.'}
               action={
                 <Button asChild>
                   <Link to="/backups/new">Run backup</Link>
@@ -143,6 +144,7 @@ function Recover({ id }: { id: string }) {
                   .filter(
                     (a) =>
                       a.source.engine === d.spec.engine &&
+                      (d.spec.engine !== 'vitess' || a.source_version === d.spec.version) &&
                       a.source.managed_database_id !== id &&
                       !a.deletion_pending,
                   )
@@ -162,6 +164,7 @@ function Recover({ id }: { id: string }) {
             The archive is authenticated before recovery. {d.spec.engine === 'postgresql' && 'PostgreSQL 17 archives can be staged in a separate PostgreSQL 18 database. '}Changes after the recovery point require a fresh
             capture before final cutover.
           </Note>
+          {d.spec.engine === 'vitess' && <Note>Vitess recovery is admitted only when the archive and target have the same version, shard count and table-routing schema, and the target retains its approved native backup destination. The recovery plan is the authoritative compatibility check.</Note>}
         </FormSection>
         {plan && (
           <FormSection title="Review recovery">

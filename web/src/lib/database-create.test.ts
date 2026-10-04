@@ -3,10 +3,10 @@ import test from 'node:test'
 import { endpointAddress, endpointName, databaseCapacity, databaseMemberCapacity, databaseRequestedCapacity, databaseStorageGiB } from './database-view'
 import { databaseCreateIssue, initialDatabaseSpec, databaseEngineDefaults } from './database-create'
 
-test('Vitess remains gated and accounts for tablets and dedicated supporting services', () => {
+test('Vitess creation requires recovery configuration and accounts for dedicated services', () => {
   const spec = { ...databaseEngineDefaults({ ...initialDatabaseSpec, name: 'orders' }, 'vitess'), vitess: { backup_destination_id: 'a'.repeat(32), backup_destination_revision: 1 } }
   assert.equal(spec.version, '23')
-  assert.match(databaseCreateIssue(spec, 0) || '', /available/)
+  assert.equal(databaseCreateIssue(spec, 0), undefined)
   for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(spec, step), undefined)
   // 5Gi data, 3Gi topology storage and two 5Gi native-backup volumes.
   assert.equal(databaseStorageGiB(spec), 18)
@@ -29,7 +29,9 @@ test('creation review blocks unavailable engines and unsupported topology', () =
   const base = { ...initialDatabaseSpec, name: 'orders-db' }
   for (let step = 0; step < 4; step++) assert.equal(databaseCreateIssue(base, step), undefined)
   assert.match(databaseCreateIssue({ ...base, name: 'orders-' }, 0) || '', /Start with a letter/)
-  assert.match(databaseCreateIssue({ ...base, engine: 'vitess' as typeof base.engine }, 0) || '', /available/)
+  const vitess = databaseEngineDefaults(base, 'vitess')
+  assert.equal(vitess.vitess?.backup_destination_id, '')
+  assert.equal(vitess.vitess?.backup_destination_revision, 0)
   const cluster = { ...base, mode: 'cluster' as const, replicas: 6 }
   assert.equal(databaseCreateIssue(cluster, 1), undefined)
   assert.match(databaseCreateIssue({ ...cluster, replicas: 7 }, 1) || '', /between 1 and 6/)

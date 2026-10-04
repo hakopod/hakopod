@@ -30,7 +30,7 @@ export function DatabaseIdentity({ database: d }: { database: ManagedDatabase })
           {engineName(d.spec.engine)} {d.spec.version}
         </strong>
         <span>
-          {databaseLayoutSummary(d.spec)}{['clickhouse', 'oracle'].includes(d.spec.engine) && ' · Development preview'}{d.spec.engine === 'vitess' && ' · Creation unavailable'}
+          {databaseLayoutSummary(d.spec)}{['clickhouse', 'oracle'].includes(d.spec.engine) && ' · Development preview'}
         </span>
       </div>
     </div>
