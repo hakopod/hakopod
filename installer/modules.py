@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+from database_controllers import ENGINES
+
 KUBE = ['/opt/hakopod/tools/kubectl', '--kubeconfig=/etc/hakopod/admin-kubeconfig', '--request-timeout=15s']
 
 def documents(text):
@@ -101,10 +103,12 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
         record.write_text(json.dumps(value)+'\n');record.chmod(0o600)
     print(module+' module is ready. Original installer resume inputs are unchanged.')
 
-if __name__=='__main__':
+def cli(argv=None):
     parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions','managed-databases'])
     parser.add_argument('--workspace-profile', choices=['vfs', 'shared-overlay2-v1'])
-    parser.add_argument('--engines', nargs='+', choices=['postgresql','redis','mysql','mongodb','clickhouse'])
+    parser.add_argument('--engines', nargs='+', choices=ENGINES)
     parser.add_argument('--plan'); parser.add_argument('--apply-reviewed-plan')
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
     main(args.module, args.workspace_profile, engines=args.engines, plan_path=args.plan, review_path=args.apply_reviewed_plan)
+
+if __name__=='__main__':cli()
