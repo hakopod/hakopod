@@ -295,6 +295,21 @@ func TestHostActionsStopRollbackReplayAndRevisionConflict(t *testing.T) {
 	}
 	prefix := "recovery:" + store.NewID() + ":0:"
 	stopBody := map[string]int64{"expected_revision": 1}
+	// The auth-only fixture has no Kubernetes runtime. Canonical acceptance
+	// must remain unavailable until its trusted runtime validator is attached.
+	request("/services/runner/stop", prefix+"stop", stopBody, http.StatusServiceUnavailable)
+	var rejectedCount int
+	if err = s.Pool().QueryRow(ctx, "SELECT count(*) FROM deployments WHERE application_id=$1", grant.ApplicationID).Scan(&rejectedCount); err != nil || rejectedCount != 1 {
+		t.Fatal("missing runtime validation changed durable operations", rejectedCount, err)
+	}
+	validationCalls := 0
+	s.store.ValidateDeployment = func(_ context.Context, stored store.Application, next spec.Application) error {
+		validationCalls++
+		if stored.ID != grant.ApplicationID || stored.Project != grant.Project || stored.Environment != grant.Environment || next.Name != application.Name || len(next.Services) != 1 || next.Services[grant.Service].Actions == nil {
+			t.Fatal("runtime validation lost the granted Actions application scope")
+		}
+		return nil
+	}
 	stopped := request("/services/runner/stop", prefix+"stop", stopBody, 202)
 	if stopped.ApplicationID != grant.ApplicationID || stopped.Revision != 2 || !stopped.Spec.Services[grant.Service].Suspended {
 		t.Fatal("canonical stop did not create the suspended revision")
@@ -321,5 +336,8 @@ func TestHostActionsStopRollbackReplayAndRevisionConflict(t *testing.T) {
 	var count int
 	if err = s.Pool().QueryRow(ctx, "SELECT count(*) FROM deployments WHERE application_id=$1", grant.ApplicationID).Scan(&count); err != nil || count != 3 {
 		t.Fatal("replay or revision conflict changed durable operation count", count, err)
+	}
+	if validationCalls != 4 {
+		t.Fatal("stop and rollback must validate both desired and resolved revisions", validationCalls)
 	}
 }
