@@ -1,31 +1,25 @@
-Hakopod 0.1.0-alpha.52 adds private managed ClickHouse 26.3 for self-hosted installations.
+Hakopod 0.1.0-alpha.53 repairs database network maintenance and Managed Actions stop deadlines after host maintenance.
 
-ClickHouse can run as one standalone data member or as a cluster with replicated shards and three Keeper members. Replication copies data within each shard. Queries across shards still need a Distributed table or explicit query design; a balanced connection does not make a local table query span the cluster.
+Database health observation now refreshes the owned network policy for every lifecycle-ready database, including ordinary PostgreSQL databases without recovery metadata. When a Kubernetes API endpoint changes after a host restart, the next observation replaces its stale exact address before probing database health. Maintenance validates namespace and policy ownership, holds the existing revision lease, and preserves the isolation of restored databases awaiting inspection. Unavailable endpoint discovery leaves the previous policy unchanged and records a retry status.
 
-Private native and HTTPS connections require TLS and the issued CA. Managed application bindings supply scoped credentials, endpoints and trust material through the application's service configuration. The database cockpit reports requested and observed topology, members, Keeper state, connected application bindings and bounded engine and workload metrics. Missing or stale metrics remain unavailable rather than appearing as zero.
+A deployment that only suspends GitHub or GitLab Actions services can wait for their bounded runner lifetimes, including retained runners from an older configuration. The ordinary deployment deadline previously cut that wait short. Other deployment and recovery deadlines, cancellation checks and busy-runner protections remain unchanged. An operator's backup drain timeout is a separate maximum wait; this change does not guarantee that every long-running job fits the backup window.
 
-Backups capture one native archive per shard, sequentially, and encrypt the resulting managed-backup artifact. They are not one transactionally consistent snapshot across every shard. Recovery restores into a separate empty target with the same version, mode and shard count. The source remains unchanged; the restored target stays closed to application traffic until recovery completes and a user records an inspection.
+This release retains the private self-hosted ClickHouse support added in [alpha.52](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.52). Its controller, storage, runtime and connectivity requirements continue to apply.
 
-The release package carries the pinned Altinity controller. Operators must install and verify that controller, storage and eligible worker capacity before creating a database. Sandboxed ClickHouse also requires the dedicated reviewed runtime profile; installing the controller does not configure that runtime. Connections remain private. ClickHouse public endpoints and Cloud public database endpoints are not included, and development tests on nodes within one physical VM do not establish independent-zone or cross-provider availability.
-
-The dashboard now uses browser-valid name patterns for database and related resource forms. Once a resource loads, its detail URL is corrected to that resource's project and environment while preserving the selected tab and hash. Copied links therefore carry the resource's actual scope.
-
-Six native ClickHouse tests and the HTTP API recovery workflow passed in the named development cluster. They covered lifecycle, application bindings, Keeper faults, certificate renewal, Distributed queries and recovery. The [acceptance record](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.52/docs/managed-database-release-acceptance.md) gives exact source revisions, durations, log hashes and UI review coverage. The release workflow separately verifies the published packages and supported installation paths.
-
-Install alpha.52 with the published installer:
+Install alpha.53 with the published installer:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.52/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.52
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.53/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.53
 ```
 
 Upgrade an existing installation with:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.52/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.52
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.53/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.53
 ```
 
-Direct upgrades are supported from alpha.50 and alpha.51. Older installations need a supported intermediate release. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
+Direct upgrades are supported from alpha.51 and alpha.52. Older installations need a supported intermediate release. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
