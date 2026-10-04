@@ -81,7 +81,8 @@ func logLiveBackupObjectStoreFailure(t *testing.T, name, stage string, err error
 
 func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, string, *s3.Client) {
 	t.Helper()
-	name := "hakopod-backup-smoke-" + store.NewID()[:10]
+	runID := store.NewID()
+	name := "hakopod-backup-smoke-" + runID[:10]
 	access := "fixture-access"
 	secret := store.NewID() + store.NewID()
 	config := filepath.Join(t.TempDir(), "s3.json")
@@ -93,19 +94,20 @@ func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, s
 	t.Cleanup(func() {
 		clean, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		label, err := exec.CommandContext(clean, "docker", "inspect", "--format", `{{index .Config.Labels "com.hakopod.test"}}`, name).Output()
+		identity, err := exec.CommandContext(clean, "docker", "inspect", "--format", `{{.Id}} {{index .Config.Labels "com.hakopod.test"}} {{index .Config.Labels "com.hakopod.test-run"}}`, name).Output()
 		if err != nil {
 			return
 		}
-		if strings.TrimSpace(string(label)) != "backups" {
+		fields := strings.Fields(string(identity))
+		if len(fields) != 3 || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(fields[0]) || fields[1] != "backups" || fields[2] != runID {
 			t.Error("disposable S3 container ownership changed; not removing")
 			return
 		}
-		if err := exec.CommandContext(clean, "docker", "rm", "--force", "--volumes", name).Run(); err != nil {
+		if err := exec.CommandContext(clean, "docker", "rm", "--force", "--volumes", fields[0]).Run(); err != nil {
 			t.Error("remove disposable S3 container", err)
 		}
 	})
-	command := exec.CommandContext(ctx, "docker", "run", "-d", "--name", name, "--label", "com.hakopod.test=backups", "--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()), "--entrypoint", "/usr/bin/weed", "--memory=384m", "--cpus=1", "--pids-limit=128", "-p", "127.0.0.1::9000", "-e", "GODEBUG=fips140=on", "-e", "GOMEMLIMIT=256MiB", "--mount", "type=bind,source="+config+",target=/etc/seaweedfs/s3.json,readonly", "--mount", "type=bind,source="+data+",target=/data", liveS3Image, "-logtostderr=true", "server", "-s3", "-s3.port=9000", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data", "-master.volumePreallocate", "-master.volumeSizeLimitMB=8", "-volume.max=16", "-ip=127.0.0.1", "-ip.bind=0.0.0.0")
+	command := exec.CommandContext(ctx, "docker", "run", "-d", "--name", name, "--label", "com.hakopod.test=backups", "--label", "com.hakopod.test-run="+runID, "--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()), "--entrypoint", "/usr/bin/weed", "--memory=384m", "--cpus=1", "--pids-limit=128", "-p", "127.0.0.1::9000", "-e", "GODEBUG=fips140=on", "-e", "GOMEMLIMIT=256MiB", "--mount", "type=bind,source="+config+",target=/etc/seaweedfs/s3.json,readonly", "--mount", "type=bind,source="+data+",target=/data", liveS3Image, "-logtostderr=true", "server", "-s3", "-s3.port=9000", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data", "-master.volumePreallocate", "-master.volumeSizeLimitMB=8", "-volume.max=16", "-ip=127.0.0.1", "-ip.bind=0.0.0.0")
 	if err := command.Run(); err != nil {
 		t.Fatal("start disposable S3 server", err)
 	}
