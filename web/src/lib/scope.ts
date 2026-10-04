@@ -74,6 +74,7 @@ export function useResourceScope(resource?: { project: string; environment: stri
     // Keep copied detail links in the loaded resource's scope without adding
     // history entries or discarding the selected tab and other route state.
     void navigate({
+      to: '.',
       search: (previous) => ({ ...previous, project, environment }),
       hash: true,
       replace: true,
