@@ -104,10 +104,26 @@ func TestDatabasePodPolicyMatchesRequiredAffinity(t *testing.T) {
 		{name: "unauthorized node", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.NodeName = "worker-4"; return *pod }()},
 		{name: "preferred only", pod: corev1.Pod{Spec: corev1.PodSpec{NodeName: "worker-2", Affinity: &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{{Preference: term("worker-2")}}}}}}},
 		{name: "empty required terms", pod: corev1.Pod{Spec: corev1.PodSpec{NodeName: "worker-2", Affinity: affinity()}}},
-		{name: "weakened or term", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[2].MatchExpressions = pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[2].MatchExpressions[1:]; return *pod }()},
-		{name: "wrong affinity pool", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[1].MatchExpressions[0].Values[0] = "other"; return *pod }()},
-		{name: "contradictory selector", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.NodeSelector = map[string]string{"hakopod.com/pool": "other", DatabaseDefaultRuntimeLabel: "runsc"}; return *pod }()},
-		{name: "partial selector", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.NodeSelector = map[string]string{"hakopod.com/pool": "vitess-acceptance"}; return *pod }()},
+		{name: "weakened or term", pod: func() corev1.Pod {
+			pod := observed.DeepCopy()
+			pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[2].MatchExpressions = pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[2].MatchExpressions[1:]
+			return *pod
+		}()},
+		{name: "wrong affinity pool", pod: func() corev1.Pod {
+			pod := observed.DeepCopy()
+			pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[1].MatchExpressions[0].Values[0] = "other"
+			return *pod
+		}()},
+		{name: "contradictory selector", pod: func() corev1.Pod {
+			pod := observed.DeepCopy()
+			pod.Spec.NodeSelector = map[string]string{"hakopod.com/pool": "other", DatabaseDefaultRuntimeLabel: "runsc"}
+			return *pod
+		}()},
+		{name: "partial selector", pod: func() corev1.Pod {
+			pod := observed.DeepCopy()
+			pod.Spec.NodeSelector = map[string]string{"hakopod.com/pool": "vitess-acceptance"}
+			return *pod
+		}()},
 		{name: "wrong explicit runtime", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.RuntimeClassName = ptr("runc"); return *pod }()},
 	}
 	for _, tt := range tests {
