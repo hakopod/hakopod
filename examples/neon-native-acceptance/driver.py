@@ -781,9 +781,13 @@ class Driver:
                 if self.k("get","namespace",namespace,"--ignore-not-found","-o","name").strip(): raise RuntimeError("foreign sentinel cleanup is incomplete")
                 self.foreign=None
             except Exception: failed.append(namespace)
-        try:self.command(self.bridge_argv("cleanup"),120)
-        except Exception:failed.append("control-plane-bridge")
         resources=[{"platform_id":pid,"namespace":"managed-platform-"+pid,"namespace_uid":self.bound.get(pid,(None,None))[0],"create_operation_id":opid} for pid,unused,opid in self.platforms]
+        if failed:
+            # The durable delete may outlive this wait and still needs its provider transport.
+            atomic(self.evidence/"cleanup-transport-retained.json",{"schema_version":1,"status":"retained","run_id":self.run_id,"resources":resources,"failure_categories":sorted(set(failed))})
+        else:
+            try:self.command(self.bridge_argv("cleanup"),120)
+            except Exception:failed.append("control-plane-bridge")
         atomic(self.evidence/"cleanup-attempt.json",{"schema_version":1,"status":"incomplete" if failed else "verified","run_id":self.run_id,"resources":resources,"owned_persistent_volumes":[owned_volumes[key] for key in sorted(owned_volumes)],"namespaces_absent":namespace_audit_complete and not remaining_namespaces,"persistent_volume_claim_refs_absent":volume_audit_complete and not remaining_volumes,"remaining_namespaces":sorted(remaining_namespaces),"remaining_persistent_volumes":remaining_volumes,"failure_categories":sorted(set(failed))})
         if failed: raise RuntimeError("owned cleanup is incomplete")
         self.cleanup_completed=True
