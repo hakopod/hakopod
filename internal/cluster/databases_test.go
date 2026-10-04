@@ -8,6 +8,7 @@ import (
 	"github.com/hakopod/hakopod/internal/database"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -17,6 +18,69 @@ import (
 
 func redisControllerFixture() *appsv1.Deployment {
 	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "redis-operator", Namespace: "redis-operator", Generation: 1}, Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"hakopod.io/redis-controller-source": redisControllerSource}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "redis-operator", Image: "example.invalid/controller:fixture@sha256:" + strings.Repeat("a", 64), Env: []corev1.EnvVar{{Name: "EXEC_COMMAND_TIMEOUT", Value: "20m"}}}}}}}, Status: appsv1.DeploymentStatus{ObservedGeneration: 1, AvailableReplicas: 1, UpdatedReplicas: 1, Replicas: 1}}
+}
+
+func mysqlControllerFixture() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "mysql-operator", Namespace: "mysql-operator", Generation: 1},
+		Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name:  "mysql-operator",
+			Image: mysqlOperatorImage,
+			Env: []corev1.EnvVar{
+				{Name: "MYSQL_OPERATOR_DEBUG", Value: "0"},
+				{Name: "MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS", Value: "never"},
+			},
+			Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi"),
+			}},
+		}}}}},
+		Status: appsv1.DeploymentStatus{ObservedGeneration: 1, AvailableReplicas: 1, UpdatedReplicas: 1, Replicas: 1},
+	}
+}
+
+func TestDatabaseRequiresSafeCurrentMySQLController(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*appsv1.Deployment)
+	}{
+		{"valid pinned bounded credential-safe controller", func(*appsv1.Deployment) {}},
+		{"missing controller", func(d *appsv1.Deployment) { d.Name = "other-controller" }},
+		{"unavailable controller", func(d *appsv1.Deployment) { d.Status.UnavailableReplicas = 1 }},
+		{"controller has not observed current generation", func(d *appsv1.Deployment) { d.Generation = 2 }},
+		{"only old replicas available", func(d *appsv1.Deployment) { d.Status.UpdatedReplicas = 0 }},
+		{"old replica still serving during rollout", func(d *appsv1.Deployment) { d.Status.Replicas = 2 }},
+		{"mutable controller image", func(d *appsv1.Deployment) {
+			d.Spec.Template.Spec.Containers[0].Image = "container-registry.oracle.com/mysql/community-operator:latest"
+		}},
+		{"debug logging enabled", func(d *appsv1.Deployment) { d.Spec.Template.Spec.Containers[0].Env[0].Value = "1" }},
+		{"password saving enabled", func(d *appsv1.Deployment) { d.Spec.Template.Spec.Containers[0].Env[1].Value = "always" }},
+		{"unbounded CPU", func(d *appsv1.Deployment) {
+			delete(d.Spec.Template.Spec.Containers[0].Resources.Limits, corev1.ResourceCPU)
+		}},
+		{"unbounded memory", func(d *appsv1.Deployment) {
+			delete(d.Spec.Template.Spec.Containers[0].Resources.Limits, corev1.ResourceMemory)
+		}},
+		{"extra helper container", func(d *appsv1.Deployment) {
+			d.Spec.Template.Spec.Containers = append(d.Spec.Template.Spec.Containers, corev1.Container{Name: "helper"})
+		}},
+		{"extra init helper", func(d *appsv1.Deployment) { d.Spec.Template.Spec.InitContainers = []corev1.Container{{Name: "helper"}} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deployment := mysqlControllerFixture()
+			tc.change(deployment)
+			c := &Client{kube: fake.NewClientset(deployment), dynamic: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{mysqlDatabaseResource: "InnoDBClusterList"})}
+			err := c.DatabaseControllerAvailable(context.Background(), database.Spec{Engine: "mysql", Mode: "standalone"})
+			if tc.name == "valid pinned bounded credential-safe controller" {
+				if err != nil {
+					t.Fatal("safe current MySQL controller was rejected", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("unsafe or incomplete MySQL controller rollout accepted")
+			}
+		})
+	}
 }
 
 func TestDatabaseRequiresSafeCurrentRedisController(t *testing.T) {
@@ -46,7 +110,7 @@ func TestDatabaseRequiresSafeCurrentRedisController(t *testing.T) {
 
 func TestUnqualifiedDatabaseEnginesRemainUnavailable(t *testing.T) {
 	c := &Client{kube: fake.NewClientset(), dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())}
-	for _, engine := range []string{"mysql", "clickhouse", "oracle"} {
+	for _, engine := range []string{"clickhouse", "oracle"} {
 		t.Run(engine, func(t *testing.T) {
 			err := c.DatabaseControllerAvailable(context.Background(), database.Spec{Engine: engine, Mode: "standalone"})
 			if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
