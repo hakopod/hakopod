@@ -9,9 +9,30 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 
 
 WATCHDOG_DELAY_SECONDS = 90
+CLICKHOUSE_NODE = re.compile(r"k3d-hakopod-clickhouse-worker-[0-9]+$")
+MAX_CLICKHOUSE_NODES = 4
+
+
+def clickhouse_nodes(value):
+    nodes = value.split(",") if value else []
+    if (not nodes or len(nodes) > MAX_CLICKHOUSE_NODES or len(nodes) != len(set(nodes)) or
+            any(not CLICKHOUSE_NODE.fullmatch(node) for node in nodes)):
+        raise ValueError("explicit dedicated ClickHouse fault nodes are required")
+    return set(nodes)
+
+
+def lease_id(value):
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError, TypeError):
+        raise ValueError("canonical ClickHouse lease ID is required") from None
+    if str(parsed) != value:
+        raise ValueError("canonical ClickHouse lease ID is required")
+    return value
 
 
 def watchdog_unit(database_id, uid):
@@ -21,7 +42,7 @@ def watchdog_unit(database_id, uid):
 def start_watchdog(flag, kubeconfig, database_id, pod_name, uid):
     # A separate systemd unit survives termination of the test runner's cgroup.
     # Forward only the named context path and the one engine acceptance flag.
-    run(["sudo", "systemd-run", "--quiet", "--collect",
+    command = ["sudo", "systemd-run", "--quiet", "--collect",
          "--unit=" + watchdog_unit(database_id, uid),
          "--property=User=" + pwd.getpwuid(os.getuid()).pw_name,
          "--property=Group=" + grp.getgrgid(os.getgid()).gr_name,
@@ -30,8 +51,12 @@ def start_watchdog(flag, kubeconfig, database_id, pod_name, uid):
          "--property=RuntimeMaxSec=300s",
          "--setenv=PATH=" + os.environ.get("PATH", "/usr/bin:/bin"),
          "--setenv=HAKOPOD_TEST_KUBECONFIG=" + kubeconfig,
-         "--setenv=" + flag + "=1", sys.executable,
-         str(Path(__file__).resolve()), "resume-after", database_id, pod_name, uid])
+         "--setenv=" + flag + "=1"]
+    if flag == "HAKOPOD_CLICKHOUSE_TEST":
+        command.append("--setenv=HAKOPOD_CLICKHOUSE_FAULT_NODES=" + os.environ.get("HAKOPOD_CLICKHOUSE_FAULT_NODES", ""))
+        command.append("--setenv=HAKOPOD_CLICKHOUSE_LEASE_ID=" + os.environ.get("HAKOPOD_CLICKHOUSE_LEASE_ID", ""))
+    command.extend([sys.executable, str(Path(__file__).resolve()), "resume-after", database_id, pod_name, uid])
+    run(command)
 
 
 def stop_watchdog(database_id, uid):
@@ -58,6 +83,11 @@ def main():
     resource, kind, server = ("mongodbcommunity", "MongoDBCommunity", "mongod") if engine == "mongodb" else ("innodbcluster", "InnoDBCluster", "mysql")
     if engine == "clickhouse":
         resource, kind, server = "clickhouseinstallation", "ClickHouseInstallation", "keeper"
+        allowed_nodes = clickhouse_nodes(os.environ.get("HAKOPOD_CLICKHOUSE_FAULT_NODES", ""))
+        expected_lease_id = lease_id(os.environ.get("HAKOPOD_CLICKHOUSE_LEASE_ID"))
+    else:
+        allowed_nodes = {"k3d-hakopod-dev-server-0", "k3d-hakopod-database-worker-0"}
+        expected_lease_id = None
     action, database_id, pod_name, uid = sys.argv[1:]
     if action not in ("pause", "resume", "resume-after", "verify-paused") or not re.fullmatch(r"[a-f0-9]{32}", database_id):
         raise ValueError("invalid development fault request")
@@ -96,10 +126,17 @@ def main():
     if not any(x["name"] == server and x["image"] == image for x in pod["spec"]["containers"]):
         raise ValueError("development member image changed")
     node = pod["spec"]["nodeName"]
-    if node not in ("k3d-hakopod-dev-server-0", "k3d-hakopod-database-worker-0"):
+    if node not in allowed_nodes:
         raise ValueError("member is outside the named development nodes")
     node_labels = json.loads(run(["sudo", "docker", "inspect", node, "--format", "{{json .Config.Labels}}"] ))
-    if node_labels.get("k3d.cluster") != "hakopod-dev" and node_labels.get("com.hakopod.acceptance") != "database-placement":
+    if engine == "clickhouse":
+        owned_node = (node_labels.get("k3d.cluster") == "hakopod-dev" and
+                      node_labels.get("k3d.role") == "agent" and
+                      node_labels.get("com.hakopod.lease-id") == expected_lease_id)
+    else:
+        owned_node = (node_labels.get("k3d.cluster") == "hakopod-dev" or
+                      node_labels.get("com.hakopod.acceptance") == "database-placement")
+    if not owned_node:
         raise ValueError("development node container ownership changed")
     status = next(x for x in pod["status"]["containerStatuses"] if x["name"] == server)
     container_id = status["containerID"].removeprefix("containerd://")
