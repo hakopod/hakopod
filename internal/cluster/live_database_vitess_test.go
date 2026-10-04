@@ -124,12 +124,8 @@ func newVitessFixture(t *testing.T, ctx context.Context, fixtures *vitessLiveFix
 	if len(d.Spec.Placement.NodeNames) < 2 || len(d.Spec.Placement.NodeNames) > 3 {
 		t.Fatal("Vitess native fixtures require two or three named development nodes")
 	}
-	seenNodes := map[string]bool{}
-	for _, node := range d.Spec.Placement.NodeNames {
-		if node == "" || seenNodes[node] || (node != "k3d-hakopod-dev-server-0" && node != "k3d-hakopod-database-worker-0" && node != "k3d-hakopod-database-worker-1") {
-			t.Fatal("Vitess native fixtures require unique dedicated database development nodes")
-		}
-		seenNodes[node] = true
+	if !validVitessFixtureNodes(d.Spec.Placement.NodeNames) {
+		t.Fatal("Vitess native fixtures require unique dedicated database development nodes")
 	}
 	if err := d.Spec.Validate(); err != nil {
 		t.Fatal(err)
@@ -168,6 +164,36 @@ func newVitessFixture(t *testing.T, ctx context.Context, fixtures *vitessLiveFix
 		t.Error("Vitess fixture did not finish reclaiming its owned resources")
 	})
 	return d, password
+}
+
+func validVitessFixtureNodes(nodes []string) bool {
+	legacy := map[string]bool{"k3d-hakopod-dev-server-0": true, "k3d-hakopod-database-worker-0": true, "k3d-hakopod-database-worker-1": true}
+	dedicated := map[string]bool{"k3d-hakopod-vitess-worker-0": true, "k3d-hakopod-vitess-worker-1": true, "k3d-hakopod-vitess-worker-2": true}
+	seen := map[string]bool{}
+	for _, node := range nodes {
+		if node == "" || seen[node] {
+			return false
+		}
+		seen[node] = true
+	}
+	if len(nodes) >= 2 && len(nodes) <= 3 {
+		allLegacy := true
+		for _, node := range nodes {
+			allLegacy = allLegacy && legacy[node]
+		}
+		if allLegacy {
+			return true
+		}
+	}
+	if len(nodes) != len(dedicated) {
+		return false
+	}
+	for node := range dedicated {
+		if !seen[node] {
+			return false
+		}
+	}
+	return true
 }
 
 func waitVitessFixture(t *testing.T, ctx context.Context, c *Client, d database.Resource, password []byte) database.Observation {

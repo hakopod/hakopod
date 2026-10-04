@@ -98,6 +98,22 @@ func TestVitessRuntimeAdmissionMatchesBuild(t *testing.T) {
 	}
 }
 
+func TestVitessFixtureNodesAcceptExactDedicatedTopology(t *testing.T) {
+	dedicated := []string{"k3d-hakopod-vitess-worker-0", "k3d-hakopod-vitess-worker-1", "k3d-hakopod-vitess-worker-2"}
+	if !validVitessFixtureNodes(dedicated) {
+		t.Fatal("exact dedicated Vitess worker topology was rejected")
+	}
+	for _, nodes := range [][]string{
+		dedicated[:2],
+		{"k3d-hakopod-vitess-worker-0", "k3d-hakopod-dev-server-0"},
+		{"k3d-hakopod-vitess-worker-0", "k3d-hakopod-vitess-worker-0", "k3d-hakopod-vitess-worker-2"},
+	} {
+		if validVitessFixtureNodes(nodes) {
+			t.Fatalf("invalid dedicated Vitess topology accepted: %v", nodes)
+		}
+	}
+}
+
 func TestVitessControlRuntimeHasBoundedGoResources(t *testing.T) {
 	d := vitessTestDatabase()
 	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))
