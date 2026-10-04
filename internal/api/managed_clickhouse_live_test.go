@@ -43,6 +43,16 @@ func (w *clickhouseAPIOutput) String() string {
 	return w.buffer.String()
 }
 
+var clickhouseAPIDiagnosticPattern = regexp.MustCompile(`^stage=(password_read|password_format|query_stage|config_write|client) exit=[0-9]{1,3} engine_code=(none|[0-9]{1,6})$`)
+
+func clickhouseAPISafeDiagnostic(output string) string {
+	diagnostic := strings.TrimSpace(output)
+	if !clickhouseAPIDiagnosticPattern.MatchString(diagnostic) {
+		return "stage=exec diagnostic=unavailable"
+	}
+	return diagnostic
+}
+
 func TestClickhouseAPIOutputBound(t *testing.T) {
 	var output clickhouseAPIOutput
 	reader := io.LimitReader(strings.NewReader(strings.Repeat("x", (64<<10)+1)), (64<<10)+1)
@@ -54,18 +64,82 @@ func TestClickhouseAPIOutputBound(t *testing.T) {
 	}
 }
 
+func TestClickhouseAPIQueryDiagnosticsAreCredentialSafe(t *testing.T) {
+	directory := t.TempDir()
+	client := directory + "/clickhouse-client"
+	script := `#!/bin/sh
+set -eu
+case "${CLICKHOUSE_TEST_RESULT:-}" in
+ success) printf 'query-result\n' ;;
+	 failure) printf 'Code: 516. DB::Exception: password=private query=secret\n' >&2; exit 17 ;;
+	 oversize) head -c 70000 /dev/zero ;;
+ *) exit 19 ;;
+esac
+`
+	if err := os.WriteFile(client, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run := func(result string) (string, error) {
+		command := exec.Command("bash", "-c", clickhouseAPIQuery, "clickhouse-api-query", "database.example.test")
+		command.Env = append(os.Environ(), "PATH="+directory+":"+os.Getenv("PATH"), "CLICKHOUSE_TEST_RESULT="+result)
+		command.Stdin = strings.NewReader(strings.Repeat("a", 64) + "\nSELECT 'private-query'\n")
+		var output clickhouseAPIOutput
+		command.Stdout = &output
+		command.Stderr = io.Discard
+		err := command.Run()
+		return strings.TrimSpace(output.String()), err
+	}
+	if output, err := run("success"); err != nil || output != "query-result" {
+		t.Fatal("successful diagnostic fixture failed")
+	}
+	output, err := run("failure")
+	if err == nil || output != "stage=client exit=17 engine_code=516" || strings.Contains(output, "private") || strings.Contains(output, "secret") {
+		t.Fatal("failed query did not return the bounded credential-safe diagnostic")
+	}
+	output, err = run("oversize")
+	if err == nil || len(output) > 128 || !clickhouseAPIDiagnosticPattern.MatchString(output) {
+		t.Fatal("oversized client output was not reduced to a bounded diagnostic")
+	}
+	for _, unsafe := range []string{"query-row", "query-row\nstage=client exit=1 engine_code=516", "stage=other exit=1 engine_code=516", strings.Repeat("1", 65<<10)} {
+		if got := clickhouseAPISafeDiagnostic(unsafe); got != "stage=exec diagnostic=unavailable" {
+			t.Fatal("unexpected or partial output was not redacted")
+		}
+	}
+}
+
 const clickhouseAPIQuery = `set -eu
 umask 077
-IFS= read -r password
-[[ "$password" =~ ^[a-f0-9]{64}$ ]]
+if ! IFS= read -r password; then
+  printf 'stage=password_read exit=1 engine_code=none\n'
+  exit 1
+fi
+if [[ ! "$password" =~ ^[a-f0-9]{64}$ ]]; then
+  printf 'stage=password_format exit=1 engine_code=none\n'
+  exit 1
+fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-cat > "$work/query.sql"
-cat > "$work/client.xml" <<EOF
+ulimit -f 64
+if ! cat > "$work/query.sql"; then
+  printf 'stage=query_stage exit=1 engine_code=none\n'
+  exit 1
+fi
+if ! cat > "$work/client.xml" <<EOF
 <config><host>127.0.0.1</host><port>9440</port><tls-sni-override>$1</tls-sni-override><database>app</database><user>app</user><password>$password</password><secure>true</secure><connect_timeout>3</connect_timeout><receive_timeout>20</receive_timeout><send_timeout>20</send_timeout><send_logs_level>none</send_logs_level><openSSL><client><caConfig>/etc/hakopod-client-tls/ca.crt</caConfig><verificationMode>strict</verificationMode><extendedVerification>true</extendedVerification><loadDefaultCAFile>false</loadDefaultCAFile><invalidCertificateHandler><name>RejectCertificateHandler</name></invalidCertificateHandler></client></openSSL></config>
 EOF
+then
+  printf 'stage=config_write exit=1 engine_code=none\n'
+  exit 1
+fi
 unset password
-clickhouse-client --config-file="$work/client.xml" --queries-file="$work/query.sql"
+if clickhouse-client --config-file="$work/client.xml" --queries-file="$work/query.sql" > "$work/result" 2> "$work/error"; then
+  cat "$work/result"
+else
+  status=$?
+  code=$(sed -n 's/.*Code: \([0-9][0-9]*\)\..*/\1/p' "$work/error" | head -n 1)
+  printf 'stage=client exit=%s engine_code=%s\n' "$status" "${code:-none}"
+  exit "$status"
+fi
 `
 
 func clickhouseAPIPreflight(t *testing.T, ctx context.Context, kube kubernetes.Interface) []string {
@@ -236,7 +310,7 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	source, _ := create("clickhouse-api-source", "clickhouse-api-source-create")
 	target, _ := create("clickhouse-api-target", "clickhouse-api-target-create")
 
-	query := func(d managed.Resource, sql string) string {
+	query := func(d managed.Resource, stage, sql string) string {
 		var credentials map[string]string
 		if status := client.request("POST", "/databases/"+d.ID+"/credentials", map[string]any{}, &credentials, ""); status != 200 {
 			t.Fatal("credentials", status)
@@ -248,11 +322,13 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 		step, stop := context.WithTimeout(ctx, 30*time.Second)
 		defer stop()
 		if err := runtime.DatabaseExec(step, d, member, []string{"bash", "-c", clickhouseAPIQuery, "clickhouse-api-query", host}, input, &output); err != nil {
-			t.Fatal("ClickHouse app query failed")
+			diagnostic := clickhouseAPISafeDiagnostic(output.String())
+			t.Fatalf("ClickHouse app query failed at %s (%v; %s)", stage, err, diagnostic)
 		}
 		return strings.TrimSpace(output.String())
 	}
-	query(source, "CREATE TABLE api_recovery (id UInt64, value String) ENGINE=MergeTree ORDER BY id; INSERT INTO api_recovery VALUES (1, unhex('0080FF0D0A'))")
+	query(source, "source_create", "CREATE TABLE api_recovery (id UInt64, value String) ENGINE=MergeTree ORDER BY id")
+	query(source, "source_insert_initial", "INSERT INTO api_recovery VALUES (1, unhex('0080FF0D0A'))")
 
 	var job backup.Job
 	if status := client.request("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "clickhouse"}}, &job, "clickhouse-api-backup"); status != 202 {
@@ -281,7 +357,7 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	if err != nil || artifact.Source.Engine != "clickhouse" || artifact.Source.ManagedDatabaseID != source.ID || artifact.SourceRevision != source.Revision || artifact.VerifiedAt == nil {
 		t.Fatal("ClickHouse backup artifact is incomplete")
 	}
-	query(source, "INSERT INTO api_recovery VALUES (2, unhex('01027F'))")
+	query(source, "source_insert_after_backup", "INSERT INTO api_recovery VALUES (2, unhex('01027F'))")
 
 	var plan backup.RestorePlan
 	if status := client.request("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, ""); status != 200 {
@@ -313,7 +389,7 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	if err = db.RefreshDatabaseRecoveries(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if query(target, "SELECT id, hex(value) FROM api_recovery ORDER BY id FORMAT TSV") != "1\t0080FF0D0A" || query(source, "SELECT id, hex(value) FROM api_recovery ORDER BY id FORMAT TSV") != "1\t0080FF0D0A\n2\t01027F" {
+	if query(target, "target_verify_restore", "SELECT id, hex(value) FROM api_recovery ORDER BY id FORMAT TSV") != "1\t0080FF0D0A" || query(source, "source_verify_preserved", "SELECT id, hex(value) FROM api_recovery ORDER BY id FORMAT TSV") != "1\t0080FF0D0A\n2\t01027F" {
 		t.Fatal("ClickHouse recovery point or source preservation changed")
 	}
 	var inspected managed.Resource
