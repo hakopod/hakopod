@@ -1035,7 +1035,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                       <dt>Backups</dt>
                       <dd>{spec.engine === 'vitess' ? `${vitessDestinations.find((item) => item.id === spec.vitess?.backup_destination_id)?.name || 'Native destination required'} · revision ${spec.vitess?.backup_destination_revision || '—'} · exported schedules set up after creation` : 'No schedule configured · set up after creation'}</dd>
                     </div>
-                    {spec.engine === 'vitess' && <div><dt>Table routing</dt><dd>{spec.shards > 1 ? `${spec.vitess?.tables?.length || 0} reviewed table entries` : 'Single shard · no table routing entries'}</dd></div>}
+                    {spec.engine === 'vitess' && <div><dt>Table routing</dt><dd>{spec.shards > 1 ? `${spec.vitess?.tables?.length || 0} reviewed table ${spec.vitess?.tables?.length === 1 ? 'entry' : 'entries'}` : 'Single shard · no table routing entries'}</dd></div>}
                   </dl>
                 </FormSection>
                 <Note>
