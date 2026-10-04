@@ -10,6 +10,11 @@ func TestCatalogDefaultsValidateAfterRequiredUserConfiguration(t *testing.T) {
 			spec.Secrets[key] = SecretReference{Name: key, Revision: 1}
 		}
 		if item.Kind == "supabase" {
+			for _, component := range []string{"postgres-meta", "storage"} {
+				if resources := spec.Resources[component]; resources.CPU != "250m" || resources.Memory != "512Mi" {
+					t.Fatalf("Supabase %s default resources were reduced to its safety floor: %#v", component, resources)
+				}
+			}
 			spec.Placement.NodeNames = []string{"node-a"}
 			spec.Supabase.PublicURL, spec.Supabase.SiteURL = "https://api.example.com", "https://app.example.com"
 		} else {

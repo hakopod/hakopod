@@ -14,10 +14,12 @@ This release supports the fixed application database name `postgres`. Its
 pinned initialization assets target that database explicitly, so other names
 are rejected during review instead of reaching Kubernetes.
 
-Candidate admission reserves at least 500m CPU and 2 GiB memory for PostgreSQL,
-and 250m CPU and 512 MiB memory each for Realtime and Supavisor. These are
-Hakopod safety floors for later acceptance, not upstream sizing guarantees or
-evidence that the stack has run successfully.
+Candidate admission reserves at least 500m CPU and 2 GiB memory for PostgreSQL;
+250m CPU and 512 MiB memory each for Realtime and Supavisor; and 250m CPU and
+256 MiB memory each for postgres-meta and Storage. The postgres-meta and
+Storage floors follow a native startup run where 128 MiB limits caused both
+containers to be OOM-killed. These are Hakopod safety floors, not upstream
+sizing guarantees. Production sizing still needs workload-specific measurements.
 
 The candidate is unavailable. Its cluster and public qualification fields stay
 false. It must not appear as a selectable catalog product or be described as a
