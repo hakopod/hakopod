@@ -45,6 +45,7 @@ type NeonControlTarget struct {
 // timeline, pageserver, and safekeeper placement.
 type NeonRuntimeConfig struct {
 	ResolveComputeConfig                     func(context.Context, string, json.RawMessage) (json.RawMessage, error)
+	ObserveTimelineRouting                   func(context.Context, NeonTimelineRoutingObservation) error
 	StorageController                        NeonControlTarget
 	Computes                                 []NeonControlTarget
 	Pageservers                              []NeonPageserverRegistration
