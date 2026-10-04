@@ -75,6 +75,10 @@ if docker volume inspect k3d-hakopod-dev-images >/dev/null 2>&1; then
   echo 'The isolated daemon retains a development image volume; inspect its previous cleanup first.' >&2
   exit 1
 fi
+[[ -z "$(docker volume ls -q)" ]] || {
+  echo 'The isolated daemon retains Docker volumes; inspect their ownership and previous cleanup first.' >&2
+  exit 1
+}
 check_disk() {
 python3 - "$actual_root" <<'PY'
 import shutil, sys
@@ -281,6 +285,7 @@ cleanup() {
       if docker volume inspect k3d-hakopod-dev-images >/dev/null 2>&1; then
         cleanup_ok=0
       fi
+      [[ -z "$(docker volume ls -q)" ]] || cleanup_ok=0
     fi
     if [[ "$cleanup_ok" == 1 ]]; then
       echo 'Owned disposable development cluster and workers removed.' | tee "$results/cleanup.txt"
