@@ -198,7 +198,11 @@ variable substitutions. Use TOML multiline strings for PEM, SQL and YAML.
 
 Each database client needs its own role credential. The role-bootstrap SQL
 must set the same passwords used by the Auth, REST, Realtime, Storage,
-postgres-meta and Supavisor snapshots. The Supavisor snapshot contains a
+postgres-meta and Supavisor snapshots. Hakopod creates the empty `_realtime`
+schema before running this SQL in the database image's init phase. The SQL
+must create its scoped roles before assigning ownership or privileges; the
+upstream migrations and final Realtime ownership step run afterward. The
+Supavisor snapshot contains a
 `value` URL for the `pgbouncer` role in the `_supabase` database and a matching
 `password` value; that role owns only the `_supavisor` metadata schema. Auth, REST and Storage connection URLs
 must verify the `db` hostname using the mounted database CA. Database
