@@ -1127,7 +1127,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                 <Server size={20} aria-hidden="true" />
                 <span>
                   {spec.engine === 'vitess'
-                    ? `${spec.shards} ${spec.shards === 1 ? 'shard' : 'shards'} · ${spec.replicas + 1} tablets each`
+                    ? `${spec.shards} ${spec.shards === 1 ? 'shard' : 'shards'} · ${spec.replicas + 1} ${spec.replicas === 0 ? 'tablet' : 'tablets'} each`
                     : spec.engine === 'clickhouse' && spec.mode === 'cluster'
                     ? `${spec.shards} shards · ${spec.replicas + 1} copies each`
                     : spec.engine === 'redis' && spec.mode === 'cluster'
