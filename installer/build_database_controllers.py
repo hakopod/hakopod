@@ -23,7 +23,7 @@ IMAGE = re.compile(r'^[^\s]+:[^/@:]+@sha256:[0-9a-f]{64}$')
 REDIS_CONTROLLER_IMAGE = 'ghcr.io/hakopod/managed-redis-operator:candidate-36996745177-1@sha256:87a426b087355e41247210d176d82812a5c8c462cc2856789513dd00a37ab32a'
 HERE = Path(__file__).resolve().parent
 NAMESPACES = {'postgresql': 'cnpg-system', 'redis': 'redis-operator', 'mysql': 'mysql-operator', 'mongodb': 'mongodb-system', 'clickhouse': 'clickhouse-operator'}
-RELEASE_ENGINES = ('postgresql', 'redis', 'mysql', 'mongodb')
+RELEASE_ENGINES = ('postgresql', 'redis', 'mysql', 'mongodb', 'clickhouse')
 
 
 def fetch(url, expected, path, limit=8 * 1024 * 1024):
