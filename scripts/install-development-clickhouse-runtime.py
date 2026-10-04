@@ -13,6 +13,7 @@ import re
 RUNTIME = "hakopod-clickhouse"
 LABEL = "hakopod.com.node-restriction.kubernetes.io/clickhouse-runtime"
 PROFILE = "systrap-no-patching-v1"
+POOL = "clickhouse-acceptance"
 SERVER = "k3d-hakopod-dev-server-0"
 WORKER = "k3d-hakopod-database-worker-0"
 EXTRA_WORKER = "k3d-hakopod-database-worker-1"
@@ -77,6 +78,10 @@ def target_is_idle(pods, runtime_containers):
     pod_uids.discard(None)
     return all(item.get("Labels", {}).get("io.kubernetes.pod.uid") in pod_uids
                for item in runtime_containers)
+
+
+def runtime_class():
+    return {"apiVersion":"node.k8s.io/v1", "kind":"RuntimeClass", "metadata":{"name":RUNTIME,"labels":{"app.kubernetes.io/managed-by":"hakopod"},"annotations":{LABEL:PROFILE}},"handler":RUNTIME,"scheduling":{"nodeSelector":{LABEL:PROFILE,"hakopod.com/pool":POOL},"tolerations":[{"key":"hakopod.com/pool","operator":"Equal","value":POOL,"effect":"NoSchedule"}]},"overhead":{"podFixed":{"cpu":"20m","memory":"50Mi"}}}
 
 
 def main():
@@ -178,8 +183,7 @@ def main():
                 raise ValueError("Development runtime did not restart")
             run(kube + ["label", "node", node, LABEL + "=" + PROFILE, "--overwrite"])
             print("Installed ClickHouse sandbox on", node, flush=True)
-    runtime = {"apiVersion":"node.k8s.io/v1", "kind":"RuntimeClass", "metadata":{"name":RUNTIME,"labels":{"app.kubernetes.io/managed-by":"hakopod"},"annotations":{LABEL:PROFILE}},"handler":RUNTIME,"scheduling":{"nodeSelector":{LABEL:PROFILE}},"overhead":{"podFixed":{"cpu":"20m","memory":"50Mi"}}}
-    run(kube + ["apply", "-f", "-"], input=json.dumps(runtime).encode())
+    run(kube + ["apply", "-f", "-"], input=json.dumps(runtime_class()).encode())
 
 
 if __name__ == "__main__":

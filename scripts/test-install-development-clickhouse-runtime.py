@@ -48,6 +48,14 @@ class DevelopmentClickHouseRuntimeTests(unittest.TestCase):
             with self.subTest(config=config):
                 self.assertFalse(RUNTIME.bounded_worker(config))
 
+    def test_runtime_class_selects_and_tolerates_only_dedicated_pool(self):
+        scheduling = RUNTIME.runtime_class()["scheduling"]
+        self.assertEqual(scheduling["nodeSelector"], {
+            RUNTIME.LABEL: RUNTIME.PROFILE, "hakopod.com/pool": RUNTIME.POOL})
+        self.assertEqual(scheduling["tolerations"], [{
+            "key": "hakopod.com/pool", "operator": "Equal",
+            "value": RUNTIME.POOL, "effect": "NoSchedule"}])
+
 
 if __name__ == "__main__":
     unittest.main()
