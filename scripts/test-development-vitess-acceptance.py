@@ -194,9 +194,11 @@ class NativePreflightTests(unittest.TestCase):
                 return {'items': [{'metadata': {'name': name}, 'spec': {'group': 'planetscale.com', 'scope': 'Namespaced'},
                                    'status': {'conditions': [{'type': 'Established', 'status': 'True'}, {'type': 'NamesAccepted', 'status': 'True'}]}}
                                   for name in runner.VITESS_CRDS]}
-            with patch.object(runner, 'command_json', side_effect=metadata):
+            with patch.object(runner, 'command_json', side_effect=metadata) as commands:
                 result = runner.cluster_prerequisites(['kubectl'], path, hashlib.sha256(raw).hexdigest(), runner.NODES)
             self.assertEqual(set(result['vitess_crds']), runner.VITESS_CRDS)
+            crd_command = commands.call_args_list[-1].args[0]
+            self.assertEqual(crd_command[3:-2], sorted(runner.VITESS_CRDS))
 
     def test_cluster_prerequisites_reject_missing_crd_or_changed_identity(self):
         receipt = {'context': 'k3d-hakopod-dev', 'cluster_uid': 'cluster-a',
