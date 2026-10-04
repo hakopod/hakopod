@@ -19,6 +19,7 @@ class DevelopmentFaultTests(unittest.TestCase):
         self.database = 'a' * 32
         self.uid = '01234567-89ab-cdef-0123-456789abcdef'
         self.container = 'b' * 64
+        self.lease = '566710d7-b493-4a69-a59e-d0a5772669c5'
         self.pod_name = 'database-0'
         self.state = 'RUNNING'
         self.calls = []
@@ -44,9 +45,14 @@ class DevelopmentFaultTests(unittest.TestCase):
             return b''
         if args[0] == 'kubectl':
             kind = args[args.index('get') + 1]
-            value = {'namespace': self.namespace, 'mongodbcommunity': self.object, 'pod': self.pod, 'statefulset': self.statefulset}[kind]
+            value = {'namespace': self.namespace, 'mongodbcommunity': self.object,
+                     'clickhouseinstallation': self.object, 'pod': self.pod,
+                     'statefulset': self.statefulset}[kind]
             return json.dumps(value).encode()
         if args[:3] == ['sudo', 'docker', 'inspect']:
+            if self.environment.get('HAKOPOD_CLICKHOUSE_TEST') == '1':
+                return json.dumps({'k3d.cluster': 'hakopod-dev', 'k3d.role': 'agent',
+                                   'com.hakopod.lease-id': self.lease}).encode()
             return b'{"k3d.cluster":"hakopod-dev"}'
         if args[-3:-1] == ['containers', 'info']:
             return json.dumps(self.runtime).encode()
@@ -66,6 +72,21 @@ class DevelopmentFaultTests(unittest.TestCase):
              patch.object(HELPER.subprocess, 'run') as stop, patch.object(HELPER.time, 'sleep') as sleep:
             HELPER.main()
             return stop, sleep
+
+    def clickhouse(self):
+        self.environment = {
+            'HAKOPOD_CLICKHOUSE_TEST': '1',
+            'HAKOPOD_CLICKHOUSE_FAULT_NODES': 'k3d-hakopod-clickhouse-worker-0',
+            'HAKOPOD_CLICKHOUSE_LEASE_ID': self.lease,
+            'HAKOPOD_TEST_KUBECONFIG': '/fixture/development-kubeconfig',
+            'PATH': '/fixture/bin:/usr/bin',
+        }
+        self.pod['spec']['nodeName'] = 'k3d-hakopod-clickhouse-worker-0'
+        self.pod['spec']['containers'] = [{'name': 'keeper', 'image': 'docker.io/clickhouse/clickhouse-keeper:26.3.33.24@sha256:3fd59d9efb8c9e9136c3c924ceaa004f65c0b14699f34e4eae4eb63e2f860803'}]
+        self.pod['status']['containerStatuses'][0]['name'] = 'keeper'
+        self.pod_name = 'database-keeper-0'
+        self.statefulset['metadata']['ownerReferences'] = [{'kind': 'Namespace', 'uid': 'namespace'}]
+        self.runtime['Labels']['io.kubernetes.container.name'] = 'keeper'
 
     def test_pause_schedules_independent_bounded_rescue_before_mutation(self):
         self.invoke('pause')
@@ -121,6 +142,42 @@ class DevelopmentFaultTests(unittest.TestCase):
                     self.pod['spec']['nodeName'] = 'k3d-hakopod-provider-smoke-20260929'
                 else:
                     self.runtime['Labels']['io.kubernetes.pod.uid'] = 'replaced'
+                self.calls.clear()
+                with self.assertRaises(ValueError):
+                    self.invoke('pause')
+                self.assertFalse(any(call[:2] == ['sudo', 'systemd-run'] or call[-3:-1] == ['tasks', 'pause'] for call in self.calls))
+
+    def test_clickhouse_requires_explicit_dedicated_nodes_and_forwards_them(self):
+        self.clickhouse()
+        self.invoke('pause')
+        rescue = next(call for call in self.calls if call[:2] == ['sudo', 'systemd-run'])
+        self.assertIn('--setenv=HAKOPOD_CLICKHOUSE_FAULT_NODES=k3d-hakopod-clickhouse-worker-0', rescue)
+        self.assertIn('--setenv=HAKOPOD_CLICKHOUSE_LEASE_ID=' + self.lease, rescue)
+
+        self.environment.pop('HAKOPOD_CLICKHOUSE_FAULT_NODES')
+        self.calls.clear()
+        with self.assertRaises(ValueError):
+            self.invoke('pause')
+        self.assertFalse(any(call[:2] == ['sudo', 'systemd-run'] or call[-3:-1] == ['tasks', 'pause'] for call in self.calls))
+
+    def test_clickhouse_requires_exact_node_lease(self):
+        self.clickhouse()
+        for lease in (None, 'fedcba98-7654-3210-fedc-ba9876543210'):
+            with self.subTest(lease=lease):
+                if lease is None:
+                    self.environment.pop('HAKOPOD_CLICKHOUSE_LEASE_ID')
+                else:
+                    self.environment['HAKOPOD_CLICKHOUSE_LEASE_ID'] = lease
+                self.calls.clear()
+                with self.assertRaises(ValueError):
+                    self.invoke('pause')
+                self.assertFalse(any(call[:2] == ['sudo', 'systemd-run'] or call[-3:-1] == ['tasks', 'pause'] for call in self.calls))
+
+    def test_clickhouse_rejects_legacy_and_unselected_nodes(self):
+        self.clickhouse()
+        for node in ('k3d-hakopod-database-worker-0', 'k3d-hakopod-clickhouse-worker-1'):
+            with self.subTest(node=node):
+                self.pod['spec']['nodeName'] = node
                 self.calls.clear()
                 with self.assertRaises(ValueError):
                     self.invoke('pause')
