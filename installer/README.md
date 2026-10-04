@@ -310,10 +310,10 @@ Managed Actions is an optional Pro module. See [the setup and lifecycle guide](.
 ## Managed database controllers
 
 The installer kit now carries a `deploy/database-controllers` bundle. Release
-packaging renders PostgreSQL, Redis, MySQL and MongoDB controller sources with
-pinned checksums and image digests. Alpha.50 adds the MySQL controller.
-ClickHouse and Oracle Database remain held
-for a later release. Building that bundle requires
+packaging renders PostgreSQL, Redis, MySQL, MongoDB and ClickHouse controller
+sources with pinned checksums and image digests. Use the bundle from the same
+release as the installed server. Oracle Database remains held for a later
+release. Building that bundle requires
 PyYAML on a Linux build host and `HAKOPOD_REDIS_CONTROLLER_IMAGE` naming the
 separately qualified credential/TLS-safe Redis image. The builder downloads and
 checks the pinned Helm binary itself. Controller installation uses only Python,
@@ -329,7 +329,14 @@ admission prerequisite; creation also requires the current pin, a healthy
 rollout, required permissions and valid placement and capacity. It does not by
 itself qualify MySQL or enable Cloud admission.
 
-Vitess remains behind a compiled release gate, so the alpha.50 package
+The ClickHouse payload is `clickhouse.json`. It installs the pinned Altinity
+operator and its CRDs; database creation supplies the data and Keeper members.
+Admission verifies controller ownership, image, readiness and permissions.
+Sandboxed workers also need the [dedicated runtime](#optional-clickhouse-sandbox)
+before creation. Installing the controller does not configure that runtime or
+reserve database capacity.
+
+Vitess remains behind a compiled release gate, so the current package
 omits it. Enabling that gate requires native qualification records matching the
 current source and exact runtime images; packaging stops when those records are
 missing or stale. An enabled Vitess payload contains eight CRDs. Hakopod creates
@@ -340,7 +347,7 @@ From the matching extracted installer kit on a completed installer-owned host:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mysql mongodb \
+  --engines postgresql redis mysql mongodb clickhouse \
   --plan /root/hakopod-database-controllers-plan.json
 ```
 
@@ -353,7 +360,7 @@ Then apply that exact plan within 30 minutes:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mysql mongodb \
+  --engines postgresql redis mysql mongodb clickhouse \
   --apply-reviewed-plan /root/hakopod-database-controllers-plan.json
 ```
 

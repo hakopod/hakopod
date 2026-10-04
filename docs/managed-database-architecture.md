@@ -1,6 +1,6 @@
 # How Hakopod manages a database
 
-Status: self-hosted alpha.50 includes PostgreSQL, Redis, MySQL and MongoDB. ClickHouse, Oracle Database and Vitess remain held. Neon and Supabase are deferred. Sections about unavailable engines explain source implementations; they do not announce availability. Cloud provisioning requires a separate operator rollout and approved capacity. See the [acceptance record](managed-database-release-acceptance.md) for the exact development tests and their limits.
+Status: self-hosted alpha.52 includes PostgreSQL, Redis, MySQL, MongoDB and private ClickHouse. Oracle Database and Vitess remain held; Neon and Supabase are deferred. Sections about unavailable engines explain source implementations. Cloud provisioning requires a separate operator rollout and approved capacity. See the [acceptance record](managed-database-release-acceptance.md) for the exact development tests and their limits.
 
 ## Follow one create request
 
