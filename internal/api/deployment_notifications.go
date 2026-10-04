@@ -13,10 +13,12 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
 )
@@ -46,12 +48,16 @@ func (s *Server) notificationSettings(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	for i := range targets {
+		targets[i].SlackManaged = s.notificationTargetSlackManaged(a, targets[i])
+	}
 	history, err := s.Store.NotificationHistory(r.Context(), who(r), a)
 	if err != nil {
 		failure(w, err)
 		return
 	}
-	write(w, 200, map[string]any{"items": targets, "deliveries": history, "email_available": s.smtpMailAvailable(r.Context()), "encryption_ready": len(s.authEncryptionKey()) == 32})
+	slackAvailable, slackReason := s.legacySlackNotificationAvailability(r.Context())
+	write(w, 200, map[string]any{"items": targets, "deliveries": history, "email_available": s.smtpMailAvailable(r.Context()), "encryption_ready": len(s.authEncryptionKey()) == 32, "legacy_slack_available": slackAvailable, "legacy_slack_reason": slackReason})
 }
 func (s *Server) saveNotification(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")
@@ -112,6 +118,15 @@ func (s *Server) saveNotification(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_notification", err.Error())
 		return
 	}
+	// An expired installation may perform exactly one maintenance mutation on an
+	// existing legacy Slack target: disable it without changing its identity,
+	// selected events, or saved credentials. It can then delete the target or
+	// migrate it to a non-Slack channel. All new, enabled, paused, or modified
+	// direct Slack destinations still require Pro.
+	maintenanceDisable := old.ID != "" && old.Enabled && !in.Enabled && old.Kind == in.Kind && old.Name == in.Name && slices.Equal(old.Events, in.Events) && strings.TrimSpace(in.Destination) == "" && in.SigningSecret == ""
+	if legacySlackWebhookDestination(in.Kind, secret.Destination) && !maintenanceDisable && !s.requireLegacySlackWebhook(w, r, in.Kind, secret.Destination) {
+		return
+	}
 	if in.Kind == "email" && in.Enabled && !s.smtpMailAvailable(r.Context()) {
 		problem(w, 400, "smtp_unavailable", "Configure installation SMTP before enabling email notifications.")
 		return
@@ -129,6 +144,7 @@ func (s *Server) saveNotification(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	n.SlackManaged = s.notificationTargetSlackManaged(a, n)
 	status := 200
 	if r.Method == "POST" {
 		status = 201
@@ -163,6 +179,14 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	target, err := s.Store.NotificationTarget(r.Context(), a.ID, r.PathValue("target"))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if !s.requireSavedLegacySlackWebhook(w, r, a, target) {
+		return
+	}
 	id, err := s.Store.TestNotification(r.Context(), who(r), a, r.PathValue("target"), in.ExpectedRevision)
 	if err != nil {
 		failure(w, err)
@@ -170,6 +194,86 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, 202, map[string]string{"id": id, "status": "pending"})
 }
+
+// legacySlackWebhookDestination recognizes both the explicit legacy Slack
+// channel and a Slack-hosted URL submitted through the generic webhook channel.
+// Host matching keeps domain boundaries exact so an unrelated hostname cannot be
+// classified as Slack.
+func legacySlackWebhookDestination(kind, destination string) bool {
+	if kind == "slack" {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(destination))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	return host == "slack.com" || strings.HasSuffix(host, ".slack.com") || host == "slack-gov.com" || strings.HasSuffix(host, ".slack-gov.com")
+}
+
+// legacySlackNotificationAvailability is safe to expose with notification
+// settings. It identifies only the policy state; target destinations remain
+// encrypted and unreadable through the API.
+func (s *Server) legacySlackNotificationAvailability(ctx context.Context) (bool, string) {
+	if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud {
+		return false, "managed_by_cloud"
+	}
+	if err := s.Store.RequireFeatures(ctx, store.SlackFeature); err != nil {
+		if errors.Is(err, store.ErrLicenseRequired) {
+			return false, "license_required"
+		}
+		return false, "unavailable"
+	}
+	return true, ""
+}
+
+func (s *Server) requireLegacySlackWebhook(w http.ResponseWriter, r *http.Request, kind, destination string) bool {
+	if !legacySlackWebhookDestination(kind, destination) {
+		return true
+	}
+	if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud {
+		problem(w, http.StatusConflict, "slack_managed_by_cloud", "Direct Slack webhooks are unavailable in Hakopod Cloud. Connect Slack in Settings → Integrations → Slack.")
+		return false
+	}
+	if err := s.Store.RequireFeatures(r.Context(), store.SlackFeature); err != nil {
+		if errors.Is(err, store.ErrLicenseRequired) {
+			problem(w, http.StatusPaymentRequired, "license_required", "Slack webhook notifications require Hakopod Pro. Connect Slack in Settings → Integrations → Slack after activating Pro.")
+		} else {
+			failure(w, err)
+		}
+		return false
+	}
+	return true
+}
+
+// notificationTargetSlackManaged is a presentation-only classification. It lets
+// clients explain why a saved target cannot be enabled or tested without
+// returning its encrypted URL or any signing credential.
+func (s *Server) notificationTargetSlackManaged(a store.Application, target store.NotificationTarget) bool {
+	if target.Kind == "slack" {
+		return true
+	}
+	plain, err := s.decryptAuth(target.Destination)
+	var secret notificationSecret
+	return err == nil && json.Unmarshal(plain, &secret) == nil && secret.Purpose == "deployment-notification" && secret.ApplicationID == a.ID && secret.TargetID == target.ID && legacySlackWebhookDestination(target.Kind, secret.Destination)
+}
+
+// requireSavedLegacySlackWebhook applies the same gate to an existing target.
+// A generic target's decrypted destination is authoritative; requests do not
+// carry its secret after the first save.
+func (s *Server) requireSavedLegacySlackWebhook(w http.ResponseWriter, r *http.Request, a store.Application, target store.NotificationTarget) bool {
+	if target.Kind == "slack" {
+		return s.requireLegacySlackWebhook(w, r, target.Kind, "")
+	}
+	plain, err := s.decryptAuth(target.Destination)
+	var secret notificationSecret
+	if err != nil || json.Unmarshal(plain, &secret) != nil || secret.Purpose != "deployment-notification" || secret.ApplicationID != a.ID || secret.TargetID != target.ID {
+		problem(w, http.StatusServiceUnavailable, "notification_credentials_unavailable", "Saved destination cannot be decrypted.")
+		return false
+	}
+	return s.requireLegacySlackWebhook(w, r, target.Kind, secret.Destination)
+}
+
 func validateNotificationDestination(kind, destination, secret string) error {
 	if kind == "email" {
 		email, err := store.NormalizeEmail(destination)
@@ -280,8 +384,10 @@ func (s *Server) deliverNotification(ctx context.Context, client *http.Client, d
 	if json.Unmarshal(d.Payload, &payload) != nil {
 		return "failed", "Invalid notification payload."
 	}
-	app, _ := payload["application_id"].(string)
-	target, err := s.Store.NotificationTarget(ctx, app, d.TargetID)
+	// The target row, rather than the queued payload, owns the application's
+	// current scope. This prevents a stale or malformed payload from changing
+	// the policy used for delivery.
+	target, err := s.Store.NotificationTargetByID(ctx, d.TargetID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "skipped", "Destination was removed."
 	}
@@ -291,6 +397,7 @@ func (s *Server) deliverNotification(ctx context.Context, client *http.Client, d
 	if !target.Enabled || target.Revision != d.TargetRevision {
 		return "skipped", "Destination was disabled or changed."
 	}
+	app := target.ApplicationID
 	plain, err := s.decryptAuth(target.Destination)
 	var secret notificationSecret
 	if err != nil || json.Unmarshal(plain, &secret) != nil || secret.Purpose != "deployment-notification" || secret.TargetID != target.ID || secret.ApplicationID != app {
@@ -298,6 +405,17 @@ func (s *Server) deliverNotification(ctx context.Context, client *http.Client, d
 	}
 	if validateNotificationDestination(target.Kind, secret.Destination, secret.SigningSecret) != nil {
 		return "failed", "Destination is invalid."
+	}
+	if legacySlackWebhookDestination(target.Kind, secret.Destination) {
+		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud {
+			return "skipped", "Direct Slack webhooks are unavailable in Hakopod Cloud. Connect Slack in Settings → Integrations → Slack."
+		}
+		if err := s.Store.RequireFeatures(ctx, store.SlackFeature); err != nil {
+			if errors.Is(err, store.ErrLicenseRequired) {
+				return "skipped", "Slack webhook notifications require Hakopod Pro."
+			}
+			return "pending", "Slack entitlement could not be verified; retry scheduled."
+		}
 	}
 	if s.Auth.PublicURL != "" {
 		payload["dashboard_url"] = strings.TrimSuffix(s.Auth.PublicURL, "/") + "/applications/" + url.PathEscape(app) + "?tab=deployments"

@@ -5501,6 +5501,8 @@ export interface components {
             enabled: boolean;
             events: ("succeeded" | "failed" | "cancelled")[];
             revision: number;
+            /** @description True when this legacy target resolves to a Slack-hosted destination. No destination URL is returned. */
+            readonly slack_managed: boolean;
         };
         NotificationInput: {
             name: string;
@@ -5545,6 +5547,8 @@ export interface components {
             deliveries: components["schemas"]["NotificationDelivery"][];
             email_available: boolean;
             encryption_ready: boolean;
+            legacy_slack_available: boolean;
+            legacy_slack_reason: string;
         };
         /** @description A provider is installation-wide, or scoped to one project and one environment, never to a project alone. Credentials are never returned. */
         DNSProvider: {

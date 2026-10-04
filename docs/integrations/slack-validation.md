@@ -27,6 +27,15 @@ point. A managed Cloud relay node does not need a local Slack entitlement;
 Cloud checks that workspace's active Pro eligibility before accepting and again
 before delivering the event.
 
+The same Pro requirement applies to legacy per-application Slack webhooks,
+including a Slack-hosted URL entered as a generic webhook. The API checks
+configuration, test requests and delivery against current entitlement. Managed
+Cloud rejects direct legacy Slack delivery and directs owners to the workspace
+integration. Existing blocked destinations remain inspectable and deletable;
+an exact pause-only update and migration to a non-Slack destination remain
+available. The dashboard consumes API-derived policy and disables Slack actions
+when that policy is missing.
+
 ## Catalog expansion status
 
 The selectable catalog contains alarm opened and resolved, audit, deployment
@@ -53,19 +62,29 @@ development VM. Logs are retained under
 
 | Scope | Result | Evidence |
 | --- | --- | --- |
-| Complete platform Go suite with disposable PostgreSQL | Passed: `go test -count=1 -p=2 ./...`; live flags remained unset | `platform-full-db-v1.log` |
+| Complete final platform Go suite with disposable PostgreSQL | Passed: `go test -count=1 -p=2 ./...`; 39 package result lines, no failures; live flags remained unset | `platform-final-db-v3.log` |
+| Final legacy Slack gate and notification queue checks | Passed with disposable PostgreSQL after giving the existing Slack success fixture an explicit self-hosted Pro license | `platform-final-focus-v2.log` |
 | Expanded uncached Slack store checks with disposable PostgreSQL | Passed: `go test -count=1 -v ./internal/store -run Slack`; seven cases, no skips | `platform-db-store-slack-v3.log` |
 | Expanded uncached Slack API checks with disposable PostgreSQL | Passed: `go test -count=1 -v ./internal/api -run Slack`; nine top-level cases, no skips | `platform-db-api-slack-v3.log` |
 | Expanded real-cluster Slack outbox acceptance | Passed: two digest-pinned services deployed twice on `k3d-hakopod-dev`; selected self-hosted and Cloud outbox records verified and the owned preview namespace removed | `platform-live-slack-v3.log` |
-| Public dashboard typecheck | Passed: `pnpm typecheck` | `dashboard-final-typecheck-v4.log` |
-| Public dashboard production build | Passed: `pnpm build` | `dashboard-final-build-v4.log` |
-| Public dashboard tests | Passed: 218 UI tests; no failures or skips; the same command also runs the server suite | `dashboard-final-test-v4.log` |
-| SDK tests | Passed: 52 tests; no failures or skips | `expanded-sdk-tests.log` |
+| Public dashboard typecheck and production build | Passed after the final pause-status wording fix | `dashboard-final-v3.log` |
+| Public dashboard tests | Passed: 65 server tests and 218 UI tests; no failures or skips | `dashboard-final-v3.log` |
+| SDK generation, generated check and tests | Passed: 52 tests; no failures or skips | `sdk-final.log` |
 
 Cloud and website validation are recorded in their respective repositories.
 Earlier successful commands without a test database, and empty redirected logs
 from failed command dispatches, are not evidence for the final database-backed
 or frontend implementation.
+
+The final Go run used the frozen `platform-final-validation-v2` source snapshot.
+Its before/snapshot fingerprints are retained in
+`platform-final-source-v2.pre.sha256` and
+`platform-final-source-v2.snapshot.sha256`. The dispatch completed successfully
+with exit status 0; the API package passed in 447.399 seconds and the store
+package in 291.308 seconds. The earlier full attempt exposed an existing test
+that assumed free Slack access. Its success case now installs a test-only Pro
+license, while separate gate cases retain free, expired, Cloud and downgraded
+delivery rejection coverage. Product authorization was not relaxed.
 
 Both current development-only review fixtures returned HTTP 200 after the
 source sync:
@@ -88,7 +107,9 @@ removed afterward.
 
 The independent reviewer approved the affected dashboard UI after inspecting
 the current 40-case matrix, recovery states, screenshots, real element bounds,
-and keyboard and pointer interaction. Coverage and limitations are recorded in
+and keyboard and pointer interaction. Two incremental reviewer passes also
+inspected 47 original legacy-notification screenshots, including missing policy,
+failed-save retention, pause, delete and migration states. Coverage and limitations are recorded in
 [the Slack UI review record](slack-ui-review.md). The review fixture uses
 artificial API and workspace records only. Actual touch, assistive technology,
 live OAuth and Slack transport were not part of that review.

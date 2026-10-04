@@ -21,7 +21,10 @@ type NotificationTarget struct {
 	Enabled       bool     `json:"enabled"`
 	Events        []string `json:"events"`
 	Revision      int64    `json:"revision"`
-	Destination   []byte   `json:"-"`
+	// SlackManaged is derived by the API from the encrypted destination. It
+	// deliberately carries no URL or credential material.
+	SlackManaged bool   `json:"slack_managed"`
+	Destination  []byte `json:"-"`
 }
 
 const notificationColumns = "id,application_id,name,kind,enabled,events,revision,destination"
@@ -52,6 +55,12 @@ func (s *Store) NotificationTargets(ctx context.Context, p Principal, a Applicat
 }
 func (s *Store) NotificationTarget(ctx context.Context, app, id string) (NotificationTarget, error) {
 	return scanNotification(s.Pool.QueryRow(ctx, "SELECT "+notificationColumns+" FROM deployment_notification_targets WHERE application_id=$1 AND id=$2", app, id))
+}
+
+// NotificationTargetByID resolves the target's current application scope for
+// background delivery. Queue payloads are never authoritative for scope.
+func (s *Store) NotificationTargetByID(ctx context.Context, id string) (NotificationTarget, error) {
+	return scanNotification(s.Pool.QueryRow(ctx, "SELECT "+notificationColumns+" FROM deployment_notification_targets WHERE id=$1", id))
 }
 func (s *Store) PutNotificationTarget(ctx context.Context, p Principal, a Application, n NotificationTarget, expected int64) (NotificationTarget, error) {
 	if !p.Allows("deployments:write", a.Project, a.Environment, a.Name) {

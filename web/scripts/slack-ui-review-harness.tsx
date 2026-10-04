@@ -17,6 +17,8 @@ import {
 import { SettingsLayout } from '@hakopod/hatch-ui/blocks/settings-layout'
 import { PageHeader } from '../src/components/shared'
 import { SlackIntegrationPage, SlackSettingsPanel } from '../src/components/slack-settings'
+import { SlackLogo } from '../src/components/slack-logo'
+import { Notifications } from '../src/routes/applications.$applicationId.notifications'
 import { ScopeContext } from '../src/lib/scope'
 
 type Scenario =
@@ -33,11 +35,18 @@ type Scenario =
   | 'paginated-channels'
   | 'channel-page-cap'
   | 'catalog-unavailable'
+  | 'legacy-selfhost-free'
+  | 'legacy-selfhost-pro'
+  | 'legacy-selfhost-expired'
+  | 'legacy-cloud'
+  | 'legacy-save-error'
+  | 'legacy-disable-delete'
+  | 'legacy-policy-unavailable'
 const query = new URLSearchParams(window.location.search)
 const scenario = (query.get('scenario') || 'pro-connected') as Scenario
 const theme = query.get('theme') === 'paper' ? 'light' : 'dark'
 document.documentElement.dataset.theme = theme
-const cloudScenario = scenario === 'cloud-owner' || scenario === 'cloud-unpaid'
+const cloudScenario = scenario === 'cloud-owner' || scenario === 'cloud-unpaid' || scenario === 'legacy-cloud'
 document.documentElement.dataset.edition = cloudScenario ? 'cloud' : 'self-hosted'
 document.documentElement.className = theme === 'light' ? 'light' : 'dark'
 
@@ -417,10 +426,92 @@ const fixtures: Record<
     license: { plan: 'pro', catalog: [{ id: 'slack_notifications', enabled: true }] },
     deliveries: { items: [] },
   },
+  'legacy-selfhost-free': {
+    integration: base,
+    license: { plan: 'free', catalog: [{ id: 'slack_notifications', enabled: false }] },
+    deliveries: { items: [] },
+  },
+  'legacy-selfhost-pro': {
+    integration: base,
+    license: { plan: 'pro', catalog: [{ id: 'slack_notifications', enabled: true }] },
+    deliveries: { items: [] },
+  },
+  'legacy-selfhost-expired': {
+    integration: base,
+    license: { plan: 'free', catalog: [{ id: 'slack_notifications', enabled: false }] },
+    deliveries: { items: [] },
+  },
+  'legacy-cloud': {
+    integration: { ...base, mode: 'cloud' },
+    license: { plan: 'pro', catalog: [{ id: 'slack_notifications', enabled: true }] },
+    deliveries: { items: [] },
+  },
+  'legacy-save-error': {
+    integration: base,
+    license: { plan: 'free', catalog: [{ id: 'slack_notifications', enabled: false }] },
+    deliveries: { items: [] },
+  },
+  'legacy-disable-delete': {
+    integration: base,
+    license: { plan: 'free', catalog: [{ id: 'slack_notifications', enabled: false }] },
+    deliveries: { items: [] },
+  },
+  'legacy-policy-unavailable': {
+    integration: base,
+    license: { plan: 'free', catalog: [{ id: 'slack_notifications', enabled: false }] },
+    deliveries: { items: [] },
+  },
 }
 const fixture = fixtures[fixtureKey(scenario)]
 let fixtureIntegration = structuredClone(fixture.integration) as Record<string, unknown>
 let channelFailuresRemaining = scenario === 'events-success-channel-error' ? 1 : 0
+const legacyNotificationScenario = scenario.startsWith('legacy-')
+const legacySlackPolicy =
+  scenario === 'legacy-policy-unavailable'
+    ? {}
+    : scenario === 'legacy-cloud'
+    ? { legacy_slack_available: false, legacy_slack_reason: 'managed_by_cloud' }
+    : scenario === 'legacy-selfhost-pro' || scenario === 'legacy-save-error'
+      ? { legacy_slack_available: true, legacy_slack_reason: '' }
+      : { legacy_slack_available: false, legacy_slack_reason: 'license_required' }
+let fixtureNotifications = {
+  items:
+    scenario === 'legacy-disable-delete'
+      ? [
+          {
+            id: 'legacy-slack-target',
+            application_id: 'fixture-app',
+            name: 'Former Slack webhook',
+            kind: 'slack',
+            enabled: true,
+            events: ['failed'],
+            revision: 4,
+            slack_managed: true,
+          },
+          {
+            id: 'legacy-generic-slack-target',
+            application_id: 'fixture-app',
+            name: 'Former generic Slack webhook',
+            kind: 'webhook',
+            enabled: true,
+            events: ['failed'],
+            revision: 7,
+            slack_managed: true,
+          },
+        ]
+      : [],
+  deliveries: [],
+  email_available: true,
+  encryption_ready: true,
+  ...legacySlackPolicy,
+}
+const fixtureApplication = {
+  id: 'fixture-app',
+  name: 'fixture-app',
+  display_name: 'Fixture application',
+  project: 'demo',
+  environment: 'development',
+}
 
 function fixtureKey(value: Scenario): Scenario {
   return value in fixtures ? value : 'pro-connected'
@@ -554,6 +645,66 @@ window.fetch = async (input, init) => {
       )
     return Response.json({ deleted: true })
   }
+  if (legacyNotificationScenario && url.pathname === '/api/applications/fixture-app') return Response.json(fixtureApplication)
+  if (legacyNotificationScenario && url.pathname === '/api/applications/fixture-app/notifications' && method === 'GET')
+    return Response.json(fixtureNotifications)
+  if (legacyNotificationScenario && url.pathname === '/api/applications/fixture-app/notifications' && method === 'POST') {
+    const body = await fixtureRequestBody(input, init)
+    const destination = typeof body.destination === 'string' ? body.destination : ''
+    const isSlack = body.kind === 'slack' || /(^|\.)slack(?:-gov)?\.com$/i.test(new URL(destination || 'https://example.test').hostname)
+    if (isSlack && scenario !== 'legacy-selfhost-pro') {
+      const cloud = scenario === 'legacy-cloud'
+      return Response.json(
+        {
+          error: {
+            code: cloud ? 'slack_managed_by_cloud' : 'license_required',
+            message: cloud
+              ? 'Direct Slack webhooks are unavailable in Hakopod Cloud. Connect Slack in Settings → Integrations → Slack.'
+              : 'Slack webhook notifications require Hakopod Pro. Connect Slack in Settings → Integrations → Slack after activating Pro.',
+          },
+        },
+        { status: cloud ? 409 : 402 },
+      )
+    }
+    const target = {
+      id: 'fixture-notification-target',
+      application_id: 'fixture-app',
+      name: body.name || 'Fixture destination',
+      kind: body.kind || 'webhook',
+      enabled: body.enabled !== false,
+      events: Array.isArray(body.events) ? body.events : ['failed'],
+      revision: 1,
+      slack_managed: isSlack,
+    }
+    fixtureNotifications = { ...fixtureNotifications, items: [...fixtureNotifications.items, target] }
+    return Response.json(target, { status: 201 })
+  }
+  if (legacyNotificationScenario && url.pathname.startsWith('/api/applications/fixture-app/notifications/')) {
+    const targetID = url.pathname.split('/').at(-1) === 'test' ? url.pathname.split('/').at(-2)! : url.pathname.split('/').at(-1)!
+    const item = fixtureNotifications.items.find((target) => target.id === targetID)
+    if (method === 'PUT' && item) {
+      const body = await fixtureRequestBody(input, init)
+      const destination = typeof body.destination === 'string' ? body.destination : ''
+      const next = {
+        ...item,
+        name: body.name || item.name,
+        kind: body.kind || item.kind,
+        enabled: body.enabled !== false,
+        events: Array.isArray(body.events) ? body.events : item.events,
+        revision: item.revision + 1,
+        slack_managed:
+          body.kind === 'slack' ||
+          (destination ? /(^|\.)slack(?:-gov)?\.com$/i.test(new URL(destination).hostname) : item.slack_managed),
+      }
+      fixtureNotifications = { ...fixtureNotifications, items: fixtureNotifications.items.map((target) => (target.id === item.id ? next : target)) }
+      return Response.json(next)
+    }
+    if (method === 'DELETE' && item) {
+      fixtureNotifications = { ...fixtureNotifications, items: fixtureNotifications.items.filter((target) => target.id !== item.id) }
+      return Response.json({ deleted: true })
+    }
+    if (method === 'POST' && url.pathname.endsWith('/test')) return Response.json({ id: 'fixture-test', status: 'pending' }, { status: 202 })
+  }
   if (url.pathname === '/api/integrations/slack' && method === 'GET')
     return Response.json(fixtureIntegration)
   if (url.pathname === '/api/integrations/slack/events' && method === 'PUT') {
@@ -650,11 +801,28 @@ function FixtureIntegrations() {
     </div>
   )
 }
+function FixtureNotifications() {
+  return (
+    <div className="hako-shell">
+      <div className="fixture-banner flex items-center gap-2" role="status">
+        <SlackLogo className="h-4 w-4" /> Legacy Slack webhook fixture · artificial data · no destination is contacted
+      </div>
+      <div className="hako-page-content">
+        <Notifications />
+      </div>
+    </div>
+  )
+}
 const rootRoute = createRootRoute({ component: () => <Outlet /> })
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   component: FixtureSettings,
+})
+const notificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/applications/$applicationId/notifications',
+  component: FixtureNotifications,
 })
 const integrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -678,14 +846,17 @@ const detailRoute = createRoute({
 })
 const routeTree = rootRoute.addChildren([
   settingsRoute.addChildren([integrationsRoute.addChildren([detailRoute])]),
+  notificationsRoute,
 ])
 const router = createRouter({
   routeTree,
   history: createMemoryHistory({
     initialEntries: [
-      query.get('view') === 'settings'
-        ? '/settings'
-        : query.get('view') === 'detail'
+      query.get('view') === 'notifications' || legacyNotificationScenario
+        ? '/applications/fixture-app/notifications'
+        : query.get('view') === 'settings'
+          ? '/settings'
+          : query.get('view') === 'detail'
           ? `/settings/integrations/slack${
               query.get('configure') === '1' ||
               scenario === 'mutation-error' ||
@@ -703,7 +874,7 @@ const router = createRouter({
 const cache = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: Infinity } },
 })
-const admin = scenario !== 'denied' && !cloudScenario
+const admin = scenario !== 'denied' && (!cloudScenario || scenario === 'legacy-cloud')
 const scope = {
   project: '',
   environment: '',
