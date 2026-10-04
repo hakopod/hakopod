@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,6 +83,164 @@ func TestManagedPlatformTLSCreatesOwnedIdentityAndResumesWithoutNewKeys(t *testi
 	root, err := c.kube.CoreV1().Secrets(ns.Name).Get(context.Background(), managedplatform.ManagedTLSIssuerSecret, metav1.GetOptions{})
 	if err != nil || len(root.Data) != 2 || len(root.Data["ca.key"]) == 0 {
 		t.Fatal("private issuer was not retained separately")
+	}
+}
+
+func TestPlatformTLSSecretLogicalNamesDoNotOverlap(t *testing.T) {
+	data := map[string][]byte{"tls.crt": []byte("certificate"), "tls.key": []byte("key")}
+	controller := platformTLSSecretName("controller-auth", data)
+	database := platformTLSSecretName("controller-database-password", data)
+	if !platformTLSSecretMatchesLogical(controller, "controller-auth") || !platformTLSSecretMatchesLogical(database, "controller-database-password") {
+		t.Fatal("exact managed TLS snapshot name was rejected")
+	}
+	if platformTLSSecretMatchesLogical(database, "controller-auth") || platformTLSSecretMatchesLogical(controller, "controller-database-password") {
+		t.Fatal("overlapping managed TLS logical name was accepted")
+	}
+	for _, invalid := range []string{controller + "0", strings.Replace(controller, "-r1", "-r2", 1), strings.Replace(controller, "a", "z", 1)} {
+		if platformTLSSecretMatchesLogical(invalid, "controller-auth") {
+			t.Fatal("malformed managed TLS snapshot name was accepted")
+		}
+	}
+}
+
+func TestManagedNeonTLSIssuesAndReplaysSEC1ComputeIdentity(t *testing.T) {
+	c, state, op, ns, prior, current := platformTLSFixture(t)
+	op.Spec = managedplatform.Spec{Kind: "neon", TLSMode: "managed", Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3}}
+	values := map[string]map[string][]byte{}
+	for _, logical := range managedplatform.ManagedTLSLogicalNames("neon") {
+		op.Spec.Secrets[logical] = managedplatform.SecretReference{Name: logical, Revision: 1}
+		values[logical+"-r1"] = map[string][]byte{}
+	}
+	before := func() error { return state.HeartbeatManagedPlatformOperation(context.Background(), op) }
+	input := op.Spec
+	if err := c.prepareManagedPlatformTLS(context.Background(), state, op, ns, &input, nil, &values, prior, current, before); err != nil {
+		t.Fatal(err)
+	}
+	computeName := secretSnapshotNameForCluster(input.Secrets["compute-auth"])
+	compute := copySecretData(values[computeName])
+	block, rest := pem.Decode(compute["tls.key"])
+	if block == nil || block.Type != "EC PRIVATE KEY" || len(bytes.TrimSpace(rest)) != 0 {
+		t.Fatal("managed Neon compute identity was not issued with a SEC1 key")
+	}
+	if _, err := tls.X509KeyPair(compute["tls.crt"], compute["tls.key"]); err != nil {
+		t.Fatal("managed Neon compute certificate and SEC1 key do not match", err)
+	}
+	replayedInput := op.Spec
+	replayedValues := map[string]map[string][]byte{}
+	for _, logical := range managedplatform.ManagedTLSLogicalNames("neon") {
+		replayedValues[logical+"-r1"] = map[string][]byte{}
+	}
+	if err := c.prepareManagedPlatformTLS(context.Background(), state, op, ns, &replayedInput, nil, &replayedValues, prior, current, before); err != nil {
+		t.Fatal(err)
+	}
+	if replayedName := secretSnapshotNameForCluster(replayedInput.Secrets["compute-auth"]); replayedName != computeName || !equalSecretData(replayedValues[replayedName], compute) {
+		t.Fatal("managed Neon compute identity changed during replay")
+	}
+}
+
+func TestManagedNeonTLSRenewalKeepsIssuerAndReplaysSEC1Leaf(t *testing.T) {
+	c, state, op, ns, prior, current := platformTLSFixture(t)
+	op.Spec = managedplatform.Spec{Kind: "neon", TLSMode: "managed", Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3}}
+	values := map[string]map[string][]byte{}
+	for _, logical := range managedplatform.ManagedTLSLogicalNames("neon") {
+		op.Spec.Secrets[logical] = managedplatform.SecretReference{Name: logical, Revision: 1}
+		values[logical+"-r1"] = map[string][]byte{}
+	}
+	ctx := context.Background()
+	before := func() error { return state.HeartbeatManagedPlatformOperation(ctx, op) }
+	root, ca, signer, err := c.prepareManagedPlatformIssuer(ctx, state, op, ns, prior, current, before, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, ips, err := platformTLSNames(op.Spec, op.PlatformID, "compute-auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiring, err := issuePlatformTLSLeaf(map[string][]byte{}, ca, signer, root.Data["ca.crt"], names, ips, time.Now().Add(-25*24*time.Hour), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = normalizeNeonComputeTLSKey(expiring); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.applySupabaseSecret(ctx, state, op, ns, platformTLSSecretName("compute-auth", expiring), expiring, prior, current, before); err != nil {
+		t.Fatal(err)
+	}
+	input := op.Spec
+	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &input, nil, &values, prior, current, before); err != nil {
+		t.Fatal(err)
+	}
+	computeName := secretSnapshotNameForCluster(input.Secrets["compute-auth"])
+	renewed := copySecretData(values[computeName])
+	block, _ := pem.Decode(renewed["tls.key"])
+	if block == nil || block.Type != "EC PRIVATE KEY" || bytes.Equal(renewed["tls.crt"], expiring["tls.crt"]) || !bytes.Equal(renewed["ca.crt"], root.Data["ca.crt"]) {
+		t.Fatal("managed Neon renewal did not replace the leaf with SEC1 while preserving its issuer")
+	}
+	replayedInput := op.Spec
+	replayedValues := map[string]map[string][]byte{}
+	for _, logical := range managedplatform.ManagedTLSLogicalNames("neon") {
+		replayedValues[logical+"-r1"] = map[string][]byte{}
+	}
+	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &replayedInput, nil, &replayedValues, prior, current, before); err != nil {
+		t.Fatal(err)
+	}
+	if replayedName := secretSnapshotNameForCluster(replayedInput.Secrets["compute-auth"]); replayedName != computeName || !equalSecretData(replayedValues[replayedName], renewed) {
+		t.Fatal("renewed managed Neon compute identity changed during replay")
+	}
+}
+
+func TestManagedNeonRecoverySelectsSEC1ComputeSnapshot(t *testing.T) {
+	c, state, op, ns, prior, current := platformTLSFixture(t)
+	op.Spec = managedplatform.Spec{Kind: "neon", TLSMode: "managed", Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{ComputeReplicas: 1, Pageservers: 2, Safekeepers: 3}}
+	values := map[string]map[string][]byte{}
+	for _, logical := range managedplatform.ManagedTLSLogicalNames("neon") {
+		op.Spec.Secrets[logical] = managedplatform.SecretReference{Name: logical, Revision: 1}
+		values[logical+"-r1"] = map[string][]byte{}
+	}
+	ctx := context.Background()
+	before := func() error { return state.HeartbeatManagedPlatformOperation(ctx, op) }
+	input := op.Spec
+	if err := c.prepareManagedPlatformTLS(ctx, state, op, ns, &input, nil, &values, prior, current, before); err != nil {
+		t.Fatal(err)
+	}
+	current["namespace."+ns.Name] = store.PlatformResourceClaim{ResourceID: string(ns.UID)}
+	sec1Name := secretSnapshotNameForCluster(input.Secrets["compute-auth"])
+	sec1Secret, err := c.kube.CoreV1().Secrets(ns.Name).Get(ctx, sec1Name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldData := copySecretData(sec1Secret.Data)
+	block, _ := pem.Decode(oldData["tls.key"])
+	key, err := x509.ParseECPrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldData["tls.key"] = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	oldName := platformTLSSecretName("compute-auth", oldData)
+	if err = c.applySupabaseSecret(ctx, state, op, ns, oldName, oldData, prior, current, before); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.kube.CoreV1().Secrets(ns.Name).Delete(ctx, sec1Name, metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	restored, restoredValues := op.Spec, map[string]map[string][]byte{}
+	if err = c.readManagedPlatformTLS(ctx, op.PlatformID, &restored, nil, &restoredValues, current); err == nil {
+		t.Fatal("recovery accepted only a provider-incompatible compute key")
+	}
+	if _, err = c.kube.CoreV1().Secrets(ns.Name).Create(ctx, sec1Secret, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	restored, restoredValues = op.Spec, map[string]map[string][]byte{}
+	if err = c.readManagedPlatformTLS(ctx, op.PlatformID, &restored, nil, &restoredValues, current); err != nil {
+		t.Fatal("recovery did not select the compatible compute snapshot", err)
+	}
+	selected := restoredValues[secretSnapshotNameForCluster(restored.Secrets["compute-auth"])]
+	if !equalSecretData(selected, sec1Secret.Data) || bytes.Equal(selected["tls.key"], oldData["tls.key"]) {
+		t.Fatal("recovery selected the provider-incompatible compute snapshot")
 	}
 }
 
