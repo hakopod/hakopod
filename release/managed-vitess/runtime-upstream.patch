@@ -1,0 +1,742 @@
+diff --git a/go/mysql/flavor_mysql.go b/go/mysql/flavor_mysql.go
+index f4a53e9..a9d68af 100644
+--- a/go/mysql/flavor_mysql.go
++++ b/go/mysql/flavor_mysql.go
+@@ -29,6 +29,7 @@ import (
+ 	"vitess.io/vitess/go/mysql/sqlerror"
+ 	"vitess.io/vitess/go/vt/proto/replicationdata"
+ 	"vitess.io/vitess/go/vt/vterrors"
++	"vitess.io/vitess/go/vt/vttls"
+ 
+ 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
+ )
+@@ -569,6 +570,9 @@ func (mysqlFlavor) setReplicationSourceCommand(params *ConnParams, host string,
+ 	}
+ 	if params.SslEnabled() {
+ 		args = append(args, "SOURCE_SSL = 1")
++		if params.EffectiveSslMode() == vttls.VerifyIdentity {
++			args = append(args, "SOURCE_SSL_VERIFY_SERVER_CERT = 1")
++		}
+ 	} else {
+ 		args = append(args, "GET_SOURCE_PUBLIC_KEY = 1")
+ 	}
+@@ -597,9 +601,12 @@ func (mysqlFlavor) catchupToGTIDCommands(params *ConnParams, replPos replication
+ 		"STOP REPLICA IO_THREAD FOR CHANNEL ''",
+ 	}
+ 
+-	if params.SslCa != "" || params.SslCert != "" {
++	if params.SslEnabled() || params.SslCa != "" || params.SslCert != "" {
+ 		// We need to use TLS
+ 		cmd := fmt.Sprintf("CHANGE REPLICATION SOURCE TO SOURCE_HOST='%s', SOURCE_PORT=%d, SOURCE_USER='%s', SOURCE_PASSWORD='%s', SOURCE_AUTO_POSITION=1, SOURCE_SSL=1", params.Host, params.Port, params.Uname, params.Pass)
++		if params.EffectiveSslMode() == vttls.VerifyIdentity {
++			cmd += ", SOURCE_SSL_VERIFY_SERVER_CERT=1"
++		}
+ 		if params.SslCa != "" {
+ 			cmd += fmt.Sprintf(", SOURCE_SSL_CA='%s'", params.SslCa)
+ 		}
+diff --git a/go/mysql/flavor_mysql_test.go b/go/mysql/flavor_mysql_test.go
+index a3ed8d4..8e02df9 100644
+--- a/go/mysql/flavor_mysql_test.go
++++ b/go/mysql/flavor_mysql_test.go
+@@ -80,6 +80,7 @@ func TestMysql8SetReplicationSourceCommandSSL(t *testing.T) {
+   SOURCE_PASSWORD = 'password',
+   SOURCE_CONNECT_RETRY = 1234,
+   SOURCE_SSL = 1,
++  SOURCE_SSL_VERIFY_SERVER_CERT = 1,
+   SOURCE_SSL_CA = 'ssl-ca',
+   SOURCE_SSL_CAPATH = 'ssl-ca-path',
+   SOURCE_SSL_CERT = 'ssl-cert',
+@@ -186,6 +187,7 @@ func TestMysql9SetReplicationSourceCommandSSL(t *testing.T) {
+   SOURCE_PASSWORD = 'password',
+   SOURCE_CONNECT_RETRY = 1234,
+   SOURCE_SSL = 1,
++  SOURCE_SSL_VERIFY_SERVER_CERT = 1,
+   SOURCE_SSL_CA = 'ssl-ca',
+   SOURCE_SSL_CAPATH = 'ssl-ca-path',
+   SOURCE_SSL_CERT = 'ssl-cert',
+diff --git a/go/mysql/hakopod_replication_tls_test.go b/go/mysql/hakopod_replication_tls_test.go
+new file mode 100644
+index 0000000..2287dfc
+--- /dev/null
++++ b/go/mysql/hakopod_replication_tls_test.go
+@@ -0,0 +1,31 @@
++package mysql
++
++import (
++	"strings"
++	"testing"
++
++	"vitess.io/vitess/go/mysql/replication"
++	"vitess.io/vitess/go/vt/vttls"
++)
++
++func TestHakopodReplicationVerifiesIdentity(t *testing.T) {
++	for _, params := range []ConnParams{
++		{SslMode: vttls.VerifyIdentity, SslCa: "/trust/ca.pem"},
++		{SslMode: vttls.VerifyIdentity},
++		{Flags: CapabilityClientSSL, SslCa: "/trust/ca.pem"},
++	} {
++		params.Host, params.Port, params.Uname = "primary.database.svc", 3306, "replication"
++		regular := (mysqlFlavor{}).setReplicationSourceCommand(&params, params.Host, int32(params.Port), 0, 10)
++		catchup := strings.Join((mysqlFlavor{}).catchupToGTIDCommands(&params, replication.Position{}), "\n")
++		for name, command := range map[string]string{"regular": regular, "catchup": catchup} {
++			compact := strings.ReplaceAll(command, " ", "")
++			if !strings.Contains(compact, "SOURCE_SSL=1") || !strings.Contains(compact, "SOURCE_SSL_VERIFY_SERVER_CERT=1") || strings.Contains(compact, "GET_SOURCE_PUBLIC_KEY") {
++				t.Fatalf("%s replication omitted required certificate verification", name)
++			}
++		}
++	}
++	params := ConnParams{SslMode: vttls.Disabled}
++	if strings.Contains((mysqlFlavor{}).setReplicationSourceCommand(&params, "primary", 3306, 0, 10), "SOURCE_SSL_VERIFY_SERVER_CERT") {
++		t.Fatal("disabled TLS unexpectedly acquired certificate verification")
++	}
++}
+diff --git a/go/vt/mysqlctl/hakopod_command_log_test.go b/go/vt/mysqlctl/hakopod_command_log_test.go
+new file mode 100644
+index 0000000..240bfaa
+--- /dev/null
++++ b/go/vt/mysqlctl/hakopod_command_log_test.go
+@@ -0,0 +1,196 @@
++package mysqlctl
++
++import (
++	"go/ast"
++	"go/parser"
++	"go/token"
++	"strings"
++	"testing"
++)
++
++func commandStateKey(value ast.Expr) string {
++	switch value := value.(type) {
++	case *ast.Ident:
++		return value.Name
++	case *ast.SelectorExpr:
++		if prefix := commandStateKey(value.X); prefix != "" {
++			return prefix + "." + value.Sel.Name
++		}
++	case *ast.ParenExpr:
++		return commandStateKey(value.X)
++	case *ast.UnaryExpr:
++		return commandStateKey(value.X)
++	}
++	return ""
++}
++
++// Inspect functions separately: a local name must not taint another function.
++// Command values, aliases, args, environment and redirected files are private.
++func commandLogState(file *ast.File) (int, []token.Pos) {
++	commands := 0
++	var violations []token.Pos
++	for _, declaration := range file.Decls {
++		function, ok := declaration.(*ast.FuncDecl)
++		if !ok || function.Body == nil {
++			continue
++		}
++		tainted := map[string]bool{}
++		mark := func(value ast.Expr) bool {
++			key := commandStateKey(value)
++			if key == "" || key == "_" || tainted[key] {
++				return false
++			}
++			tainted[key] = true
++			return true
++		}
++		ast.Inspect(function.Body, func(node ast.Node) bool {
++			if item, ok := node.(*ast.ValueSpec); ok {
++				if pointer, ok := item.Type.(*ast.StarExpr); ok && commandStateKey(pointer.X) == "exec.Cmd" {
++					for _, name := range item.Names {
++						if mark(name) {
++							commands++
++						}
++					}
++				}
++			}
++			return true
++		})
++		// Follow declarations and assignments to a fixed point. Return values
++		// from command methods, such as Wait errors, remain ordinary diagnostics.
++		for changed := true; changed; {
++			changed = false
++			ast.Inspect(function.Body, func(node ast.Node) bool {
++				var left, right []ast.Expr
++				switch item := node.(type) {
++				case *ast.AssignStmt:
++					left, right = item.Lhs, item.Rhs
++				case *ast.ValueSpec:
++					for _, name := range item.Names {
++						left = append(left, name)
++					}
++					right = item.Values
++				default:
++					return true
++				}
++				for index, value := range right {
++					if index >= len(left) {
++						continue
++					}
++					if call, ok := value.(*ast.CallExpr); ok {
++						constructor := commandStateKey(call.Fun)
++						if constructor == "os.ReadFile" {
++							privatePath := false
++							for _, argument := range call.Args {
++								ast.Inspect(argument, func(node ast.Node) bool {
++									if literal, ok := node.(*ast.BasicLit); ok && strings.Contains(literal.Value, "/proc/") && strings.Contains(literal.Value, "/cmdline") {
++										privatePath = true
++									}
++									return true
++								})
++							}
++							if privatePath && mark(left[index]) {
++								commands++
++								changed = true
++							}
++						}
++						if constructor == "exec.Command" || constructor == "exec.CommandContext" {
++							if mark(left[index]) {
++								commands++
++								changed = true
++							}
++							first := 1
++							if constructor == "exec.CommandContext" {
++								first = 2
++							}
++							if len(call.Args) >= first {
++								for _, argument := range call.Args[first:] {
++									changed = mark(argument) || changed
++								}
++							}
++						}
++					}
++					key := commandStateKey(value)
++					private := tainted[key]
++					if selector, ok := value.(*ast.SelectorExpr); ok {
++						private = private || tainted[commandStateKey(selector.X)]
++					}
++					if private {
++						changed = mark(left[index]) || changed
++					}
++					if destination, ok := left[index].(*ast.SelectorExpr); ok && tainted[commandStateKey(destination.X)] {
++						switch destination.Sel.Name {
++						case "Args", "Env", "Stderr", "Stdout", "Stdin":
++							changed = mark(value) || changed
++						}
++					}
++				}
++				return true
++			})
++		}
++		ast.Inspect(function.Body, func(node ast.Node) bool {
++			call, ok := node.(*ast.CallExpr)
++			if !ok || !strings.HasPrefix(commandStateKey(call.Fun), "log.") {
++				return true
++			}
++			for _, argument := range call.Args {
++				ast.Inspect(argument, func(value ast.Node) bool {
++					if expression, ok := value.(ast.Expr); ok && tainted[commandStateKey(expression)] {
++						violations = append(violations, call.Pos())
++						return false
++					}
++					return true
++				})
++			}
++			return true
++		})
++	}
++	return commands, violations
++}
++
++func TestHakopodProcessLogsExcludeCommandState(t *testing.T) {
++	fset := token.NewFileSet()
++	file, err := parser.ParseFile(fset, "mysqld.go", nil, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	commands, violations := commandLogState(file)
++	if commands == 0 {
++		t.Fatal("MySQL process commands were not inspected")
++	}
++	for _, position := range violations {
++		t.Errorf("private command state in log at %s", fset.Position(position))
++	}
++}
++
++func TestHakopodProcessLogRegressionDetectsAliasesAndFields(t *testing.T) {
++	for _, body := range []string{
++		`cmd := exec.Command("mysql"); alias := cmd; log.Info(alias)`,
++		`cmd := exec.Command("mysql"); var alias = cmd; log.Info(alias.Env)`,
++		`cmd := exec.Command("mysql"); var environment = cmd.Env; log.Info(environment)`,
++		`holder.cmd = exec.Command("mysql"); log.Info(holder.cmd)`,
++		`var cmd *exec.Cmd; cmd = exec.Command("mysql"); log.Info(cmd)`,
++		`cmd := exec.Command("mysql", args...); log.Info(args)`,
++		`cmd := exec.CommandContext(ctx, "mysql", args...); log.Info(args)`,
++		`cmd := exec.Command("mysql"); cmd.Env = env; log.Info(env)`,
++		`cmd := exec.Command("mysql"); cmd.Stderr = errfile; log.Info(errfile.Name())`,
++		`cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); log.Info(string(cmdline))`,
++	} {
++		file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", "package fixture; func fixture() {"+body+"}", 0)
++		if err != nil {
++			t.Fatal(err)
++		}
++		commands, violations := commandLogState(file)
++		if commands == 0 || len(violations) == 0 {
++			t.Fatal("unsafe command diagnostic escaped regression", body)
++		}
++	}
++	file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", `package fixture
++func start() { cmd := exec.Command("mysql"); err := cmd.Wait(); log.Info(err) }
++func separate() { cmd := "ordinary status"; log.Info(cmd) }`, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, violations := commandLogState(file); len(violations) != 0 {
++		t.Fatal("ordinary diagnostics were rejected")
++	}
++}
+diff --git a/go/vt/mysqlctl/mysqld.go b/go/vt/mysqlctl/mysqld.go
+index 2e9957d..bc51335 100644
+--- a/go/vt/mysqlctl/mysqld.go
++++ b/go/vt/mysqlctl/mysqld.go
+@@ -398,7 +398,7 @@ func (mysqld *Mysqld) startNoWait(cnf *Mycnf, mysqldArgs ...string) error {
+ 		cmd := exec.Command(name, args...)
+ 		cmd.Dir = vtMysqlRoot
+ 		cmd.Env = env
+-		log.Infof("%v %#v", ts, cmd)
++		log.Infof("%v: starting local MySQL process", ts)
+ 		stderr, err := cmd.StderrPipe()
+ 		if err != nil {
+ 			return err
+@@ -493,8 +493,8 @@ func cleanupLockfile(socket string, ts string) error {
+ 		// remove the lock file, so we have to keep it around.
+ 		cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", p))
+ 		if err == nil {
+-			name := string(bytes.ReplaceAll(cmdline, []byte{0}, []byte(" ")))
+-			log.Errorf("%v: not removing socket lock file: %v with pid %v for %q", ts, lockPath, p, name)
++			_ = cmdline // Do not log another process's command arguments.
++			log.Errorf("%v: not removing socket lock file: %v with live pid %v", ts, lockPath, p)
+ 		} else {
+ 			log.Errorf("%v: not removing socket lock file: %v with pid %v (failed to read process name: %v)", ts, lockPath, p, err)
+ 		}
+@@ -1454,7 +1454,7 @@ func (mysqld *Mysqld) ApplyBinlogFile(ctx context.Context, req *mysqlctlpb.Apply
+ 		mysqlbinlogCmd.Dir = dir
+ 		mysqlbinlogCmd.Env = mysqlbinlogEnviron(env)
+ 		mysqlbinlogCmd.Stderr = mysqlbinlogErrFile
+-		log.Infof("ApplyBinlogFile: running mysqlbinlog command: %#v with errfile=%v", mysqlbinlogCmd, mysqlbinlogErrFile.Name())
++		log.Info("ApplyBinlogFile: starting mysqlbinlog process")
+ 		pipe, err = mysqlbinlogCmd.StdoutPipe() // to be piped into mysql
+ 		if err != nil {
+ 			return err
+@@ -1513,7 +1513,7 @@ func (mysqld *Mysqld) ApplyBinlogFile(ctx context.Context, req *mysqlctlpb.Apply
+ 		mysqlCmd.Stdin = pipe // piped from mysqlbinlog
+ 
+ 		mysqlCmd.Stderr = mysqlErrFile
+-		log.Infof("ApplyBinlogFile: running mysql command: %#v with errfile=%v", mysqlCmd, mysqlErrFile.Name())
++		log.Info("ApplyBinlogFile: starting local MySQL process")
+ 	}
+ 	// Run both processes, piped:
+ 	if err := mysqlbinlogCmd.Start(); err != nil {
+@@ -1589,7 +1589,7 @@ func (mysqld *Mysqld) scanBinlogTimestamp(
+ 	mysqlbinlogCmd := exec.Command(mysqlbinlogName, args...)
+ 	mysqlbinlogCmd.Dir = mysqlbinlogDir
+ 	mysqlbinlogCmd.Env = mysqlbinlogEnv
+-	log.Infof("ApplyBinlogFile: running mysqlbinlog command: %#v", mysqlbinlogCmd)
++	log.Info("ApplyBinlogFile: starting binlog timestamp process")
+ 	pipe, err := mysqlbinlogCmd.StdoutPipe() // to be piped into mysql
+ 	if err != nil {
+ 		return firstMatchedTime, lastMatchedTime, err
+diff --git a/go/vt/mysqlctl/s3backupstorage/hakopod_completion.go b/go/vt/mysqlctl/s3backupstorage/hakopod_completion.go
+new file mode 100644
+index 0000000..1a157ae
+--- /dev/null
++++ b/go/vt/mysqlctl/s3backupstorage/hakopod_completion.go
+@@ -0,0 +1,28 @@
++package s3backupstorage
++
++import (
++	"errors"
++	"io"
++	"sync"
++)
++
++// A file occupies its backup worker until S3 confirms the upload. Closing only
++// the input pipe lets subsequent files allocate buffers while uploads overlap.
++type completedUploadWriter struct {
++	*io.PipeWriter
++	done   <-chan error
++	finish func()
++	once   sync.Once
++	err    error
++}
++
++func (w *completedUploadWriter) Close() error {
++	w.once.Do(func() {
++		// Cancellation closes both pipe ends and cancels the SDK request, so
++		// this join also releases an uploader blocked on input or network I/O.
++		pipeErr := w.PipeWriter.Close()
++		w.err = errors.Join(pipeErr, <-w.done)
++		w.finish()
++	})
++	return w.err
++}
+diff --git a/go/vt/mysqlctl/s3backupstorage/hakopod_completion_test.go b/go/vt/mysqlctl/s3backupstorage/hakopod_completion_test.go
+new file mode 100644
+index 0000000..961a0be
+--- /dev/null
++++ b/go/vt/mysqlctl/s3backupstorage/hakopod_completion_test.go
+@@ -0,0 +1,225 @@
++package s3backupstorage
++
++import (
++	"context"
++	"errors"
++	"io"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"github.com/aws/aws-sdk-go-v2/aws"
++	"github.com/aws/aws-sdk-go-v2/service/s3"
++	"vitess.io/vitess/go/vt/mysqlctl/backupstorage"
++)
++
++type completionClient struct {
++	*s3.Client
++	started chan struct{}
++	release chan struct{}
++	failure error
++	active  atomic.Int32
++	peak    atomic.Int32
++}
++
++func (c *completionClient) PutObject(ctx context.Context, _ *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
++	if c.started != nil {
++		close(c.started)
++	}
++	select {
++	case <-ctx.Done():
++		return nil, ctx.Err()
++	case <-c.release:
++		return &s3.PutObjectOutput{}, c.failure
++	}
++}
++
++func (c *completionClient) CreateMultipartUpload(ctx context.Context, _ *s3.CreateMultipartUploadInput, _ ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error) {
++	if c.failure != nil {
++		return nil, c.failure
++	}
++	return &s3.CreateMultipartUploadOutput{UploadId: aws.String("test-upload")}, nil
++}
++
++func (c *completionClient) UploadPart(ctx context.Context, in *s3.UploadPartInput, _ ...func(*s3.Options)) (*s3.UploadPartOutput, error) {
++	active := c.active.Add(1)
++	defer c.active.Add(-1)
++	for previous := c.peak.Load(); active > previous && !c.peak.CompareAndSwap(previous, active); previous = c.peak.Load() {
++	}
++	select {
++	case <-ctx.Done():
++		return nil, ctx.Err()
++	case <-time.After(20 * time.Millisecond):
++	}
++	if _, err := io.Copy(io.Discard, in.Body); err != nil {
++		return nil, err
++	}
++	return &s3.UploadPartOutput{ETag: aws.String("part")}, nil
++}
++
++func (c *completionClient) CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput, ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error) {
++	return &s3.CompleteMultipartUploadOutput{}, nil
++}
++
++func (c *completionClient) AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput, ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error) {
++	return &s3.AbortMultipartUploadOutput{}, nil
++}
++
++func completionHandle(client *completionClient) *S3BackupHandle {
++	return &S3BackupHandle{client: client, bs: &S3BackupStorage{params: backupstorage.NoParams()}}
++}
++
++func TestHakopodS3CloseWaitsForUploadAndIsIdempotent(t *testing.T) {
++	for _, fail := range []bool{false, true} {
++		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
++			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++			defer cancel()
++			client := &completionClient{started: make(chan struct{}), release: make(chan struct{})}
++			if fail {
++				client.failure = errors.New("upload failed")
++			}
++			handle := completionHandle(client)
++			writer, err := handle.AddFile(ctx, "test", 16)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if _, err = writer.Write([]byte("backup data")); err != nil {
++				t.Fatal(err)
++			}
++			closed := make(chan error, 1)
++			go func() { closed <- writer.Close() }()
++			select {
++			case <-client.started:
++			case <-ctx.Done():
++				t.Fatal(ctx.Err())
++			}
++			select {
++			case <-closed:
++				t.Fatal("file completed before S3 upload")
++			case <-time.After(30 * time.Millisecond):
++			}
++			close(client.release)
++			select {
++			case err = <-closed:
++			case <-ctx.Done():
++				t.Fatal(ctx.Err())
++			}
++			if !errors.Is(err, client.failure) {
++				t.Fatalf("close error %v; want %v", err, client.failure)
++			}
++			if again := writer.Close(); !errors.Is(again, client.failure) {
++				t.Fatal("repeated close changed upload result", again)
++			}
++			handle.waitGroup.Wait()
++			if handle.HasErrors() != fail {
++				t.Fatal("upload result was not recorded before close")
++			}
++		})
++	}
++}
++
++func TestHakopodS3CancellationUnblocksInputAndJoinsUploader(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	handle := completionHandle(&completionClient{})
++	writer, err := handle.AddFile(ctx, "test", 16)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err = writer.Write([]byte("backup data")); err != nil {
++		t.Fatal(err)
++	}
++	// The uploader is still reading its first part and no HTTP call exists.
++	cancel()
++	closed := make(chan error, 1)
++	go func() { closed <- writer.Close() }()
++	select {
++	case err = <-closed:
++		if !errors.Is(err, context.Canceled) {
++			t.Fatal("cancellation was lost", err)
++		}
++	case <-time.After(3 * time.Second):
++		t.Fatal("cancelled uploader did not join")
++	}
++	handle.waitGroup.Wait()
++}
++
++func TestHakopodS3CancellationJoinsNetworkUpload(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	client := &completionClient{started: make(chan struct{}), release: make(chan struct{})}
++	handle := completionHandle(client)
++	writer, err := handle.AddFile(ctx, "test", 16)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err = writer.Write([]byte("backup data")); err != nil {
++		t.Fatal(err)
++	}
++	closed := make(chan error, 1)
++	go func() { closed <- writer.Close() }()
++	select {
++	case <-client.started:
++	case <-time.After(3 * time.Second):
++		t.Fatal("upload did not start")
++	}
++	cancel()
++	select {
++	case err = <-closed:
++		if !errors.Is(err, context.Canceled) {
++			t.Fatal("network cancellation was lost", err)
++		}
++	case <-time.After(3 * time.Second):
++		t.Fatal("cancelled network upload did not join")
++	}
++	handle.waitGroup.Wait()
++}
++
++type backupZeros struct{}
++
++func (backupZeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
++
++func TestHakopodS3EarlyUploadFailureUnblocksWriter(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++	defer cancel()
++	failure := errors.New("multipart creation failed")
++	handle := completionHandle(&completionClient{failure: failure})
++	writer, err := handle.AddFile(ctx, "test", 12<<20)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, err = io.CopyN(writer, backupZeros{}, 12<<20)
++	if !errors.Is(err, failure) {
++		t.Fatal("blocked writer did not receive upload failure", err)
++	}
++	if err = writer.Close(); !errors.Is(err, failure) {
++		t.Fatal("close lost early failure", err)
++	}
++	handle.waitGroup.Wait()
++}
++
++func TestHakopodS3MultipartUsesOneUploadWorker(t *testing.T) {
++	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
++	defer cancel()
++	client := &completionClient{}
++	handle := completionHandle(client)
++	writer, err := handle.AddFile(ctx, "test", 20<<20)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err = io.CopyN(writer, backupZeros{}, 20<<20); err != nil {
++		t.Fatal(err)
++	}
++	if err = writer.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if peak := client.peak.Load(); peak != 1 {
++		t.Fatalf("multipart upload used %d concurrent workers", peak)
++	}
++	part, err := calculateUploadPartSize(1 << 40)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if 2*part > (448-192)<<20 {
++		t.Fatal("maximum supported file parts exceed backup Go budget")
++	}
++}
+diff --git a/go/vt/mysqlctl/s3backupstorage/s3.go b/go/vt/mysqlctl/s3backupstorage/s3.go
+index 84f3ac1..f98db65 100644
+--- a/go/vt/mysqlctl/s3backupstorage/s3.go
++++ b/go/vt/mysqlctl/s3backupstorage/s3.go
+@@ -185,21 +185,28 @@ func (bh *S3BackupHandle) AddFile(ctx context.Context, filename string, filesize
+ 
+ 	bh.bs.params.Logger.Infof("Using S3 upload part size: %s", humanize.IBytes(uint64(partSizeBytes)))
+ 
++	uploadCtx, cancel := context.WithCancel(ctx)
+ 	reader, writer := io.Pipe()
+-	bh.handleAddFile(ctx, filename, partSizeBytes, reader, func(err error) {
++	stop := context.AfterFunc(uploadCtx, func() {
++		reader.CloseWithError(uploadCtx.Err())
++		writer.CloseWithError(uploadCtx.Err())
++	})
++	done := bh.handleAddFile(uploadCtx, filename, partSizeBytes, reader, func(err error) {
+ 		reader.CloseWithError(err)
+ 	})
+-
+-	return writer, nil
++	return &completedUploadWriter{PipeWriter: writer, done: done, finish: func() { stop(); cancel() }}, nil
+ }
+ 
+-func (bh *S3BackupHandle) handleAddFile(ctx context.Context, filename string, partSizeBytes int64, reader io.Reader, closer func(error)) {
++func (bh *S3BackupHandle) handleAddFile(ctx context.Context, filename string, partSizeBytes int64, reader io.Reader, closer func(error)) <-chan error {
++	done := make(chan error, 1)
+ 	bh.waitGroup.Add(1)
+ 
+ 	go func() {
+ 		defer bh.waitGroup.Done()
+ 		uploader := manager.NewUploader(bh.client, func(u *manager.Uploader) {
+ 			u.PartSize = partSizeBytes
++			// One upload worker retains at most two multipart buffers.
++			u.Concurrency = 1
+ 		})
+ 		object := objName(bh.dir, bh.name, filename)
+ 		sendStats := bh.bs.params.Stats.Scope(stats.Operation("AWS:Request:Send"))
+@@ -223,11 +230,13 @@ func (bh *S3BackupHandle) handleAddFile(ctx context.Context, filename string, pa
+ 				})
+ 			})
+ 		})
++		closer(err)
+ 		if err != nil {
+-			closer(err)
+ 			bh.RecordError(filename, err)
+ 		}
++		done <- err
+ 	}()
++	return done
+ }
+ 
+ // calculateUploadPartSize is a helper to calculate the part size, taking into consideration the minimum part size
+diff --git a/go/vt/mysqlctl/s3backupstorage/s3_test.go b/go/vt/mysqlctl/s3backupstorage/s3_test.go
+index 5e93642..35ddd40 100644
+--- a/go/vt/mysqlctl/s3backupstorage/s3_test.go
++++ b/go/vt/mysqlctl/s3backupstorage/s3_test.go
+@@ -90,7 +90,7 @@ func TestAddFileError(t *testing.T) {
+ 	require.NoErrorf(t, err, "TestAddFile() could not write to uploader, got %d bytes written, err %s", n, err)
+ 
+ 	err = wc.Close()
+-	require.NoErrorf(t, err, "TestAddFile() could not close writer, got %s", err)
++	require.ErrorContains(t, err, "some error", "Close must report upload failure")
+ 
+ 	bh.waitGroup.Wait() // wait for the goroutine to finish, at which point it should have recorded an error
+ 
+@@ -175,7 +175,7 @@ func TestAddFileErrorStats(t *testing.T) {
+ 	require.NoErrorf(t, err, "TestAddFile() could not write to uploader, got %d bytes written, err %s", n, err)
+ 
+ 	err = wc.Close()
+-	require.NoErrorf(t, err, "TestAddFile() could not close writer, got %s", err)
++	require.ErrorContains(t, err, "some error", "Close must report upload failure")
+ 
+ 	bh.waitGroup.Wait() // wait for the goroutine to finish, at which point it should have recorded an error
+ 
+diff --git a/go/vt/vttablet/tabletmanager/semisyncmonitor/hakopod_account_test.go b/go/vt/vttablet/tabletmanager/semisyncmonitor/hakopod_account_test.go
+new file mode 100644
+index 0000000..7d3a523
+--- /dev/null
++++ b/go/vt/vttablet/tabletmanager/semisyncmonitor/hakopod_account_test.go
+@@ -0,0 +1,38 @@
++package semisyncmonitor
++
++import (
++	"go/ast"
++	"go/parser"
++	"go/token"
++	"testing"
++)
++
++// The monitor writes and truncates internal sidecar tables. Customer table
++// grants must remain independent of the local account used by that pool.
++func TestHakopodMonitorUsesInternalAccount(t *testing.T) {
++	file, err := parser.ParseFile(token.NewFileSet(), "monitor.go", nil, 0)
++	if err != nil {
++		t.Fatal(err)
++	}
++	internal, application := 0, 0
++	ast.Inspect(file, func(node ast.Node) bool {
++		call, ok := node.(*ast.CallExpr)
++		if !ok {
++			return true
++		}
++		selector, ok := call.Fun.(*ast.SelectorExpr)
++		if !ok {
++			return true
++		}
++		if selector.Sel.Name == "AllPrivsWithDB" {
++			internal++
++		}
++		if selector.Sel.Name == "AppWithDB" {
++			application++
++		}
++		return true
++	})
++	if internal != 1 || application != 0 {
++		t.Fatal("semi-sync monitor must use the internal account")
++	}
++}
+diff --git a/go/vt/vttablet/tabletmanager/semisyncmonitor/monitor.go b/go/vt/vttablet/tabletmanager/semisyncmonitor/monitor.go
+index 13cad54..5ed6d7c 100644
+--- a/go/vt/vttablet/tabletmanager/semisyncmonitor/monitor.go
++++ b/go/vt/vttablet/tabletmanager/semisyncmonitor/monitor.go
+@@ -165,7 +165,7 @@ func (m *Monitor) Open() {
+ 	// This function could be running from within a unit test scope, in which case we use
+ 	// mock pools that are already open. This is why we test for the pool being open.
+ 	if !m.appPool.IsOpen() {
+-		m.appPool.Open(m.config.DB.AppWithDB())
++		m.appPool.Open(m.config.DB.AllPrivsWithDB())
+ 	}
+ 	m.clearTicks.Start(m.clearAllData)
+ 	m.ticks.Start(m.checkAndFixSemiSyncBlocked)

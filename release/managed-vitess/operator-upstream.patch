@@ -1,0 +1,1412 @@
+diff --git a/pkg/controller/vitessbackupschedule/hakopod_api_test.go b/pkg/controller/vitessbackupschedule/hakopod_api_test.go
+new file mode 100644
+index 0000000..6556c74
+--- /dev/null
++++ b/pkg/controller/vitessbackupschedule/hakopod_api_test.go
+@@ -0,0 +1,36 @@
++package vitessbackupschedule
++
++import (
++	"bytes"
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"testing"
++
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++)
++
++func TestHakopodGeneratedClusterAPI(t *testing.T) {
++	directory := os.Getenv("HAKOPOD_VITESS_CANDIDATE_DIR")
++	if directory == "" {
++		t.Skip("no Hakopod candidate resource provided")
++	}
++	for _, mode := range []string{"standalone", "cluster"} {
++		raw, err := os.ReadFile(filepath.Join(directory, mode+".json"))
++		if err != nil {
++			t.Fatal(err)
++		}
++		decoder := json.NewDecoder(bytes.NewReader(raw))
++		decoder.DisallowUnknownFields()
++		var cluster planetscalev2.VitessCluster
++		if err = decoder.Decode(&cluster); err != nil {
++			t.Fatalf("%s resource does not match pinned operator API: %v", mode, err)
++		}
++		if cluster.Spec.Backup == nil || len(cluster.Spec.Backup.Locations) != 1 || len(cluster.Spec.Backup.Schedules) != 1 {
++			t.Fatal("candidate omitted native recovery")
++		}
++		if cluster.Spec.Backup.Schedules[0].Suspend != nil && *cluster.Spec.Backup.Schedules[0].Suspend {
++			t.Fatal("approved desired schedule cannot clear prior suspension")
++		}
++	}
++}
+diff --git a/pkg/controller/vitessbackupschedule/hakopod_backup.go b/pkg/controller/vitessbackupschedule/hakopod_backup.go
+new file mode 100644
+index 0000000..f4fa49a
+--- /dev/null
++++ b/pkg/controller/vitessbackupschedule/hakopod_backup.go
+@@ -0,0 +1,133 @@
++package vitessbackupschedule
++
++import (
++	"context"
++	"fmt"
++	"reflect"
++	"strconv"
++	"time"
++
++	kbatch "k8s.io/api/batch/v1"
++	corev1 "k8s.io/api/core/v1"
++	apierrors "k8s.io/apimachinery/pkg/api/errors"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++	"planetscale.dev/vitess-operator/pkg/operator/vttablet"
++	ctrl "sigs.k8s.io/controller-runtime"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++func configureScheduledBackup(spec *vttablet.BackupSpec, schedule planetscalev2.VitessBackupSchedule, strategy planetscalev2.VitessBackupScheduleStrategy) error {
++	if schedule.Spec.JobTimeoutMinutes < 1 || schedule.Spec.JobTimeoutMinutes > 120 {
++		return fmt.Errorf("backup job deadline must be 1 to 120 minutes")
++	}
++	for key, value := range strategy.ExtraFlags {
++		switch key {
++		case "min_retention_time":
++			duration, err := time.ParseDuration(value)
++			if err != nil || duration < 24*time.Hour || duration > 30*24*time.Hour {
++				return fmt.Errorf("invalid backup retention duration")
++			}
++			spec.MinRetentionTime = duration
++		case "min_retention_count":
++			count, err := strconv.Atoi(value)
++			if err != nil || count < 2 || count > 168 {
++				return fmt.Errorf("invalid backup retention count")
++			}
++			spec.MinRetentionCount = count
++		case "min_backup_interval":
++			duration, err := time.ParseDuration(value)
++			if err != nil || duration < time.Minute || duration > 24*time.Hour {
++				return fmt.Errorf("invalid backup interval")
++			}
++			spec.MinBackupInterval = duration
++		default:
++			return fmt.Errorf("unsupported scheduled backup flag %q", key)
++		}
++	}
++	if spec.MinRetentionTime == 0 || spec.MinRetentionCount < 2 {
++		return fmt.Errorf("native backups require bounded retention and at least two copies")
++	}
++	return nil
++}
++
++// Reserve at most two backup pods and claims per shard, including initial
++// backups and objects waiting for deletion. A stalled node must not let each
++// hourly run allocate another full copy of the database.
++func (r *ReconcileVitessBackupsSchedule) ensureScheduledBackupStorage(ctx context.Context, schedule *planetscalev2.VitessBackupSchedule, job *kbatch.Job, spec *vttablet.Spec) error {
++	selector := client.MatchingLabels{
++		planetscalev2.ClusterLabel:   job.Labels[planetscalev2.ClusterLabel],
++		planetscalev2.KeyspaceLabel:  job.Labels[planetscalev2.KeyspaceLabel],
++		planetscalev2.ShardLabel:     job.Labels[planetscalev2.ShardLabel],
++		planetscalev2.ComponentLabel: planetscalev2.VtbackupComponentName,
++	}
++	var pods corev1.PodList
++	if err := r.client.List(ctx, &pods, client.InNamespace(job.Namespace), selector, client.Limit(3)); err != nil {
++		return err
++	}
++	if pods.Continue != "" || len(pods.Items) >= 2 {
++		return fmt.Errorf("native backup pod capacity is still in use")
++	}
++	var claims corev1.PersistentVolumeClaimList
++	if err := r.client.List(ctx, &claims, client.InNamespace(job.Namespace), selector, client.Limit(3)); err != nil {
++		return err
++	}
++	if claims.Continue != "" || len(claims.Items) > 2 {
++		return fmt.Errorf("native backup storage inventory exceeds its bound")
++	}
++	for _, claim := range claims.Items {
++		if claim.Name == job.Name || claim.DeletionTimestamp != nil || !metav1.IsControlledBy(&claim, schedule) || claim.CreationTimestamp.IsZero() || time.Since(claim.CreationTimestamp.Time) < 2*time.Hour {
++			continue
++		}
++		// The schedule can survive a crash between PVC and Job creation. Only
++		// reclaim a stale claim when its owner is this schedule and both the
++		// corresponding Job and any pod using it are absent.
++		used := false
++		for _, pod := range pods.Items {
++			for _, volume := range pod.Spec.Volumes {
++				if volume.PersistentVolumeClaim != nil && volume.PersistentVolumeClaim.ClaimName == claim.Name {
++					used = true
++				}
++			}
++		}
++		if used {
++			continue
++		}
++		var oldJob kbatch.Job
++		err := r.client.Get(ctx, client.ObjectKey{Namespace: claim.Namespace, Name: claim.Name}, &oldJob)
++		if err == nil {
++			continue
++		}
++		if !apierrors.IsNotFound(err) {
++			return err
++		}
++		uid := claim.UID
++		if uid == "" {
++			return fmt.Errorf("native backup claim has no immutable identity")
++		}
++		if err = r.client.Delete(ctx, &claim, &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); err != nil && !apierrors.IsNotFound(err) {
++			return err
++		}
++		return fmt.Errorf("waiting for abandoned native backup storage to be reclaimed")
++	}
++	key := client.ObjectKey{Namespace: job.Namespace, Name: job.Name}
++	want := vttablet.NewPVC(key, spec)
++	if err := ctrl.SetControllerReference(schedule, want, r.scheme); err != nil {
++		return err
++	}
++	var existing corev1.PersistentVolumeClaim
++	err := r.client.Get(ctx, key, &existing)
++	if err == nil {
++		if existing.DeletionTimestamp != nil || !metav1.IsControlledBy(&existing, schedule) || existing.Labels[planetscalev2.ComponentLabel] != planetscalev2.VtbackupComponentName || !reflect.DeepEqual(existing.Spec.Resources.Requests, want.Spec.Resources.Requests) || (want.Spec.StorageClassName != nil && !reflect.DeepEqual(existing.Spec.StorageClassName, want.Spec.StorageClassName)) || !reflect.DeepEqual(existing.Spec.AccessModes, want.Spec.AccessModes) {
++			return fmt.Errorf("existing native backup storage differs from its owned allocation")
++		}
++		return nil
++	}
++	if !apierrors.IsNotFound(err) {
++		return err
++	}
++	if len(claims.Items) >= 2 {
++		return fmt.Errorf("native backup storage capacity is still in use")
++	}
++	return r.client.Create(ctx, want)
++}
+diff --git a/pkg/controller/vitessbackupschedule/hakopod_backup_test.go b/pkg/controller/vitessbackupschedule/hakopod_backup_test.go
+new file mode 100644
+index 0000000..f9ed894
+--- /dev/null
++++ b/pkg/controller/vitessbackupschedule/hakopod_backup_test.go
+@@ -0,0 +1,120 @@
++package vitessbackupschedule
++
++import (
++	"context"
++	"testing"
++	"time"
++
++	kbatch "k8s.io/api/batch/v1"
++	corev1 "k8s.io/api/core/v1"
++	apierrors "k8s.io/apimachinery/pkg/api/errors"
++	"k8s.io/apimachinery/pkg/api/resource"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"k8s.io/apimachinery/pkg/runtime"
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++	"planetscale.dev/vitess-operator/pkg/operator/vttablet"
++	ctrl "sigs.k8s.io/controller-runtime"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++	"sigs.k8s.io/controller-runtime/pkg/client/fake"
++)
++
++func TestHakopodScheduledBackupRetention(t *testing.T) {
++	schedule := planetscalev2.VitessBackupSchedule{}
++	schedule.Spec.JobTimeoutMinutes = 60
++	strategy := planetscalev2.VitessBackupScheduleStrategy{ExtraFlags: map[string]string{"min_retention_time": "72h", "min_retention_count": "2", "min_backup_interval": "30m"}}
++	spec := &vttablet.BackupSpec{}
++	if err := configureScheduledBackup(spec, schedule, strategy); err != nil {
++		t.Fatal(err)
++	}
++	if spec.MinRetentionTime != 72*time.Hour || spec.MinRetentionCount != 2 || spec.MinBackupInterval != 30*time.Minute {
++		t.Fatal("retention flags were ignored")
++	}
++	for name, flags := range map[string]map[string]string{
++		"missing":   {},
++		"unbounded": {"min_retention_time": "0", "min_retention_count": "2"},
++		"one-copy":  {"min_retention_time": "72h", "min_retention_count": "1"},
++		"unknown":   {"database-password": "secret"},
++	} {
++		t.Run(name, func(t *testing.T) {
++			strategy.ExtraFlags = flags
++			if configureScheduledBackup(&vttablet.BackupSpec{}, schedule, strategy) == nil {
++				t.Fatal("unsafe configuration accepted")
++			}
++		})
++	}
++}
++
++func TestHakopodScheduledBackupStorageRetryAndBounds(t *testing.T) {
++	scheme := runtime.NewScheme()
++	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, kbatch.AddToScheme, planetscalev2.SchemeBuilder.AddToScheme} {
++		if err := add(scheme); err != nil {
++			t.Fatal(err)
++		}
++	}
++	schedule := &planetscalev2.VitessBackupSchedule{ObjectMeta: metav1.ObjectMeta{Name: "member-recovery", Namespace: "database", UID: "schedule-one"}}
++	labels := map[string]string{planetscalev2.ClusterLabel: "database", planetscalev2.KeyspaceLabel: "app", planetscalev2.ShardLabel: "x-x", planetscalev2.ComponentLabel: planetscalev2.VtbackupComponentName}
++	job := &kbatch.Job{ObjectMeta: metav1.ObjectMeta{Name: "backup-current", Namespace: "database", Labels: labels}}
++	spec := &vttablet.Spec{Labels: labels, DataVolumePVCSpec: &corev1.PersistentVolumeClaimSpec{AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}}}}
++	claim := func(name string) *corev1.PersistentVolumeClaim {
++		pvc := vttablet.NewPVC(client.ObjectKey{Namespace: "database", Name: name}, spec)
++		if err := ctrl.SetControllerReference(schedule, pvc, scheme); err != nil {
++			t.Fatal(err)
++		}
++		return pvc
++	}
++	t.Run("retry-owned-claim", func(t *testing.T) {
++		c := fake.NewClientBuilder().WithScheme(scheme).Build()
++		r := &ReconcileVitessBackupsSchedule{client: c, scheme: scheme}
++		for range 2 {
++			if err := r.ensureScheduledBackupStorage(context.Background(), schedule, job, spec); err != nil {
++				t.Fatal(err)
++			}
++		}
++		var claims corev1.PersistentVolumeClaimList
++		if err := c.List(context.Background(), &claims); err != nil || len(claims.Items) != 1 {
++			t.Fatal("retry allocated another claim", err)
++		}
++	})
++	t.Run("foreign-claim", func(t *testing.T) {
++		pvc := claim(job.Name)
++		pvc.OwnerReferences[0].UID = "foreign-schedule"
++		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pvc).Build()
++		r := &ReconcileVitessBackupsSchedule{client: c, scheme: scheme}
++		if r.ensureScheduledBackupStorage(context.Background(), schedule, job, spec) == nil {
++			t.Fatal("accepted foreign claim")
++		}
++	})
++	t.Run("full-storage", func(t *testing.T) {
++		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(claim("first"), claim("second")).Build()
++		r := &ReconcileVitessBackupsSchedule{client: c, scheme: scheme}
++		if r.ensureScheduledBackupStorage(context.Background(), schedule, job, spec) == nil {
++			t.Fatal("allocated a third claim")
++		}
++	})
++	t.Run("full-pods", func(t *testing.T) {
++		one := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "one", Namespace: "database", Labels: labels}}
++		two := one.DeepCopy()
++		two.Name = "two"
++		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(one, two).Build()
++		r := &ReconcileVitessBackupsSchedule{client: c, scheme: scheme}
++		if r.ensureScheduledBackupStorage(context.Background(), schedule, job, spec) == nil {
++			t.Fatal("allocated storage for a third pod")
++		}
++	})
++	t.Run("recover-crashed-job-creation", func(t *testing.T) {
++		pvc := claim("old-abandoned")
++		pvc.UID = "claim-one"
++		pvc.CreationTimestamp = metav1.NewTime(time.Now().Add(-3 * time.Hour))
++		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pvc).Build()
++		r := &ReconcileVitessBackupsSchedule{client: c, scheme: scheme}
++		if r.ensureScheduledBackupStorage(context.Background(), schedule, job, spec) == nil {
++			t.Fatal("did not wait for orphan cleanup")
++		}
++		if err := c.Get(context.Background(), client.ObjectKeyFromObject(pvc), &corev1.PersistentVolumeClaim{}); !apierrors.IsNotFound(err) {
++			t.Fatal("owned orphan claim remains", err)
++		}
++		if err := r.ensureScheduledBackupStorage(context.Background(), schedule, job, spec); err != nil {
++			t.Fatal(err)
++		}
++	})
++}
+diff --git a/pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go b/pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go
+new file mode 100644
+index 0000000..e8ef5ac
+--- /dev/null
++++ b/pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go
+@@ -0,0 +1,37 @@
++package vitessbackupschedule
++
++import (
++	"testing"
++
++	appsv1 "k8s.io/api/apps/v1"
++	corev1 "k8s.io/api/core/v1"
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++	"planetscale.dev/vitess-operator/pkg/operator/vtctld"
++	"planetscale.dev/vitess-operator/pkg/operator/vtgate"
++	"planetscale.dev/vitess-operator/pkg/operator/vtorc"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++func TestHakopodControlPodsReadGroupOnlySecrets(t *testing.T) {
++	key := client.ObjectKey{Namespace: "fixture", Name: "control"}
++	mode := int32(0440)
++	volumes := []corev1.Volume{{Name: "tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "fixture-tls", DefaultMode: &mode}}}}
++	mounts := []corev1.VolumeMount{{Name: "tls", MountPath: "/etc/hakopod/tls", ReadOnly: true}}
++	pods := map[string]*appsv1.Deployment{
++		"vtgate": vtgate.NewDeployment(key, &vtgate.Spec{Cell: &planetscalev2.VitessCellSpec{}, Authentication: &planetscalev2.VitessGatewayAuthentication{}, ExtraVolumes: volumes, ExtraVolumeMounts: mounts}, "mysql:8.4.6"),
++		"vtctld": vtctld.NewDeployment(key, &vtctld.Spec{Cell: &planetscalev2.VitessCellTemplate{}, GlobalLockserver: &planetscalev2.VitessLockserverParams{}, ExtraVolumes: volumes, ExtraVolumeMounts: mounts}, "mysql:8.4.6"),
++		"vtorc":  vtorc.NewDeployment(key, &vtorc.Spec{ExtraVolumes: volumes, ExtraVolumeMounts: mounts}),
++	}
++	for name, deployment := range pods {
++		pod := deployment.Spec.Template.Spec
++		if pod.SecurityContext == nil || pod.SecurityContext.FSGroup == nil || *pod.SecurityContext.FSGroup != planetscalev2.DefaultVitessFSGroup {
++			t.Fatalf("%s cannot read TLS files with group-only mode", name)
++		}
++		if len(pod.Containers) != 1 || pod.Containers[0].SecurityContext == nil || pod.Containers[0].SecurityContext.RunAsUser == nil || *pod.Containers[0].SecurityContext.RunAsUser == 0 {
++			t.Fatalf("%s lost its non-root process identity", name)
++		}
++		if len(pod.Volumes) != 1 || pod.Volumes[0].Secret == nil || *pod.Volumes[0].Secret.DefaultMode != mode || len(pod.Containers[0].VolumeMounts) != 1 || !pod.Containers[0].VolumeMounts[0].ReadOnly {
++			t.Fatalf("%s weakened its projected TLS volume", name)
++		}
++	}
++}
+diff --git a/pkg/controller/vitessbackupschedule/vitessbackupschedule_controller.go b/pkg/controller/vitessbackupschedule/vitessbackupschedule_controller.go
+index 0d5048d..b35d984 100644
+--- a/pkg/controller/vitessbackupschedule/vitessbackupschedule_controller.go
++++ b/pkg/controller/vitessbackupschedule/vitessbackupschedule_controller.go
+@@ -74,6 +74,7 @@ var (
+ // watchResources should contain all the resource types that this controller creates.
+ var watchResources = []client.Object{
+ 	&kbatch.Job{},
++	&corev1.PersistentVolumeClaim{},
+ }
+ 
+ type (
+@@ -140,7 +141,7 @@ func add(mgr manager.Manager, r *ReconcileVitessBackupsSchedule) error {
+ 		err := c.Watch(source.Kind(mgr.GetCache(), resource, handler.EnqueueRequestForOwner(
+ 			mgr.GetScheme(),
+ 			mgr.GetRESTMapper(),
+-			&planetscalev2.VitessBackupStorage{},
++			&planetscalev2.VitessBackupSchedule{},
+ 			handler.OnlyControllerOwner(),
+ 		)))
+ 		if err != nil {
+@@ -297,9 +298,9 @@ func (r *ReconcileVitessBackupsSchedule) reconcileStrategy(
+ 	// Now that the different policies are checked, we can create and apply our new job.
+ 	job, err := r.createJob(ctx, vbsc, strategy, missedRun, vkr)
+ 	if err != nil {
+-		// Re-queuing here does not make sense as we have an error with the template and the user needs to fix it first.
++		// Storage cleanup and API failures can be temporary; retry without allocating beyond the shard budget.
+ 		log.WithError(err).Error("unable to construct job from template")
+-		return resultBuilder.Error(reconcile.TerminalError(err))
++		return resultBuilder.Error(err)
+ 	}
+ 
+ 	if err = r.client.Create(ctx, job); err != nil {
+@@ -461,7 +462,7 @@ func (r *ReconcileVitessBackupsSchedule) removeTimeoutJobs(ctx context.Context,
+ 		if err != nil {
+ 			return err
+ 		}
+-		if jobStartTime.Add(time.Minute * time.Duration(timeout)).Before(time.Now()) {
++		if jobStartTime != nil && jobStartTime.Add(time.Minute*time.Duration(timeout)).Before(time.Now()) {
+ 			if err = r.client.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)); (err) != nil {
+ 				log.WithError(err).Errorf("unable to delete timed out job: %s", job.Name)
+ 			} else {
+@@ -544,9 +545,13 @@ func (r *ReconcileVitessBackupsSchedule) createJob(
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	maps.Copy(meta.Labels, pod.Labels)
++	deadlineSeconds := int64(vbsc.Spec.JobTimeoutMinutes) * 60
+ 	job := &kbatch.Job{
+ 		ObjectMeta: meta,
+ 		Spec: kbatch.JobSpec{
++			BackoffLimit:          new(int32),
++			ActiveDeadlineSeconds: &deadlineSeconds,
+ 			Template: corev1.PodTemplateSpec{
+ 				ObjectMeta: meta,
+ 				Spec:       pod.Spec,
+@@ -558,27 +563,8 @@ func (r *ReconcileVitessBackupsSchedule) createJob(
+ 		return nil, err
+ 	}
+ 
+-	// Create the corresponding PVC for the new vtbackup pod
+-	pvc := &corev1.PersistentVolumeClaim{}
+-	key := client.ObjectKey{
+-		Namespace: job.Namespace,
+-		Name:      name,
+-	}
+-	err = r.client.Get(ctx, key, pvc)
+-	if err != nil {
+-		if !apierrors.IsNotFound(err) {
+-			return nil, err
+-		}
+-		newPVC := vttablet.NewPVC(key, vtbackupSpec.TabletSpec)
+-		if err := ctrl.SetControllerReference(&vbsc, newPVC, r.scheme); err != nil {
+-			return nil, err
+-		}
+-		err = r.client.Create(ctx, newPVC)
+-		if err != nil {
+-			return nil, err
+-		}
+-	} else {
+-		return nil, fmt.Errorf("PVC already exists for job %s", job.Name)
++	if err := r.ensureScheduledBackupStorage(ctx, &vbsc, job, vtbackupSpec.TabletSpec); err != nil {
++		return nil, err
+ 	}
+ 	return job, nil
+ }
+@@ -607,11 +593,7 @@ func (r *ReconcileVitessBackupsSchedule) createJobPod(
+ 
+ 	backupType := vitessbackup.TypeUpdate
+ 	if len(completedBackups) == 0 {
+-		if vts.Status.HasMaster == corev1.ConditionTrue {
+-			return nil, nil, fmt.Errorf("this shard has 0 backup and a running primary, the schedule cannot create an empty backup, please create a backup manually first")
+-		} else {
+-			backupType = vitessbackup.TypeInit
+-		}
++		return nil, nil, fmt.Errorf("the shard controller has not completed the first native backup")
+ 	}
+ 
+ 	podKey := client.ObjectKey{
+@@ -619,13 +601,21 @@ func (r *ReconcileVitessBackupsSchedule) createJobPod(
+ 		Name:      name,
+ 	}
+ 	vtbackupSpec := vitessshard.MakeVtbackupSpec(podKey, &vts, labels, backupType)
++	if vtbackupSpec == nil {
++		return nil, nil, fmt.Errorf("native backup configuration is unavailable")
++	}
++	if err := configureScheduledBackup(vtbackupSpec, vbsc, strategy); err != nil {
++		return nil, nil, err
++	}
+ 	p := vttablet.NewBackupPod(podKey, vtbackupSpec, vts.Spec.Images.Mysqld.Image())
+ 
+ 	// Explicitly do not restart on failure. The VitessBackupSchedule controller will retry the failed job
+ 	// during the next scheduled run.
+ 	p.Spec.RestartPolicy = corev1.RestartPolicyNever
+ 
+-	p.Spec.Affinity = vbsc.Spec.Affinity
++	if vbsc.Spec.Affinity != nil {
++		p.Spec.Affinity = vbsc.Spec.Affinity
++	}
+ 	return p, vtbackupSpec, nil
+ }
+ 
+diff --git a/pkg/controller/vitessbackupstorage/hakopod_runtime_test.go b/pkg/controller/vitessbackupstorage/hakopod_runtime_test.go
+new file mode 100644
+index 0000000..b7d12f7
+--- /dev/null
++++ b/pkg/controller/vitessbackupstorage/hakopod_runtime_test.go
+@@ -0,0 +1,34 @@
++package vitessbackupstorage
++
++import (
++	"testing"
++
++	corev1 "k8s.io/api/core/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
++)
++
++func TestHakopodSubcontrollerRuntimeIsBounded(t *testing.T) {
++	container := &corev1.Container{Env: []corev1.EnvVar{
++		{Name: "GOMAXPROCS", Value: "8"},
++		{Name: "GOMEMLIMIT", Value: "1GiB"},
++		{Name: "WATCH_NAMESPACE", Value: "database"},
++	}}
++	configureSubcontrollerRuntime(container)
++
++	wantCPU := resource.MustParse("100m")
++	wantMemory := resource.MustParse("512Mi")
++	if !container.Resources.Requests.Cpu().Equal(wantCPU) || !container.Resources.Limits.Cpu().Equal(wantCPU) ||
++		!container.Resources.Requests.Memory().Equal(wantMemory) || !container.Resources.Limits.Memory().Equal(wantMemory) {
++		t.Fatal("backup storage subcontroller resources are not bounded", container.Resources)
++	}
++	values := map[string]string{}
++	for _, variable := range container.Env {
++		if _, exists := values[variable.Name]; exists {
++			t.Fatal("backup storage subcontroller has a duplicate environment variable", variable.Name)
++		}
++		values[variable.Name] = variable.Value
++	}
++	if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "384MiB" || values["WATCH_NAMESPACE"] != "database" {
++		t.Fatal("backup storage subcontroller Go runtime is not bounded", values)
++	}
++}
+diff --git a/pkg/controller/vitessbackupstorage/reconcile_subcontroller.go b/pkg/controller/vitessbackupstorage/reconcile_subcontroller.go
+index 1cfa869..9906b1c 100644
+--- a/pkg/controller/vitessbackupstorage/reconcile_subcontroller.go
++++ b/pkg/controller/vitessbackupstorage/reconcile_subcontroller.go
+@@ -48,7 +48,7 @@ const (
+ 	vitessHomeDir = "/home/vitess"
+ 
+ 	subcontrollerCPUMillis   = 100
+-	subcontrollerMemoryBytes = 128 * (1 << 20) // 128 MiB
++	subcontrollerMemoryBytes = 512 * (1 << 20) // 512 MiB
+ )
+ 
+ func (r *ReconcileVitessBackupStorage) reconcileSubcontroller(ctx context.Context, vbs *planetscalev2.VitessBackupStorage) (reconcile.Result, error) {
+@@ -182,15 +182,7 @@ func (r *ReconcileVitessBackupStorage) newSubcontrollerPodSpec(ctx context.Conte
+ 		},
+ 	})
+ 
+-	// Set resource requests specific to the subcontroller.
+-	// It doesn't need as much as the main operator process.
+-	container.Resources.Requests = corev1.ResourceList{
+-		corev1.ResourceCPU:    *resource.NewMilliQuantity(subcontrollerCPUMillis, resource.DecimalSI),
+-		corev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
+-	}
+-	container.Resources.Limits = corev1.ResourceList{
+-		corev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
+-	}
++	configureSubcontrollerRuntime(container)
+ 
+ 	// Add config for this specific backup storage location.
+ 	clusterName := vbs.Labels[planetscalev2.ClusterLabel]
+@@ -203,6 +195,21 @@ func (r *ReconcileVitessBackupStorage) newSubcontrollerPodSpec(ctx context.Conte
+ 	return spec, nil
+ }
+ 
++func configureSubcontrollerRuntime(container *corev1.Container) {
++	update.Env(&container.Env, []corev1.EnvVar{
++		{Name: "GOMAXPROCS", Value: "1"},
++		{Name: "GOMEMLIMIT", Value: "384MiB"},
++	})
++	container.Resources.Requests = corev1.ResourceList{
++		corev1.ResourceCPU:    *resource.NewMilliQuantity(subcontrollerCPUMillis, resource.DecimalSI),
++		corev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
++	}
++	container.Resources.Limits = corev1.ResourceList{
++		corev1.ResourceCPU:    *resource.NewMilliQuantity(subcontrollerCPUMillis, resource.DecimalSI),
++		corev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
++	}
++}
++
+ func updateSubcontrollerPod(pod *corev1.Pod, spec *corev1.PodSpec) {
+ 	newSpec := spec.DeepCopy()
+ 
+diff --git a/pkg/controller/vitessshard/hakopod_first_live_backup_test.go b/pkg/controller/vitessshard/hakopod_first_live_backup_test.go
+new file mode 100644
+index 0000000..8f68b11
+--- /dev/null
++++ b/pkg/controller/vitessshard/hakopod_first_live_backup_test.go
+@@ -0,0 +1,76 @@
++package vitessshard
++
++import (
++	"testing"
++
++	corev1 "k8s.io/api/core/v1"
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++	"planetscale.dev/vitess-operator/pkg/operator/vttablet"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++func TestHakopodFirstLiveBackupRequiresStableOwnedPrimary(t *testing.T) {
++	primary := planetscalev2.VitessTabletStatus{
++		Type: "primary", Running: corev1.ConditionTrue, Ready: corev1.ConditionTrue,
++		Available: corev1.ConditionTrue, DataVolumeBound: corev1.ConditionTrue,
++	}
++	shard := &planetscalev2.VitessShard{Status: planetscalev2.VitessShardStatus{
++		HasMaster: corev1.ConditionTrue, ServingWrites: corev1.ConditionTrue,
++		MasterAlias: "zone1-100", Tablets: map[string]planetscalev2.VitessTabletStatus{"zone1-100": primary},
++	}}
++	if !firstLiveBackupReady(shard) {
++		t.Fatal("stable topology primary was rejected")
++	}
++	checks := map[string]func(*planetscalev2.VitessShard){
++		"not-serving-writes": func(v *planetscalev2.VitessShard) { v.Status.ServingWrites = corev1.ConditionFalse },
++		"foreign-alias":      func(v *planetscalev2.VitessShard) { v.Status.MasterAlias = "zone1-999" },
++		"not-primary": func(v *planetscalev2.VitessShard) {
++			s := v.Status.Tablets["zone1-100"]
++			s.Type = "replica"
++			v.Status.Tablets["zone1-100"] = s
++		},
++		"not-ready": func(v *planetscalev2.VitessShard) {
++			s := v.Status.Tablets["zone1-100"]
++			s.Ready = corev1.ConditionFalse
++			v.Status.Tablets["zone1-100"] = s
++		},
++		"not-available": func(v *planetscalev2.VitessShard) {
++			s := v.Status.Tablets["zone1-100"]
++			s.Available = corev1.ConditionFalse
++			v.Status.Tablets["zone1-100"] = s
++		},
++		"volume-unbound": func(v *planetscalev2.VitessShard) {
++			s := v.Status.Tablets["zone1-100"]
++			s.DataVolumeBound = corev1.ConditionFalse
++			v.Status.Tablets["zone1-100"] = s
++		},
++	}
++	for name, change := range checks {
++		t.Run(name, func(t *testing.T) {
++			candidate := shard.DeepCopy()
++			change(candidate)
++			if firstLiveBackupReady(candidate) {
++				t.Fatal("unsafe first live backup accepted")
++			}
++		})
++	}
++}
++
++func TestHakopodFirstLiveBackupModePreservesTabletSpec(t *testing.T) {
++	tabletSpec := &vttablet.Spec{}
++	spec := &vttablet.BackupSpec{TabletSpec: tabletSpec, InitialBackup: true}
++	configureFirstLiveBackup(spec)
++	if spec.InitialBackup || !spec.AllowFirstBackup || spec.TabletSpec != tabletSpec {
++		t.Fatal("first live backup mode changed the owned tablet or retained empty initialization")
++	}
++}
++
++func TestHakopodBootstrapStatusTracksSelectedPod(t *testing.T) {
++	desired := client.ObjectKey{Namespace: "database", Name: "first-live"}
++	if !isBootstrapBackup(desired, desired) {
++		t.Fatal("selected first-live pod was not tracked")
++	}
++	if isBootstrapBackup(client.ObjectKey{Namespace: "database", Name: "init"}, desired) {
++		t.Fatal("stale empty-init pod was treated as the selected first-live pod")
++	}
++}
+diff --git a/pkg/controller/vitessshard/reconcile_backup_job.go b/pkg/controller/vitessshard/reconcile_backup_job.go
+index 6a90c4c..1bda85a 100644
+--- a/pkg/controller/vitessshard/reconcile_backup_job.go
++++ b/pkg/controller/vitessshard/reconcile_backup_job.go
+@@ -71,29 +71,33 @@ func (r *ReconcileVitessShard) reconcileBackupJob(ctx context.Context, vts *plan
+ 	pvcKeys := []client.ObjectKey{}
+ 	specMap := map[client.ObjectKey]*vttablet.BackupSpec{}
+ 
+-	// The object name for the initial backup Pod, if we end up needing one.
+-	initPodName := vttablet.InitialBackupPodName(clusterName, keyspaceName, vts.Spec.KeyRange)
+-	initPodKey := client.ObjectKey{
++	// Empty initialization is valid only before a shard has a primary. Once
++	// writes are serving, seed recovery from a temporary replica that catches
++	// up to the exact topology primary instead of uploading an empty database.
++	backupPodKey := client.ObjectKey{
+ 		Namespace: vts.Namespace,
+-		Name:      initPodName,
++		Name:      vttablet.InitialBackupPodName(clusterName, keyspaceName, vts.Spec.KeyRange),
+ 	}
+-
+-	if len(completeBackups) == 0 && vts.Status.HasMaster != corev1.ConditionTrue {
+-		// Until we see at least one complete backup, we attempt to create an
+-		// "initial backup", which is a special imaginary backup created from
+-		// scratch (not from any tablet). If we're wrong and a backup exists
+-		// already, the idempotent vtbackup "initial backup" mode will just do
+-		// nothing and return success.
+-		initSpec := MakeVtbackupSpec(initPodKey, vts, labels, vitessbackup.TypeInit)
+-		if initSpec != nil {
+-			podKeys = append(podKeys, initPodKey)
+-			if initSpec.TabletSpec.DataVolumePVCSpec != nil {
+-				pvcKeys = append(pvcKeys, initPodKey)
++	if len(completeBackups) == 0 {
++		backupSpec := MakeVtbackupSpec(backupPodKey, vts, labels, vitessbackup.TypeInit)
++		if backupSpec != nil && vts.Status.HasMaster == corev1.ConditionTrue {
++			if !firstLiveBackupReady(vts) {
++				resultBuilder.RequeueAfter(5 * time.Second)
++				backupSpec = nil
++			} else {
++				backupPodKey.Name = vttablet.FirstLiveBackupPodName(clusterName, keyspaceName, vts.Spec.KeyRange)
++				backupSpec = MakeVtbackupSpec(backupPodKey, vts, labels, vitessbackup.TypeInit)
++				configureFirstLiveBackup(backupSpec)
++			}
++		}
++		if backupSpec != nil {
++			podKeys = append(podKeys, backupPodKey)
++			if backupSpec.TabletSpec.DataVolumePVCSpec != nil {
++				pvcKeys = append(pvcKeys, backupPodKey)
+ 			}
+-			specMap[initPodKey] = initSpec
++			specMap[backupPodKey] = backupSpec
+ 		}
+ 	} else {
+-		// We have at least one complete backup already.
+ 		vts.Status.HasInitialBackup = corev1.ConditionTrue
+ 	}
+ 
+@@ -135,7 +139,7 @@ func (r *ReconcileVitessShard) reconcileBackupJob(ctx context.Context, vts *plan
+ 
+ 			// If this status hook is telling us about the special init Pod,
+ 			// we can update HasInitialBackup.
+-			if key == initPodKey {
++			if isBootstrapBackup(key, backupPodKey) {
+ 				// If the Pod is Suceeded or Failed, we can update status.
+ 				// Otherwise, we leave it as Unknown since we can't tell.
+ 				switch pod.Status.Phase {
+@@ -168,6 +172,25 @@ func (r *ReconcileVitessShard) reconcileBackupJob(ctx context.Context, vts *plan
+ 	return resultBuilder.Result()
+ }
+ 
++func firstLiveBackupReady(vts *planetscalev2.VitessShard) bool {
++	if vts.Status.HasMaster != corev1.ConditionTrue || vts.Status.ServingWrites != corev1.ConditionTrue || vts.Status.MasterAlias == "" {
++		return false
++	}
++	primary, ok := vts.Status.Tablets[vts.Status.MasterAlias]
++	return ok && primary.Type == "primary" && primary.Running == corev1.ConditionTrue &&
++		primary.Ready == corev1.ConditionTrue && primary.Available == corev1.ConditionTrue &&
++		primary.DataVolumeBound == corev1.ConditionTrue
++}
++
++func configureFirstLiveBackup(spec *vttablet.BackupSpec) {
++	spec.InitialBackup = false
++	spec.AllowFirstBackup = true
++}
++
++func isBootstrapBackup(key, desired client.ObjectKey) bool {
++	return key == desired
++}
++
+ func MakeVtbackupSpec(key client.ObjectKey, vts *planetscalev2.VitessShard, parentLabels map[string]string, typ string) *vttablet.BackupSpec {
+ 	// If we specifically set our cluster to avoid initial backups, bail early.
+ 	if !*vts.Spec.Replication.InitializeBackup {
+@@ -198,8 +221,9 @@ func vtbackupSpec(key client.ObjectKey, vts *planetscalev2.VitessShard, parentLa
+ 
+ 	// Copy parent labels map and add child-specific labels.
+ 	labels := map[string]string{
+-		vitessbackup.LocationLabel: backupLocation.Name,
+-		vitessbackup.TypeLabel:     backupType,
++		planetscalev2.ComponentLabel: planetscalev2.VtbackupComponentName,
++		vitessbackup.LocationLabel:   backupLocation.Name,
++		vitessbackup.TypeLabel:       backupType,
+ 	}
+ 	for k, v := range parentLabels {
+ 		labels[k] = v
+@@ -214,13 +238,22 @@ func vtbackupSpec(key client.ObjectKey, vts *planetscalev2.VitessShard, parentLa
+ 	update.Annotations(&annotations, pool.Annotations)
+ 	update.Annotations(&annotations, backupLocation.Annotations)
+ 
++	// Copy shared TLS flags without changing the tablet pool itself.
++	vttabletConfig := pool.Vttablet.DeepCopy()
++	vttabletConfig.ExtraFlags = make(map[string]string)
++	for key, value := range vts.Spec.ExtraVitessFlags {
++		vttabletConfig.ExtraFlags[key] = value
++	}
++	for key, value := range pool.Vttablet.ExtraFlags {
++		vttabletConfig.ExtraFlags[key] = value
++	}
+ 	// Fill in the parts of a vttablet spec that make sense for vtbackup.
+ 	tabletSpec := &vttablet.Spec{
+ 		GlobalLockserver:         vts.Spec.GlobalLockserver,
+ 		Labels:                   labels,
+ 		Images:                   vts.Spec.Images,
+ 		KeyRange:                 vts.Spec.KeyRange,
+-		Vttablet:                 &pool.Vttablet,
++		Vttablet:                 vttabletConfig,
+ 		Mysqld:                   pool.Mysqld,
+ 		MysqldExporter:           pool.MysqldExporter,
+ 		DataVolumePVCName:        key.Name,
+@@ -233,6 +266,8 @@ func vtbackupSpec(key client.ObjectKey, vts *planetscalev2.VitessShard, parentLa
+ 		InitContainers:           pool.InitContainers,
+ 		SidecarContainers:        pool.SidecarContainers,
+ 		ExtraEnv:                 pool.ExtraEnv,
++		ExtraVolumes:             pool.ExtraVolumes,
++		ExtraVolumeMounts:        pool.ExtraVolumeMounts,
+ 		Annotations:              annotations,
+ 		Affinity:                 pool.Affinity,
+ 		Tolerations:              pool.Tolerations,
+diff --git a/pkg/operator/controllermanager/flags.go b/pkg/operator/controllermanager/flags.go
+index 7cc10cd..bee02cd 100644
+--- a/pkg/operator/controllermanager/flags.go
++++ b/pkg/operator/controllermanager/flags.go
+@@ -39,6 +39,7 @@ func InitFlags() {
+ 		"gcs-backup-storage-bucket":      false,
+ 		"gcs-backup-storage-root":        false,
+ 		"s3-backup-aws-region":           false,
++		"s3-backup-aws-min-partsize":     false,
+ 		"s3-backup-storage-bucket":       false,
+ 		"s3-backup-storage-root":         false,
+ 		"s3-backup-force-path-style":     false,
+diff --git a/pkg/operator/controllermanager/hakopod_backup_flags_test.go b/pkg/operator/controllermanager/hakopod_backup_flags_test.go
+new file mode 100644
+index 0000000..d660aff
+--- /dev/null
++++ b/pkg/operator/controllermanager/hakopod_backup_flags_test.go
+@@ -0,0 +1,49 @@
++package controllermanager
++
++import (
++	"os"
++	"os/exec"
++	"strings"
++	"testing"
++
++	"github.com/spf13/pflag"
++)
++
++func TestHakopodBackupSubcontrollerFlags(t *testing.T) {
++	mode := os.Getenv("HAKOPOD_OPERATOR_FLAG_TEST")
++	if mode == "" {
++		binary, err := os.Executable()
++		if err != nil {
++			t.Fatal(err)
++		}
++		for _, alias := range []string{"hyphens", "underscores"} {
++			command := exec.Command(binary, "-test.run=^TestHakopodBackupSubcontrollerFlags$")
++			command.Env = append(os.Environ(), "HAKOPOD_OPERATOR_FLAG_TEST="+alias)
++			if output, err := command.CombinedOutput(); err != nil {
++				t.Fatalf("%s backup subcontroller flags failed: %v\n%s", alias, err, output)
++			}
++		}
++		return
++	}
++	arguments := []string{
++		"backup-storage-implementation=s3", "s3-backup-aws-region=us-east-1",
++		"s3-backup-storage-bucket=fixture", "s3-backup-storage-root=fixture-prefix",
++		"s3-backup-force-path-style=true", "s3-backup-aws-endpoint=https://storage.example.test",
++		"s3-backup-aws-min-partsize=8388608",
++	}
++	os.Args = []string{"vitess-operator"}
++	for _, argument := range arguments {
++		name, value, _ := strings.Cut(argument, "=")
++		if mode == "underscores" {
++			name = strings.ReplaceAll(name, "-", "_")
++		}
++		os.Args = append(os.Args, "--"+name+"="+value)
++	}
++	InitFlags()
++	for _, name := range []string{"s3-backup-aws-min-partsize", "s3_backup_aws_min_partsize"} {
++		flag := pflag.CommandLine.Lookup(name)
++		if flag == nil || flag.Value.String() != "8388608" {
++			t.Fatal("operator lost the generated multipart size flag")
++		}
++	}
++}
+diff --git a/pkg/operator/vtctld/deployment.go b/pkg/operator/vtctld/deployment.go
+index 43b628f..7f91326 100644
+--- a/pkg/operator/vtctld/deployment.go
++++ b/pkg/operator/vtctld/deployment.go
+@@ -106,6 +106,15 @@ func UpdateDeploymentImmediate(obj *appsv1.Deployment, spec *Spec) {
+ // UpdateDeployment updates the mutable parts of the vtctld Deployment
+ // that should be changed as part of a gradual, rolling update.
+ func UpdateDeployment(obj *appsv1.Deployment, spec *Spec, mysqldImage string) {
++	// Match tablet and backup pods so non-root processes can read owned
++	// TLS Secrets projected with group-only permissions.
++	if planetscalev2.DefaultVitessFSGroup >= 0 {
++		if obj.Spec.Template.Spec.SecurityContext == nil {
++			obj.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{}
++		}
++		obj.Spec.Template.Spec.SecurityContext.FSGroup = ptr.To(planetscalev2.DefaultVitessFSGroup)
++	}
++
+ 	UpdateDeploymentImmediate(obj, spec)
+ 
+ 	// Reset Pod template labels so we remove old ones.
+diff --git a/pkg/operator/vtgate/deployment.go b/pkg/operator/vtgate/deployment.go
+index 909b9ea..a7303b1 100644
+--- a/pkg/operator/vtgate/deployment.go
++++ b/pkg/operator/vtgate/deployment.go
+@@ -108,6 +108,15 @@ func NewDeployment(key client.ObjectKey, spec *Spec, mysqldImage string) *appsv1
+ 
+ // UpdateDeployment updates the mutable parts of the vtgate Deployment.
+ func UpdateDeployment(obj *appsv1.Deployment, spec *Spec, mysqldImage string) {
++	// Match tablet and backup pods so non-root processes can read owned
++	// TLS Secrets projected with group-only permissions.
++	if planetscalev2.DefaultVitessFSGroup >= 0 {
++		if obj.Spec.Template.Spec.SecurityContext == nil {
++			obj.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{}
++		}
++		obj.Spec.Template.Spec.SecurityContext.FSGroup = ptr.To(planetscalev2.DefaultVitessFSGroup)
++	}
++
+ 	// Set labels on the Deployment object.
+ 	update.Labels(&obj.Labels, spec.Labels)
+ 
+diff --git a/pkg/operator/vtorc/deployment.go b/pkg/operator/vtorc/deployment.go
+index 0133281..b5a741f 100644
+--- a/pkg/operator/vtorc/deployment.go
++++ b/pkg/operator/vtorc/deployment.go
+@@ -102,6 +102,15 @@ func UpdateDeploymentImmediate(obj *appsv1.Deployment, spec *Spec) {
+ // UpdateDeployment updates the mutable parts of the vtorc Deployment
+ // that should be changed as part of a gradual, rolling update.
+ func UpdateDeployment(obj *appsv1.Deployment, spec *Spec) {
++	// Match tablet and backup pods so non-root processes can read owned
++	// TLS Secrets projected with group-only permissions.
++	if planetscalev2.DefaultVitessFSGroup >= 0 {
++		if obj.Spec.Template.Spec.SecurityContext == nil {
++			obj.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{}
++		}
++		obj.Spec.Template.Spec.SecurityContext.FSGroup = ptr.To(planetscalev2.DefaultVitessFSGroup)
++	}
++
+ 	UpdateDeploymentImmediate(obj, spec)
+ 
+ 	// Reset Pod template labels so we remove old ones.
+diff --git a/pkg/operator/vttablet/constants.go b/pkg/operator/vttablet/constants.go
+index 89824ba..578709e 100644
+--- a/pkg/operator/vttablet/constants.go
++++ b/pkg/operator/vttablet/constants.go
+@@ -67,6 +67,7 @@ const (
+ 	vtSocketPath       = vtRootPath + "/socket"
+ 	vtMysqlRootPath    = "/usr"
+ 	vtRootVolumeName   = "vt-root"
++	vtSocketVolumeName = "rundir"
+ 	mysqlctlSocketPath = vtSocketPath + "/mysqlctl.sock"
+ 	mysqlSocketPath    = vtSocketPath + "/mysql.sock"
+ 	sslCertsPath       = "/etc/ssl/certs"
+@@ -98,9 +99,9 @@ const (
+ 	waitForBackupInterval = 10 * time.Second
+ 
+ 	// restoreConcurrency is how many files to restore concurrently in vttablet.
+-	restoreConcurrency = 10
++	restoreConcurrency = 1
+ 	// vtbackupConcurrency is how many files to backup/restore concurrently in vtbackup.
+-	vtbackupConcurrency = 10
++	vtbackupConcurrency = 1
+ 
+ 	homeDir = "/home/vitess"
+ 
+diff --git a/pkg/operator/vttablet/flags.go b/pkg/operator/vttablet/flags.go
+index 3201bb6..df8c4a8 100644
+--- a/pkg/operator/vttablet/flags.go
++++ b/pkg/operator/vttablet/flags.go
+@@ -63,7 +63,7 @@ func init() {
+ 			// We inject the POD_IP environment variable up above via the Pod Downward API.
+ 			// The Pod args list natively expands environment variables in this format,
+ 			// so we don't need to use a shell to launch vttablet.
+-			"tablet_hostname": "$(POD_IP)",
++			"tablet-hostname": "$(POD_IP)",
+ 
+ 			"init_keyspace":    spec.KeyspaceName,
+ 			"init_shard":       spec.KeyRange.String(),
+@@ -116,6 +116,7 @@ func init() {
+ 			// vtbackup-specific flags.
+ 			"concurrency":         vtbackupConcurrency,
+ 			"initial_backup":      backupSpec.InitialBackup,
++			"allow_first_backup":  backupSpec.AllowFirstBackup,
+ 			"min_backup_interval": backupSpec.MinBackupInterval,
+ 			"min_retention_time":  backupSpec.MinRetentionTime,
+ 			"min_retention_count": backupSpec.MinRetentionCount,
+diff --git a/pkg/operator/vttablet/hakopod_backup_test.go b/pkg/operator/vttablet/hakopod_backup_test.go
+new file mode 100644
+index 0000000..40c0d66
+--- /dev/null
++++ b/pkg/operator/vttablet/hakopod_backup_test.go
+@@ -0,0 +1,100 @@
++package vttablet
++
++import (
++	"strings"
++	"testing"
++
++	corev1 "k8s.io/api/core/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++func TestHakopodBackupReceivesTLS(t *testing.T) {
++	resources := corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("256Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("256Mi")}}
++	spec := &Spec{
++		Images:            planetscalev2.VitessKeyspaceImages{Vtbackup: "test-backup", Mysqld: &planetscalev2.MysqldImage{Mysql80Compatible: "test-mysql"}},
++		Vttablet:          &planetscalev2.VttabletSpec{Resources: resources, ExtraFlags: map[string]string{"topo-etcd-tls-ca": "/trust/ca.crt", "db-ssl-mode": "verify_identity", "queryserver-config-pool-size": "32"}},
++		Mysqld:            &planetscalev2.MysqldSpec{Resources: resources},
++		ExtraVolumes:      []corev1.Volume{{Name: "trust", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "database-tls"}}}},
++		ExtraVolumeMounts: []corev1.VolumeMount{{Name: "trust", MountPath: "/trust", ReadOnly: true}},
++	}
++	pod := NewBackupPod(client.ObjectKey{Namespace: "database", Name: "backup"}, &BackupSpec{TabletSpec: spec, InitialBackup: true}, "test-mysql")
++	args := strings.Join(pod.Spec.Containers[0].Args, " ")
++	if !strings.Contains(args, "topo-etcd-tls-ca=/trust/ca.crt") || !strings.Contains(args, "db-ssl-mode=verify_identity") || strings.Contains(args, "queryserver-config-pool-size") {
++		t.Fatal("backup TLS flags were dropped or unsupported tablet flags leaked")
++	}
++	volume, mount := false, false
++	for _, v := range pod.Spec.Volumes {
++		if v.Name == "trust" && v.Secret != nil && v.Secret.SecretName == "database-tls" {
++			volume = true
++		}
++	}
++	for _, v := range pod.Spec.Containers[0].VolumeMounts {
++		if v.Name == "trust" && v.MountPath == "/trust" && v.ReadOnly {
++			mount = true
++		}
++	}
++	if !volume || !mount {
++		t.Fatal("backup trust volume is absent")
++	}
++	for _, c := range pod.Spec.InitContainers {
++		if c.Resources.Limits.Cpu().IsZero() || c.Resources.Limits.Memory().IsZero() {
++			t.Fatal("backup init container has unbounded resources")
++		}
++	}
++}
++
++func TestHakopodFirstLiveBackupUsesDedicatedFlagAndStableName(t *testing.T) {
++	spec := &Spec{
++		Images:   planetscalev2.VitessKeyspaceImages{Vtbackup: "test-backup", Mysqld: &planetscalev2.MysqldImage{Mysql80Compatible: "test-mysql"}},
++		Vttablet: &planetscalev2.VttabletSpec{}, Mysqld: &planetscalev2.MysqldSpec{},
++	}
++	pod := NewBackupPod(client.ObjectKey{Namespace: "database", Name: "first"}, &BackupSpec{TabletSpec: spec, AllowFirstBackup: true}, "test-mysql")
++	args := strings.Join(pod.Spec.Containers[0].Args, " ")
++	if !strings.Contains(args, "allow_first_backup=true") || strings.Contains(args, "initial_backup=true") {
++		t.Fatal("first live backup did not remain distinct from empty initialization")
++	}
++	keyRange := planetscalev2.VitessKeyRange{}
++	if FirstLiveBackupPodName("database", "app", keyRange) == InitialBackupPodName("database", "app", keyRange) {
++		t.Fatal("first live backup reuses the immutable empty-init pod name")
++	}
++}
++
++func TestHakopodBackupResourcesIncludeBothProcesses(t *testing.T) {
++	resources := func(cpu, memory string) corev1.ResourceRequirements {
++		return corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}}
++	}
++	spec := &Spec{
++		Images:   planetscalev2.VitessKeyspaceImages{Vtbackup: "test-backup", Mysqld: &planetscalev2.MysqldImage{Mysql80Compatible: "test-mysql"}},
++		Vttablet: &planetscalev2.VttabletSpec{Resources: resources("100m", "256Mi")},
++		Mysqld:   &planetscalev2.MysqldSpec{Resources: resources("500m", "1Gi")},
++		ExtraEnv: []corev1.EnvVar{{Name: "GOMAXPROCS", Value: "1"}, {Name: "GOMEMLIMIT", Value: "192MiB"}},
++	}
++	for _, mode := range []struct{ initial, firstLive bool }{{true, false}, {false, false}, {false, true}} {
++		pod := NewBackupPod(client.ObjectKey{Namespace: "database", Name: "backup"}, &BackupSpec{TabletSpec: spec, InitialBackup: mode.initial, AllowFirstBackup: mode.firstLive}, "test-mysql")
++		container := pod.Spec.Containers[0]
++		for _, allocation := range []corev1.ResourceList{container.Resources.Requests, container.Resources.Limits} {
++			if allocation.Cpu().String() != "600m" || allocation.Memory().String() != "1536Mi" {
++				t.Fatal("backup omitted the Go or MySQL resource budget", allocation)
++			}
++		}
++		values := map[string]string{}
++		for _, env := range container.Env {
++			values[env.Name] = env.Value
++		}
++		if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "448MiB" {
++			t.Fatal("backup lost its separate Go process budget")
++		}
++		args := strings.Join(container.Args, " ")
++		if !strings.Contains(args, "concurrency=1") || strings.Contains(args, "concurrency=10") {
++			t.Fatal("backup file concurrency is unbounded", args)
++		}
++	}
++	if spec.Mysqld.Resources.Limits.Memory().String() != "1Gi" || spec.Vttablet.Resources.Limits.Memory().String() != "256Mi" {
++		t.Fatal("backup rendering changed tablet resources")
++	}
++	if restoreConcurrency != 1 {
++		t.Fatal("tablet restore concurrency exceeds its process budget")
++	}
++}
+diff --git a/pkg/operator/vttablet/hakopod_hostname_test.go b/pkg/operator/vttablet/hakopod_hostname_test.go
+new file mode 100644
+index 0000000..ecfca88
+--- /dev/null
++++ b/pkg/operator/vttablet/hakopod_hostname_test.go
+@@ -0,0 +1,50 @@
++package vttablet
++
++import (
++	"strings"
++	"testing"
++
++	corev1 "k8s.io/api/core/v1"
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++func TestHakopodTabletHostnameOverrideHasOneCanonicalFlag(t *testing.T) {
++	for _, override := range []string{"", "tablet-hostname", "--tablet-hostname"} {
++		spec := &Spec{
++			Images:   planetscalev2.VitessKeyspaceImages{Vttablet: "test-tablet", Mysqld: &planetscalev2.MysqldImage{Mysql80Compatible: "test-mysql"}},
++			Vttablet: &planetscalev2.VttabletSpec{ExtraFlags: map[string]string{}},
++			Mysqld:   &planetscalev2.MysqldSpec{},
++		}
++		want := "$(POD_IP)"
++		if override != "" {
++			want = "$(POD_NAME).database.svc.cluster.local"
++			spec.Vttablet.ExtraFlags[override] = want
++		}
++		pod := NewPod(client.ObjectKey{Namespace: "database", Name: "tablet"}, spec)
++		var tablet *corev1.Container
++		for i := range pod.Spec.Containers {
++			if pod.Spec.Containers[i].Name == "vttablet" {
++				tablet = &pod.Spec.Containers[i]
++			}
++		}
++		if tablet == nil {
++			t.Fatal("vttablet container is absent")
++		}
++		count := 0
++		for _, arg := range tablet.Args {
++			if strings.HasPrefix(arg, "--tablet_hostname=") {
++				t.Fatal("deprecated alias can override the canonical hostname")
++			}
++			if strings.HasPrefix(arg, "--tablet-hostname=") {
++				count++
++				if arg != "--tablet-hostname="+want {
++					t.Fatalf("wrong hostname: %s", arg)
++				}
++			}
++		}
++		if count != 1 {
++			t.Fatalf("expected one canonical hostname flag, found %d", count)
++		}
++	}
++}
+diff --git a/pkg/operator/vttablet/hakopod_shared_socket_test.go b/pkg/operator/vttablet/hakopod_shared_socket_test.go
+new file mode 100644
+index 0000000..6a83a3c
+--- /dev/null
++++ b/pkg/operator/vttablet/hakopod_shared_socket_test.go
+@@ -0,0 +1,92 @@
++package vttablet
++
++import (
++	"reflect"
++	"testing"
++
++	corev1 "k8s.io/api/core/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++
++	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
++)
++
++func TestHakopodRunscSocketVolumeIsBoundedAndShared(t *testing.T) {
++	spec := &Spec{
++		AliasStr:     "zone1-0000000001",
++		KeyspaceName: "app",
++		Vttablet:     &planetscalev2.VttabletSpec{},
++		Mysqld:       &planetscalev2.MysqldSpec{},
++		Images: planetscalev2.VitessKeyspaceImages{
++			Vttablet: "vitess:test",
++			Mysqld:   &planetscalev2.MysqldImage{Mysql80Compatible: "mysql:test"},
++		},
++	}
++	pod := NewPod(client.ObjectKey{Namespace: "fixture", Name: "tablet"}, spec)
++	volumes := 0
++	for _, volume := range pod.Spec.Volumes {
++		if volume.Name != vtSocketVolumeName {
++			continue
++		}
++		volumes++
++		if volume.EmptyDir == nil || volume.EmptyDir.Medium != corev1.StorageMediumMemory || volume.EmptyDir.SizeLimit == nil || volume.EmptyDir.SizeLimit.Cmp(resource.MustParse("16Mi")) != 0 {
++			t.Fatal("rundir must be one bounded 16Mi memory EmptyDir")
++		}
++	}
++	if volumes != 1 {
++		t.Fatalf("rendered Pod has %d rundir volumes, want 1", volumes)
++	}
++
++	wantProbe := map[string]*corev1.Probe{
++		vttabletContainerName: {
++			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
++				"bash", "-ceu", "curl --fail --silent --show-error --max-time 2 http://127.0.0.1:15000/healthz >/dev/null; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
++			}}},
++			TimeoutSeconds:   3,
++			PeriodSeconds:    10,
++			SuccessThreshold: 1,
++			FailureThreshold: 3,
++		},
++		MysqldContainerName: {
++			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
++				"bash", "-ceu", "exec 3<>/dev/tcp/127.0.0.1/3306; exec 3>&-; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
++			}}},
++			TimeoutSeconds:   1,
++			PeriodSeconds:    2,
++			SuccessThreshold: 1,
++			FailureThreshold: 3,
++		},
++	}
++	seen := map[string]bool{}
++	for _, container := range pod.Spec.Containers {
++		probe, process := wantProbe[container.Name]
++		if !process {
++			continue
++		}
++		if seen[container.Name] {
++			t.Fatalf("duplicate %s container", container.Name)
++		}
++		seen[container.Name] = true
++		mounts := 0
++		for _, mount := range container.VolumeMounts {
++			if mount.Name != vtSocketVolumeName && mount.MountPath != vtSocketPath {
++				continue
++			}
++			mounts++
++			if mount.Name != vtSocketVolumeName || mount.MountPath != vtSocketPath || mount.SubPath != "" || mount.SubPathExpr != "" || mount.ReadOnly {
++				t.Fatalf("%s socket mount is not the shared writable rundir", container.Name)
++			}
++		}
++		if mounts != 1 {
++			t.Fatalf("%s has %d socket mounts, want 1", container.Name, mounts)
++		}
++		if !reflect.DeepEqual(container.ReadinessProbe, probe) {
++			t.Fatalf("%s readiness probe changed: %#v", container.Name, container.ReadinessProbe)
++		}
++	}
++	for name := range wantProbe {
++		if !seen[name] {
++			t.Fatalf("rendered Pod omitted %s", name)
++		}
++	}
++}
+diff --git a/pkg/operator/vttablet/mysqlctld.go b/pkg/operator/vttablet/mysqlctld.go
+index 2fe12f5..bb821b7 100644
+--- a/pkg/operator/vttablet/mysqlctld.go
++++ b/pkg/operator/vttablet/mysqlctld.go
+@@ -61,6 +61,15 @@ func init() {
+ 					EmptyDir: &corev1.EmptyDirVolumeSource{},
+ 				},
+ 			},
++			{
++				Name: vtSocketVolumeName,
++				VolumeSource: corev1.VolumeSource{
++					EmptyDir: &corev1.EmptyDirVolumeSource{
++						Medium:    corev1.StorageMediumMemory,
++						SizeLimit: resource.NewQuantity(16*1024*1024, resource.BinarySI),
++					},
++				},
++			},
+ 		}
+ 	})
+ 	tabletInitContainers.Add(func(s lazy.Spec) []corev1.Container {
+@@ -148,10 +157,9 @@ func init() {
+ 				SubPath:   "config",
+ 			},
+ 			{
+-				Name:      vtRootVolumeName,
++				Name:      vtSocketVolumeName,
+ 				ReadOnly:  false,
+ 				MountPath: vtSocketPath,
+-				SubPath:   "socket",
+ 			},
+ 		}
+ 	})
+diff --git a/pkg/operator/vttablet/pod.go b/pkg/operator/vttablet/pod.go
+index 53cbead..8e86988 100644
+--- a/pkg/operator/vttablet/pod.go
++++ b/pkg/operator/vttablet/pod.go
+@@ -134,18 +134,14 @@ func UpdatePod(obj *corev1.Pod, spec *Spec) {
+ 		},
+ 		SecurityContext: securityContext,
+ 		ReadinessProbe: &corev1.Probe{
+-			ProbeHandler: corev1.ProbeHandler{
+-				HTTPGet: &corev1.HTTPGetAction{
+-					// We can't use /debug/health for vttablet as we do for
+-					// other Vitess servers. On vttablet, that handler has been
+-					// corrupted into a useless hybrid of readiness and liveness
+-					// that can't be fixed because it would break legacy users.
+-					// Instead, vttablet (and only vttablet) has /healthz for
+-					// actual readiness.
+-					Path: "/healthz",
+-					Port: intstr.FromString(planetscalev2.DefaultWebPortName),
+-				},
+-			},
++			ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
++				"bash", "-ceu",
++				"curl --fail --silent --show-error --max-time 2 http://127.0.0.1:15000/healthz >/dev/null; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
++			}}},
++			TimeoutSeconds:   3,
++			PeriodSeconds:    10,
++			SuccessThreshold: 1,
++			FailureThreshold: 3,
+ 		},
+ 		LivenessProbe: &corev1.Probe{
+ 			ProbeHandler: corev1.ProbeHandler{
+@@ -186,12 +182,14 @@ func UpdatePod(obj *corev1.Pod, spec *Spec) {
+ 			},
+ 			SecurityContext: securityContext,
+ 			ReadinessProbe: &corev1.Probe{
+-				ProbeHandler: corev1.ProbeHandler{
+-					TCPSocket: &corev1.TCPSocketAction{
+-						Port: intstr.FromInt(planetscalev2.DefaultMysqlPort),
+-					},
+-				},
+-				PeriodSeconds: 2,
++				ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
++					"bash", "-ceu",
++					"exec 3<>/dev/tcp/127.0.0.1/3306; exec 3>&-; test -S /vt/socket/mysql.sock; test -S /vt/socket/mysqlctl.sock",
++				}}},
++				TimeoutSeconds:   1,
++				PeriodSeconds:    2,
++				SuccessThreshold: 1,
++				FailureThreshold: 3,
+ 			},
+ 			// TODO(enisoc): Add liveness probes that make sense for mysqld.
+ 			Env:          env,
+diff --git a/pkg/operator/vttablet/vtbackup_pod.go b/pkg/operator/vttablet/vtbackup_pod.go
+index 813257f..15d52d1 100644
+--- a/pkg/operator/vttablet/vtbackup_pod.go
++++ b/pkg/operator/vttablet/vtbackup_pod.go
+@@ -21,6 +21,7 @@ import (
+ 	"time"
+ 
+ 	corev1 "k8s.io/api/core/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
+ 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ 	"k8s.io/utils/ptr"
+ 	"planetscale.dev/vitess-operator/pkg/operator/mysql"
+@@ -61,6 +62,9 @@ type BackupSpec struct {
+ 	// aren't any. Instead, bootstrap the shard with a backup of an empty
+ 	// database.
+ 	InitialBackup bool
++	// AllowFirstBackup seeds the first recovery copy by replicating from the
++	// live shard primary. It must never be combined with InitialBackup.
++	AllowFirstBackup bool
+ 	// MinBackupInterval is the minimum spacing between backups.
+ 	// A new backup will only be taken if it's been at least this long since the
+ 	// most recent backup.
+@@ -91,6 +95,12 @@ func InitialBackupPodName(clusterName, keyspaceName string, keyRange planetscale
+ 	return names.JoinWithConstraints(names.DefaultConstraints, clusterName, keyspaceName, keyRange.SafeName(), planetscalev2.VtbackupComponentName, "init")
+ }
+ 
++// FirstLiveBackupPodName returns the stable name for the first backup copied
++// from a serving shard. A stable name makes retries reuse one Pod and PVC.
++func FirstLiveBackupPodName(clusterName, keyspaceName string, keyRange planetscalev2.VitessKeyRange) string {
++	return names.JoinWithConstraints(names.DefaultConstraints, clusterName, keyspaceName, keyRange.SafeName(), planetscalev2.VtbackupComponentName, "first-live")
++}
++
+ // NewBackupPod creates a new vtbackup Pod, which is like a special kind of
+ // minimal tablet used to run backups as a batch process.
+ func NewBackupPod(key client.ObjectKey, backupSpec *BackupSpec, mysqldImage string) *corev1.Pod {
+@@ -105,6 +115,9 @@ func NewBackupPod(key client.ObjectKey, backupSpec *BackupSpec, mysqldImage stri
+ 	})
+ 	// Then apply user-provided overrides last so they take precedence.
+ 	update.Env(&env, tabletSpec.ExtraEnv)
++	// Backup multipart buffers need a larger Go budget than a tablet. This
++	// stays below the separately reserved 512 MiB backup-process allocation.
++	update.Env(&env, []corev1.EnvVar{{Name: "GOMAXPROCS", Value: "1"}, {Name: "GOMEMLIMIT", Value: "448MiB"}})
+ 
+ 	// Mount everything for both vttablet and mysqld, since vtbackup does both
+ 	// jobs. We also need an additional mount to get SSL certs.
+@@ -119,6 +132,7 @@ func NewBackupPod(key client.ObjectKey, backupSpec *BackupSpec, mysqldImage stri
+ 	volumeMounts = append(volumeMounts, mysqldVolumeMounts.Get(tabletSpec)...)
+ 	volumeMounts = append(volumeMounts, tabletVolumeMounts.Get(tabletSpec)...)
+ 	volumeMounts = append(volumeMounts, vttabletVolumeMounts.Get(tabletSpec)...)
++	update.VolumeMounts(&volumeMounts, tabletSpec.ExtraVolumeMounts)
+ 
+ 	podSecurityContext := &corev1.PodSecurityContext{}
+ 	if planetscalev2.DefaultVitessFSGroup >= 0 {
+@@ -132,8 +146,43 @@ func NewBackupPod(key client.ObjectKey, backupSpec *BackupSpec, mysqldImage stri
+ 	var containerResources corev1.ResourceRequirements
+ 	// Make a copy of Resources since it contains pointers.
+ 	update.ResourceRequirements(&containerResources, &tabletSpec.Mysqld.Resources)
++	// vtbackup and its mysqld child share one cgroup. Reserve both process
++	// budgets, as the ordinary tablet pod does with separate containers.
++	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
++		if containerResources.Requests == nil {
++			containerResources.Requests = corev1.ResourceList{}
++		}
++		if containerResources.Limits == nil {
++			containerResources.Limits = corev1.ResourceList{}
++		}
++		request := containerResources.Requests[name]
++		extraRequest, extraLimit := tabletSpec.Vttablet.Resources.Requests[name], tabletSpec.Vttablet.Resources.Limits[name]
++		if name == corev1.ResourceMemory {
++			// The supported 1 TiB maximum can require two 105 MiB S3 parts.
++			extraRequest, extraLimit = resource.MustParse("512Mi"), resource.MustParse("512Mi")
++		}
++		request.Add(extraRequest)
++		containerResources.Requests[name] = request
++		limit := containerResources.Limits[name]
++		limit.Add(extraLimit)
++		containerResources.Limits[name] = limit
++	}
+ 
+ 	vtbackupAllFlags := vtbackupFlags.Get(backupSpec)
++	// vtbackup accepts a smaller flag set than vttablet. Forward only
++	// transport and credentials flags shared by these two binaries.
++	for _, key := range []string{
++		"topo-etcd-tls-ca", "topo-etcd-tls-cert", "topo-etcd-tls-key",
++		"tablet-manager-grpc-ca", "tablet-manager-grpc-server-name",
++		"tablet-manager-grpc-cert", "tablet-manager-grpc-key",
++		"db-credentials-file", "db-ssl-mode", "db-ssl-ca",
++		"db-app-use-ssl", "db-appdebug-use-ssl", "db-allprivs-use-ssl",
++		"db-dba-use-ssl", "db-filtered-use-ssl", "db-repl-use-ssl",
++	} {
++		if value, ok := tabletSpec.Vttablet.ExtraFlags[key]; ok {
++			vtbackupAllFlags[key] = value
++		}
++	}
+ 	mysql.UpdateMySQLServerVersion(vtbackupAllFlags, mysqldImage)
+ 	pod := &corev1.Pod{
+ 		ObjectMeta: metav1.ObjectMeta{
+@@ -152,6 +201,7 @@ func NewBackupPod(key client.ObjectKey, backupSpec *BackupSpec, mysqldImage stri
+ 			InitContainers: []corev1.Container{
+ 				{
+ 					Name:            "init-vt-root",
++					Resources:       tabletSpec.Vttablet.Resources,
+ 					SecurityContext: securityContext,
+ 					// We only use the vtbackup image to steal the vtbackup binary.
+ 					// When we actually run it, we run inside the mysqld image.
+@@ -184,6 +234,8 @@ func NewBackupPod(key client.ObjectKey, backupSpec *BackupSpec, mysqldImage stri
+ 		},
+ 	}
+ 
++	update.Volumes(&pod.Spec.Volumes, tabletSpec.ExtraVolumes)
++
+ 	if planetscalev2.DefaultVitessServiceAccount != "" {
+ 		pod.Spec.ServiceAccountName = planetscalev2.DefaultVitessServiceAccount
+ 	}
