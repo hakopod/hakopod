@@ -156,7 +156,7 @@ function DatabaseAllocationForm({
       >
         <FormSection title="Database and allocation">
           {spec.engine === 'mysql' && <Note>MySQL member resources and storage are fixed at creation. Recover into a new database to change per-member resources. Clusters support 2, 4 or 6 voting replicas.</Note>}
-          {spec.engine === 'mongodb' && <Note>MongoDB member resources and storage are fixed at creation. Recover into a new database to change per-member resources. Clusters support 2, 4 or 6 voting replicas. Removing replicas retains their volumes and the database's previous capacity reservation until the database is deleted.</Note>}
+          {spec.engine === 'mongodb' && <Note>MongoDB member resources and storage are fixed at creation. Recover into a new database to change per-member resources. Clusters support 2, 4 or 6 voting replicas. Removing replicas retains their volumes until the database is deleted.</Note>}
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
               Name
@@ -420,6 +420,7 @@ function DatabaseAllocationForm({
               <p>Each member also has a 100m CPU / 256Mi agent and a separate 1 GiB log volume.</p>
               <p>Total requested: {capacity.cpu.toLocaleString()} CPU cores · {(capacity.memoryMiB / 1024).toLocaleString()} GiB memory · {databaseStorageGiB(spec)} GiB storage. Additional capacity is reserved for replacement and recovery operations.</p>
             </>}
+            {replicaOnly && database && spec.replicas < database.spec.replicas && <Note>Reducing replicas keeps the previous CPU and storage reservations until the database is deleted. Memory reservation follows the completed layout.</Note>}
             {review.plan?.backup && (
               <p>Verified backup captured {timestamp(review.plan.backup.captured_at)}.</p>
             )}
