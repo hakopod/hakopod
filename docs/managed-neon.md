@@ -113,6 +113,11 @@ Each attempt lasts at most five minutes, and each provider request at most two
 minutes. Failed renewal cancels the work; the old worker cannot keep retrying
 under a lost lease.
 
+Each reconciliation reuses its HTTP connections while it works, then closes
+idle connections when it returns, including after a failure. Retrying an
+operation does not leave the earlier attempt's idle connections occupying
+the control transport. Active requests keep their existing time limits.
+
 Lease renewal can overlap a transaction that records provisioning progress.
 If PostgreSQL rejects that transaction with a serialization conflict, Hakopod
 retries the full transaction at most five times within the caller's deadline.

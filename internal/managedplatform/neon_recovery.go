@@ -25,6 +25,7 @@ type NeonRecoveryFence struct {
 // CheckpointOwnedRecovery derives the ownership token from the durable tenant
 // claim, so callers never need to persist or reconstruct that secret token.
 func (r *DurableNeonRuntime) CheckpointOwnedRecovery(ctx context.Context, tenantID, timelineID string) (NeonRecoveryFence, error) {
+	defer r.closeIdleConnections()
 	_, claims, err := r.claims(ctx)
 	if err != nil {
 		return NeonRecoveryFence{}, err
@@ -68,6 +69,7 @@ func NeonRecoveryExternalKey(component, resourceID, tenantID, timelineID string)
 // controller-selected pageserver to upload through that LSN. Secondary
 // pageservers share remote storage but do not serve this unsharded tenant.
 func (r *DurableNeonRuntime) CheckpointRecovery(ctx context.Context, tenantID, timelineID, tenantOwnershipToken, timelineOwnershipToken string) (NeonRecoveryFence, error) {
+	defer r.closeIdleConnections()
 	var fence NeonRecoveryFence
 	if r == nil || r.control == nil || !neonID.MatchString(tenantID) || !neonID.MatchString(timelineID) || !validNeonComputeOwnershipToken(tenantOwnershipToken) || !validNeonComputeOwnershipToken(timelineOwnershipToken) || r.control.config.PageserverToken == "" {
 		return fence, fmt.Errorf("invalid Neon recovery checkpoint request")
