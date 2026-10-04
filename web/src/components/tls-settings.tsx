@@ -715,7 +715,7 @@ function IssuerForm({
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  pattern="[a-z]([a-z0-9-]*[a-z0-9])?"
+                  pattern="[a-z]([a-z0-9\-]*[a-z0-9])?"
                   maxLength={63}
                   required
                 />

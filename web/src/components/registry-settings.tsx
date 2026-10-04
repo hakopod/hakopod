@@ -274,7 +274,7 @@ export function RegistryForm({
                 value={name}
                 readOnly={Boolean(registry)}
                 onChange={(e) => setName(e.target.value)}
-                pattern="[a-z][a-z0-9-]*"
+                pattern="[a-z][a-z0-9\-]*"
                 maxLength={63}
                 required
               />

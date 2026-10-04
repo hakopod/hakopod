@@ -138,7 +138,7 @@ export function GitHubAppSetup({ id, footerActions }: { id?: string; footerActio
                 maxLength={39}
                 value={organization}
                 disabled={!!savedID}
-                pattern="[A-Za-z0-9][A-Za-z0-9-]*"
+                pattern="[A-Za-z0-9][A-Za-z0-9\-]*"
                 onChange={(e) => setOrganization(e.target.value)}
                 placeholder="Leave empty for your personal account"
               />

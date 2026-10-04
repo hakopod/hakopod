@@ -281,7 +281,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                         spellCheck={false}
                         placeholder="orders-db"
                         maxLength={40}
-                        pattern="[a-z]([a-z0-9-]*[a-z0-9])?"
+                        pattern="[a-z]([a-z0-9\-]*[a-z0-9])?"
                         value={spec.name}
                         disabled={busy}
                         aria-describedby="db-name-help"
