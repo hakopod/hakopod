@@ -458,6 +458,29 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	if err = db.RefreshDatabaseRecoveries(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// Restore replaces data pods to revoke sessions. Wait for the API to report
+	// the replacement instead of reusing the member identity from creation.
+	previousUID := target.Observation.Members[0].UID
+	observed, stopObserved := context.WithTimeout(ctx, 90*time.Second)
+	defer stopObserved()
+	for {
+		var current managed.Resource
+		if status := client.request("GET", "/databases/"+target.ID, nil, &current, ""); status != 200 {
+			t.Fatal("restored database observation", status)
+		}
+		if current.ID != target.ID || current.Revision != target.Revision || current.Project != target.Project || current.Environment != target.Environment {
+			t.Fatal("restored database identity changed")
+		}
+		if current.Status == "ready" && current.Observation.Status == "ready" && current.Observation.Fresh(time.Now(), current.Revision) && current.Observation.TLS != nil && current.Observation.TLS.Verified && len(current.Observation.Members) == 1 && current.Observation.Members[0].UID != "" && current.Observation.Members[0].UID != previousUID && current.Recovery != nil && current.Recovery.JobID == recovery.ID && current.Recovery.RestoredAt != nil {
+			target = current
+			break
+		}
+		select {
+		case <-observed.Done():
+			t.Fatal("restored database replacement was not observed through the API")
+		case <-time.After(time.Second):
+		}
+	}
 	if query(target, "target_verify_restore", "SELECT id, hex(value) FROM api_recovery ORDER BY id FORMAT TSV") != "1\t0080FF0D0A" || query(source, "source_verify_preserved", "SELECT id, hex(value) FROM api_recovery ORDER BY id FORMAT TSV") != "1\t0080FF0D0A\n2\t01027F" {
 		t.Fatal("ClickHouse recovery point or source preservation changed")
 	}
