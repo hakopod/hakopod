@@ -42,6 +42,29 @@ type vitessLiveFixtures struct {
 	revoked map[string]bool
 }
 
+var vitessDedicatedFixtureNodes = []string{
+	"k3d-hakopod-vitess-worker-0",
+	"k3d-hakopod-vitess-worker-1",
+	"k3d-hakopod-vitess-worker-2",
+}
+
+func vitessNativeFixtureDatabasePolicy(fixtures map[string]vitessLiveStorage) DatabasePolicyResolver {
+	approved := make(map[string]backup.Destination, len(fixtures))
+	for name, fixture := range fixtures {
+		approved["vitess-development-"+name] = fixture.Destination
+	}
+	return func(_ context.Context, project, environment string, spec database.Spec) (DatabasePolicy, error) {
+		if project != "demo" || environment != "development" || spec.Engine != "vitess" || spec.Vitess == nil || !validVitessDedicatedFixtureNodes(spec.Placement.NodeNames) {
+			return DatabasePolicy{}, fmt.Errorf("Vitess native fixture placement is not approved")
+		}
+		destination, ok := approved[spec.Name]
+		if !ok || destination.ID == "" || spec.Vitess.BackupDestinationID != destination.ID || spec.Vitess.BackupDestinationRevision != destination.Revision {
+			return DatabasePolicy{}, fmt.Errorf("Vitess native fixture destination is not approved")
+		}
+		return DatabasePolicy{NodeNames: append([]string(nil), vitessDedicatedFixtureNodes...), Pool: "vitess-acceptance", RuntimeClass: "runsc", StorageClass: "local-path"}, nil
+	}
+}
+
 func newVitessLiveClient(t *testing.T, duration time.Duration) (*vitessLiveFixtures, context.Context) {
 	t.Helper()
 	if os.Getenv("HAKOPOD_DATABASE_VITESS_TEST") != "1" {
@@ -68,6 +91,9 @@ func newVitessLiveClient(t *testing.T, duration time.Duration) (*vitessLiveFixtu
 	var trailing any
 	if decoder.Decode(&trailing) != io.EOF {
 		t.Fatal("Vitess fixture file contains trailing data")
+	}
+	if vitessNativeAcceptance {
+		c.options.DatabasePolicy = vitessNativeFixtureDatabasePolicy(config.Fixtures)
 	}
 	byID := map[string]vitessLiveStorage{}
 	keys := map[string]bool{}
@@ -168,7 +194,6 @@ func newVitessFixture(t *testing.T, ctx context.Context, fixtures *vitessLiveFix
 
 func validVitessFixtureNodes(nodes []string) bool {
 	legacy := map[string]bool{"k3d-hakopod-dev-server-0": true, "k3d-hakopod-database-worker-0": true, "k3d-hakopod-database-worker-1": true}
-	dedicated := map[string]bool{"k3d-hakopod-vitess-worker-0": true, "k3d-hakopod-vitess-worker-1": true, "k3d-hakopod-vitess-worker-2": true}
 	seen := map[string]bool{}
 	for _, node := range nodes {
 		if node == "" || seen[node] {
@@ -185,10 +210,21 @@ func validVitessFixtureNodes(nodes []string) bool {
 			return true
 		}
 	}
-	if len(nodes) != len(dedicated) {
+	return validVitessDedicatedFixtureNodes(nodes)
+}
+
+func validVitessDedicatedFixtureNodes(nodes []string) bool {
+	if len(nodes) != len(vitessDedicatedFixtureNodes) {
 		return false
 	}
-	for node := range dedicated {
+	seen := make(map[string]bool, len(nodes))
+	for _, node := range nodes {
+		if node == "" || seen[node] {
+			return false
+		}
+		seen[node] = true
+	}
+	for _, node := range vitessDedicatedFixtureNodes {
 		if !seen[node] {
 			return false
 		}

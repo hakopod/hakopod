@@ -120,6 +120,16 @@ func vitessOperatorObject(d database.Resource, namespaceUID types.UID) *unstruct
 	}}
 }
 
+func applyVitessOperatorPolicy(object *unstructured.Unstructured, nodes []string, policy *DatabasePolicy) error {
+	if err := unstructured.SetNestedMap(object.Object, vitessNodeAffinity(nodes, policy), "spec", "template", "spec", "affinity"); err != nil {
+		return err
+	}
+	if policy == nil {
+		return nil
+	}
+	return unstructured.SetNestedSlice(object.Object, []any{map[string]any{"key": "hakopod.com/pool", "operator": "Equal", "value": policy.Pool, "effect": "NoSchedule"}}, "spec", "template", "spec", "tolerations")
+}
+
 func vitessRoleRules() []any {
 	rule := func(group string, resources []any) any {
 		return map[string]any{"apiGroups": []any{group}, "resources": resources, "verbs": []any{"get", "list", "watch", "create", "update", "patch", "delete"}}
@@ -216,13 +226,8 @@ func (c *Client) prepareVitessController(ctx context.Context, d database.Resourc
 	if policy != nil && len(nodes) == 0 {
 		nodes = policy.nodes()
 	}
-	if err = unstructured.SetNestedMap(object.Object, vitessNodeAffinity(nodes, policy), "spec", "template", "spec", "affinity"); err != nil {
+	if err = applyVitessOperatorPolicy(object, nodes, policy); err != nil {
 		return err
-	}
-	if policy != nil {
-		if err = unstructured.SetNestedSlice(object.Object, []any{map[string]any{"key": "hakopod.com/pool", "operator": "Equal", "value": policy.Pool, "effect": "NoSchedule"}}, "spec", "template", "spec", "tolerations"); err != nil {
-			return err
-		}
 	}
 	return c.applyVitessOwnedObject(ctx, d, ns.UID, schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, object, before)
 }
