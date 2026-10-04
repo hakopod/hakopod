@@ -37,6 +37,15 @@ func (r *DurableNeonRuntime) SetTimelineRoutingObserver(observe func(context.Con
 	r.control.config.ObserveTimelineRouting = observe
 }
 
+// Each reconcile creates a runtime. Release its idle connections when an
+// operation returns so retries cannot retain earlier transports for 30 seconds.
+// Connections are still reused within the operation; active requests stay open.
+func (r *DurableNeonRuntime) closeIdleConnections() {
+	if r != nil && r.control != nil && r.control.client != nil {
+		r.control.client.CloseIdleConnections()
+	}
+}
+
 func NewDurableNeonRuntime(config NeonRuntimeConfig, lifecycle DurableLifecycle) (*DurableNeonRuntime, error) {
 	if lifecycle == nil {
 		return nil, fmt.Errorf("durable Neon runtime requires PostgreSQL lifecycle state")
@@ -383,6 +392,7 @@ func (r *DurableNeonRuntime) confirm(ctx context.Context, intent DurableResource
 }
 
 func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycleRequest) (NeonLifecycleState, error) {
+	defer r.closeIdleConnections()
 	var state NeonLifecycleState
 	op := r.lifecycle.Operation()
 	if r.control.config.DeprovisionOnly {
@@ -880,6 +890,7 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 // Timeline ownership is re-observed from every configured safekeeper because
 // the storage controller's timeline inspection omits membership generation.
 func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecycleRequest) error {
+	defer r.closeIdleConnections()
 	op := r.lifecycle.Operation()
 	if op.Kind != "delete" || request.OperationID != op.ID {
 		return fmt.Errorf("Neon deletion request does not match the leased operation")
@@ -1322,6 +1333,7 @@ func validateNeonDeletionIdentity(request NeonLifecycleRequest) error {
 // accepts an identity only when its deterministic external key and ownership
 // token both match the reserved intent.
 func (r *DurableNeonRuntime) InspectOwnedRecoveryReservation(ctx context.Context, request NeonLifecycleRequest, intent DurableResourceIntent) (string, int64, bool, error) {
+	defer r.closeIdleConnections()
 	op := r.lifecycle.Operation()
 	if request.OperationID != op.ID || intent.ID == "" || intent.PlatformID != op.PlatformID || intent.PlatformRevision != op.Revision || intent.OwnerOperationID != op.ID || intent.Confirmed {
 		return "", 0, false, fmt.Errorf("Neon recovery reservation does not match the leased operation")
@@ -1416,6 +1428,7 @@ func (r *DurableNeonRuntime) InspectOwnedRecoveryReservation(ctx context.Context
 // still exists without changing it. An identity mismatch is an error rather
 // than absence so cleanup never adopts or forgets a foreign resource.
 func (r *DurableNeonRuntime) InspectOwnedRecoveryClaim(ctx context.Context, request NeonLifecycleRequest, claim DurableResourceClaim) (bool, error) {
+	defer r.closeIdleConnections()
 	op := r.lifecycle.Operation()
 	if request.OperationID != op.ID || claim.PlatformID != op.PlatformID || claim.PlatformRevision != op.Revision || claim.OwnerOperationID != op.ID {
 		return false, fmt.Errorf("Neon recovery claim does not match the accepted operation")
