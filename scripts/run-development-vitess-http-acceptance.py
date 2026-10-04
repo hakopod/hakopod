@@ -95,7 +95,7 @@ def cpu_milli(value):
             amount if suffix == "m" else amount * 1000)
 
 
-def preflight(kube, receipt_path, receipt_sha256, fixture, root):
+def preflight(kube, receipt_path, receipt_sha256, fixture, root, pool, storage_class):
     if not re.fullmatch(r"[a-f0-9]{64}", receipt_sha256 or ""):
         raise RuntimeError("exact development cluster receipt SHA-256 is required")
     if receipt_path.is_symlink() or not receipt_path.is_file() or receipt_path.stat().st_size > 256 * 1024:
@@ -119,6 +119,13 @@ def preflight(kube, receipt_path, receipt_sha256, fixture, root):
                 or conditions.get("Ready") != "True"
                 or any(conditions.get(kind) != "False" for kind in ("DiskPressure", "MemoryPressure", "PIDPressure"))):
             raise RuntimeError("dedicated Vitess nodes are not healthy Linux amd64 workers")
+        if (node.get("metadata", {}).get("labels", {}).get("hakopod.com/pool") != pool
+                or node.get("metadata", {}).get("labels", {}).get("hakopod.com.node-restriction.kubernetes.io/default-runtime") != "runsc"):
+            raise RuntimeError("dedicated Vitess node placement labels differ from the trusted policy")
+    runtime_class = command_json(kube + ["get", "runtimeclass", "runsc", "-o", "json"])
+    storage = command_json(kube + ["get", "storageclass", storage_class, "-o", "json"])
+    if runtime_class.get("handler") != "runsc" or storage.get("metadata", {}).get("name") != storage_class:
+        raise RuntimeError("trusted Vitess runtime or storage class is unavailable")
     databases = command_json(kube + ["get", "namespaces", "-o", "json"]).get("items", [])
     if any(item.get("metadata", {}).get("name", "").startswith("hdb-") for item in databases):
         raise RuntimeError("an existing managed database fixture owns the acceptance lane")
@@ -216,6 +223,8 @@ def main():
     parser.add_argument("--cache-root", type=Path, required=True)
     parser.add_argument("--cluster-receipt", type=Path, required=True)
     parser.add_argument("--cluster-receipt-sha256", required=True)
+    parser.add_argument("--pool", required=True)
+    parser.add_argument("--storage-class", required=True)
     parser.add_argument("--attempt", type=int, required=True)
     args = parser.parse_args()
     root, source = args.root.resolve(), args.source.resolve()
@@ -228,12 +237,14 @@ def main():
         raise RuntimeError("Go and kubectl executables are required")
     if not os.environ.get("HAKOPOD_TEST_DATABASE_URL"):
         raise RuntimeError("HAKOPOD_TEST_DATABASE_URL is required")
+    if not re.fullmatch(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?", args.pool) or not re.fullmatch(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?", args.storage_class):
+        raise RuntimeError("trusted pool and storage class names are invalid")
     kube = [str(kubectl), "--kubeconfig", str(kubeconfig), "--context", "k3d-hakopod-dev"]
     if bounded_output(kube + ["config", "current-context"]).decode().strip() != "k3d-hakopod-dev":
         raise RuntimeError("Vitess HTTP acceptance requires k3d-hakopod-dev")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     cache.mkdir(mode=0o700, parents=True, exist_ok=True)
-    environment = preflight(kube, args.cluster_receipt.resolve(), args.cluster_receipt_sha256, fixture, root)
+    environment = preflight(kube, args.cluster_receipt.resolve(), args.cluster_receipt_sha256, fixture, root, args.pool, args.storage_class)
     verifier = runpy.run_path(str(source / "release/verify-vitess-runtime.py"))
     runtime_before = verifier["source_files"](source)
     harness_before = harness_inventory(source)
@@ -250,7 +261,9 @@ def main():
                GOCACHE=str(cache / "go-cache"), GOMODCACHE=str(cache / "go-mod"),
                HAKOPOD_TEST_DATABASE_URL=os.environ["HAKOPOD_TEST_DATABASE_URL"],
                HAKOPOD_VITESS_HTTP_ACCEPTANCE_TEST="1", HAKOPOD_TEST_KUBECONFIG=str(kubeconfig),
-               HAKOPOD_VITESS_NATIVE_FIXTURE_CONFIG=str(fixture))
+               HAKOPOD_VITESS_NATIVE_FIXTURE_CONFIG=str(fixture),
+               HAKOPOD_VITESS_ACCEPTANCE_POOL=args.pool,
+               HAKOPOD_VITESS_ACCEPTANCE_STORAGE_CLASS=args.storage_class)
     started = time.time()
     code, limit_error = run_bounded([str(go), "test", "-p", "1", "./acceptance/vitess",
         "-run", "^TestVitessHTTPVerticalSlice$", "-count=1", "-timeout=55m", "-json"], source, env, log)

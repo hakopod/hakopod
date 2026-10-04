@@ -212,7 +212,25 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		t.Fatal("Vitess HTTP acceptance requires k3d-hakopod-dev")
 	}
 	fixtures := loadFixtures(t)
-	runtime, err := cluster.New(kubeconfig, cluster.Options{})
+	nodes := []string{"k3d-hakopod-vitess-worker-0", "k3d-hakopod-vitess-worker-1", "k3d-hakopod-vitess-worker-2"}
+	pool, storageClass := os.Getenv("HAKOPOD_VITESS_ACCEPTANCE_POOL"), os.Getenv("HAKOPOD_VITESS_ACCEPTANCE_STORAGE_CLASS")
+	if pool == "" || storageClass == "" {
+		t.Fatal("trusted Vitess acceptance placement policy is required")
+	}
+	runtime, err := cluster.New(kubeconfig, cluster.Options{
+		DatabasePolicy: func(_ context.Context, selectedProject, selectedEnvironment string, _ managed.Spec) (cluster.DatabasePolicy, error) {
+			if selectedProject != project || selectedEnvironment != environment {
+				return cluster.DatabasePolicy{}, fmt.Errorf("unexpected database placement scope")
+			}
+			return cluster.DatabasePolicy{NodeNames: append([]string(nil), nodes...), Pool: pool, RuntimeClass: "runsc", StorageClass: storageClass}, nil
+		},
+		WorkloadPolicy: func(_ context.Context, selectedProject, selectedEnvironment string, _ spec.Application) (cluster.WorkloadPolicy, error) {
+			if selectedProject != project || selectedEnvironment != environment {
+				return cluster.WorkloadPolicy{}, fmt.Errorf("unexpected application placement scope")
+			}
+			return cluster.WorkloadPolicy{NodeName: nodes[0], Pool: pool, RuntimeClass: "runsc", Recreate: true}, nil
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +295,6 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		}
 	})
 
-	nodes := []string{"k3d-hakopod-vitess-worker-0", "k3d-hakopod-vitess-worker-1", "k3d-hakopod-vitess-worker-2"}
 	created := []managed.Resource{}
 	t.Cleanup(func() {
 		for _, item := range created {
