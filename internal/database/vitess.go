@@ -23,23 +23,23 @@ type VitessTable struct {
 }
 
 const (
-	VitessVersion                      = "23"
-	VitessTabletCPU                    = "100m"
-	VitessTabletMemory                 = "256Mi"
-	VitessGatewayCPU                   = "250m"
-	VitessGatewayMemory                = "256Mi"
-	VitessControlCPU                   = "500m"
-	VitessControlMemory                = "256Mi"
-	VitessTopologyCPU                  = "100m"
-	VitessTopologyMemory               = "256Mi"
-	VitessTopologyStorageGiB     int64 = 1
-	VitessOperatorCPU                  = "100m"
-	VitessOperatorMemory               = "256Mi"
-	VitessBackupControllerCPU          = "100m"
-	VitessBackupControllerMemory       = "512Mi"
-	VitessControllerGOMAXPROCS          = "1"
-	VitessControllerGOMEMLIMIT         = "192MiB"
-	VitessBackupControllerGOMEMLIMIT   = "384MiB"
+	VitessVersion                          = "23"
+	VitessTabletCPU                        = "100m"
+	VitessTabletMemory                     = "256Mi"
+	VitessGatewayCPU                       = "250m"
+	VitessGatewayMemory                    = "256Mi"
+	VitessControlCPU                       = "500m"
+	VitessControlMemory                    = "256Mi"
+	VitessTopologyCPU                      = "100m"
+	VitessTopologyMemory                   = "256Mi"
+	VitessTopologyStorageGiB         int64 = 1
+	VitessOperatorCPU                      = "100m"
+	VitessOperatorMemory                   = "256Mi"
+	VitessBackupControllerCPU              = "100m"
+	VitessBackupControllerMemory           = "512Mi"
+	VitessControllerGOMAXPROCS             = "1"
+	VitessControllerGOMEMLIMIT             = "192MiB"
+	VitessBackupControllerGOMEMLIMIT       = "384MiB"
 	// Two multipart buffers for a 1 TiB file can use 210 MiB. The backup
 	// process also needs room for compression and its ordinary Go heap.
 	VitessBackupMemory = "512Mi"
