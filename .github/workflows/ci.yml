@@ -29,7 +29,8 @@ jobs:
       - run: npm pack --dry-run
   go:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Both the standard and native acceptance suites exercise the database.
+    timeout-minutes: 30
     env:
       GOMAXPROCS: "2"
       GOMEMLIMIT: 512MiB
