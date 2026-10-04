@@ -40,6 +40,22 @@ func databaseNetworkMaintenanceFixture(t *testing.T) (*Client, *fake.Clientset, 
 	}
 	policy.UID, policy.ResourceVersion = "policy-identity", "17"
 	policy.Annotations = map[string]string{"fixture": "preserve-metadata"}
+	// The fake client does not apply the API server's TCP default. Model its
+	// response so nil desired protocols cannot hide repeated policy writes.
+	tcp := corev1.ProtocolTCP
+	defaultPorts := func(ports []networkingv1.NetworkPolicyPort) {
+		for i := range ports {
+			if ports[i].Protocol == nil {
+				ports[i].Protocol = &tcp
+			}
+		}
+	}
+	for i := range policy.Spec.Ingress {
+		defaultPorts(policy.Spec.Ingress[i].Ports)
+	}
+	for i := range policy.Spec.Egress {
+		defaultPorts(policy.Spec.Egress[i].Ports)
+	}
 	if err = kube.Tracker().Update(networkingv1.SchemeGroupVersion.WithResource("networkpolicies"), policy, policy.Namespace); err != nil {
 		t.Fatal(err)
 	}
