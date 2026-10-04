@@ -175,12 +175,20 @@ def validate_native_environment(environment, case, images):
 
     capacity(environment['host_filesystem'])
     nodes = environment['nodes']
-    allowed = {'k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0', 'k3d-hakopod-database-worker-1'}
+    approved_node_sets = (
+        {'k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0', 'k3d-hakopod-database-worker-1'},
+        {'k3d-hakopod-vitess-worker-0', 'k3d-hakopod-vitess-worker-1', 'k3d-hakopod-vitess-worker-2'},
+    )
     if not isinstance(nodes, list) or len(nodes) not in (2, 3) or any(not isinstance(node, dict) for node in nodes):
         raise ValueError('Vitess native evidence requires two or three development nodes')
     node_names = [node.get('name') for node in nodes]
-    if any(not isinstance(name, str) or not name for name in node_names) or len(set(node_names)) != len(node_names) or not set(node_names) <= allowed:
+    if any(not isinstance(name, str) or not name for name in node_names) or len(set(node_names)) != len(node_names):
         raise ValueError('Vitess native evidence contains an empty, duplicate, or foreign node')
+    matching_node_sets = [allowed for index, allowed in enumerate(approved_node_sets)
+                          if set(node_names) <= allowed and (index == 0 or set(node_names) == allowed)]
+    if len(matching_node_sets) != 1:
+        raise ValueError('Vitess native evidence contains an empty, duplicate, or foreign node')
+    allowed = matching_node_sets[0]
     cluster = environment['cluster']
     expected_crds = {
         'etcdlockservers.planetscale.com', 'vitessbackups.planetscale.com',

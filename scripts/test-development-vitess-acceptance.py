@@ -105,9 +105,13 @@ class NativePreflightTests(unittest.TestCase):
     def test_two_or_three_exact_nodes_are_accepted(self):
         self.assertEqual(runner.fixture_nodes(','.join(runner.NODES)), runner.NODES)
         self.assertEqual(runner.fixture_nodes(','.join(runner.ALLOWED_NODES)), runner.ALLOWED_NODES)
+        self.assertEqual(runner.fixture_nodes(','.join(runner.DEDICATED_NODES)), runner.DEDICATED_NODES)
 
     def test_empty_duplicate_single_or_foreign_node_sets_are_rejected(self):
-        for value in ('', runner.NODES[0], runner.NODES[0]+','+runner.NODES[0], runner.NODES[0]+',provider-smoke'):
+        for value in ('', runner.NODES[0], runner.NODES[0]+','+runner.NODES[0],
+                      runner.NODES[0]+',provider-smoke',
+                      runner.NODES[0]+','+runner.DEDICATED_NODES[0],
+                      ','.join(runner.DEDICATED_NODES[:2])):
             with self.subTest(value=value), self.assertRaises(RuntimeError):
                 runner.fixture_nodes(value)
 
@@ -120,6 +124,25 @@ class NativePreflightTests(unittest.TestCase):
             with patch.object(runner.shutil, 'disk_usage', return_value=disk), patch.object(runner, 'command_json', side_effect=self.metadata):
                 report = runner.native_environment(Path('/fixture'), ['kubectl'], inventory, self.images, 'lifecycle', 4, names)
             self.qualified_environment(report)
+            verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
+
+    def test_release_verifier_accepts_exact_dedicated_topology_and_rejects_mixed_topology(self):
+        inventory = []
+        for name in runner.DEDICATED_NODES:
+            node = copy.deepcopy(self.inventory[0])
+            node['metadata']['name'] = name
+            inventory.append(node)
+        disk = SimpleNamespace(total=78 * runner.GIB, free=20 * runner.GIB)
+        with patch.object(runner.shutil, 'disk_usage', return_value=disk), \
+                patch.object(runner, 'command_json', side_effect=self.metadata):
+            report = runner.native_environment(Path('/fixture'), ['kubectl'], inventory,
+                self.images, 'lifecycle', 4, runner.DEDICATED_NODES)
+        report['cluster'] = {'uid': 'cluster-a',
+            'node_uids': {name: 'uid-' + str(index) for index, name in enumerate(runner.DEDICATED_NODES)},
+            'vitess_crds': sorted(runner.VITESS_CRDS), 'receipt_sha256': 'a' * 64}
+        verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
+        report['nodes'][0]['name'] = runner.NODES[0]
+        with self.assertRaisesRegex(ValueError, 'foreign node'):
             verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
 
     def test_release_verifier_rejects_duplicate_and_foreign_nodes(self):
