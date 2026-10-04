@@ -1,6 +1,8 @@
 package spec
 
 import (
+	"bytes"
+	"crypto/rsa"
 	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
@@ -69,6 +71,9 @@ func ValidateTemplateSecret(id, name, value string) error {
 		if id == "open-webui" && name == "provider-key" && strings.Contains(value, ";") {
 			return fmt.Errorf("provider-key must contain one provider credential")
 		}
+		if id == "xem" && name == "admin-password" && len(value) > 72 {
+			return fmt.Errorf("admin-password must contain at most 72 bytes for bcrypt")
+		}
 	case "hex32":
 		if _, err := hex.DecodeString(value); err != nil || len(value) != 32 {
 			return fmt.Errorf("%s must contain exactly 32 hexadecimal characters", name)
@@ -77,6 +82,10 @@ func ValidateTemplateSecret(id, name, value string) error {
 		decoded, err := base64.StdEncoding.Strict().DecodeString(value)
 		if err != nil || len(decoded) != 32 || strings.ContainsAny(value, "\r\n") {
 			return fmt.Errorf("%s must be 32 bytes encoded as standard Base64", name)
+		}
+	case "base64-rsa-private-key":
+		if !validTemplateRSAKey(value) {
+			return fmt.Errorf("%s must be one unencrypted RSA PEM private key (2048–4096 bits), encoded as standard Base64 on one line", name)
 		}
 	case "postgres-url", "redis-url":
 		u, err := url.Parse(value)
@@ -123,6 +132,32 @@ func ValidateTemplateSecret(id, name, value string) error {
 		}
 	}
 	return nil
+}
+
+func validTemplateRSAKey(value string) bool {
+	if len(value) > 8192 || strings.ContainsAny(value, "\r\n") {
+		return false
+	}
+	decoded, err := base64.StdEncoding.Strict().DecodeString(value)
+	if err != nil || !bytes.HasPrefix(decoded, []byte("-----BEGIN ")) {
+		return false
+	}
+	block, rest := pem.Decode(decoded)
+	if block == nil || len(block.Headers) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+		return false
+	}
+	var key *rsa.PrivateKey
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		var parsed any
+		parsed, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+		key, _ = parsed.(*rsa.PrivateKey)
+	default:
+		return false
+	}
+	return err == nil && key != nil && key.N.BitLen() >= 2048 && key.N.BitLen() <= 4096 && key.Validate() == nil
 }
 
 func ValidateTemplateSecretSet(id string, required []string, values map[string]string) error {

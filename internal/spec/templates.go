@@ -4,24 +4,40 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	catalog "github.com/hakopod/hakopod/templates"
-	"github.com/pelletier/go-toml/v2"
+	"net"
+	"net/mail"
 	"net/url"
 	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+
+	catalog "github.com/hakopod/hakopod/templates"
+	"github.com/pelletier/go-toml/v2"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // Templates are ordinary bounded application specifications. Catalog metadata
 // distinguishes registry architecture support from actual runtime verification.
 type TemplateConfigField struct {
-	Name        string `json:"name"`
-	Label       string `json:"label"`
-	Description string `json:"description"`
-	Default     string `json:"default"`
-	Required    bool   `json:"required"`
+	Name        string                   `json:"name"`
+	Label       string                   `json:"label"`
+	Description string                   `json:"description"`
+	Default     string                   `json:"default"`
+	Required    bool                     `json:"required"`
+	Options     []TemplateConfigOption   `json:"options,omitempty"`
+	When        *TemplateConfigCondition `json:"when,omitempty"`
+}
+
+type TemplateConfigOption struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+type TemplateConfigCondition struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
 }
 
 type Template struct {
@@ -84,6 +100,11 @@ func templateWorkloadRequirements(id string) []string {
 	}
 	if len(app.Volumes) > 0 {
 		required["persistent_storage"] = true
+	}
+	for _, volume := range app.Volumes {
+		if volume.AccessMode == "ReadWriteMany" {
+			required["shared_storage"] = true
+		}
 	}
 	for _, n := range app.Networks {
 		if n.VirtualNetwork != "" {
@@ -255,9 +276,6 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 		if !exists {
 			value = field.Default
 		}
-		if field.Required && strings.TrimSpace(value) == "" {
-			return Application{}, fmt.Errorf("%s is required", field.Label)
-		}
 		if len(value) > 2048 || strings.ContainsAny(value, "\x00\r\n") || strings.Contains(value, "{{") {
 			return Application{}, fmt.Errorf("%s must be one line, at most 2048 characters", field.Label)
 		}
@@ -268,7 +286,24 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 			return Application{}, fmt.Errorf("unknown configuration field %q", key)
 		}
 	}
-	if id == "baserow" {
+	// Resolve defaults before checking conditions so catalog field order does not
+	// affect which fields are required. Inactive drafts never alter the workload.
+	activeValues := make(map[string]string, len(values))
+	for _, field := range template.ConfigFields {
+		if field.When != nil && values[field.When.Field] != field.When.Value {
+			continue
+		}
+		value := values[field.Name]
+		if field.Required && strings.TrimSpace(value) == "" {
+			return Application{}, fmt.Errorf("%s is required", field.Label)
+		}
+		if len(field.Options) > 0 && !slices.ContainsFunc(field.Options, func(option TemplateConfigOption) bool { return option.Value == value }) {
+			return Application{}, fmt.Errorf("%s: choose a listed option", field.Label)
+		}
+		activeValues[field.Name] = value
+	}
+	values = activeValues
+	if id == "baserow" || id == "xem" && values["storage-mode"] == "external" {
 		endpoint, err := templateURL(values["storage-endpoint"])
 		if err != nil {
 			return Application{}, fmt.Errorf("storage-endpoint: %w", err)
@@ -284,6 +319,18 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 		}
 		if !regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`).MatchString(values["storage-region"]) {
 			return Application{}, fmt.Errorf("storage-region must be a provider region such as us-east-1 or auto")
+		}
+	}
+	if id == "xem" {
+		address := values["admin-email"]
+		parsed, err := mail.ParseAddress(address)
+		if err != nil || parsed.Address != address || len(address) > 254 {
+			return Application{}, fmt.Errorf("admin-email: use a single email address without a display name")
+		}
+		for _, key := range []string{"admin-name", "team-name"} {
+			if len(values[key]) > 128 || strings.TrimSpace(values[key]) != values[key] {
+				return Application{}, fmt.Errorf("%s: use up to 128 characters without surrounding whitespace", key)
+			}
 		}
 	}
 	data, err := catalog.Files.ReadFile("blueprints/" + id + "/hakopod.toml")
@@ -317,10 +364,94 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 	}
 	for name, volume := range app.Volumes {
 		volume.SizeGiB = o.StorageGiB
+		// Shared storage classes are installation-specific. Resolve declared
+		// configuration as data and let Normalize validate the Kubernetes name.
+		for key, value := range values {
+			volume.StorageClass = strings.ReplaceAll(volume.StorageClass, "{{config."+key+"}}", value)
+		}
 		app.Volumes[name] = volume
 	}
 	main := app.Services["main"]
 	switch id {
+	case "mathesar", "xem":
+		if values["database-mode"] == "external" {
+			host := values["database-host"]
+			if len(validation.IsDNS1123Subdomain(host)) != 0 && net.ParseIP(host) == nil {
+				return Application{}, fmt.Errorf("database-host: use a hostname or IP address without a scheme, port or credentials")
+			}
+			port, err := strconv.Atoi(values["database-port"])
+			if err != nil || port < 1 || port > 65535 {
+				return Application{}, fmt.Errorf("database-port: use a port between 1 and 65535")
+			}
+			for _, key := range []string{"database-name", "database-user"} {
+				if value := values[key]; len(value) > 63 || strings.TrimSpace(value) != value {
+					return Application{}, fmt.Errorf("%s: use up to 63 characters without surrounding whitespace", key)
+				}
+			}
+			backend := app.Services["backend"]
+			backend.DependsOn = slices.DeleteFunc(backend.DependsOn, func(name string) bool { return name == "db" })
+			backend.Env["POSTGRES_HOST"] = host
+			backend.Env["POSTGRES_PORT"] = strconv.Itoa(port)
+			backend.Env["POSTGRES_DB"] = values["database-name"]
+			backend.Env["POSTGRES_USER"] = values["database-user"]
+			backend.Env["POSTGRES_SSLMODE"] = values["database-sslmode"]
+			if id == "mathesar" {
+				// Restore Mathesar's overwritten TLS options and give direct
+				// libpq connections the same policy.
+				backend.Env["PGSSLMODE"] = values["database-sslmode"]
+				if values["database-sslmode"] == "verify-full" {
+					backend.Env["PGSSLROOTCERT"] = "/etc/ssl/certs/ca-certificates.crt"
+				}
+			}
+			app.Services["backend"] = backend
+			delete(app.Services, "db")
+		}
+		if id == "xem" && values["redis-mode"] == "external" {
+			host := values["redis-host"]
+			if len(validation.IsDNS1123Subdomain(host)) != 0 && net.ParseIP(host) == nil {
+				return Application{}, fmt.Errorf("redis-host: use a hostname or IP address without a scheme, port or credentials")
+			}
+			port, err := strconv.Atoi(values["redis-port"])
+			if err != nil || port < 1 || port > 65535 {
+				return Application{}, fmt.Errorf("redis-port: use a port between 1 and 65535")
+			}
+			database, err := strconv.Atoi(values["redis-db"])
+			if err != nil || database < 0 || database > 15 {
+				return Application{}, fmt.Errorf("redis-db: use a database number between 0 and 15")
+			}
+			if user := values["redis-username"]; len(user) > 256 || strings.TrimSpace(user) != user {
+				return Application{}, fmt.Errorf("redis-username: use up to 256 characters without surrounding whitespace")
+			}
+			backend := app.Services["backend"]
+			backend.DependsOn = slices.DeleteFunc(backend.DependsOn, func(name string) bool { return name == "redis" })
+			// Xem concatenates host and port instead of using net.JoinHostPort.
+			if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+				host = "[" + host + "]"
+			}
+			backend.Env["REDIS_HOST"] = host
+			backend.Env["REDIS_PORT"] = strconv.Itoa(port)
+			backend.Env["REDIS_USERNAME"] = values["redis-username"]
+			backend.Env["REDIS_DB"] = strconv.Itoa(database)
+			backend.Env["REDIS_USE_TLS"] = values["redis-tls"]
+			app.Services["backend"] = backend
+			delete(app.Services, "redis")
+		}
+		if id == "xem" && values["storage-mode"] == "external" {
+			backend := app.Services["backend"]
+			backend.DependsOn = slices.DeleteFunc(backend.DependsOn, func(name string) bool { return name == "storage" })
+			backend.Env["S3_BUCKET_NAME"] = values["storage-bucket"]
+			backend.Env["S3_ENDPOINT_URL"] = values["storage-endpoint"]
+			backend.Env["S3_REGION"] = values["storage-region"]
+			delete(backend.Env, "S3_PUBLIC_ENDPOINT_URL")
+			delete(backend.Env, "S3_CREATE_BUCKET")
+			delete(backend.Env, "S3_ACCESS_KEY")
+			backend.Secrets["S3_ACCESS_KEY"] = SecretRef{Ref: "storage-access-key"}
+			backend.Secrets["S3_SECRET_KEY"] = SecretRef{Ref: "storage-secret-key"}
+			app.Services["backend"] = backend
+			delete(app.Services, "storage")
+			delete(main.Files, "storage")
+			main.DependsOn = slices.DeleteFunc(main.DependsOn, func(name string) bool { return name == "storage" })
+		}
 	case "postgresql":
 		main.Env["POSTGRES_USER"] = o.DatabaseUser
 		main.Env["POSTGRES_DB"] = o.DatabaseName
@@ -372,6 +503,10 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 				parsed, _ := url.Parse(o.SiteURL)
 				value = strings.ReplaceAll(value, "{{site_host}}", parsed.Host)
 			}
+			if strings.Contains(value, "{{site_hostname}}") {
+				parsed, _ := url.Parse(o.SiteURL)
+				value = strings.ReplaceAll(value, "{{site_hostname}}", parsed.Hostname())
+			}
 			service.Env[key] = value
 			if strings.Contains(value, "https://catalog.example.test") {
 				if o.SiteURL == "" {
@@ -390,6 +525,12 @@ func templateURL(value string) (string, error) {
 	u, err := url.Parse(value)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(value) > 1024 || strings.ContainsAny(value, "\r\n") {
 		return "", fmt.Errorf("use an absolute HTTPS URL without credentials, query or fragment")
+	}
+	if port := u.Port(); port != "" || strings.HasSuffix(u.Host, ":") {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return "", fmt.Errorf("URL port must be between 1 and 65535")
+		}
 	}
 	return strings.TrimRight(u.String(), "/"), nil
 }

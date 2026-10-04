@@ -181,11 +181,10 @@
   margin-top: 28px;
 }
 .catalog-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  padding: 16px 0;
-  align-items: center;
+  @apply -mx-4 flex flex-wrap items-center gap-5 px-4 py-4;
+  @variant sm {
+    @apply -mx-6 px-6;
+  }
   border-block: 1px solid var(--hairline);
 }
 .catalog-categories {
@@ -197,18 +196,16 @@
   padding: 0;
 }
 .catalog-categories .button-chip {
-  height: 32px;
-  padding: 0 10px;
+  @apply h-8 border-0 bg-transparent px-2.5;
   color: var(--muted);
 }
 .catalog-categories .button-chip[aria-pressed='true'] {
-  color: var(--state);
-  border-color: var(--state);
-  background: var(--hatch-base);
+  color: var(--navigation-active);
+  @apply border-0 bg-transparent;
 }
 .catalog-category-count {
   font: 11px var(--font-mono);
-  color: var(--muted);
+  color: inherit;
 }
 .catalog-search {
   display: flex;
@@ -233,11 +230,20 @@
   color: var(--muted);
 }
 .template-catalog {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--hairline);
-  border: 1px solid var(--hairline);
+  @apply grid grid-cols-1 gap-4 border-0 bg-transparent;
+
+  @variant min-[601px] {
+    @apply grid-cols-2;
+  }
+  @variant min-[801px] {
+    @apply grid-cols-3;
+  }
+  @variant min-[1201px] {
+    @apply grid-cols-4;
+  }
+  @variant min-[1601px] {
+    @apply grid-cols-5;
+  }
 }
 .template-catalog > .catalog-card {
   background: var(--card);
@@ -290,11 +296,6 @@
 }
 .catalog-card-meta svg {
   color: var(--state);
-}
-.template-catalog > .catalog-filler {
-  display: none;
-  background: var(--card);
-  min-height: 272px;
 }
 .catalog-detail {
   display: grid;
@@ -384,16 +385,6 @@
   border-color: var(--state);
   background: var(--hatch-base);
 }
-@media (max-width: 1600px) {
-  .template-catalog {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-@media (max-width: 1200px) {
-  .template-catalog {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
 @media (max-width: 1023px) {
   .settings-page .settings-nav {
     @apply py-1;
@@ -425,15 +416,7 @@
     padding: 16px 0 24px;
   }
 }
-@media (max-width: 800px) {
-  .template-catalog {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 @media (max-width: 600px) {
-  .template-catalog {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .catalog-search {
     width: 100%;
   }
@@ -447,58 +430,6 @@
   }
   .integration-card > .integration-state {
     grid-column: 2;
-  }
-}
-
-@media (min-width: 1601px) {
-  .template-catalog:has(.catalog-card:nth-child(5n + 1):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 4) {
-    display: block;
-  }
-  .template-catalog:has(.catalog-card:nth-child(5n + 2):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 3) {
-    display: block;
-  }
-  .template-catalog:has(.catalog-card:nth-child(5n + 3):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 2) {
-    display: block;
-  }
-  .template-catalog:has(.catalog-card:nth-child(5n + 4):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 1) {
-    display: block;
-  }
-}
-
-@media (min-width: 1201px) and (max-width: 1600px) {
-  .template-catalog:has(.catalog-card:nth-child(4n + 1):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 3) {
-    display: block;
-  }
-  .template-catalog:has(.catalog-card:nth-child(4n + 2):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 2) {
-    display: block;
-  }
-  .template-catalog:has(.catalog-card:nth-child(4n + 3):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 1) {
-    display: block;
-  }
-}
-
-@media (min-width: 801px) and (max-width: 1200px) {
-  .template-catalog:has(.catalog-card:nth-child(3n + 1):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 2) {
-    display: block;
-  }
-  .template-catalog:has(.catalog-card:nth-child(3n + 2):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 1) {
-    display: block;
-  }
-}
-
-@media (min-width: 601px) and (max-width: 800px) {
-  .template-catalog:has(.catalog-card:nth-child(2n + 1):nth-last-child(5))
-    > .catalog-filler:nth-last-child(-n + 1) {
-    display: block;
   }
 }
 

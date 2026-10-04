@@ -1,22 +1,80 @@
-# xem.email deployment review
+# Xem deployment template
 
-Xem is an open-source email marketing workspace with a Go API and a Next.js/Bun frontend. It is not a drop-in SMTP mail server. The catalog includes a guided entry rather than a deploy button because the reviewed upstream frontend embeds `NEXT_PUBLIC_API_URL` during its image build. Changing the container's runtime environment cannot reliably redirect every browser API request to a new self-hosted API.
+Xem is a self-hosted email marketing workspace with a Go API and a Next.js/Bun
+frontend. Its template offers independent **Bundled** or **Existing** choices
+for PostgreSQL, Redis and media storage, with one public Caddy proxy and private
+application services. MinIO is bundled by default; an existing private
+S3-compatible bucket remains available as an independent option.
 
-The official deployment chart is [mailxem/devops](https://github.com/mailxem/devops). It names the Docker Hub images below. Their manifests were resolved on 12 September 2026 and both contain Linux AMD64 and ARM64 images:
+Hosted Cloud deployments need an allocation that supports multiple services,
+their resource sizes and persistent storage. Free hosted compute does not
+provide the default six-service topology.
 
-| Component | Reviewed immutable reference |
-| --- | --- |
-| API | `docker.io/theboringhumane/xemgo:latest@sha256:2e2645fb55429e87d099312cb1cfcb11c800ea67d2c836152ecb523f037619b4` |
-| Frontend | `docker.io/theboringhumane/xemapp:latest@sha256:11bceebde080246765d6d94c9753e0c7272efd07c91654716a7eb15726271938` |
+The shared [blueprint and setup instructions](../templates/blueprints/xem/README.md)
+are the source of truth for configuration, scoped credentials, capacity and
+verification. The preset pins public upstream images by digest; it does not
+require a local registry or Docker login.
 
-These official image names were taken from the upstream chart. They are not guessed registry aliases. The backend manifest identifies source commit `38be77ef8b17e0a124b1dc2ebd5ce07a0d830f05` and the frontend identifies `dbb692623cdcbf35dae7d936426f9659874a1cd1`. Both identify GPL-3.0 licensing. The ARM64 compressed image sizes were approximately 26 MB and 86 MB respectively; neither index alone proves a successful deployment.
+## Upstream images
 
-At that frontend commit, `hooks/use-api.ts` reads `process.env.NEXT_PUBLIC_API_URL` in browser code. `lib/services/api.ts` uses runtime `INTERNAL_API_URL` only on the server; `auth.ts` also uses the public API setting. `next.config.js` does not supply a general same-origin proxy that repairs the browser calls. The official Dockerfile builds with the public API origin and the upstream publishing workflow supplies it from repository variables. Reusing a prebuilt hosted-origin frontend could break self-hosting or send application requests to the wrong server.
+The self-hosting changes were merged in
+[Xem PR #16](https://github.com/mailxem/mail/pull/16), source commit
+`63b0809c2a4ba0965047ee20d08b101e0fac7c48`. Xem's release workflow publishes the
+portable frontend and backend for AMD64 and ARM64:
 
-A complete installation therefore needs an operator-built frontend, pinned to the resulting digest, with `NEXT_PUBLIC_API_URL` set to the operator's API origin. Verify browser network calls, authentication, uploads and callbacks against that origin before using it. The frontend's `INTERNAL_API_URL`, `NEXTAUTH_URL` and `NEXTAUTH_SECRET` must also match the deployment. No repository push, upstream CI run or registry publication was performed as part of this catalog change.
+- `theboringhumane/xemapp:sudo-self-hosted`: browser API requests use
+  `/api/v1`, server authentication uses runtime `INTERNAL_API_URL`, and exported
+  public-form HTML retains the installation's origin.
+- `theboringhumane/xemgo:sudo`: the preset sets `S3_DISABLE_ACL=true` so uploads omit object ACL headers,
+  private uploads and public signed reads use separate endpoints, and only the
+  bundled storage mode creates a missing private bucket. A refresh-token fix
+  binds PostgreSQL UUID values as parameters.
 
-The API uses private PostgreSQL and Redis. It supports local persistent storage through `STORAGE_PROVIDER=local` and `STORAGE_BASE_PATH`, listens on port 9001, and runs as UID 65532. Set the PostgreSQL/Redis host, database/user and password values explicitly. Do not copy the upstream development database logging setting that logs every SQL statement. The API requires a non-default JWT secret and `PRIVATE_KEY`: at the reviewed commit this is a base64-encoded RSA private key parsed by the upstream crypto package. It also initializes the administrator from `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `SUPERADMIN_NAME` and `SUPERADMIN_TEAM_NAME`; do not ship shared or sample credentials.
+The regular hosted frontend embeds its configured API origin in browser assets.
+A runtime public URL variable cannot change those files. The preset therefore
+uses the upstream `sudo-self-hosted` frontend variant, resolved to a digest.
+The regular frontend `sudo` and `latest` tags retain the hosted settings. Build
+success alone does not prove authentication or external-service connectivity.
 
-Use separate scoped secret references for database/Redis passwords, JWT signing material, frontend session material, encryption keys and administrator credentials. Persist the API's local storage and database data, and back them up with encryption keys. Keep managed SMTP, managed sending and optional hosted AI assistants disabled unless the operator has explicitly configured the corresponding providers. A marketing workspace is not permission to send email: no messages were sent during this review.
+## Configuration
 
-The upstream Kubernetes chart and [deployment guide](https://github.com/mailxem/devops/blob/main/docs/kubernetes.md) are the current starting point. Once a frontend build supports the selected self-hosted origin and a complete startup/login test passes, its immutable frontend digest can be used in an ordinary reviewed Hakopod application specification. Until then, `deployable=false` is deliberate and does not present a broken plan as a working installation.
+Use a stable HTTPS origin and finish custom-domain routing/TLS before login.
+Database and Redis mode selectors reveal their own host, port, identity and TLS
+fields. Existing PostgreSQL defaults to `verify-full`; existing Redis defaults
+to verified TLS. Selecting one existing dependency leaves the other choice
+unchanged. Save the existing service's current password in its scoped secret;
+the template neither provisions nor rotates an external credential.
+
+Bundled MinIO uses generated `storage-user` and `storage-password` credentials,
+a private service and its own
+persistent volume. The backend creates the private `xem-files` bucket if missing,
+uploads through the private endpoint and signs browser reads for the public
+installation origin. Caddy exposes only object GET/HEAD requests, preserves the
+signed host and path, strips application credentials, and prevents public caching.
+MinIO's console, administration and writes have no public route.
+
+Existing storage reveals `storage-bucket`, `storage-endpoint` and `storage-region`,
+with provider-issued bucket-scoped access and secret keys. The full HTTPS endpoint
+must be reachable by the API and browser. Selecting this mode removes bundled
+MinIO and its public file route and leaves bucket creation disabled. Upstream's
+local-storage settings are unused; the bundled option provides S3 through MinIO.
+
+Administrator bootstrap asks for email, name, team and a separate password. The
+RSA encryption secret is Base64 of an unencrypted RSA private PEM key, using
+2048–4096 bits. Generate and copy it before saving, keep it stable, and include
+it with database backups. Bootstrap settings do not change an existing account.
+The administrator password limit is 72 bytes, matching bcrypt's input bound.
+
+Managed SES, SMTP submission, managed notifications, MCP, payments and hosted AI
+services are excluded. Configure a user-owned sending provider inside Xem when
+needed. No messages are sent by template validation or acceptance.
+
+## Verification status
+
+The source contract and upstream fixes are implemented. Planner/API tests cover
+all eight bundled/existing combinations. Earlier development builds and browser
+checks covered authentication, forms and uploads with external storage. The
+final bundled-MinIO cluster matrix stopped because of development disk pressure
+before its backend and storage assertions. The shared blueprint's verification
+section records image release evidence and these runtime limits; registry
+architecture metadata alone is not a runtime claim.

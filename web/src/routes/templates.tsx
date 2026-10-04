@@ -165,9 +165,6 @@ function Templates() {
               </span>
             </button>
           ))}
-          {[0, 1, 2, 3].map((index) => (
-            <div key={`filler-${index}`} className="catalog-filler" aria-hidden="true" />
-          ))}
         </div>
       )}
       <Dialog

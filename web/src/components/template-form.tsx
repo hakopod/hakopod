@@ -18,7 +18,12 @@ import { FormPage, FormHint, FormSection } from './form-page'
 import { ServiceIcon } from './service-icon'
 import { ComputeNotice } from './compute-notice'
 import { useEditionFeatures } from '../lib/dashboard-edition'
-import { workloadRequirementLabel } from '../lib/template-requirements'
+import {
+  activeTemplateConfigFields,
+  activeTemplateConfigValues,
+  unsupportedHostedTemplateRequirements,
+  workloadRequirementLabel,
+} from '../lib/template-requirements'
 
 export default function TemplateForm({
   template,
@@ -43,6 +48,7 @@ export default function TemplateForm({
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries((template.config_fields || []).map((field) => [field.name, field.default])),
   )
+  const activeConfigFields = activeTemplateConfigFields(template.config_fields || [], values)
   const [isPublic, setPublic] = useState(false)
   const [storage, setStorage] = useState(
     features.hostedStorageGiB
@@ -106,7 +112,7 @@ export default function TemplateForm({
               ? { application_id: application.id, expected_revision: application.revision }
               : {}),
             public: isPublic,
-            values,
+            values: activeTemplateConfigValues(template.config_fields || [], values),
             storage_gib: storage,
             ...(features.hostedFree && ['postgresql', 'redis', 'mysql'].includes(template.id)
               ? { size: 'small' as const }
@@ -168,21 +174,7 @@ export default function TemplateForm({
       setBusy(false)
     }
   }
-  const unsupportedRequirements = (template.workload_requirements || []).filter((requirement) => {
-    if (requirement === 'persistent_storage' && features.hostedStorageGiB > 0) return false
-    if (
-      ['larger_service', 'multiple_services', 'multiple_replicas'].includes(requirement) &&
-      !features.hostedFree
-    )
-      return false
-    if (
-      requirement === 'larger_service' &&
-      features.hostedFree &&
-      ['postgresql', 'redis', 'mysql'].includes(template.id)
-    )
-      return false
-    return true
-  })
+  const unsupportedRequirements = unsupportedHostedTemplateRequirements(template, features)
   if (template.deployable && features.hostedCompute && unsupportedRequirements.length)
     return (
       <FormPage title={template.name} description={template.description} breadcrumbs={[]}>
@@ -255,6 +247,7 @@ export default function TemplateForm({
     )
   return (
     <FormPage
+      keepFocusedControlsVisible
       breadcrumbs={[{ label: 'Templates', to: '/templates' }, { label: template.name }]}
       icon="box"
       help={
@@ -448,20 +441,35 @@ export default function TemplateForm({
                 ]}
               />
             </div>
-            {(template.config_fields || []).map((field) => (
+            {activeConfigFields.map((field) => (
               <div className="grid gap-1" key={field.name}>
                 <label htmlFor={`template-config-${field.name}`}>{field.label}</label>
-                <Input
-                  id={`template-config-${field.name}`}
-                  aria-describedby={`template-help-${field.name}`}
-                  value={values[field.name] || ''}
-                  error={fieldError(error, `values.${field.name}`)}
-                  required={field.required}
-                  maxLength={2048}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, [field.name]: event.target.value }))
-                  }
-                />
+                {field.options?.length ? (
+                  <SelectField
+                    id={`template-config-${field.name}`}
+                    label={field.label}
+                    aria-describedby={`template-help-${field.name}`}
+                    value={values[field.name] || ''}
+                    error={fieldError(error, `values.${field.name}`)}
+                    required={field.required}
+                    options={field.options}
+                    onValueChange={(value) =>
+                      setValues((current) => ({ ...current, [field.name]: value }))
+                    }
+                  />
+                ) : (
+                  <Input
+                    id={`template-config-${field.name}`}
+                    aria-describedby={`template-help-${field.name}`}
+                    value={values[field.name] || ''}
+                    error={fieldError(error, `values.${field.name}`)}
+                    required={field.required}
+                    maxLength={2048}
+                    onChange={(event) =>
+                      setValues((current) => ({ ...current, [field.name]: event.target.value }))
+                    }
+                  />
+                )}
                 <span className="field-help" id={`template-help-${field.name}`}>
                   {field.description}
                 </span>
@@ -638,9 +646,7 @@ export default function TemplateForm({
           disabled={
             busy ||
             !name ||
-            (template.config_fields || []).some(
-              (field) => field.required && !values[field.name]?.trim(),
-            ) ||
+            activeConfigFields.some((field) => field.required && !values[field.name]?.trim()) ||
             (template.workload_requirements?.includes('persistent_storage') &&
               (!Number.isInteger(storage) ||
                 storage < 1 ||
