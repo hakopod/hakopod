@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect } from 'react'
+import { useLocation, useNavigate } from '@tanstack/react-router'
 import type { Identity, Project } from './types'
 
 export type Scope = {
@@ -62,9 +63,23 @@ export function useScope() {
 
 export function useResourceScope(resource?: { project: string; environment: string }) {
   const scope = useScope()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const project = resource?.project
+  const environment = resource?.environment
   useEffect(() => {
-    if (resource) scope.syncScope(resource.project, resource.environment)
-  }, [resource?.project, resource?.environment, scope.syncScope])
+    if (!project || !environment) return
+    scope.syncScope(project, environment)
+    if (location.search.project === project && location.search.environment === environment) return
+    // Keep copied detail links in the loaded resource's scope without adding
+    // history entries or discarding the selected tab and other route state.
+    void navigate({
+      search: (previous) => ({ ...previous, project, environment }),
+      hash: true,
+      replace: true,
+      resetScroll: false,
+    })
+  }, [project, environment, location.search.project, location.search.environment, scope.syncScope, navigate])
 }
 
 export function canOpenHostTerminal(identity: Identity, node: string) {
