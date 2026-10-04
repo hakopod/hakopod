@@ -27,7 +27,7 @@ import {
 import { DatabaseBackups } from '../components/database-backups'
 import { DatabaseSecurity } from '../components/database-security'
 import { Copy, Status } from '../components/shared'
-import { endpointName, endpointAddress } from '../lib/database-view'
+import { endpointName, endpointAddress, votingDatabase } from '../lib/database-view'
 
 const databaseTabs = [
   'overview',
@@ -98,7 +98,7 @@ function Detail() {
                   params={{ databaseId: id }}
                   search={search}
                 >
-                  {['clickhouse', 'oracle', 'vitess'].includes(d.spec.engine) ? 'Capacity' : 'Resize'}
+                  {votingDatabase(d.spec.engine) ? d.spec.mode === 'cluster' ? 'Change replicas' : 'Capacity' : ['clickhouse', 'oracle', 'vitess'].includes(d.spec.engine) ? 'Capacity' : 'Resize'}
                 </Link>
               </Button>
             )}

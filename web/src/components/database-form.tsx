@@ -17,7 +17,7 @@ import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { databaseVersions } from '../lib/database-create'
 import { DatabaseCreate } from './database-create'
-import { databaseRequestedCapacity, routerInstances, votingDatabase, databaseStorageGiB } from '../lib/database-view'
+import { databaseRequestedCapacity, routerInstances, votingDatabase, databaseStorageGiB, engineName } from '../lib/database-view'
 
 const initial: DatabaseSpec = {
   schema_version: 1,
@@ -70,6 +70,8 @@ function DatabaseAllocationForm({
   const cache = useQueryClient()
   const { identity } = useScope()
   const canManage = !identity.application && canAccess(identity, project, 'deployments:write')
+  const replicaOnly = Boolean(database && votingDatabase(spec.engine))
+  const unchangedReplicas = replicaOnly && spec.replicas === database?.spec.replicas
   const expired = Boolean(review?.plan && Date.parse(review.plan.expires_at) <= Date.now())
   const update = (fields: Partial<DatabaseSpec>) => {
     setSpec((v) => ({ ...v, ...fields }))
@@ -83,8 +85,8 @@ function DatabaseAllocationForm({
         Database changes require project deployment permission without an application-only scope.
       </Note>
     )
-  if (database && ['clickhouse', 'oracle', 'vitess'].includes(spec.engine)) return <FormPage title="Database capacity" description="Review the current engine's capacity policy." breadcrumbs={[]}>
-    <Note>{spec.engine === 'vitess' ? 'Vitess capacity and table routing' : spec.engine === 'clickhouse' ? 'ClickHouse topology and resources' : 'Oracle edition and resources'} are fixed at creation. Create a separate compatible database and recover into it to change capacity.</Note>
+  if (database && (['clickhouse', 'oracle', 'vitess'].includes(spec.engine) || (replicaOnly && spec.mode === 'standalone'))) return <FormPage title="Database capacity" description="Review the current engine's capacity policy." breadcrumbs={[]}>
+    <Note>{replicaOnly ? `${engineName(spec.engine)} member resources and storage` : spec.engine === 'vitess' ? 'Vitess capacity and table routing' : spec.engine === 'clickhouse' ? 'ClickHouse topology and resources' : 'Oracle edition and resources'} are fixed at creation. Create a separate compatible database and recover into it to change capacity.</Note>
     {spec.engine === 'vitess' && <>
       <Note>Creation is unavailable while native replication and recovery acceptance remain incomplete. Vitess requires a dedicated operator-approved native backup destination.</Note>
       <FormSection title="Vitess configuration"><dl className="db-create-facts"><div><dt>Table routing</dt><dd>{spec.shards === 1 ? 'Single shard; no sharding columns' : (spec.vitess?.tables || []).map((table) => `${table.name} / ${table.sharding_column}`).join(', ') || 'Not configured'}</dd></div><div><dt>Native backup destination</dt><dd>{spec.vitess?.backup_destination_id || 'Not configured'}{spec.vitess && ` · r${spec.vitess.backup_destination_revision}`}</dd></div></dl></FormSection>
@@ -93,7 +95,7 @@ function DatabaseAllocationForm({
   </FormPage>
   return (
     <FormPage
-      title={database ? 'Resize database' : 'New database'}
+      title={replicaOnly ? 'Change replicas' : database ? 'Resize database' : 'New database'}
       description="Database resources are independent of application replicas. Review the allocation before creating or resizing."
       breadcrumbs={[]}
     >
@@ -101,6 +103,10 @@ function DatabaseAllocationForm({
         onSubmit={async (e) => {
           e.preventDefault()
           if (busy) return
+          if (unchangedReplicas) {
+            setError('Choose a different replica count before requesting a review.')
+            return
+          }
           setBusy(true)
           setError('')
           try {
@@ -149,8 +155,8 @@ function DatabaseAllocationForm({
         }}
       >
         <FormSection title="Database and allocation">
-          {spec.engine === 'mysql' && <Note>MySQL member resources and storage are fixed at creation. Recover into a new database to change capacity. Clusters support 2, 4 or 6 voting replicas.</Note>}
-          {spec.engine === 'mongodb' && <Note>MongoDB member resources and storage are fixed at creation. Recover into a new database to change capacity. Clusters support 2, 4 or 6 voting replicas. Removing replicas retains their volumes and the database's previous capacity reservation until the database is deleted.</Note>}
+          {spec.engine === 'mysql' && <Note>MySQL member resources and storage are fixed at creation. Recover into a new database to change per-member resources. Clusters support 2, 4 or 6 voting replicas.</Note>}
+          {spec.engine === 'mongodb' && <Note>MongoDB member resources and storage are fixed at creation. Recover into a new database to change per-member resources. Clusters support 2, 4 or 6 voting replicas. Removing replicas retains their volumes and the database's previous capacity reservation until the database is deleted.</Note>}
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
               Name
@@ -230,6 +236,7 @@ function DatabaseAllocationForm({
                   disabled={busy}
                   onChange={(e) => update({ replicas: Number(e.target.value) })}
                 />
+                {replicaOnly && database && <span className="field-help">Current: {database.spec.replicas} voting replicas. Choose a different count to review a change.</span>}
               </label>
             )}
             {spec.mode === 'cluster' && spec.engine === 'redis' && (
@@ -391,7 +398,8 @@ function DatabaseAllocationForm({
             <p>
               {project} / {environment} · {spec.name}
             </p>
-            <p>{databaseSummary(spec)}</p>
+            <p>{database ? 'Proposed: ' : ''}{databaseSummary(spec)}</p>
+            {replicaOnly && database && <p>Voting replicas change from {database.spec.replicas} to {spec.replicas}. Per-member CPU, memory and storage stay the same.</p>}
             <p>
               {spec.placement?.spread === 'zones'
                 ? 'One member per zone'
@@ -430,7 +438,7 @@ function DatabaseAllocationForm({
                   checked={confirmed}
                   onChange={(e) => setConfirmed(e.target.checked)}
                 />
-                I have reviewed the resources and this change.
+                {replicaOnly ? 'I have reviewed the replica change and its total resource allocation.' : 'I have reviewed the resources and this change.'}
               </label>
             )}
           </FormSection>
@@ -448,12 +456,12 @@ function DatabaseAllocationForm({
             type="submit"
             variant="primary"
             disabled={
-              busy ||
+              busy || unchangedReplicas ||
               expired ||
               Boolean(review && (!confirmed || review.plan?.blocked_reasons.length))
             }
           >
-            {busy ? 'Working…' : !review ? 'Review' : database ? 'Apply resize' : 'Create database'}
+            {busy ? 'Working…' : !review ? 'Review' : replicaOnly ? 'Apply replica change' : database ? 'Apply resize' : 'Create database'}
           </Button>
         </div>
       </form>
