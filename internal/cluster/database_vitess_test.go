@@ -185,15 +185,19 @@ func TestVitessNativeFixturePolicyIsScopedAndSchedulesEveryComponent(t *testing.
 	}
 
 	for name, mutate := range map[string]func(*database.Resource){
-		"wrong project": func(resource *database.Resource) { resource.Project = "other" },
-		"wrong environment": func(resource *database.Resource) { resource.Environment = "production" },
-		"unknown fixture": func(resource *database.Resource) { resource.Spec.Name = "vitess-development-other" },
-		"wrong version": func(resource *database.Resource) { resource.Spec.Version = "22" },
-		"wrong destination": func(resource *database.Resource) { resource.Spec.Vitess.BackupDestinationID = strings.Repeat("f", 32) },
+		"wrong project":              func(resource *database.Resource) { resource.Project = "other" },
+		"wrong environment":          func(resource *database.Resource) { resource.Environment = "production" },
+		"unknown fixture":            func(resource *database.Resource) { resource.Spec.Name = "vitess-development-other" },
+		"wrong version":              func(resource *database.Resource) { resource.Spec.Version = "22" },
+		"wrong destination":          func(resource *database.Resource) { resource.Spec.Vitess.BackupDestinationID = strings.Repeat("f", 32) },
 		"wrong destination revision": func(resource *database.Resource) { resource.Spec.Vitess.BackupDestinationRevision++ },
-		"partial topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames = resource.Spec.Placement.NodeNames[:2] },
+		"partial topology": func(resource *database.Resource) {
+			resource.Spec.Placement.NodeNames = resource.Spec.Placement.NodeNames[:2]
+		},
 		"mixed topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames[2] = "k3d-hakopod-dev-server-0" },
-		"duplicate topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames[2] = resource.Spec.Placement.NodeNames[0] },
+		"duplicate topology": func(resource *database.Resource) {
+			resource.Spec.Placement.NodeNames[2] = resource.Spec.Placement.NodeNames[0]
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			candidate := d

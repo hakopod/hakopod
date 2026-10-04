@@ -134,6 +134,8 @@ vtgate exposes the MySQL protocol on port 3306. The database target selects the
 tablet role: use `app@primary` for writes and primary reads, or `app@replica` for
 replica reads. These are explicit routes. They do not promise automatic SQL
 read/write splitting or read-after-write consistency on a replica.
+Both targets use the same application account. Selecting the replica target
+does not give that account read-only permissions.
 
 ```sh
 mysql --host=OBSERVED_HOST --port=3306 --user=app --password \
