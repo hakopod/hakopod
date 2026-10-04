@@ -196,7 +196,44 @@ func databasePodPolicyMatches(pod corev1.Pod, p *DatabasePolicy) bool {
 	if p.podRuntimeClass != "" {
 		runtimeMatches = pod.Spec.RuntimeClassName != nil && *pod.Spec.RuntimeClassName == p.podRuntimeClass
 	}
-	return slices.Contains(p.nodes(), pod.Spec.NodeName) && pod.Spec.NodeSelector["hakopod.com/pool"] == p.Pool && pod.Spec.NodeSelector[DatabaseDefaultRuntimeLabel] == p.RuntimeClass && runtimeMatches
+	return slices.Contains(p.nodes(), pod.Spec.NodeName) && databasePodPlacementMatches(pod, p) && runtimeMatches
+}
+
+func databasePodPlacementMatches(pod corev1.Pod, p *DatabasePolicy) bool {
+	const poolLabel = "hakopod.com/pool"
+	pool, hasPool := pod.Spec.NodeSelector[poolLabel]
+	runtime, hasRuntime := pod.Spec.NodeSelector[DatabaseDefaultRuntimeLabel]
+	if hasPool || hasRuntime {
+		return hasPool && hasRuntime && pool == p.Pool && runtime == p.RuntimeClass
+	}
+	required := pod.Spec.Affinity
+	if required == nil || required.NodeAffinity == nil || required.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+		return false
+	}
+	terms := required.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms
+	if len(terms) == 0 {
+		return false
+	}
+	for _, term := range terms {
+		if !databaseAffinityTermRequires(term, poolLabel, p.Pool) || !databaseAffinityTermRequires(term, DatabaseDefaultRuntimeLabel, p.RuntimeClass) {
+			return false
+		}
+	}
+	return true
+}
+
+func databaseAffinityTermRequires(term corev1.NodeSelectorTerm, key, value string) bool {
+	found := false
+	for _, requirement := range term.MatchExpressions {
+		if requirement.Key != key {
+			continue
+		}
+		if requirement.Operator != corev1.NodeSelectorOpIn || len(requirement.Values) != 1 || requirement.Values[0] != value {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // ValidateDatabasePlacement rejects unavailable hosted placement before creating

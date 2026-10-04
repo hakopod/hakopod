@@ -73,3 +73,48 @@ func TestDatabasePolicyRequiresVerifiedSandboxAndPinsControllers(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabasePodPolicyMatchesRequiredAffinity(t *testing.T) {
+	policy := &DatabasePolicy{NodeNames: []string{"worker-1", "worker-2", "worker-3"}, Pool: "vitess-acceptance", RuntimeClass: "runsc"}
+	requirement := func(key, value string) corev1.NodeSelectorRequirement {
+		return corev1.NodeSelectorRequirement{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}
+	}
+	term := func(node string) corev1.NodeSelectorTerm {
+		return corev1.NodeSelectorTerm{
+			MatchExpressions: []corev1.NodeSelectorRequirement{
+				requirement("hakopod.com/pool", "vitess-acceptance"),
+				requirement(DatabaseDefaultRuntimeLabel, "runsc"),
+				requirement(corev1.LabelArchStable, "amd64"),
+			},
+			MatchFields: []corev1.NodeSelectorRequirement{requirement("metadata.name", node)},
+		}
+	}
+	affinity := func(terms ...corev1.NodeSelectorTerm) *corev1.Affinity {
+		return &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: terms}}}
+	}
+	observed := corev1.Pod{Spec: corev1.PodSpec{NodeName: "worker-2", Affinity: affinity(term("worker-1"), term("worker-2"), term("worker-3"))}}
+
+	tests := []struct {
+		name string
+		pod  corev1.Pod
+		want bool
+	}{
+		{name: "observed required affinity", pod: observed, want: true},
+		{name: "exact selector", pod: corev1.Pod{Spec: corev1.PodSpec{NodeName: "worker-2", NodeSelector: map[string]string{"hakopod.com/pool": "vitess-acceptance", DatabaseDefaultRuntimeLabel: "runsc"}}}, want: true},
+		{name: "unauthorized node", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.NodeName = "worker-4"; return *pod }()},
+		{name: "preferred only", pod: corev1.Pod{Spec: corev1.PodSpec{NodeName: "worker-2", Affinity: &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{{Preference: term("worker-2")}}}}}}},
+		{name: "empty required terms", pod: corev1.Pod{Spec: corev1.PodSpec{NodeName: "worker-2", Affinity: affinity()}},
+		{name: "weakened or term", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[2].MatchExpressions = pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[2].MatchExpressions[1:]; return *pod }()},
+		{name: "wrong affinity pool", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[1].MatchExpressions[0].Values[0] = "other"; return *pod }()},
+		{name: "contradictory selector", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.NodeSelector = map[string]string{"hakopod.com/pool": "other", DatabaseDefaultRuntimeLabel: "runsc"}; return *pod }()},
+		{name: "partial selector", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.NodeSelector = map[string]string{"hakopod.com/pool": "vitess-acceptance"}; return *pod }()},
+		{name: "wrong explicit runtime", pod: func() corev1.Pod { pod := observed.DeepCopy(); pod.Spec.RuntimeClassName = ptr("runc"); return *pod }()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := databasePodPolicyMatches(tt.pod, policy); got != tt.want {
+				t.Fatalf("databasePodPolicyMatches() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
