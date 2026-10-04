@@ -25,6 +25,8 @@ python3 scripts/run-development-vitess-http-acceptance.py \
   --cache-root /srv/hakopod-backup-scratch/vitess-http-final-a48baa9-v1/cache \
   --cluster-receipt /srv/hakopod-vitess-v28/receipts/prepared-workers-v3.json \
   --cluster-receipt-sha256 4d4861b73b0ea917c4688cf66eb74a36fc679971a22ece2f9c7fca129efac420 \
+  --pool vitess-acceptance \
+  --storage-class local-path \
   --attempt 1
 ```
 
