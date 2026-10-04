@@ -167,6 +167,13 @@ restart, update and restore. Only the public key enters the compute
 configuration. Go binds the control's TLS paths to the managed compute
 certificate and enables the provider's TLS feature.
 
+The pinned compute control process requires a P-256 TLS key encoded as SEC1
+PEM. Hakopod converts PKCS#8 P-256 keys to that encoding while retaining the
+same key and certificate. This applies to supplied keys, managed issuance and
+renewal. A changed encoding creates a new immutable secret snapshot through
+the normal reconciliation path. Other Neon components keep their existing
+key encoding.
+
 Compute startup and serving readiness have separate checks. The control process
 can start before PostgreSQL has been configured. Its metrics endpoint checks
 that the process responds. The TLS sidecar also checks the authenticated status

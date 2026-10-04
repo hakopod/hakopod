@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -11,6 +13,40 @@ import (
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
 )
+
+// normalizeNeonComputeTLSKey preserves the supplied P-256 key while encoding
+// it in the SEC1 form required by the pinned Neon compute control binary.
+func normalizeNeonComputeTLSKey(data map[string][]byte) error {
+	encoded := data["tls.key"]
+	if len(encoded) == 0 {
+		return nil
+	}
+	block, rest := pem.Decode(encoded)
+	if block == nil || len(bytes.TrimSpace(rest)) != 0 {
+		return fmt.Errorf("Neon compute TLS private key is invalid")
+	}
+	if block.Type == "EC PRIVATE KEY" {
+		key, err := x509.ParseECPrivateKey(block.Bytes)
+		if err != nil || key.Curve != elliptic.P256() {
+			return fmt.Errorf("Neon compute TLS requires a P-256 private key")
+		}
+		return nil
+	}
+	if block.Type != "PRIVATE KEY" {
+		return fmt.Errorf("Neon compute TLS requires a P-256 private key")
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	key, ok := parsed.(*ecdsa.PrivateKey)
+	if err != nil || !ok || key.Curve != elliptic.P256() {
+		return fmt.Errorf("Neon compute TLS requires a P-256 private key")
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return fmt.Errorf("encode Neon compute TLS private key: %w", err)
+	}
+	data["tls.key"] = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
+	return nil
+}
 
 func validateNeonTLSSecretSnapshots(values map[string]map[string][]byte, spec managedplatform.Spec, platformID string, now time.Time) error {
 	if len(platformID) != 32 || spec.Neon == nil {
@@ -75,6 +111,12 @@ func validateNeonTLSSecretSnapshots(values map[string]map[string][]byte, spec ma
 		data, err := snapshot(identity.logical)
 		if err != nil {
 			return err
+		}
+		if identity.logical == "compute-auth" {
+			normalized := copySecretData(data)
+			if err = normalizeNeonComputeTLSKey(normalized); err != nil || !bytes.Equal(normalized["tls.key"], data["tls.key"]) {
+				return fmt.Errorf("Neon TLS identity compute-auth requires a SEC1 P-256 private key")
+			}
 		}
 		if err = validateNeonServerIdentity(data, [][]byte{data["ca.crt"]}, identity.hosts, now); err != nil {
 			return fmt.Errorf("Neon TLS identity %s is invalid: %w", identity.logical, err)
