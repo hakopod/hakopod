@@ -331,8 +331,15 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	query(source, "source_insert_initial", "INSERT INTO api_recovery VALUES (1, unhex('0080FF0D0A'))")
 
 	var job backup.Job
-	if status := client.request("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "clickhouse"}}, &job, "clickhouse-api-backup"); status != 202 {
-		t.Fatal("backup acceptance", status)
+	if status, code := client.requestCode("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "clickhouse"}}, &job, "clickhouse-api-backup"); status != 202 {
+		var databaseStatus, observedStatus string
+		var maintenanceActive bool
+		diagnostic, stop := context.WithTimeout(ctx, 3*time.Second)
+		defer stop()
+		if err := db.Pool.QueryRow(diagnostic, `SELECT status,COALESCE(observation->>'status',''),COALESCE(maintenance_lease_until>clock_timestamp(),false) FROM managed_databases WHERE id=$1`, source.ID).Scan(&databaseStatus, &observedStatus, &maintenanceActive); err != nil {
+			t.Fatal("backup acceptance", status, code, "state unavailable")
+		}
+		t.Fatalf("backup acceptance status=%d code=%s database=%s observation=%s maintenance_active=%t", status, code, databaseStatus, observedStatus, maintenanceActive)
 	}
 	for ctx.Err() == nil {
 		if err = server.Backups.RunOnce(ctx); err != nil {
