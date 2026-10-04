@@ -8,6 +8,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/database"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -227,6 +228,36 @@ func TestVitessControlRuntimeHasBoundedGoResources(t *testing.T) {
 		if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "192MiB" || len(values) != 2 {
 			t.Fatal("Vitess control Go runtime budget changed")
 		}
+	}
+}
+
+func TestVitessNamespaceOperatorHasBoundedGoResources(t *testing.T) {
+	operator := vitessOperatorObject(vitessTestDatabase(), "namespace-uid")
+	containers, found, err := unstructured.NestedSlice(operator.Object, "spec", "template", "spec", "containers")
+	if err != nil || !found || len(containers) != 1 {
+		t.Fatal("Vitess namespace operator container is missing", err)
+	}
+	environment := containers[0].(map[string]any)["env"].([]any)
+	values := map[string]string{}
+	for _, raw := range environment {
+		item := raw.(map[string]any)
+		if value, ok := item["value"].(string); ok {
+			values[item["name"].(string)] = value
+		}
+	}
+	if values["GOMAXPROCS"] != database.VitessControllerGOMAXPROCS || values["GOMEMLIMIT"] != database.VitessControllerGOMEMLIMIT {
+		t.Fatal("Vitess namespace operator Go runtime budget changed", values)
+	}
+}
+
+func TestVitessControllerRuntimeInspectionUsesPerProcessMemoryTarget(t *testing.T) {
+	operator := []corev1.EnvVar{{Name: "GOMAXPROCS", Value: "1"}, {Name: "GOMEMLIMIT", Value: "192MiB"}}
+	backup := []corev1.EnvVar{{Name: "GOMAXPROCS", Value: "1"}, {Name: "GOMEMLIMIT", Value: "384MiB"}}
+	if !vitessControllerGoRuntimeBounded(operator, database.VitessControllerGOMEMLIMIT) || !vitessControllerGoRuntimeBounded(backup, database.VitessBackupControllerGOMEMLIMIT) {
+		t.Fatal("Vitess controller runtime inspection rejected an approved budget")
+	}
+	if vitessControllerGoRuntimeBounded(operator, database.VitessBackupControllerGOMEMLIMIT) || vitessControllerGoRuntimeBounded(backup, database.VitessControllerGOMEMLIMIT) {
+		t.Fatal("Vitess controller runtime inspection accepted the wrong process budget")
 	}
 }
 

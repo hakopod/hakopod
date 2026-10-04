@@ -36,7 +36,10 @@ const (
 	VitessOperatorCPU                  = "100m"
 	VitessOperatorMemory               = "256Mi"
 	VitessBackupControllerCPU          = "100m"
-	VitessBackupControllerMemory       = "128Mi"
+	VitessBackupControllerMemory       = "512Mi"
+	VitessControllerGOMAXPROCS          = "1"
+	VitessControllerGOMEMLIMIT         = "192MiB"
+	VitessBackupControllerGOMEMLIMIT   = "384MiB"
 	// Two multipart buffers for a 1 TiB file can use 210 MiB. The backup
 	// process also needs room for compression and its ordinary Go heap.
 	VitessBackupMemory = "512Mi"

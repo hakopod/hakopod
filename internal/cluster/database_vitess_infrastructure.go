@@ -111,6 +111,9 @@ func (c *Client) observeVitessInfrastructure(ctx context.Context, d database.Res
 	if container.Image != vitessOperatorImage || container.Resources.Limits.Cpu().String() != database.VitessOperatorCPU || container.Resources.Limits.Memory().String() != database.VitessOperatorMemory {
 		return fmt.Errorf("Vitess namespace controller differs from its approved runtime")
 	}
+	if !vitessControllerGoRuntimeBounded(container.Env, database.VitessControllerGOMEMLIMIT) {
+		return fmt.Errorf("Vitess namespace controller Go runtime differs from its allocation")
+	}
 	operatorPods, err := c.kube.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: vitessComponentLabel + "=operator", Limit: 2, FieldSelector: activeDatabasePodFields})
 	if err != nil || operatorPods.Continue != "" || len(operatorPods.Items) != 1 {
 		return fmt.Errorf("Vitess namespace controller process is unavailable")
@@ -180,10 +183,30 @@ func (c *Client) observeVitessInfrastructure(ctx context.Context, d database.Res
 	if container.Image != vitessOperatorImage || container.Resources.Requests.Cpu().String() != database.VitessBackupControllerCPU || container.Resources.Limits.Cpu().String() != database.VitessBackupControllerCPU || container.Resources.Requests.Memory().String() != database.VitessBackupControllerMemory || container.Resources.Limits.Memory().String() != database.VitessBackupControllerMemory {
 		return fmt.Errorf("Vitess backup storage resources differ from their allocation")
 	}
+	if !vitessControllerGoRuntimeBounded(container.Env, database.VitessBackupControllerGOMEMLIMIT) {
+		return fmt.Errorf("Vitess backup storage Go runtime differs from its allocation")
+	}
 	for _, condition := range pod.Status.Conditions {
 		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 			return nil
 		}
 	}
 	return fmt.Errorf("Vitess backup storage controller is not ready")
+}
+
+func vitessControllerGoRuntimeBounded(environment []corev1.EnvVar, memoryLimit string) bool {
+	values := map[string]string{}
+	for _, variable := range environment {
+		if variable.Name != "GOMAXPROCS" && variable.Name != "GOMEMLIMIT" {
+			continue
+		}
+		if variable.ValueFrom != nil {
+			return false
+		}
+		if _, exists := values[variable.Name]; exists {
+			return false
+		}
+		values[variable.Name] = variable.Value
+	}
+	return values["GOMAXPROCS"] == database.VitessControllerGOMAXPROCS && values["GOMEMLIMIT"] == memoryLimit
 }
