@@ -117,6 +117,29 @@ func TestVitessFixtureNodesAcceptExactDedicatedTopology(t *testing.T) {
 	}
 }
 
+func TestVitessNativeFixturePolicySelectionPreservesLegacyTopology(t *testing.T) {
+	legacy := "k3d-hakopod-dev-server-0,k3d-hakopod-database-worker-0"
+	for _, nodes := range []string{"", legacy} {
+		selected, err := selectVitessNativeFixturePolicy(nodes)
+		if err != nil || selected {
+			t.Fatalf("legacy fixture selection %q enabled dedicated policy: selected=%v err=%v", nodes, selected, err)
+		}
+	}
+	selected, err := selectVitessNativeFixturePolicy(strings.Join(vitessDedicatedFixtureNodes, ","))
+	if err != nil || !selected {
+		t.Fatal("exact dedicated fixture selection did not enable its policy", err)
+	}
+	for _, nodes := range []string{
+		strings.Join(vitessDedicatedFixtureNodes[:2], ","),
+		vitessDedicatedFixtureNodes[0] + ",k3d-hakopod-dev-server-0",
+		vitessDedicatedFixtureNodes[0] + "," + vitessDedicatedFixtureNodes[0] + "," + vitessDedicatedFixtureNodes[2],
+	} {
+		if selected, err := selectVitessNativeFixturePolicy(nodes); err == nil || selected {
+			t.Fatalf("invalid dedicated selection %q was not rejected", nodes)
+		}
+	}
+}
+
 func TestVitessNativeFixturePolicyIsScopedAndSchedulesEveryComponent(t *testing.T) {
 	destination := backup.Destination{ID: strings.Repeat("d", 32), Revision: 7}
 	resolve := vitessNativeFixtureDatabasePolicy(map[string]vitessLiveStorage{
@@ -165,7 +188,9 @@ func TestVitessNativeFixturePolicyIsScopedAndSchedulesEveryComponent(t *testing.
 		"wrong project": func(resource *database.Resource) { resource.Project = "other" },
 		"wrong environment": func(resource *database.Resource) { resource.Environment = "production" },
 		"unknown fixture": func(resource *database.Resource) { resource.Spec.Name = "vitess-development-other" },
+		"wrong version": func(resource *database.Resource) { resource.Spec.Version = "22" },
 		"wrong destination": func(resource *database.Resource) { resource.Spec.Vitess.BackupDestinationID = strings.Repeat("f", 32) },
+		"wrong destination revision": func(resource *database.Resource) { resource.Spec.Vitess.BackupDestinationRevision++ },
 		"partial topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames = resource.Spec.Placement.NodeNames[:2] },
 		"mixed topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames[2] = "k3d-hakopod-dev-server-0" },
 		"duplicate topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames[2] = resource.Spec.Placement.NodeNames[0] },

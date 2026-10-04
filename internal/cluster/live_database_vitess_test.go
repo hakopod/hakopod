@@ -54,7 +54,7 @@ func vitessNativeFixtureDatabasePolicy(fixtures map[string]vitessLiveStorage) Da
 		approved["vitess-development-"+name] = fixture.Destination
 	}
 	return func(_ context.Context, project, environment string, spec database.Spec) (DatabasePolicy, error) {
-		if project != "demo" || environment != "development" || spec.Engine != "vitess" || spec.Vitess == nil || !validVitessDedicatedFixtureNodes(spec.Placement.NodeNames) {
+		if project != "demo" || environment != "development" || spec.Engine != "vitess" || spec.Version != "23" || spec.Vitess == nil || !validVitessDedicatedFixtureNodes(spec.Placement.NodeNames) {
 			return DatabasePolicy{}, fmt.Errorf("Vitess native fixture placement is not approved")
 		}
 		destination, ok := approved[spec.Name]
@@ -63,6 +63,24 @@ func vitessNativeFixtureDatabasePolicy(fixtures map[string]vitessLiveStorage) Da
 		}
 		return DatabasePolicy{NodeNames: append([]string(nil), vitessDedicatedFixtureNodes...), Pool: "vitess-acceptance", RuntimeClass: "runsc", StorageClass: "local-path"}, nil
 	}
+}
+
+func selectVitessNativeFixturePolicy(nodes string) (bool, error) {
+	if nodes == "" {
+		return false, nil
+	}
+	selected := strings.Split(nodes, ",")
+	if validVitessDedicatedFixtureNodes(selected) {
+		return true, nil
+	}
+	for _, candidate := range selected {
+		for _, dedicated := range vitessDedicatedFixtureNodes {
+			if candidate == dedicated {
+				return false, fmt.Errorf("dedicated Vitess fixture nodes require the exact approved triple")
+			}
+		}
+	}
+	return false, nil
 }
 
 func newVitessLiveClient(t *testing.T, duration time.Duration) (*vitessLiveFixtures, context.Context) {
@@ -92,7 +110,11 @@ func newVitessLiveClient(t *testing.T, duration time.Duration) (*vitessLiveFixtu
 	if decoder.Decode(&trailing) != io.EOF {
 		t.Fatal("Vitess fixture file contains trailing data")
 	}
-	if vitessNativeAcceptance {
+	dedicatedPolicy, err := selectVitessNativeFixturePolicy(os.Getenv("HAKOPOD_DATABASE_FIXTURE_NODES"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vitessNativeAcceptance && dedicatedPolicy {
 		c.options.DatabasePolicy = vitessNativeFixtureDatabasePolicy(config.Fixtures)
 	}
 	byID := map[string]vitessLiveStorage{}
