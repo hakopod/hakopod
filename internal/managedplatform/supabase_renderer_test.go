@@ -422,6 +422,9 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 	if bootstrap == nil || bootstrap.Data["99-z-hakopod-realtime-owner.sql"] != supabaseRealtimeOwnerSQL {
 		t.Fatal("database bootstrap does not keep Hakopod's post-migration ownership step separate from upstream assets")
 	}
+	if bootstrap.Data["99-y-hakopod-realtime-schema.sql"] != "CREATE SCHEMA IF NOT EXISTS _realtime;\n" {
+		t.Fatal("database bootstrap does not create the Realtime schema before the role bootstrap")
+	}
 	if !strings.Contains(bootstrap.Data["99-z-hakopod-realtime-owner.sql"], "GRANT SET ON PARAMETER log_min_messages TO supabase_realtime_admin;") {
 		t.Fatal("Realtime owner cannot apply its pinned list_changes migration")
 	}
@@ -439,15 +442,17 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 		t.Fatal("Supavisor metadata role does not own its isolated schema")
 	}
 	want := map[string]bool{
-		"/docker-entrypoint-initdb.d/migrations/97-_supabase.sql":                  false,
-		"/docker-entrypoint-initdb.d/migrations/99-logs.sql":                       false,
-		"/docker-entrypoint-initdb.d/migrations/99-pooler.sql":                     false,
-		"/docker-entrypoint-initdb.d/migrations/99-realtime.sql":                   false,
-		"/docker-entrypoint-initdb.d/migrations/99-z-hakopod-realtime-owner.sql":   false,
-		"/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql":                 false,
-		"/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql":                      false,
-		"/docker-entrypoint-initdb.d/init-scripts/99-z-hakopod-role-passwords.sql": false,
+		"/docker-entrypoint-initdb.d/migrations/97-_supabase.sql":                   false,
+		"/docker-entrypoint-initdb.d/migrations/99-logs.sql":                        false,
+		"/docker-entrypoint-initdb.d/migrations/99-pooler.sql":                      false,
+		"/docker-entrypoint-initdb.d/migrations/99-realtime.sql":                    false,
+		"/docker-entrypoint-initdb.d/migrations/99-z-hakopod-realtime-owner.sql":    false,
+		"/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql":                  false,
+		"/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql":                       false,
+		"/docker-entrypoint-initdb.d/init-scripts/99-y-hakopod-realtime-schema.sql": false,
+		"/docker-entrypoint-initdb.d/init-scripts/99-z-hakopod-role-passwords.sql":  false,
 	}
+	var schemaPath, rolePath string
 	for _, mount := range container.VolumeMounts {
 		if mount.MountPath == "/docker-entrypoint-initdb.d" {
 			t.Fatal("database assets hide the image bootstrap launcher")
@@ -458,6 +463,15 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 			}
 			want[mount.MountPath] = true
 		}
+		if mount.SubPath == "99-y-hakopod-realtime-schema.sql" {
+			schemaPath = mount.MountPath
+		}
+		if mount.SubPath == "99-z-hakopod-role-passwords.sql" {
+			rolePath = mount.MountPath
+		}
+	}
+	if !strings.HasPrefix(schemaPath, "/docker-entrypoint-initdb.d/init-scripts/") || !strings.HasPrefix(rolePath, "/docker-entrypoint-initdb.d/init-scripts/") || schemaPath >= rolePath {
+		t.Fatal("Realtime schema prerequisite must run in the same init phase before the role bootstrap")
 	}
 	for path, found := range want {
 		if !found {
