@@ -265,7 +265,7 @@ function DatabaseAllocationForm({
                       variant={selected && !showCustomResources ? 'primary' : 'outline'}
                       aria-pressed={selected && !showCustomResources}
                       disabled={busy || votingDatabase(spec.engine)}
-                      className="h-auto min-h-11 min-w-0 justify-start! whitespace-normal! px-3 py-2 text-left normal-case! font-sans!"
+                      className="h-auto! min-h-11 min-w-0 justify-start! whitespace-normal! px-3 py-2 text-left normal-case! font-sans!"
                       onClick={() => {
                         setShowCustomResources(false)
                         update({ cpu: preset.cpu, memory: preset.memory })
