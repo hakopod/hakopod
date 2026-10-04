@@ -13,7 +13,7 @@ export const databaseEngines = [
   { id: 'redis', name: 'Redis', category: 'Key-value', description: 'In-memory data, caching, queues and streams.', enabled: true },
   { id: 'mysql', name: 'MySQL', category: 'Relational', description: 'SQL transactions with InnoDB Cluster and explicit read/write routes.', enabled: true },
   { id: 'mongodb', name: 'MongoDB', category: 'Document', description: 'Flexible documents and native replica sets.', enabled: true },
-  { id: 'clickhouse', name: 'ClickHouse', category: 'Analytics', description: 'Creation is unavailable pending native qualification.', enabled: false },
+  { id: 'clickhouse', name: 'ClickHouse', category: 'Analytics', description: 'Column-oriented storage for analytics and replicated shards.', enabled: true },
   { id: 'oracle', name: 'Oracle Database', category: 'Relational', description: 'Creation is unavailable pending native qualification.', enabled: false },
   { id: 'vitess', name: 'Vitess', category: 'Distributed MySQL', description: 'Sharded MySQL managed on your infrastructure.', enabled: false },
 ] as const

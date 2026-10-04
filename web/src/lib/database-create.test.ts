@@ -92,11 +92,11 @@ test('pooler capacity is included in creation without inflating member monitorin
   assert.match(databaseCreateIssue({ ...spec, pooling: { ...spec.pooling, default_pool_size: 21 } }, 3) || '', /server connections/)
 })
 
-test('ClickHouse remains held while capacity accounts for Keepers and backup staging', () => {
+test('ClickHouse creation accounts for Keepers and backup staging', () => {
   const base = databaseEngineDefaults({ ...initialDatabaseSpec, name: 'events' }, 'clickhouse')
-  assert.match(databaseCreateIssue(base, 0) || '', /available/)
-  for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(base, step), undefined)
+  for (const step of [0, 1, 2, 3]) assert.equal(databaseCreateIssue(base, step), undefined)
   const spec = { ...base, mode: 'cluster' as const, shards: 2, replicas: 2 }
+  for (const step of [0, 1, 2, 3]) assert.equal(databaseCreateIssue(spec, step), undefined)
   assert.equal(databaseRequestedCapacity(spec)?.cpu, 3.75)
   assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 13056)
   assert.equal(databaseStorageGiB(spec), 63)
