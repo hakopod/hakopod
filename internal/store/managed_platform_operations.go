@@ -688,11 +688,15 @@ func (s *Store) platformResourceIntents(ctx context.Context, op ManagedPlatformO
 // CancelPlatformResourceIntent releases a still-pending reservation only.
 // Callers must first prove that the external object does not exist.
 func (s *Store) CancelPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent) error {
-	return retryManagedPlatformWrite(ctx, func() error { return s.cancelPlatformResourceIntent(ctx, op, intent) })
+	return retryManagedPlatformWrite(ctx, func() error { return s.cancelPlatformResourceIntent(ctx, op, intent, false) })
 }
 
-func (s *Store) cancelPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent) error {
-	if !managedPlatformID.MatchString(intent.ID) || intent.PlatformID != op.PlatformID || intent.PlatformRevision != op.Revision && intent.PlatformRevision != op.Revision-1 || !managedPlatformComponent.MatchString(intent.Component) || len(intent.ExternalKey) < 1 || len(intent.ExternalKey) > 255 || intent.OwnerOperationID == "" {
+func (s *Store) cancelPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent, olderNeonTimeline bool) error {
+	revisionAllowed := intent.PlatformRevision == op.Revision || intent.PlatformRevision == op.Revision-1
+	if olderNeonTimeline {
+		revisionAllowed = op.Kind == "delete" && op.Spec.Kind == "neon" && !op.Maintenance && intent.Component == "timeline" && intent.Kind == "neon_timeline" && intent.PlatformRevision >= 1 && intent.PlatformRevision < op.Revision
+	}
+	if !managedPlatformID.MatchString(intent.ID) || intent.PlatformID != op.PlatformID || !revisionAllowed || !managedPlatformComponent.MatchString(intent.Component) || len(intent.ExternalKey) < 1 || len(intent.ExternalKey) > 255 || intent.OwnerOperationID == "" {
 		return ErrInput
 	}
 	if intent.Kind != "neon_tenant" && intent.Kind != "neon_timeline" && intent.Kind != "runtime_component" {

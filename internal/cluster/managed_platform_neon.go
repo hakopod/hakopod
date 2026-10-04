@@ -90,11 +90,38 @@ func (a neonLifecycleAdapter) Intents(ctx context.Context, revision int64) ([]ma
 	}
 	return out, nil
 }
+func (a neonLifecycleAdapter) NeonTimelineDeletionIntents(ctx context.Context, tenantID, timelineID, parentToken string) ([]managedplatform.DurableResourceIntent, error) {
+	state, ok := a.state.(interface {
+		NeonTimelineDeletionIntents(context.Context, store.ManagedPlatformOperation, string, string, string) ([]store.PlatformResourceIntent, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("Neon timeline deletion requires durable original intent lookup")
+	}
+	values, err := state.NeonTimelineDeletionIntents(ctx, a.op, tenantID, timelineID, parentToken)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]managedplatform.DurableResourceIntent, 0, len(values))
+	for _, v := range values {
+		out = append(out, managedplatform.DurableResourceIntent{ID: v.ID, PlatformID: v.PlatformID, PlatformRevision: v.PlatformRevision, Component: v.Component, Kind: v.Kind, ExternalKey: v.ExternalKey, OwnerOperationID: v.OwnerOperationID, Confirmed: v.ConfirmedAt != nil})
+	}
+	return out, nil
+}
 func (a neonLifecycleAdapter) Confirm(ctx context.Context, i managedplatform.DurableResourceIntent, c managedplatform.DurableResourceClaim) error {
 	return a.state.ConfirmPlatformResourceIntent(ctx, a.op, store.PlatformResourceIntent{ID: i.ID, PlatformID: i.PlatformID, PlatformRevision: i.PlatformRevision, Component: i.Component, Kind: i.Kind, ExternalKey: i.ExternalKey, OwnerOperationID: i.OwnerOperationID}, store.PlatformResourceClaim{PlatformID: c.PlatformID, PlatformRevision: c.PlatformRevision, Component: c.Component, Kind: c.Kind, ResourceID: c.ResourceID, ImmutableGeneration: c.ImmutableGeneration, OwnerOperationID: c.OwnerOperationID})
 }
 func (a neonLifecycleAdapter) Cancel(ctx context.Context, i managedplatform.DurableResourceIntent) error {
-	return a.state.CancelPlatformResourceIntent(ctx, a.op, store.PlatformResourceIntent{ID: i.ID, PlatformID: i.PlatformID, PlatformRevision: i.PlatformRevision, Component: i.Component, Kind: i.Kind, ExternalKey: i.ExternalKey, OwnerOperationID: i.OwnerOperationID})
+	intent := store.PlatformResourceIntent{ID: i.ID, PlatformID: i.PlatformID, PlatformRevision: i.PlatformRevision, Component: i.Component, Kind: i.Kind, ExternalKey: i.ExternalKey, OwnerOperationID: i.OwnerOperationID}
+	if a.op.Kind == "delete" && i.Component == "timeline" && i.Kind == "neon_timeline" && i.PlatformRevision < a.op.Revision-1 {
+		state, ok := a.state.(interface {
+			CancelNeonTimelineDeletionIntent(context.Context, store.ManagedPlatformOperation, store.PlatformResourceIntent) error
+		})
+		if !ok {
+			return fmt.Errorf("Neon timeline deletion requires durable original intent cancellation")
+		}
+		return state.CancelNeonTimelineDeletionIntent(ctx, a.op, intent)
+	}
+	return a.state.CancelPlatformResourceIntent(ctx, a.op, intent)
 }
 func (a neonLifecycleAdapter) Claim(ctx context.Context, c managedplatform.DurableResourceClaim) error {
 	return a.state.ClaimPlatformResource(ctx, a.op, store.PlatformResourceClaim{PlatformID: c.PlatformID, PlatformRevision: c.PlatformRevision, Component: c.Component, Kind: c.Kind, ResourceID: c.ResourceID, ImmutableGeneration: c.ImmutableGeneration, OwnerOperationID: c.OwnerOperationID})
