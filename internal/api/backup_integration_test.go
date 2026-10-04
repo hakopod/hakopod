@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,44 @@ type backupRequestClient struct {
 	token  string
 }
 
+func TestBackupRequestClientReturnsOnlyBoundedProblemCode(t *testing.T) {
+	t.Run("successful_empty_response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+		status, code := (backupRequestClient{t: t, server: server}).requestCode("POST", "/backups", nil, nil, "")
+		if status != http.StatusNoContent || code != "" {
+			t.Fatal("successful empty response was classified as a problem")
+		}
+	})
+	for _, test := range []struct {
+		name, body, want string
+	}{
+		{"known", `{"error":{"code":"backup_target_unavailable","message":"private detail"}}`, "backup_target_unavailable"},
+		{"invalid", `{"error":{"code":"private detail"}}`, "unavailable"},
+		{"malformed", `{`, "unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = io.WriteString(w, test.body)
+			}))
+			defer server.Close()
+			status, code := (backupRequestClient{t: t, server: server}).requestCode("POST", "/backups", nil, nil, "")
+			if status != http.StatusConflict || code != test.want {
+				t.Fatal("problem code classification differs")
+			}
+		})
+	}
+}
+
 func (c backupRequestClient) request(method, path string, input, output any, idem string) int {
+	status, _ := c.requestCode(method, path, input, output, idem)
+	return status
+}
+
+func (c backupRequestClient) requestCode(method, path string, input, output any, idem string) (int, string) {
 	c.t.Helper()
 	var body io.Reader
 	if input != nil {
@@ -44,12 +82,23 @@ func (c backupRequestClient) request(method, path string, input, output any, ide
 		c.t.Fatal(err)
 	}
 	defer response.Body.Close()
-	if output != nil && response.StatusCode < 400 {
-		if err = json.NewDecoder(io.LimitReader(response.Body, 256<<10)).Decode(output); err != nil {
-			c.t.Fatal("decode backup API response", err)
+	if response.StatusCode < 400 {
+		if output != nil {
+			if err = json.NewDecoder(io.LimitReader(response.Body, 256<<10)).Decode(output); err != nil {
+				c.t.Fatal("decode backup API response", err)
+			}
 		}
+		return response.StatusCode, ""
 	}
-	return response.StatusCode
+	var failure struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&failure); err != nil || !regexp.MustCompile(`^[a-z_]{1,64}$`).MatchString(failure.Error.Code) {
+		return response.StatusCode, "unavailable"
+	}
+	return response.StatusCode, failure.Error.Code
 }
 
 type transactionBackupRuntime struct{}
