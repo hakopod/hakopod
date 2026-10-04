@@ -145,8 +145,8 @@ func (c *Client) prepareMySQLSecurity(ctx context.Context, d database.Resource, 
 }
 
 func mysqlPrimary(object *unstructured.Unstructured) string {
-	// The operator status is only used to locate a candidate. Native replication
-	// queries must independently verify its role before reporting readiness.
+	// Account bootstrap requires the operator's full ONLINE state. Read-only
+	// health observation separately handles ONLINE_PARTIAL after scale-down.
 	value, _, _ := unstructured.NestedString(object.Object, "status", "cluster", "status")
 	if value != "ONLINE" {
 		return ""

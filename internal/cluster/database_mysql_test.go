@@ -115,13 +115,30 @@ func TestMySQLHealthRejectsUnknownMembersAndUnsafeTransport(t *testing.T) {
 	if primary, role, err := verifyMySQLGroupView(raw, d, members[0], members); err != nil || primary != "database-0" || role != "primary" {
 		t.Fatal("valid MySQL view rejected", err)
 	}
-	for _, change := range []func(map[string]any){func(v map[string]any) { v["group_tls"] = "REQUIRED" }, func(v map[string]any) { v["secure"] = 0 }, func(v map[string]any) { v["read_only"] = 1 }, func(v map[string]any) { v["uuid"] = "outside" }, func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["state"] = "RECOVERING" }, func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["role"] = "PRIMARY" }, func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["host"] = "outside.example" }} {
-		var changed map[string]any
-		_ = json.Unmarshal(raw, &changed)
-		change(changed)
-		invalid, _ := json.Marshal(changed)
-		if _, _, err := verifyMySQLGroupView(invalid, d, members[0], members); err == nil {
-			t.Fatal("unsafe MySQL replication view accepted")
-		}
+	for _, tc := range []struct {
+		name   string
+		change func(map[string]any)
+	}{
+		{"unverified group TLS", func(v map[string]any) { v["group_tls"] = "REQUIRED" }},
+		{"insecure client transport", func(v map[string]any) { v["secure"] = 0 }},
+		{"incorrect local role", func(v map[string]any) { v["read_only"] = 1 }},
+		{"foreign local UUID", func(v map[string]any) { v["uuid"] = "outside" }},
+		{"recovering member", func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["state"] = "RECOVERING" }},
+		{"offline member", func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["state"] = "OFFLINE" }},
+		{"multiple primaries", func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["role"] = "PRIMARY" }},
+		{"foreign hostname", func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["host"] = "outside.example" }},
+		{"missing member", func(v map[string]any) { v["members"] = v["members"].([]any)[:2] }},
+		{"extra member", func(v map[string]any) { v["members"] = append(v["members"].([]any), v["members"].([]any)[0]) }},
+		{"duplicate UUID", func(v map[string]any) { v["members"].([]any)[1].(map[string]any)["id"] = "id-0" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var changed map[string]any
+			_ = json.Unmarshal(raw, &changed)
+			tc.change(changed)
+			invalid, _ := json.Marshal(changed)
+			if _, _, err := verifyMySQLGroupView(invalid, d, members[0], members); err == nil {
+				t.Fatal("unsafe MySQL replication view accepted")
+			}
+		})
 	}
 }
