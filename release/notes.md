@@ -8,7 +8,7 @@ Hakopod 0.1.0-alpha.48 adds Mathesar and updates Xem with independent choices fo
 
 The catalog contains 78 entries: 43 deployment presets and 35 migration guides. All preset images are pinned by digest. Migration guides remain unavailable through the deployment API; this release does not promote unqualified managed database engines.
 
-The template guides record the precise validation scope. Mathesar has real development-cluster acceptance coverage. Xem's upstream regressions and earlier login/form/upload checks do not establish arbitrary external-provider connectivity or real email delivery; the final bundled-MinIO cluster matrix was interrupted by development disk pressure.
+The template guides record the precise validation scope. Mathesar passed real development-cluster acceptance on native AMD64 and ARM64, including login, uploads, restart persistence, existing-database reattachment and PostgreSQL TLS checks. Xem's upstream regressions and earlier login/form/upload checks do not establish arbitrary external-provider connectivity or real email delivery; the final bundled-MinIO cluster matrix was interrupted by development disk pressure.
 
 Database and platform pages now share navigation. The source includes guided platform configuration, certificate inspection and recovery work, but Neon, Supabase and Vitess remain disabled until their full native qualification passes. MySQL, ClickHouse and Oracle Database also remain unavailable. This release does not enable additional public database endpoints.
 
