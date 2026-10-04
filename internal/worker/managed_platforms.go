@@ -112,6 +112,7 @@ var managedPlatformSafeCategories = map[string]struct{}{
 	"supabase_database_tls_validation": {}, "supabase_database_url_validation": {},
 	"supabase_gateway_validation": {}, "supabase_snapshot_mismatch": {},
 	"supabase_snapshot_missing": {}, "supabase_namespace": {},
+	"supabase_runtime_secret_validation": {},
 	"supabase_observe": {}, "supabase_qualification": {}, "neon_qualification": {}, "supabase_render": {}, "unsupported_kind": {},
 	"supabase_rotate_database_credentials": {},
 	"platform_identity":                    {}, "platform_tls_observe": {},

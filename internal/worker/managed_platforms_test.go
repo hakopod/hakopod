@@ -27,6 +27,7 @@ func TestManagedPlatformErrorObservation(t *testing.T) {
 		{"PostgreSQL serialization", &pgconn.PgError{Code: "40001", Message: "secret material"}, "postgres_serialization"},
 		{"safe stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_database_tls_validation", Err: errors.New("secret material")}, "supabase_database_tls_validation"},
 		{"safe apply stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_apply_statefulset", Err: errors.New("password=must-not-escape")}, "supabase_apply_statefulset"},
+		{"safe runtime secret validation stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_runtime_secret_validation", Err: errors.New("password=must-not-escape")}, "supabase_runtime_secret_validation"},
 		{"safe credential rotation stage", &cluster.ManagedPlatformRuntimeError{Category: "supabase_rotate_database_credentials", Err: errors.New("password=must-not-escape")}, "supabase_rotate_database_credentials"},
 		{"safe Neon provider absence stage", &cluster.ManagedPlatformRuntimeError{Category: "neon_provider_state", Err: errors.New("password=must-not-escape")}, "neon_provider_state"},
 		{"safe Neon TLS preparation stage", &cluster.ManagedPlatformRuntimeError{Category: "neon_tls_prepare", Err: errors.New("password=must-not-escape")}, "neon_tls_prepare"},
