@@ -37,7 +37,7 @@ class ControllerPlanTests(unittest.TestCase):
 
     def release_bundle(self,root,vitess=False,vitess_objects=None):
         files={}
-        engines=['postgresql','redis','mongodb']+(['vitess'] if vitess else [])
+        engines=['postgresql','redis','mysql','mongodb']+(['vitess'] if vitess else [])
         for engine in engines:
             data=json.dumps({'apiVersion':'v1','kind':'List','items':(vitess_objects or []) if engine=='vitess' else []}).encode()
             (root/(engine+'.json')).write_bytes(data)
@@ -65,7 +65,7 @@ class ControllerPlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             original=self.release_bundle(root)
-            controllers.load_bundle(root,['postgresql','redis','mongodb'])
+            controllers.load_bundle(root,['postgresql','redis','mysql','mongodb'])
             for changed in ({'managed_runtimes':{}}, {'managed_runtimes':{'vitess':0,'supabase':False,'neon':False}},
                             {'managed_runtimes':{'vitess':False,'supabase':False,'neon':False,'extra':False}},
                             {'source_revision':'HEAD'}, {'source_revision':None}):
@@ -73,6 +73,11 @@ class ControllerPlanTests(unittest.TestCase):
                 with self.subTest(changed=changed),self.assertRaisesRegex(ValueError,'availability and source revision'):
                     controllers.load_bundle(root,['postgresql'])
             (root/'manifest.json').write_text(json.dumps(original))
+            (root/'mysql.json').unlink()
+            with self.assertRaisesRegex(ValueError,'files differ'):
+                controllers.load_bundle(root,['postgresql'])
+            mysql=json.dumps({'apiVersion':'v1','kind':'List','items':[]}).encode()
+            (root/'mysql.json').write_bytes(mysql)
             (root/'vitess.json').write_text('{}')
             with self.assertRaisesRegex(ValueError,'files differ'):
                 controllers.load_bundle(root,['postgresql'])
@@ -101,7 +106,7 @@ class ControllerPlanTests(unittest.TestCase):
             bundle=root/'bundle';bundle.mkdir()
             self.release_bundle(bundle)
             shutil.copyfile(Path(controllers.__file__),root/'database_controllers.py')
-            command=[sys.executable,'-B','-c',"from pathlib import Path; import database_controllers; database_controllers.load_bundle(Path('bundle'), ['postgresql', 'redis', 'mongodb'])"]
+            command=[sys.executable,'-B','-c',"from pathlib import Path; import database_controllers; database_controllers.load_bundle(Path('bundle'), ['postgresql', 'redis', 'mysql', 'mongodb'])"]
             env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=str(root))
             subprocess.run(command,cwd=root,env=env,check=True,capture_output=True,timeout=15)
 

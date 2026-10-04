@@ -23,7 +23,7 @@ IMAGE = re.compile(r'^[^\s]+:[^/@:]+@sha256:[0-9a-f]{64}$')
 REDIS_CONTROLLER_IMAGE = 'ghcr.io/hakopod/managed-redis-operator:candidate-36996745177-1@sha256:87a426b087355e41247210d176d82812a5c8c462cc2856789513dd00a37ab32a'
 HERE = Path(__file__).resolve().parent
 NAMESPACES = {'postgresql': 'cnpg-system', 'redis': 'redis-operator', 'mysql': 'mysql-operator', 'mongodb': 'mongodb-system', 'clickhouse': 'clickhouse-operator'}
-RELEASE_ENGINES = ('postgresql', 'redis', 'mongodb')
+RELEASE_ENGINES = ('postgresql', 'redis', 'mysql', 'mongodb')
 
 
 def fetch(url, expected, path, limit=8 * 1024 * 1024):
@@ -91,10 +91,17 @@ def render(engine, pin, root, redis_image, helm):
                     container['image']=pin['image']
                     container['resources']={'requests':{'cpu':'100m','memory':'256Mi'},'limits':{'cpu':'500m','memory':'512Mi'}}
             if engine=='mysql':
+                if len(pod.get('containers',[]))!=1 or pod.get('initContainers'):
+                    raise ValueError('MySQL controller must contain exactly one operator container')
                 container=pod['containers'][0]
+                if container.get('name')!='mysql-operator':
+                    raise ValueError('MySQL controller container identity changed')
                 container['image']=container['image'].split('@')[0]+'@sha256:'+pin['image_sha256']
                 container['resources']={'requests':{'cpu':'100m','memory':'256Mi'},'limits':{'cpu':'500m','memory':'512Mi'}}
                 container['readinessProbe']['timeoutSeconds']=5
+                env=[item for item in container.get('env',[]) if item.get('name') not in ('MYSQL_OPERATOR_DEBUG','MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS')]
+                env.extend([{'name':'MYSQL_OPERATOR_DEBUG','value':'0'},{'name':'MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS','value':'never'}])
+                container['env']=env
             if engine=='clickhouse':
                 annotations=obj['spec']['template']['metadata'].setdefault('annotations',{})
                 annotations.update({'hakopod.io/clickhouse-security':'strict-tls-v1','hakopod.io/clickhouse-watch':'database-namespaces-v1','hakopod.io/clickhouse-reconcile':'two-databases-v1'})
