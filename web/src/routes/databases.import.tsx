@@ -308,7 +308,7 @@ function ImportPage({
                 <Input
                   required
                   value={name}
-                  pattern="[a-z][a-z0-9-]{0,62}"
+                  pattern="[a-z][a-z0-9\-]{0,62}"
                   maxLength={63}
                   onChange={(e) => {
                     setName(e.target.value)

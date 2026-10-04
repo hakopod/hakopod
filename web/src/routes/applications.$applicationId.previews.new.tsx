@@ -151,7 +151,7 @@ export function PreviewForm({ application }: { application: Application }) {
                 Name
                 <Input
                   required
-                  pattern="[a-z][a-z0-9-]{0,31}"
+                  pattern="[a-z][a-z0-9\-]{0,31}"
                   maxLength={32}
                   value={name}
                   disabled={busy || review}

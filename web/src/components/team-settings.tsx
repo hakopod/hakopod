@@ -460,7 +460,7 @@ export default function TeamSettings() {
                 onChange={(event) => setUsername(event.target.value.toLowerCase())}
                 minLength={2}
                 maxLength={30}
-                pattern="[a-z][a-z0-9_-]{1,29}"
+                pattern="[a-z][a-z0-9_\-]{1,29}"
                 required
                 autoComplete="off"
               />

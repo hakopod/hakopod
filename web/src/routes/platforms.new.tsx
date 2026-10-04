@@ -434,7 +434,7 @@ export function PlatformForm({
               <Input
                 required
                 maxLength={40}
-                pattern="[a-z][a-z0-9-]*"
+                pattern="[a-z][a-z0-9\-]*"
                 autoComplete="off"
                 value={draft.name}
                 disabled={busy || Boolean(initial)}

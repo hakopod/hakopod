@@ -165,7 +165,7 @@ function DatabaseAllocationForm({
                 value={spec.name}
                 disabled={Boolean(database) || busy}
                 maxLength={40}
-                pattern="[a-z][a-z0-9-]*"
+                pattern="[a-z][a-z0-9\-]*"
                 onChange={(e) => update({ name: e.target.value })}
               />
             </label>
