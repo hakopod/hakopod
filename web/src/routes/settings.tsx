@@ -94,6 +94,11 @@ function Administration() {
     { id: 'appearance', label: 'Appearance', group: 'Personal' },
     { id: 'teams', label: 'Teams & access', group: 'Workspace' },
     { id: 'license', label: 'License & features', group: 'Workspace' },
+    {
+      id: 'integrations',
+      label: 'Integrations',
+      group: dashboardEdition.cloud ? 'Workspace' : 'Installation',
+    },
     ...(scope.identity.can_manage_keys && !scope.identity.admin
       ? [{ id: 'keys', label: 'API keys', group: 'Workspace' }]
       : []),
@@ -134,7 +139,13 @@ function Administration() {
       <SettingsLayout
         sections={visibleSections}
         active={tab}
-        onSectionChange={(next) => void navigate({ search: { tab: next } })}
+        onSectionChange={(next) => {
+          if (next === 'integrations') {
+            void navigate({ to: '/settings/integrations' })
+            return
+          }
+          void navigate({ search: { tab: next } })
+        }}
       >
         <Suspense fallback={<Loading />}>
           {tab === 'account' && <AccountSettings />}

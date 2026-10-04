@@ -3584,6 +3584,118 @@ export interface paths {
         patch: operations["setAppearance"];
         trace?: never;
     };
+    "/integrations/slack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSlackIntegration"];
+        put?: never;
+        post?: never;
+        delete: operations["disconnectSlack"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/slack/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["connectSlack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/slack/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSlackChannels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/slack/channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setSlackChannel"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/slack/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["setSlackEvents"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/slack/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listSlackDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/slack/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["testSlack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/github": {
         parameters: {
             query?: never;
@@ -7259,6 +7371,79 @@ export interface components {
         };
         Appearance: {
             accent_color: string;
+        };
+        SlackEventDefinition: {
+            /** @enum {string} */
+            id: "alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed";
+            category: string;
+            label: string;
+            description: string;
+        };
+        SlackTeam: {
+            id: string;
+            name: string;
+        };
+        SlackChannel: {
+            id: string;
+            name: string;
+            is_private: boolean;
+        };
+        SlackManifest: {
+            display_information: {
+                [key: string]: string;
+            };
+            oauth_config: unknown;
+            settings: unknown;
+            features: unknown;
+        };
+        SlackIntegrationStatus: {
+            /** @enum {string} */
+            mode: "cloud" | "self_hosted";
+            available: boolean;
+            configured: boolean;
+            setup_available: boolean;
+            reason?: string;
+            team?: components["schemas"]["SlackTeam"];
+            channel?: components["schemas"]["SlackChannel"];
+            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed")[];
+            event_catalog: components["schemas"]["SlackEventDefinition"][];
+            revision: number;
+            manifest?: components["schemas"]["SlackManifest"];
+        };
+        SlackConnectInput: {
+            client_id?: string;
+            client_secret?: string;
+        };
+        SlackConnectResult: {
+            authorization_url: string;
+        };
+        SlackChannelInput: {
+            channel_id: string;
+            expected_revision: number;
+        };
+        SlackEventsInput: {
+            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed")[];
+            expected_revision: number;
+        };
+        SlackDelivery: {
+            id: number;
+            event: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed") | "test";
+            /** @enum {string} */
+            status: "pending" | "sending" | "sent" | "skipped" | "failed";
+            attempts: number;
+            last_error: string;
+            /** Format: date-time */
+            created_at: string;
+            finished_at?: string | null;
+        };
+        SlackDeliveries: {
+            items: components["schemas"]["SlackDelivery"][];
+            next_before?: number;
+        };
+        SlackTestResult: {
+            id: string;
+            /** @enum {string} */
+            status: "pending";
         };
         GitHubStatus: {
             configured: boolean;
@@ -17255,6 +17440,271 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Appearance"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSlackIntegration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackIntegrationStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    disconnectSlack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    connectSlack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackConnectInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackConnectResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listSlackChannels: {
+        parameters: {
+            query?: {
+                before?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SlackChannel"][];
+                        next_before?: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setSlackChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackChannelInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackIntegrationStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setSlackEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackEventsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackIntegrationStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listSlackDeliveries: {
+        parameters: {
+            query?: {
+                before?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackDeliveries"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testSlack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackTestResult"];
                 };
             };
             /** @description Error */

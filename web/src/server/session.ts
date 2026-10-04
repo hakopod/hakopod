@@ -106,6 +106,31 @@ export function sessionToken(request: Request) {
   return cookie ? openSession(cookie.slice(prefix.length)) : null
 }
 
+// OAuth providers return through a top-level cross-site navigation, where the
+// Strict dashboard session cookie is intentionally unavailable. A flow may use
+// this short-lived sealed copy to recover the initiating browser authority at
+// its callback. It is never exposed to client JavaScript.
+export function callbackSessionCookie(
+  request: Request,
+  name: string,
+  token: string,
+  clear = false,
+) {
+  const secure = trustedOrigin(request).startsWith('https://')
+  const prefix = secure ? '__Host-' : ''
+  return `${prefix}${name}=${clear ? '' : sealSession(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${clear ? 0 : 600}${secure ? '; Secure' : ''}`
+}
+
+export function callbackSessionToken(request: Request, name: string) {
+  const prefix = `${trustedOrigin(request).startsWith('https://') ? '__Host-' : ''}${name}=`
+  const cookie = request.headers
+    .get('cookie')
+    ?.split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix))
+  return cookie ? openSession(cookie.slice(prefix.length)) : null
+}
+
 export function apiURL(path: string) {
   const url = new URL(process.env.HAKOPOD_API_URL || 'http://127.0.0.1:8080')
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)

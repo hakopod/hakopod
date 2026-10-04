@@ -233,16 +233,19 @@ export function PageHeader({
   title,
   description,
   action,
+  icon,
 }: {
   eyebrow?: string
   title: string
   description?: string
   action?: ReactNode
+  icon?: ReactNode
 }) {
   return (
     <header className="page-heading hako-page-heading">
       <div className="hako-page-heading-title">
         {eyebrow && <span className="sr-only">{eyebrow}</span>}
+        {icon}
         <h1 className="min-w-0 [overflow-wrap:anywhere]">{title}</h1>
         {description && <HeadingHelp title={title}>{description}</HeadingHelp>}
       </div>

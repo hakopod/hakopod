@@ -1,21 +1,36 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { proxy } from './api-proxy.ts'
-import { sealSession, sessionCookie } from './session.ts'
+import { callbackSessionCookie, sealSession, sessionCookie } from './session.ts'
 
 const origin = 'http://127.0.0.1:4173'
 const token = 'hs_proxy_regression_not_a_real_session_12345'
 test('managed platform catalog forwards scope through the protected session proxy', async (t) => {
-  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
-    const target = new URL(String(url))
-    assert.equal(target.pathname, '/api/v1/managed-platforms/catalog')
-    assert.equal(target.search, '?project=owned&environment=production')
-    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
-    return Response.json({ items: [] })
+  const mocked = t.mock.method(
+    globalThis,
+    'fetch',
+    async (url: unknown, init: RequestInit = {}) => {
+      const target = new URL(String(url))
+      assert.equal(target.pathname, '/api/v1/managed-platforms/catalog')
+      assert.equal(target.search, '?project=owned&environment=production')
+      assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+      return Response.json({ items: [] })
+    },
+  )
+  const response = await proxy({
+    request: request('managed-platforms/catalog?project=owned&environment=production'),
+    params: { _splat: 'managed-platforms/catalog' },
   })
-  const response = await proxy({ request: request('managed-platforms/catalog?project=owned&environment=production'), params: { _splat: 'managed-platforms/catalog' } })
   assert.equal(response.status, 200)
-  assert.equal((await proxy({ request: request('managed-platforms/catalog', 'GET', undefined, false), params: { _splat: 'managed-platforms/catalog' } })).status, 401)
+  assert.equal(
+    (
+      await proxy({
+        request: request('managed-platforms/catalog', 'GET', undefined, false),
+        params: { _splat: 'managed-platforms/catalog' },
+      })
+    ).status,
+    401,
+  )
   mocked.mock.restore()
 })
 function request(
@@ -548,6 +563,37 @@ test('OIDC start is public while forwarding only its temporary OAuth state', asy
   assert.equal(response.headers.get('Location'), 'https://identity.example.test/authorize')
   assert.match(response.headers.get('Set-Cookie') || '', /HttpOnly.*SameSite=Lax/)
   assert.equal(response.headers.get('Set-Cookie')?.includes('Domain='), false)
+})
+
+test('Slack callback uses a short-lived callback session and forwards only an approved relative redirect', async (t) => {
+  const callback = new Request(
+    `${origin}/api/integrations/slack/callback?code=fixture&state=fixture`,
+  )
+  callback.headers.set(
+    'Cookie',
+    callbackSessionCookie(callback, 'hakopod_slack_callback', token).split(';')[0],
+  )
+  const mocked = t.mock.method(
+    globalThis,
+    'fetch',
+    async (url: unknown, init: RequestInit = {}) => {
+      assert.equal(new URL(String(url)).pathname, '/api/v1/integrations/slack/callback')
+      assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+      assert.equal(init.redirect, 'manual')
+      return new Response(null, {
+        status: 303,
+        headers: { Location: '/settings/integrations/slack?connected=1' },
+      })
+    },
+  )
+  const response = await proxy({
+    request: callback,
+    params: { _splat: 'v1/integrations/slack/callback' },
+  })
+  assert.equal(response.status, 303)
+  assert.equal(response.headers.get('Location'), '/settings/integrations/slack?connected=1')
+  assert.match(response.headers.get('Set-Cookie') || '', /hakopod_slack_callback=.*Max-Age=0/)
+  mocked.mock.restore()
 })
 
 test('named Git CRUD and source OAuth completion require the initiating browser authority', async (t) => {

@@ -52,6 +52,7 @@ type Server struct {
 	ProcessLogs                      *serverlogs.Buffer
 	ManagedPlatformPlanner           ManagedPlatformPlanner
 	ManagedPlatformRuntime           ManagedPlatformRuntime
+	SlackCloudEvents                 SlackCloudEventSink
 	NeonProxyAuthority               NeonProxyAuthority
 	neonProxyConcurrent              chan struct{}
 	nativeProbes                     chan struct{}
@@ -129,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerExternalDatabaseRoutes(routes)
 	s.registerAlarmRoutes(routes)
 	s.registerNotificationRoutes(routes)
+	s.registerSlackRoutes(mux, routes)
 	s.registerRequestRoutes(routes)
 	s.registerSourceRoutes(mux, routes)
 	s.registerSettingsRoutes(routes)
@@ -829,12 +831,11 @@ func (s *Server) rollback(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	d, err := s.Store.Accept(r.Context(), who(r), a.Project, a.Environment, resolved, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"), resolved)
+	d, err := s.Store.AcceptRollback(r.Context(), who(r), a.Project, a.Environment, resolved, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"), resolved)
 	if err != nil {
 		failure(w, err)
 		return
 	}
-	_ = s.Store.Event(r.Context(), d.ID, "rollback", fmt.Sprintf("Auditable rollback to successful revision %d; external data is not restored", in.Revision), "")
 	write(w, 202, d)
 }
 func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {

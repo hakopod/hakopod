@@ -14097,6 +14097,332 @@
         }
       }
     },
+    "/integrations/slack": {
+      "get": {
+        "operationId": "getSlackIntegration",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackIntegrationStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "disconnectSlack",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/slack/connect": {
+      "post": {
+        "operationId": "connectSlack",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackConnectResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackConnectInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/slack/channels": {
+      "get": {
+        "operationId": "listSlackChannels",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SlackChannel"
+                      }
+                    },
+                    "next_before": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/slack/channel": {
+      "put": {
+        "operationId": "setSlackChannel",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackIntegrationStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackChannelInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/slack/events": {
+      "put": {
+        "operationId": "setSlackEvents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackIntegrationStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlackEventsInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/slack/deliveries": {
+      "get": {
+        "operationId": "listSlackDeliveries",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackDeliveries"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/slack/test": {
+      "post": {
+        "operationId": "testSlack",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackTestResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/integrations/github": {
       "get": {
         "operationId": "githubStatus",
@@ -28269,6 +28595,453 @@
         },
         "required": [
           "accent_color"
+        ]
+      },
+      "SlackEventDefinition": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "alarm.opened",
+              "alarm.resolved",
+              "audit",
+              "deployment.queued",
+              "deployment.started",
+              "deployment.succeeded",
+              "deployment.failed",
+              "deployment.cancelled",
+              "deployment.superseded",
+              "deployment.rollback.requested",
+              "deployment.cancellation.requested",
+              "application.created",
+              "application.configuration.updated",
+              "application.renamed",
+              "application.deleted",
+              "service.added",
+              "service.removed",
+              "service.renamed",
+              "service.configuration.updated",
+              "service.image.updated",
+              "service.variables.updated",
+              "service.resources.updated",
+              "service.scale.updated",
+              "service.suspended",
+              "service.resumed",
+              "service.restart.requested",
+              "service.network.updated",
+              "service.storage.updated",
+              "service.healthcheck.updated",
+              "service.placement.updated",
+              "service.command.updated",
+              "service.delivery.updated",
+              "service.update.started",
+              "service.ready",
+              "service.failed",
+              "service.job.scheduled",
+              "service.job.completed",
+              "service.certificate.renewed"
+            ]
+          },
+          "category": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "label",
+          "description"
+        ]
+      },
+      "SlackTeam": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "SlackChannel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "is_private": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_private"
+        ]
+      },
+      "SlackManifest": {
+        "type": "object",
+        "properties": {
+          "display_information": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "oauth_config": {},
+          "settings": {},
+          "features": {}
+        },
+        "required": [
+          "display_information",
+          "oauth_config",
+          "settings",
+          "features"
+        ]
+      },
+      "SlackIntegrationStatus": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "cloud",
+              "self_hosted"
+            ]
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "setup_available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "team": {
+            "$ref": "#/components/schemas/SlackTeam"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/SlackChannel"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "alarm.opened",
+                "alarm.resolved",
+                "audit",
+                "deployment.queued",
+                "deployment.started",
+                "deployment.succeeded",
+                "deployment.failed",
+                "deployment.cancelled",
+                "deployment.superseded",
+                "deployment.rollback.requested",
+                "deployment.cancellation.requested",
+                "application.created",
+                "application.configuration.updated",
+                "application.renamed",
+                "application.deleted",
+                "service.added",
+                "service.removed",
+                "service.renamed",
+                "service.configuration.updated",
+                "service.image.updated",
+                "service.variables.updated",
+                "service.resources.updated",
+                "service.scale.updated",
+                "service.suspended",
+                "service.resumed",
+                "service.restart.requested",
+                "service.network.updated",
+                "service.storage.updated",
+                "service.healthcheck.updated",
+                "service.placement.updated",
+                "service.command.updated",
+                "service.delivery.updated",
+                "service.update.started",
+                "service.ready",
+                "service.failed",
+                "service.job.scheduled",
+                "service.job.completed",
+                "service.certificate.renewed"
+              ]
+            }
+          },
+          "event_catalog": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlackEventDefinition"
+            }
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/SlackManifest"
+          }
+        },
+        "required": [
+          "mode",
+          "available",
+          "configured",
+          "setup_available",
+          "events",
+          "event_catalog",
+          "revision"
+        ]
+      },
+      "SlackConnectInput": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": []
+      },
+      "SlackConnectResult": {
+        "type": "object",
+        "properties": {
+          "authorization_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ]
+      },
+      "SlackChannelInput": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "channel_id",
+          "expected_revision"
+        ]
+      },
+      "SlackEventsInput": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "alarm.opened",
+                "alarm.resolved",
+                "audit",
+                "deployment.queued",
+                "deployment.started",
+                "deployment.succeeded",
+                "deployment.failed",
+                "deployment.cancelled",
+                "deployment.superseded",
+                "deployment.rollback.requested",
+                "deployment.cancellation.requested",
+                "application.created",
+                "application.configuration.updated",
+                "application.renamed",
+                "application.deleted",
+                "service.added",
+                "service.removed",
+                "service.renamed",
+                "service.configuration.updated",
+                "service.image.updated",
+                "service.variables.updated",
+                "service.resources.updated",
+                "service.scale.updated",
+                "service.suspended",
+                "service.resumed",
+                "service.restart.requested",
+                "service.network.updated",
+                "service.storage.updated",
+                "service.healthcheck.updated",
+                "service.placement.updated",
+                "service.command.updated",
+                "service.delivery.updated",
+                "service.update.started",
+                "service.ready",
+                "service.failed",
+                "service.job.scheduled",
+                "service.job.completed",
+                "service.certificate.renewed"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "expected_revision"
+        ]
+      },
+      "SlackDelivery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "alarm.opened",
+                  "alarm.resolved",
+                  "audit",
+                  "deployment.queued",
+                  "deployment.started",
+                  "deployment.succeeded",
+                  "deployment.failed",
+                  "deployment.cancelled",
+                  "deployment.superseded",
+                  "deployment.rollback.requested",
+                  "deployment.cancellation.requested",
+                  "application.created",
+                  "application.configuration.updated",
+                  "application.renamed",
+                  "application.deleted",
+                  "service.added",
+                  "service.removed",
+                  "service.renamed",
+                  "service.configuration.updated",
+                  "service.image.updated",
+                  "service.variables.updated",
+                  "service.resources.updated",
+                  "service.scale.updated",
+                  "service.suspended",
+                  "service.resumed",
+                  "service.restart.requested",
+                  "service.network.updated",
+                  "service.storage.updated",
+                  "service.healthcheck.updated",
+                  "service.placement.updated",
+                  "service.command.updated",
+                  "service.delivery.updated",
+                  "service.update.started",
+                  "service.ready",
+                  "service.failed",
+                  "service.job.scheduled",
+                  "service.job.completed",
+                  "service.certificate.renewed"
+                ]
+              },
+              {
+                "type": "string",
+                "const": "test"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sending",
+              "sent",
+              "skipped",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "event",
+          "status",
+          "attempts",
+          "last_error",
+          "created_at"
+        ]
+      },
+      "SlackDeliveries": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlackDelivery"
+            }
+          },
+          "next_before": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "SlackTestResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status"
         ]
       },
       "GitHubStatus": {
