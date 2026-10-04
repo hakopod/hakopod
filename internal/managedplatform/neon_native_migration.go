@@ -12,6 +12,7 @@ import (
 )
 
 func (r *DurableNeonRuntime) MigrateTenantNative(ctx context.Context, platformID, tenantID string, source, destination int64, claims []DurableResourceClaim) (int64, int64, error) {
+	defer r.closeIdleConnections()
 	if r == nil || r.control == nil || source == destination || source < 1 || destination < 1 || source > int64(len(r.control.config.Pageservers)) || destination > int64(len(r.control.config.Pageservers)) {
 		return 0, 0, fmt.Errorf("native Neon migration target is invalid")
 	}
@@ -72,6 +73,7 @@ func (r *DurableNeonRuntime) MigrateTenantNative(ctx context.Context, platformID
 }
 
 func (r *DurableNeonRuntime) VerifyNativeComputeRouting(ctx context.Context, request NeonNativeProbeRequest, configs map[string]json.RawMessage) error {
+	defer r.closeIdleConnections()
 	claims, err := nativeNeonClaims(request.Claims, r.control.config)
 	if err != nil {
 		return err

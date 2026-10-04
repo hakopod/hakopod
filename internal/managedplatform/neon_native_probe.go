@@ -38,6 +38,7 @@ type NeonNativeProbeRequest struct {
 // lifecycle handle and cannot reserve, confirm, advance, release, or delete a
 // provider resource.
 func (inspector *DurableNeonRuntime) ProbeNeonNative(ctx context.Context, request NeonNativeProbeRequest) (NeonNativeProbeResult, error) {
+	defer inspector.closeIdleConnections()
 	var result NeonNativeProbeResult
 	if !neonID.MatchString(request.TenantID) || !neonID.MatchString(request.TimelineID) {
 		return result, fmt.Errorf("native Neon probe identity is invalid")
