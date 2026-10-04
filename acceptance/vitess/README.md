@@ -27,6 +27,9 @@ python3 scripts/run-development-vitess-http-acceptance.py \
   --cluster-receipt-sha256 4d4861b73b0ea917c4688cf66eb74a36fc679971a22ece2f9c7fca129efac420 \
   --pool vitess-acceptance \
   --storage-class local-path \
+  --engine-image '<candidate Vitess runtime repository@sha256 digest>' \
+  --operator-image '<candidate Vitess operator repository@sha256 digest>' \
+  --fixture-budget-gib 12 \
   --attempt 1
 ```
 

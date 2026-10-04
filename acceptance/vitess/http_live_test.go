@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	managed "github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/hakopod/hakopod/internal/worker"
 	"github.com/jackc/pgx/v5"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -44,6 +46,18 @@ type httpClient struct {
 	t      *testing.T
 	server *httptest.Server
 	token  string
+}
+
+type boundedBuffer struct {
+	bytes.Buffer
+	limit int
+}
+
+func (b *boundedBuffer) Write(value []byte) (int, error) {
+	if len(value) > b.limit-b.Len() {
+		return 0, fmt.Errorf("output exceeds %d bytes", b.limit)
+	}
+	return b.Buffer.Write(value)
 }
 
 func (c httpClient) request(method, path string, input, output any, idempotency string) (int, string) {
@@ -142,7 +156,7 @@ func loadFixtures(t *testing.T) map[string]storageFixture {
 		t.Fatal("Vitess fixture is invalid")
 	}
 	result := map[string]storageFixture{}
-	for _, name := range []string{"recovery-source", "recovery-target"} {
+	for _, name := range []string{"standalone", "recovery-source", "recovery-target"} {
 		fixture, ok := config.Fixtures[name]
 		if !ok || !fixture.Dedicated || fixture.Destination.ID == "" || len(fixture.ApprovedEndpointCIDRs) == 0 {
 			t.Fatalf("Vitess fixture %q is incomplete", name)
@@ -181,21 +195,50 @@ func waitOperation(t *testing.T, ctx context.Context, client httpClient, operati
 	return managed.Resource{}
 }
 
-func vitessQuery(t *testing.T, ctx context.Context, runtime *cluster.Client, database managed.Resource, password, query string) string {
+func waitDeployment(t *testing.T, ctx context.Context, client httpClient, deployment store.Deployment) store.Deployment {
+	t.Helper()
+	for ctx.Err() == nil {
+		var current store.Deployment
+		status, _ := client.request("GET", "/deployments/"+deployment.ID, nil, &current, "")
+		if status != http.StatusOK {
+			t.Fatal("deployment lookup", status)
+		}
+		if current.Status == "succeeded" {
+			return current
+		}
+		if current.Status != "queued" && current.Status != "running" {
+			t.Fatal("deployment failed", current.Status, current.Error)
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatal("deployment timed out")
+	return store.Deployment{}
+}
+
+func vitessQuery(t *testing.T, ctx context.Context, runtime *cluster.Client, database managed.Resource, password, trust, query string) string {
 	t.Helper()
 	if database.Observation.Routing == nil || len(database.Observation.Routing.Members) == 0 {
 		t.Fatal("Vitess gateway is unavailable")
 	}
+	host := ""
+	for _, endpoint := range database.Observation.Endpoints {
+		if endpoint.Purpose == "read_write" && endpoint.Port == 3306 {
+			host = endpoint.Host
+		}
+	}
+	if host == "" || trust == "" {
+		t.Fatal("verified Vitess endpoint is unavailable")
+	}
 	const script = `set -eu
 IFS= read -r MYSQL_PWD
 export MYSQL_PWD
-exec mysql --no-defaults --protocol=TCP --host=127.0.0.1 --port=3306 --user=app --database=app --connect-timeout=5 --ssl-mode=REQUIRED --batch --raw --skip-column-names --binary-mode=1 --local-infile=0 --execute="$1"`
-	var output bytes.Buffer
-	if err := runtime.DatabaseExec(ctx, database, database.Observation.Routing.Members[0], []string{"sh", "-c", script, "vitess-http-query", query}, strings.NewReader(password+"\n"), &output); err != nil {
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+cat > "$work/ca.crt"
+exec mysql --no-defaults --protocol=TCP --host="$1" --port=3306 --user=app --database=app --connect-timeout=5 --ssl-mode=VERIFY_IDENTITY --ssl-ca="$work/ca.crt" --batch --raw --skip-column-names --binary-mode=1 --local-infile=0 --execute="$2"`
+	output := &boundedBuffer{limit: 16 << 10}
+	if err := runtime.DatabaseExec(ctx, database, database.Observation.Routing.Members[0], []string{"sh", "-c", script, "vitess-http-query", host, query}, strings.NewReader(password+"\n"+trust), output); err != nil {
 		t.Fatal("Vitess application query failed", err)
-	}
-	if output.Len() > 16<<10 {
-		t.Fatal("Vitess application query output exceeded its bound")
 	}
 	return strings.TrimSpace(output.String())
 }
@@ -245,7 +288,8 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	}
 	authKey := bytes.Repeat([]byte{41}, 32)
 	approvals := make([]backup.VitessBackupApproval, 0, 2)
-	for name, databaseName := range map[string]string{"recovery-source": "vitess-http-source", "recovery-target": "vitess-http-target"} {
+	for _, binding := range []struct{ fixture, database string }{{"standalone", ""}, {"recovery-source", "vitess-http-source"}, {"recovery-target", "vitess-http-target"}} {
+		name, databaseName := binding.fixture, binding.database
 		fixture := fixtures[name]
 		identity, recipient, identityErr := backup.NewEncryptionIdentity("")
 		if identityErr != nil {
@@ -263,7 +307,13 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		if _, err = database.PutBackupDestination(ctx, principal, fixture.Destination, 0); err != nil {
 			t.Fatal("store protected backup destination", err)
 		}
-		approvals = append(approvals, backup.VitessBackupApproval{DestinationID: fixture.Destination.ID, Revision: 1, Project: project, Environment: environment, Database: databaseName, DedicatedCredentials: true, EndpointCIDRs: fixture.ApprovedEndpointCIDRs})
+		if databaseName != "" {
+			cidrs := make([]string, len(fixture.ApprovedEndpointCIDRs))
+			for index, prefix := range fixture.ApprovedEndpointCIDRs {
+				cidrs[index] = prefix.String()
+			}
+			approvals = append(approvals, backup.VitessBackupApproval{DestinationID: fixture.Destination.ID, Revision: 1, Project: project, Environment: environment, Database: databaseName, DedicatedCredentials: true, EndpointCIDRs: cidrs})
+		}
 		fixtures[name] = fixture
 	}
 	server := &api.Server{Store: database, Cluster: runtime, Auth: api.AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString(authKey)}}
@@ -274,7 +324,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	httpServer := httptest.NewServer(server.Handler())
 	httpServer.Client().Timeout = 30 * time.Second
 	defer httpServer.Close()
-	_, scopedToken, err := database.CreateKey(ctx, owner, store.KeyInput{Name: "vitess-http", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write"}, ExpiresAt: time.Now().Add(time.Hour)})
+	_, scopedToken, err := database.CreateKey(ctx, owner, store.KeyInput{Name: "vitess-http", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write", "logs:read"}, ExpiresAt: time.Now().Add(time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,33 +334,52 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	}
 	client := httpClient{t: t, server: httpServer, token: scopedToken}
 	workers, stopWorkers := context.WithCancel(ctx)
-	done := make(chan struct{})
-	go func() { defer close(done); server.RunManagedDatabases(workers) }()
-	t.Cleanup(func() {
-		stopWorkers()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			t.Error("database workers did not stop")
-		}
-	})
+	databaseDone, applicationDone := make(chan struct{}), make(chan struct{})
+	go func() { defer close(databaseDone); server.RunManagedDatabases(workers) }()
+	go func() {
+		defer close(applicationDone)
+		(&worker.Worker{Store: database, Cluster: runtime, Concurrency: 1, Timeout: 10 * time.Minute}).Run(workers)
+	}()
+	var stopOnce sync.Once
+	stopDatabaseWorkers := func() {
+		stopOnce.Do(func() {
+			stopWorkers()
+			select {
+			case <-databaseDone:
+			case <-time.After(10 * time.Second):
+				t.Error("database workers did not stop")
+			}
+			select {
+			case <-applicationDone:
+			case <-time.After(10 * time.Second):
+				t.Error("application worker did not stop")
+			}
+		})
+	}
+	t.Cleanup(stopDatabaseWorkers)
 
 	created := []managed.Resource{}
 	t.Cleanup(func() {
+		stopDatabaseWorkers()
 		for _, item := range created {
 			cleanup, stop := context.WithTimeout(context.Background(), 5*time.Minute)
 			if current, loadErr := database.DatabaseInternal(cleanup, item.ID); loadErr == nil {
 				item = current
 			}
+			completed := false
 			for cleanup.Err() == nil {
 				done, deleteErr := runtime.DeleteDatabase(cleanup, item, func() error { return cleanup.Err() })
 				if deleteErr != nil || done {
 					if deleteErr != nil {
 						t.Error("cleanup database", deleteErr)
 					}
+					completed = done
 					break
 				}
 				time.Sleep(2 * time.Second)
+			}
+			if !completed {
+				t.Error("cleanup database did not finish", item.ID)
 			}
 			stop()
 		}
@@ -341,14 +410,14 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if status, _ := client.request("GET", "/databases/"+source.ID+"/trust", nil, &trust, ""); status != http.StatusOK || trust.CertificatePEM == "" {
 		t.Fatal("public trust was not returned", status)
 	}
-	vitessQuery(t, ctx, runtime, source, credentials["password"], "CREATE TABLE records (id BIGINT NOT NULL PRIMARY KEY, payload VARBINARY(16) NOT NULL, label VARCHAR(80) CHARACTER SET utf8mb4 NOT NULL)")
-	vitessQuery(t, ctx, runtime, source, credentials["password"], "INSERT INTO records(id,payload,label) VALUES (1,0x000AFF01,'नमस्ते / 東京'),(2,0x0080FF02,'source')")
-	if got := vitessQuery(t, ctx, runtime, source, credentials["password"], "SELECT id,HEX(payload),label FROM records ORDER BY id"); got != "1\t000AFF01\tनमस्ते / 東京\n2\t0080FF02\tsource" {
+	vitessQuery(t, ctx, runtime, source, credentials["password"], trust.CertificatePEM, "CREATE TABLE records (id BIGINT NOT NULL PRIMARY KEY, payload VARBINARY(16) NOT NULL, label VARCHAR(80) CHARACTER SET utf8mb4 NOT NULL)")
+	vitessQuery(t, ctx, runtime, source, credentials["password"], trust.CertificatePEM, "INSERT INTO records(id,payload,label) VALUES (1,0x000AFF01,'नमस्ते / 東京'),(2,0x0080FF02,'source')")
+	if got := vitessQuery(t, ctx, runtime, source, credentials["password"], trust.CertificatePEM, "SELECT id,HEX(payload),label FROM records ORDER BY id"); got != "1\t000AFF01\tनमस्ते / 東京\n2\t0080FF02\tsource" {
 		t.Fatal("Vitess source data differs before backup")
 	}
 
 	var job backup.Job
-	if status, code := client.request("POST", "/backups", map[string]any{"destination_id": fixtures["recovery-source"].Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "vitess"}}, &job, "vitess-http-backup"); status != http.StatusAccepted {
+	if status, code := client.request("POST", "/backups", map[string]any{"destination_id": fixtures["standalone"].Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "vitess"}}, &job, "vitess-http-backup"); status != http.StatusAccepted {
 		t.Fatal("backup acceptance", status, code)
 	}
 	for ctx.Err() == nil && job.Status != "succeeded" {
@@ -365,7 +434,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if err != nil || artifact.VerifiedAt == nil || artifact.Format != "age-v1+vitess-logical-v1" {
 		t.Fatal("verified Vitess artifact was not recorded")
 	}
-	vitessQuery(t, ctx, runtime, source, credentials["password"], "INSERT INTO records(id,payload,label) VALUES (99,0xCAFE,'after-backup')")
+	vitessQuery(t, ctx, runtime, source, credentials["password"], trust.CertificatePEM, "INSERT INTO records(id,payload,label) VALUES (99,0xCAFE,'after-backup')")
 	var plan backup.RestorePlan
 	if status, _ := client.request("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, ""); status != http.StatusOK {
 		t.Fatal("restore plan", status)
@@ -400,10 +469,14 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if status, _ := client.request("POST", "/databases/"+target.ID+"/credentials", map[string]any{}, &targetCredentials, ""); status != http.StatusOK || targetCredentials["password"] == "" {
 		t.Fatal("target credentials were not returned", status)
 	}
-	if got := vitessQuery(t, ctx, runtime, target, targetCredentials["password"], "SELECT id,HEX(payload),label FROM records ORDER BY id"); got != "1\t000AFF01\tनमस्ते / 東京\n2\t0080FF02\tsource" {
+	var targetTrust managed.PublicTrust
+	if status, _ := client.request("GET", "/databases/"+target.ID+"/trust", nil, &targetTrust, ""); status != http.StatusOK || targetTrust.CertificatePEM == "" {
+		t.Fatal("target public trust was not returned", status)
+	}
+	if got := vitessQuery(t, ctx, runtime, target, targetCredentials["password"], targetTrust.CertificatePEM, "SELECT id,HEX(payload),label FROM records ORDER BY id"); got != "1\t000AFF01\tनमस्ते / 東京\n2\t0080FF02\tsource" {
 		t.Fatal("Vitess restored data differs from the captured recovery point")
 	}
-	if got := vitessQuery(t, ctx, runtime, source, credentials["password"], "SELECT COUNT(*) FROM records WHERE id=99"); got != "1" {
+	if got := vitessQuery(t, ctx, runtime, source, credentials["password"], trust.CertificatePEM, "SELECT COUNT(*) FROM records WHERE id=99"); got != "1" {
 		t.Fatal("Vitess recovery changed the source")
 	}
 	var inspected managed.Resource
@@ -411,11 +484,25 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		t.Fatal("inspection acknowledgement", status)
 	}
 
-	application := spec.Application{SchemaVersion: 1, Name: "vitess-http-client", Services: map[string]spec.Service{"web": {Image: "nginx:alpine"}}}
-	deployment, err := database.Accept(ctx, owner, project, environment, application, 0, "vitess-http-client-create")
-	if err != nil {
-		t.Fatal("seed application", err)
+	applicationImage := os.Getenv("HAKOPOD_VITESS_ACCEPTANCE_APPLICATION_IMAGE")
+	if !regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$`).MatchString(applicationImage) {
+		t.Fatal("immutable Vitess acceptance application image is required")
 	}
+	appScript := `set -eu
+if [ -z "${DATABASE_URL:-}" ]; then exec sleep 86400; fi
+MYSQL_PWD=${DATABASE_URL#mysql://app:}
+MYSQL_PWD=${MYSQL_PWD%%@*}
+export MYSQL_PWD
+result=$(mysql --no-defaults --protocol=TCP --host="$1" --port=3306 --user=app --database=app --connect-timeout=5 --ssl-mode=VERIFY_IDENTITY --ssl-ca="$2" --batch --raw --skip-column-names --execute='SELECT label FROM records WHERE id=1')
+test "$result" = 'नमस्ते / 東京'
+printf 'VITESS_BOUND_TLS_QUERY_OK\n'
+exec sleep 86400`
+	application := spec.Application{SchemaVersion: 1, Name: "vitess-http-client", Services: map[string]spec.Service{"web": {Image: applicationImage, Command: []string{"sh", "-c"}, Args: []string{appScript, "vitess-http-client", source.Observation.Endpoints[0].Host, cluster.DatabaseTrustPath(source.ID)}}}}
+	var deployment store.Deployment
+	if status, code := client.request("POST", "/deployments", map[string]any{"project": project, "environment": environment, "spec": application, "expected_revision": 0}, &deployment, "vitess-http-client-create"); status != http.StatusAccepted {
+		t.Fatal("application deployment", status, code)
+	}
+	deployment = waitDeployment(t, ctx, client, deployment)
 	var connectionPlan store.DatabaseConnectionPlan
 	if status, _ := client.request("POST", "/databases/"+source.ID+"/connection-plan", map[string]any{"application_id": deployment.ApplicationID, "service": "web", "variable": "DATABASE_URL", "endpoint": "read_write", "cluster_aware": false}, &connectionPlan, ""); status != http.StatusOK {
 		t.Fatal("connection plan", status)
@@ -424,13 +511,37 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if status, _ := client.request("POST", "/databases/"+source.ID+"/connect", map[string]string{"review_id": connectionPlan.ID, "confirm_application": application.Name}, &redeploy, "vitess-http-connect"); status != http.StatusAccepted || redeploy.ApplicationID != deployment.ApplicationID || redeploy.Revision <= deployment.Revision {
 		t.Fatal("connection deployment", status)
 	}
-
-	var deletion managed.Operation
-	if status, _ := client.request("DELETE", "/databases/"+target.ID, map[string]any{"expected_revision": target.Revision, "confirm_name": target.Spec.Name}, &deletion, "vitess-http-delete"); status != http.StatusAccepted {
-		t.Fatal("database deletion", status)
+	redeploy = waitDeployment(t, ctx, client, redeploy)
+	logStream, err := runtime.Logs(ctx, cluster.Namespace(redeploy.ApplicationID), "web", 100, false)
+	if err != nil {
+		t.Fatal("bound application logs", err)
 	}
-	_ = waitOperation(t, ctx, client, deletion)
-	t.Log("Vitess HTTP create, scope, credentials, trust, backup, restore, inspection, connection revision and deletion passed")
+	logData, readErr := io.ReadAll(io.LimitReader(logStream, (64<<10)+1))
+	logStream.Close()
+	if readErr != nil || len(logData) > 64<<10 || !bytes.Contains(logData, []byte("VITESS_BOUND_TLS_QUERY_OK")) {
+		t.Fatal("bound application did not prove its TLS query")
+	}
+	empty := spec.Application{SchemaVersion: 1, Name: application.Name, Services: map[string]spec.Service{}}
+	var emptyDeployment store.Deployment
+	if status, code := client.request("POST", "/deployments", map[string]any{"project": project, "environment": environment, "spec": empty, "expected_revision": redeploy.Revision}, &emptyDeployment, "vitess-http-client-empty"); status != http.StatusAccepted {
+		t.Fatal("empty application deployment", status, code)
+	}
+	emptyDeployment = waitDeployment(t, ctx, client, emptyDeployment)
+	if status, code := client.request("DELETE", "/applications/"+redeploy.ApplicationID, map[string]any{"expected_revision": emptyDeployment.Revision, "confirm_name": application.Name, "delete_data": true}, nil, ""); status != http.StatusOK {
+		t.Fatal("application deletion", status, code)
+	}
+
+	deleteDatabase := func(item managed.Resource) {
+		t.Helper()
+		var deletion managed.Operation
+		if status, _ := client.request("DELETE", "/databases/"+item.ID, map[string]any{"expected_revision": item.Revision, "confirm_name": item.Spec.Name}, &deletion, "vitess-http-delete-"+item.ID); status != http.StatusAccepted {
+			t.Fatal("database deletion", status)
+		}
+		_ = waitOperation(t, ctx, client, deletion)
+	}
+	deleteDatabase(target)
+	deleteDatabase(source)
+	t.Log("Vitess HTTP create, scope, credentials, trust, backup, restore, inspection, bound application query and deletion passed")
 }
 
 func TestFixtureNamesRemainBounded(t *testing.T) {
