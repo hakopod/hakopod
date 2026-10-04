@@ -12,6 +12,12 @@ The producer binds the active `k3d-hakopod-dev` cluster UID and sorted node inve
 
 The complete run must verify provider ownership, client-side certificate-chain and hostname enforcement, the server certificate, plaintext refusal, real lifecycle transitions, backup and separate-target restore, storage and compute replacement, cancellation cleanup, and removal of all three disposable platforms. This transport observation does not prove mutual TLS or application authentication; those remain separate acceptance requirements. A distinct cancellation target is created after the successful restore, so cancellation cannot destroy the restored target used for verification. Finalization checks exact namespace and persistent-volume absence independently.
 
+If a delete exceeds the driver's wait or a resource audit fails, the run fails
+and preserves the control-plane bridge for the pending durable operation.
+`cleanup-transport-retained.json` identifies the affected resources. Complete
+those operations and verify namespace and volume removal before cleaning up
+the bridge. A timeout is not evidence that deletion completed.
+
 The driver accepts the API token only through a mode-600 file. Its work directory must be a fresh direct child named `hakopod-neon-native-*` under `/tmp` or `/srv/hakopod-backup-scratch`. The source, recovery target and fresh cancellation target specifications must be strict Neon specifications with distinct names and object-storage prefixes. Source identity comes from the gate attestation's exact file inventory and server binary digest; the runner has no caller-supplied tree labels. The inventory must contain exactly the eight digest-pinned components and matching qualified UID/GID/image records. `KUBECONFIG` must select `k3d-hakopod-dev`, whose identity and at least three nodes are independently bound by `evidence.py` and by the native server gate.
 
 `HAKOPOD_ACCEPTANCE_PROJECT` must equal the project recorded in the gate
