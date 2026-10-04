@@ -11,6 +11,7 @@ import platform
 import tarfile
 from pathlib import Path
 import re
+import runpy
 import subprocess
 import tempfile
 from urllib.request import urlopen
@@ -134,7 +135,14 @@ def helm_binary(root):
     return path
 
 
-def build(destination, redis_image, include_vitess=True):
+def build(destination, redis_image, include_vitess=None):
+    availability=runpy.run_path(str(HERE.parent/'release/managed-runtime-availability.py'))
+    managed_runtimes=availability['release_availability'](HERE.parent)
+    source_revision=availability['source_revision'](HERE.parent)
+    source_gates=availability['source_gate_hashes'](HERE.parent)
+    if include_vitess is not None and (type(include_vitess) is not bool or include_vitess is not managed_runtimes['vitess']):
+        raise ValueError('Vitess inclusion must match the compiled release gate')
+    include_vitess=managed_runtimes['vitess']
     pins=json.loads((HERE/'database-controller-sources.json').read_text())
     if destination.exists():raise ValueError('Use a fresh controller bundle directory')
     if include_vitess:qualify_vitess(HERE.parent)
@@ -149,7 +157,9 @@ def build(destination, redis_image, include_vitess=True):
             root=Path(tmp)/'vitess';root.mkdir()
             objects,pins['vitess']=render_vitess(HERE.parent,root,fetch);validate(objects)
             files['vitess.json']=(json.dumps({'apiVersion':'v1','kind':'List','items':objects},sort_keys=True)+'\n').encode()
-        manifest={'schema_version':1,'sources':pins,'helm':json.loads((HERE/'pins.json').read_text())['helm'],'redis_controller_image':redis_image,'files':{name:hashlib.sha256(data).hexdigest() for name,data in files.items()}}
+        if (availability['release_availability'](HERE.parent)!=managed_runtimes or availability['source_gate_hashes'](HERE.parent)!=source_gates or availability['source_revision'](HERE.parent)!=source_revision):
+            raise ValueError('Release source changed while building database controllers')
+        manifest={'schema_version':2,'source_revision':source_revision,'managed_runtimes':managed_runtimes,'sources':pins,'helm':json.loads((HERE/'pins.json').read_text())['helm'],'redis_controller_image':redis_image,'files':{name:hashlib.sha256(data).hexdigest() for name,data in files.items()}}
         destination.mkdir(parents=True)
         for name,data in files.items():(destination/name).write_bytes(data)
         (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
@@ -159,5 +169,5 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--redis-controller-image',default=os.environ.get('HAKOPOD_REDIS_CONTROLLER_IMAGE') or REDIS_CONTROLLER_IMAGE)
-    parser.add_argument('--without-vitess',action='store_false',dest='include_vitess',help='Build a development-only controller bundle without Vitess')
+    parser.add_argument('--without-vitess',action='store_false',dest='include_vitess',default=None,help='Require the compiled Vitess release gate to be closed')
     args=parser.parse_args();build(args.output,args.redis_controller_image,args.include_vitess)
