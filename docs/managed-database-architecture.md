@@ -1,6 +1,6 @@
 # How Hakopod manages a database
 
-Status: architecture guide for alpha.47, October 2, 2026. The release offers PostgreSQL, Redis and MongoDB. MySQL, ClickHouse, Oracle Database, Vitess, Neon and Supabase remain unavailable while native qualification is incomplete. Sections about those engines explain source implementations; they do not announce availability or a production deployment.
+Status: self-hosted alpha.50 includes PostgreSQL, Redis, MySQL and MongoDB. ClickHouse, Oracle Database and Vitess remain held. Neon and Supabase are deferred. Sections about unavailable engines explain source implementations; they do not announce availability. Cloud provisioning requires a separate operator rollout and approved capacity. See the [acceptance record](managed-database-release-acceptance.md) for the exact development tests and their limits.
 
 ## Follow one create request
 
