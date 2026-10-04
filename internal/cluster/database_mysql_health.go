@@ -79,7 +79,11 @@ func verifyMySQLGroupView(raw []byte, d database.Resource, member database.Membe
 }
 
 func (c *Client) observeMySQLDatabase(ctx context.Context, d database.Resource, object *unstructured.Unstructured, o *database.Observation) error {
-	if mysqlPrimary(object) == "" {
+	// The operator can retain ONLINE_PARTIAL after a completed scale-down.
+	// Both states still require exact owned pods and native membership, role,
+	// routing and TLS checks before the database can become ready.
+	status, _, _ := unstructured.NestedString(object.Object, "status", "cluster", "status")
+	if status != "ONLINE" && status != "ONLINE_PARTIAL" {
 		return fmt.Errorf("waiting for MySQL Group Replication")
 	}
 	group, step := errgroup.WithContext(ctx)
