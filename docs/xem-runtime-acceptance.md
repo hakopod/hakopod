@@ -29,6 +29,14 @@ refusal with `verify-full`, and independent untrusted-certificate and hostname
 rejection. All owned namespaces, claims, volumes, workers and clusters were
 reclaimed; R5 exited successfully.
 
+The final daemon audit separately found four anonymous Docker volumes from the
+first failed K3s setup helper at 10:08:55 UTC. They held only empty directories
+and eight image-provided CNI symlinks. Exact identity, contents and lack of
+container references were checked before removal; the final volume list was
+empty. `orphan-volume-cleanup-20261004.json` records this correction to the
+earlier helper cleanup receipt. The runner now refuses any retained Docker
+volume before startup and requires an empty volume list after cleanup.
+
 R4's fourth case passed its TLS behavior probes but failed probe cleanup because
 normal pod status updates invalidated a creation-time resource version. The
 retry retained the immutable UID deletion precondition, required confirmation
@@ -111,9 +119,9 @@ Reserve additional space for compilation and image pulls; on a shared VM,
 monitor the remaining headroom throughout execution.
 
 The checked-in runner refuses macOS, an implicit Docker socket, a mismatched
-Docker data directory, a checkout outside scratch, or an existing container or
-k3d cluster. After reviewing VM capacity and reserving the isolated daemon, run
-inside its network namespace:
+Docker data directory, a checkout outside scratch, or an existing container,
+Docker volume or k3d cluster. After reviewing VM capacity and reserving the
+isolated daemon, run inside its network namespace:
 
 ```sh
 HAKOPOD_XEM_VM_ACCEPTANCE=1 \
