@@ -75,9 +75,11 @@ def harness_inventory(source):
     result = {}
     total = 0
     for path in paths:
+        if path.is_symlink():
+            raise RuntimeError("HTTP acceptance source must contain regular files only")
         if path.is_dir():
             continue
-        if path.is_symlink() or not path.is_file():
+        if not path.is_file():
             raise RuntimeError("HTTP acceptance source must contain regular files only")
         total += path.stat().st_size
         if len(result) >= 32 or total > 2 * 1024 * 1024:
