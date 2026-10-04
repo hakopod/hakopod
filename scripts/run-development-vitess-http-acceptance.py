@@ -225,6 +225,9 @@ def main():
     parser.add_argument("--cluster-receipt-sha256", required=True)
     parser.add_argument("--pool", required=True)
     parser.add_argument("--storage-class", required=True)
+    parser.add_argument("--engine-image", required=True)
+    parser.add_argument("--operator-image", required=True)
+    parser.add_argument("--fixture-budget-gib", type=int, required=True)
     parser.add_argument("--attempt", type=int, required=True)
     args = parser.parse_args()
     root, source = args.root.resolve(), args.source.resolve()
@@ -239,6 +242,9 @@ def main():
         raise RuntimeError("HAKOPOD_TEST_DATABASE_URL is required")
     if not re.fullmatch(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?", args.pool) or not re.fullmatch(r"[a-z0-9]([-a-z0-9.]*[a-z0-9])?", args.storage_class):
         raise RuntimeError("trusted pool and storage class names are invalid")
+    image = re.compile(r"^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$")
+    if not image.fullmatch(args.engine_image) or not image.fullmatch(args.operator_image) or not 1 <= args.fixture_budget_gib <= 64:
+        raise RuntimeError("immutable candidate images and a bounded fixture budget are required")
     kube = [str(kubectl), "--kubeconfig", str(kubeconfig), "--context", "k3d-hakopod-dev"]
     if bounded_output(kube + ["config", "current-context"]).decode().strip() != "k3d-hakopod-dev":
         raise RuntimeError("Vitess HTTP acceptance requires k3d-hakopod-dev")
@@ -246,6 +252,17 @@ def main():
     cache.mkdir(mode=0o700, parents=True, exist_ok=True)
     environment = preflight(kube, args.cluster_receipt.resolve(), args.cluster_receipt_sha256, fixture, root, args.pool, args.storage_class)
     verifier = runpy.run_path(str(source / "release/verify-vitess-runtime.py"))
+    native = runpy.run_path(str(source / "scripts/run-development-vitess-acceptance.py"))
+    inventory = command_json(kube + ["get", "nodes", *NODES, "-o", "json"]).get("items", [])
+    native_cluster = native["cluster_prerequisites"](kube, args.cluster_receipt.resolve(), args.cluster_receipt_sha256, NODES)
+    native_environment = native["native_environment"](root, kube, inventory,
+        {"runtime": args.engine_image, "operator": args.operator_image,
+         "etcd": verifier["source_constant"](source, "vitessEtcdImage")},
+        "recovery", args.fixture_budget_gib, NODES)
+    native_environment["cluster"] = native_cluster
+    verifier["validate_native_environment"](native_environment, "recovery",
+        [args.engine_image, args.operator_image, verifier["source_constant"](source, "vitessEtcdImage")])
+    environment["qualified_native_preflight"] = native_environment
     runtime_before = verifier["source_files"](source)
     harness_before = harness_inventory(source)
     stem = f"vitess-http-v{args.attempt}"
@@ -263,9 +280,10 @@ def main():
                HAKOPOD_VITESS_HTTP_ACCEPTANCE_TEST="1", HAKOPOD_TEST_KUBECONFIG=str(kubeconfig),
                HAKOPOD_VITESS_NATIVE_FIXTURE_CONFIG=str(fixture),
                HAKOPOD_VITESS_ACCEPTANCE_POOL=args.pool,
-               HAKOPOD_VITESS_ACCEPTANCE_STORAGE_CLASS=args.storage_class)
+               HAKOPOD_VITESS_ACCEPTANCE_STORAGE_CLASS=args.storage_class,
+               HAKOPOD_VITESS_ACCEPTANCE_APPLICATION_IMAGE=args.engine_image)
     started = time.time()
-    code, limit_error = run_bounded([str(go), "test", "-p", "1", "./acceptance/vitess",
+    code, limit_error = run_bounded([str(go), "test", "-tags=hakopod_native_acceptance", "-p", "1", "./acceptance/vitess",
         "-run", "^TestVitessHTTPVerticalSlice$", "-count=1", "-timeout=55m", "-json"], source, env, log)
     runtime_after = verifier["source_files"](source)
     harness_after = harness_inventory(source)
