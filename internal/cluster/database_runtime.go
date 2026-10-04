@@ -27,17 +27,17 @@ func (c *Client) databaseNetworkPolicy(ctx context.Context, d database.Resource,
 		return c.vitessNetworkPolicy(ctx, d, before)
 	}
 	ns := DatabaseNamespace(d.ID)
+	tcp := corev1.ProtocolTCP
 	ports := []networkingv1.NetworkPolicyPort{}
 	for _, port := range []int{5432, 6379, 16379, 8000} {
 		p := intstr.FromInt(port)
-		ports = append(ports, networkingv1.NetworkPolicyPort{Port: &p})
+		ports = append(ports, networkingv1.NetworkPolicyPort{Port: &p, Protocol: &tcp})
 	}
 	local := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{}}
 	operators := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "kubernetes.io/metadata.name", Operator: metav1.LabelSelectorOpIn, Values: []string{"cnpg-system", "redis-operator"}}}}}
 	apps := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"hakopod.io/database-access-" + d.ID: "true"}}}
 	dnsPort := intstr.FromInt(53)
 	udp := corev1.ProtocolUDP
-	tcp := corev1.ProtocolTCP
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: "database", Namespace: ns, Labels: databaseLabels(d)}, Spec: networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{Key: databaseRecoveryHelper, Operator: metav1.LabelSelectorOpDoesNotExist}}}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}, Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{local, operators, apps}, Ports: ports}}, Egress: []networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{local}, Ports: ports}, {To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kube-system"}}}}, Ports: []networkingv1.NetworkPolicyPort{{Port: &dnsPort, Protocol: &udp}, {Port: &dnsPort, Protocol: &tcp}}}}}}
 	allowApplications := d.Status != "restoring" && (d.Recovery == nil || d.Recovery.RestoredAt != nil && d.Recovery.InspectedAt != nil)
 	if !allowApplications {

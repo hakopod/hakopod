@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -259,15 +261,46 @@ func TestLiveDatabaseNetworkPolicyRefresh(t *testing.T) {
 	if target == "" || endpointCIDRs["192.0.2.254/32"] || serviceCIDRs["192.0.2.254/32"] {
 		t.Fatal("fixture API endpoint selection is unsafe or empty")
 	}
+	apiRoots := x509.NewCertPool()
+	if !apiRoots.AppendCertsFromPEM(config.CAData) {
+		t.Fatal("development fixture requires an embedded API certificate authority")
+	}
+	controlProbe := func() {
+		t.Helper()
+		control, stop := context.WithTimeout(ctx, 5*time.Second)
+		defer stop()
+		dialer := tls.Dialer{NetDialer: &net.Dialer{Timeout: 5 * time.Second}, Config: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: apiRoots, ServerName: "kubernetes.default.svc"}}
+		connection, e := dialer.DialContext(control, "tcp", target)
+		if e != nil {
+			t.Fatal("actual API endpoint was unavailable during fixture pod denial", e)
+		}
+		_ = connection.Close()
+	}
 	probe := func() string {
 		t.Helper()
 		// CA verification and a fresh TCP/TLS connection need no token or key.
-		const command = `if timeout 5 openssl s_client -connect "$1" -servername kubernetes.default.svc -verify_hostname kubernetes.default.svc -CAfile /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -verify_return_error -brief </dev/null >/dev/null 2>&1; then printf 'connected\n'; else code=$?; if [ "$code" = 124 ]; then printf 'blocked\n'; else printf 'probe-failed\n'; fi; fi`
+		// Combined output is capped by databaseNetworkProbeOutput. Kube-router
+		// can reject traffic immediately instead of silently dropping it.
+		const command = `timeout 5 openssl s_client -connect "$1" -servername kubernetes.default.svc -verify_hostname kubernetes.default.svc -CAfile /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -verify_return_error -brief </dev/null 2>&1; code=$?; printf '\nprobe-exit=%s\n' "$code"`
 		result, e := exec([]string{"sh", "-c", command, "database-network-development-fixture", target})
 		if e != nil {
 			t.Fatal("fresh API probe execution failed", e)
 		}
-		return result
+		lines := strings.Split(result, "\n")
+		switch lines[len(lines)-1] {
+		case "probe-exit=0":
+			return "connected"
+		case "probe-exit=124":
+			return "timed out"
+		case "probe-exit=1":
+			for _, line := range lines {
+				if line == "connect:errno=111" || line == "connect:errno=113" {
+					return line
+				}
+			}
+		}
+		t.Fatalf("fresh API probe failed without a recognized connection outcome: %s", result)
+		return ""
 	}
 	if probe() != "connected" {
 		t.Fatal("fixture cannot establish a verified fresh API connection before fault injection")
@@ -287,12 +320,14 @@ func TestLiveDatabaseNetworkPolicyRefresh(t *testing.T) {
 	blocked := false
 	for attempt := 0; attempt < 4; attempt++ {
 		result := probe()
-		if result == "blocked" {
+		if result == "timed out" || result == "connect:errno=111" || result == "connect:errno=113" {
+			controlProbe()
+			t.Log("Fresh fixture API connection denied while the same endpoint accepted verified control TLS:", result)
 			blocked = true
 			break
 		}
 		if result != "connected" {
-			t.Fatal("API fault probe failed for a reason other than blocked traffic")
+			t.Fatal("API fault probe failed for a reason other than denied traffic")
 		}
 		time.Sleep(time.Second)
 	}
@@ -328,7 +363,16 @@ func TestLiveDatabaseNetworkPolicyRefresh(t *testing.T) {
 		t.Fatal("repaired policy did not restore a verified fresh API connection")
 	}
 	waitReady(resumed)
+	steadyPolicy, err := policies.Get(ctx, "database", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitReady(d.Observation.ObservedAt)
 	halt()
+	currentPolicy, err := policies.Get(ctx, "database", metav1.GetOptions{})
+	if err != nil || currentPolicy.UID != steadyPolicy.UID || currentPolicy.ResourceVersion != steadyPolicy.ResourceVersion {
+		t.Fatal("healthy observation rewrote the API-defaulted network policy", err)
+	}
 	if query("SELECT value FROM network_fixture") != sentinel {
 		t.Fatal("fixture database content changed")
 	}
