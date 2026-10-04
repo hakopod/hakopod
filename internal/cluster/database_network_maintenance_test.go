@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -24,7 +25,10 @@ func databaseNetworkMaintenanceFixture(t *testing.T) (*Client, *fake.Clientset, 
 	d := database.Resource{ID: strings.Repeat("a", 32), Revision: 3, Status: "ready", PublicEndpointAccess: true,
 		Spec: database.Spec{Engine: "postgresql", Version: "17"}}
 	port := int32(6443)
-	kube := fake.NewClientset(
+	// This fixture checks the exact object submitted by maintenance. Field
+	// tracking rewrites server-owned timestamps; the live test covers the API's
+	// behavior separately while this tracker preserves all fixture metadata.
+	kube := fake.NewSimpleClientset(
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(d.ID), UID: "namespace-identity", Labels: databaseLabels(d)}},
 		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}, Spec: corev1.ServiceSpec{ClusterIPs: []string{"10.43.0.1"}}},
 		&discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default", Labels: map[string]string{discoveryv1.LabelServiceName: "kubernetes"}},
@@ -166,7 +170,17 @@ func TestDatabaseNetworkMaintenanceRefreshesOrdinaryPostgresAPIEgress(t *testing
 		}
 	}
 	if !replaced || !serviceRetained || !reflect.DeepEqual(current, expected) {
-		t.Fatal("API endpoint refresh changed object identity, non-API rules, ports, ingress or metadata")
+		describe := func(policy *networkingv1.NetworkPolicy) string {
+			raw, err := json.Marshal(policy)
+			if err != nil {
+				return err.Error()
+			}
+			if len(raw) > 8192 {
+				return string(raw[:8192]) + " (truncated)"
+			}
+			return string(raw)
+		}
+		t.Fatalf("API endpoint refresh changed object identity, non-API rules, ports, ingress or metadata\nexpected: %s\nactual: %s", describe(expected), describe(current))
 	}
 	kube.ClearActions()
 	if err = c.ReconcileDatabaseNetworkPolicy(context.Background(), d, func() error { t.Error("unchanged policy requested mutation authority"); return nil }); err != nil {
