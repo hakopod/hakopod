@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -185,6 +186,9 @@ func catalogTestValues(template Template) map[string]string {
 			if f.Name == "storage-bucket" {
 				values[f.Name] = "catalog-media"
 			}
+			if f.Name == "media-storage-class" {
+				values[f.Name] = "shared-media"
+			}
 		}
 	}
 	return values
@@ -206,6 +210,14 @@ func TestTemplateComputeRequirementsDescribeWorkloads(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("PostgreSQL must disclose its persistent storage requirement before configuration")
+	}
+	if !slices.Contains(byID["mathesar"].WorkloadRequirements, "shared_storage") {
+		t.Fatal("Mathesar must disclose ReadWriteMany storage before hosted users configure it")
+	}
+	for _, id := range []string{"postgresql", "xem"} {
+		if slices.Contains(byID[id].WorkloadRequirements, "shared_storage") {
+			t.Fatalf("%s only uses independent persistent claims and must not require shared storage", id)
+		}
 	}
 	nginx, exists := byID["nginx"]
 	if !exists || len(nginx.WorkloadRequirements) != 0 {

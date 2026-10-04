@@ -28421,6 +28421,36 @@
           "expires_at"
         ]
       },
+      "TemplateConfigOption": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "TemplateConfigCondition": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value"
+        ]
+      },
       "TemplateConfigField": {
         "type": "object",
         "properties": {
@@ -28438,6 +28468,15 @@
           },
           "required": {
             "type": "boolean"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateConfigOption"
+            }
+          },
+          "when": {
+            "$ref": "#/components/schemas/TemplateConfigCondition"
           }
         },
         "required": [

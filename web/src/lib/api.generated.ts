@@ -7310,12 +7310,22 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
+        TemplateConfigOption: {
+            label: string;
+            value: string;
+        };
+        TemplateConfigCondition: {
+            field: string;
+            value: string;
+        };
         TemplateConfigField: {
             name: string;
             label: string;
             description: string;
             default: string;
             required: boolean;
+            options?: components["schemas"]["TemplateConfigOption"][];
+            when?: components["schemas"]["TemplateConfigCondition"];
         };
         TemplateSecretField: {
             name: string;

@@ -3,8 +3,11 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,6 +20,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
+
+// RSA generation is CPU work; keep concurrent requests from saturating the API.
+var templateRSAKeySlots = make(chan struct{}, 2)
 
 func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -220,6 +226,23 @@ func (s *Server) putTemplateSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) generateTemplateSecret(ctx context.Context, project, environment, application string, field spec.TemplateSecretField) (string, error) {
+	if field.Format == "base64-rsa-private-key" {
+		select {
+		case templateRSAKeySlots <- struct{}{}:
+			defer func() { <-templateRSAKeySlots }()
+		case <-ctx.Done():
+			return "", fmt.Errorf("secure credential generation timed out")
+		}
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return "", fmt.Errorf("secure credential generation is unavailable")
+		}
+		der, err := x509.MarshalPKCS8PrivateKey(key)
+		if err != nil {
+			return "", fmt.Errorf("private key encoding is unavailable")
+		}
+		return base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})), nil
+	}
 	if field.Format == "postgres-url" || field.Format == "redis-url" {
 		password := "database-password"
 		if field.Format == "redis-url" {

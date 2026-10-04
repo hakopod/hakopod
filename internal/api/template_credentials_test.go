@@ -45,6 +45,10 @@ func templateSecretKube(t *testing.T, architectures ...string) *cluster.Client {
 			write(w, 200, map[string]any{"apiVersion": "storage.k8s.io/v1", "kind": "StorageClassList", "items": []any{map[string]any{"metadata": map[string]any{"name": "test-storage", "annotations": map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}}, "provisioner": "test.invalid/storage"}}})
 			return
 		}
+		if r.URL.Path == "/apis/storage.k8s.io/v1/storageclasses/test-storage" {
+			write(w, 200, map[string]any{"apiVersion": "storage.k8s.io/v1", "kind": "StorageClass", "metadata": map[string]any{"name": "test-storage"}, "provisioner": "test.invalid/storage"})
+			return
+		}
 		if r.URL.Path == "/api/v1/nodes" {
 			write(w, 200, map[string]any{"apiVersion": "v1", "kind": "NodeList", "items": []any{map[string]any{"metadata": map[string]any{"name": "fixture-node", "labels": map[string]string{"kubernetes.io/arch": architecture}}, "status": map[string]any{"conditions": []any{map[string]string{"type": "Ready", "status": "True"}}, "allocatable": map[string]string{"cpu": "8", "memory": "16Gi"}}}}})
 			return

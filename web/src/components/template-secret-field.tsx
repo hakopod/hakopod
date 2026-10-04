@@ -7,6 +7,46 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 
+export async function generateTemplateSecretValue(format: string) {
+  if (format === 'base64-rsa-private-key') {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        (async () => {
+          const keys = await crypto.subtle.generateKey(
+            {
+              name: 'RSA-OAEP',
+              modulusLength: 2048,
+              publicExponent: new Uint8Array([1, 0, 1]),
+              hash: 'SHA-256',
+            },
+            true,
+            ['encrypt', 'decrypt'],
+          )
+          const encoded = btoa(
+            String.fromCharCode(
+              ...new Uint8Array(await crypto.subtle.exportKey('pkcs8', keys.privateKey)),
+            ),
+          )
+          const pem = `-----BEGIN PRIVATE KEY-----\n${encoded.match(/.{1,64}/g)!.join('\n')}\n-----END PRIVATE KEY-----\n`
+          return btoa(pem)
+        })(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Secure generation timed out.')), 10000)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  const bytes = crypto.getRandomValues(
+    new Uint8Array(format === 'hex32' ? 16 : format === 'token64' ? 48 : 32),
+  )
+  return format === 'hex32'
+    ? Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+    : btoa(String.fromCharCode(...bytes))
+}
+
 export function TemplateSecretField({
   templateId,
   field,
@@ -31,6 +71,7 @@ export function TemplateSecretField({
   onCancel: () => void
 }) {
   const [error, setError] = useState('')
+  const [generating, setGenerating] = useState(false)
   const pem = ['certificate', 'private-key'].includes(field.format)
   const derived = ['postgres-url', 'redis-url'].includes(field.format)
   async function save(generate = false) {
@@ -77,7 +118,7 @@ export function TemplateSecretField({
             type="password"
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            maxLength={4096}
+            maxLength={field.format === 'base64-rsa-private-key' ? 8192 : 4096}
             autoComplete="new-password"
             spellCheck={false}
             required
@@ -111,29 +152,28 @@ export function TemplateSecretField({
         </label>
       )}
       {field.generate && !derived && (
-        <div className="inline-actions">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             disabled={busy}
-            onClick={() => {
+            onClick={async () => {
+              if (busy || generating) return
+              setGenerating(true)
+              onBusy(true)
               try {
-                const bytes = crypto.getRandomValues(
-                  new Uint8Array(field.format === 'hex32' ? 16 : 32),
-                )
-                onChange(
-                  field.format === 'hex32'
-                    ? Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-                    : btoa(String.fromCharCode(...bytes)),
-                )
+                onChange(await generateTemplateSecretValue(field.format))
                 setError('')
               } catch {
                 setError(
-                  'Secure generation is unavailable in this browser. Supply your own generated value.',
+                  'Secure generation could not finish. Try again or supply your own generated value.',
                 )
+              } finally {
+                setGenerating(false)
+                onBusy(false)
               }
             }}
           >
-            Generate value
+            {generating ? 'Generating…' : 'Generate value'}
           </Button>
           <Button
             type="button"
@@ -148,13 +188,13 @@ export function TemplateSecretField({
           >
             Copy value
           </Button>
-          <span className="field-help">Generated values are saved only when you choose Save.</span>
+          <span className="field-help basis-full">Generated values are saved only when you choose Save.</span>
         </div>
       )}
       {error && <RequestError error={error} />}
-      <div className="inline-actions">
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" variant="primary" disabled={busy || !value}>
-          {busy ? 'Saving…' : replacing ? 'Replace secret' : 'Save secret'}
+          {busy && !generating ? 'Saving…' : replacing ? 'Replace secret' : 'Save secret'}
         </Button>
         {derived && (
           <Button type="button" disabled={busy} onClick={() => void save(true)}>

@@ -4,9 +4,9 @@ Templates produce the same versioned application specification, review, optimist
 
 The shared catalog is maintained in [hakopod/templates](https://github.com/hakopod/templates), pinned at `templates/` in both the engine and website. Native TOML, metadata, requirements and logos have one source. The binary embeds the catalog at build time and never fetches or executes remote template definitions at runtime.
 
-The catalog has 77 entries: 40 deployment presets and 37 migration guides. All 58 requested Dokploy blueprints are recorded, with the existing Valkey preset retained. A migration guide is not deployment support. The engine now has [deployment jobs, file mounts, connection bindings and named HTTP endpoints](application-lifecycle.md), but candidates still need conversion and live verification before promotion. Privileged/root initialization, public UDP, image compatibility and application-specific bootstrap behavior remain separate prerequisites. The deploy API rejects these guides. Consult each entry’s `README.md` and `migration.json` for exact coverage.
+The catalog has 78 entries: 43 deployment presets and 35 migration guides. All 58 requested Dokploy blueprints are recorded, with the existing Valkey preset retained. A migration guide is not deployment support. The engine now has [deployment jobs, file mounts, connection bindings and named HTTP endpoints](application-lifecycle.md), but candidates still need conversion and live verification before promotion. Privileged/root initialization, public UDP, image compatibility and application-specific bootstrap behavior remain separate prerequisites. The deploy API rejects these guides. Consult each entry’s `README.md` and `migration.json` for exact coverage.
 
-All enabled presets use immutable image digests. `templates/images.lock.json` records registry checks, while each entry’s `verification` distinguishes these from actual runtime acceptance. The original 13 deployment specifications are preserved exactly. New preset live acceptance is pending. BentoPDF was blocked by Docker Hub rate limiting before workload creation. Browserless reached image creation but filled the small development disk and timed out. Its namespace, credential and exclusive cached blobs were removed; all existing deployments returned ready. Reserve at least 8 GiB free disk before testing that browser image.
+All enabled presets use immutable image digests. `templates/images.lock.json` records registry checks, while each entry’s `verification` distinguishes these from actual runtime acceptance. The original 13 deployment specifications are preserved exactly. Mathesar passed the ARM64 development-cluster acceptance recorded in its blueprint; other presets retain their individual verification limits. BentoPDF was blocked by Docker Hub rate limiting before workload creation. Browserless reached image creation but filled the small development disk and timed out. Its namespace, credential and exclusive cached blobs were removed; all existing deployments returned ready. Reserve at least 8 GiB free disk before testing that browser image.
 
 The form exposes ordinary configuration separately from scoped secrets and retains inputs after a failed request. Required configuration is checked before review and again by the API. Never substitute secret values into TOML.
 
@@ -29,7 +29,7 @@ Memory values below are Kubernetes request / limit. These are small starting con
 | Uptime Kuma 2.5.4 | Workspace: 308 / 615 MiB | Complete administrator setup before sharing. Persistent data and 256 MiB Node heap. |
 | Gitea 1.27.3 rootless | Workspace: 308 / 615 MiB | Complete administrator setup before sharing. Persistent SQLite and app.ini; HTTP Git only. |
 | vLLM 0.29.0 | Runtime: 8 / 16 GiB RAM, one NVIDIA GPU | `inference-api-key`; explicit Hugging Face owner/model and immutable revision. GPU VRAM is additional and depends on model. |
-| xem.email | Guided prerequisite entry | Official frontend embeds its API origin during image build. See [the Xem deployment review](templates-xem.md); a blind runtime-only template is intentionally unavailable. |
+| Xem | Proxy, frontend, API, optional PostgreSQL, Redis and MinIO | Each dependency can be bundled or existing. MinIO is the default media store. Current isolated-registry image pins are for development verification; public publication is pending. See [the Xem template](templates-xem.md). |
 
 Database templates force private exposure even if the plan request asks for public access. Their readiness gates are TCP for PostgreSQL, Redis/Valkey, MySQL and CockroachDB, and `/ping` for ClickHouse. These gates show a listening process; they do not establish recovery guarantees, replication, backup correctness, or production sizing. Set up backups before placing important data in a database. Redis/Valkey's no-eviction policy returns write failures when its explicit data budget is full.
 
@@ -37,7 +37,7 @@ A `storage_gib` setting applies to each persistent service, accepts 1–200 GiB 
 
 PostgreSQL and MySQL expose initial database and user names. They default to `app` and `hakopod`; changing initialization variables does not change an existing database. PostgreSQL's initial user has administrator rights. MySQL uses separate application and root passwords. Create narrower database accounts inside the database when needed.
 
-During review, generate or supply each required credential. Browser generation uses `crypto.getRandomValues`; copying a generated value is available before saving. The write-only secret API validates formats, and generation through the API uses Go's cryptographic random source. Existing references are preserved unless explicitly replaced. Infisical connection URLs can be built directly from the saved password references without returning those passwords to the browser. Provider keys and certificate material must come from their actual provider or issuer.
+During review, generate or supply each required credential. Browser generation uses Web Crypto, including RSA key generation for Xem; copying a generated value is available before saving. The write-only secret API validates formats, and generation through the API uses Go's cryptographic random source. Existing references are preserved unless explicitly replaced. Infisical connection URLs can be built directly from the saved password references without returning those passwords to the browser. Provider keys and certificate material must come from their actual provider or issuer.
 
 The template deployment endpoint parses the reviewed TOML, compares it with the current template and chosen options, then reads the scoped secret references and checks their formats and relationships before durable acceptance. A changed catalog or TOML requires another review. Failed validation queues no deployment. These checks apply to the guided template endpoint; ordinary TOML deployment remains available for custom specifications. Secret values remain mutable references and are not revision-pinned by this check.
 
@@ -56,6 +56,39 @@ Flowise installs the real upstream visual agent/workflow runtime. It requires `c
 CockroachDB requires `database-ca`, `database-node-cert` and `database-node-key` PEM secrets. The node certificate must identify the `node` principal and cover `main` and `localhost` (plus any client-facing internal DNS names you use). The process writes them under a private `/tmp` directory and starts with TLS enabled; the admin HTTP listener is loopback-only. Keep the CA private key outside the application. Use a client certificate to initialize SQL users and database grants. No plaintext/insecure startup option is offered.
 
 vLLM has an authenticated API and does not enable remote repository code. Public Hugging Face metadata may be resolved to an immutable model revision during planning. For a private or gated model, enable the model-token option, provide its immutable revision and save an approved Hugging Face read token as `model-token`; the workload receives it as `HF_TOKEN`. Its AMD64 and ARM64 images require a compatible NVIDIA GPU, CUDA 13 driver and device plugin. ARM64 refers to NVIDIA SBSA hardware, not an ordinary ARM CPU node. GPU workloads receive a private 1 GiB memory-backed `/dev/shm`. The image is about 10 GB compressed and is never downloaded by the control plane for catalog browsing.
+
+## Mathesar
+
+Mathesar 0.12.0 offers **Bundled PostgreSQL** or **Existing PostgreSQL**. Bundled
+mode creates a private PostgreSQL 17 service and its persistent volume. Existing
+mode asks for the host, port, database, user and TLS mode and removes that service,
+volume and startup dependency. It uses the same scoped `database-password`
+reference; passwords never enter template values or reviewed TOML. Use a dedicated
+existing database with a role allowed to run Mathesar's migrations. The choice
+does not migrate or delete an existing installation.
+
+External connections default to `verify-full` with the container's system CA
+bundle. `require` encrypts without verifying the server identity; `disable` is an
+explicit choice for trusted private networks. A private CA requires a trusted CA
+file mounted through the service's secret-file configuration. The template sets
+both Mathesar's `POSTGRES_SSLMODE` and libpq's `PGSSLMODE`: Mathesar 0.12.0 replaces
+Django's connection options, so relying only on its environment variable would
+lose the selected TLS policy. Private endpoints still need the installation's
+approved network access; supplying a hostname does not create a network grant.
+
+The public Caddy service forwards HTTPS requests to the private Mathesar backend
+and serves uploaded media. Supply a `ReadWriteMany` storage class for their shared
+media claim; ordinary local-path and block volumes cannot replace it. Both services
+use the same non-root filesystem group, and Caddy mounts media read-only. Static
+assets are collected into a bounded temporary mount and served by WhiteNoise.
+PostgreSQL, when bundled, uses its own persistent claim. The signing key is a
+stable scoped `secret-key` with at least 64 characters. Finish domain/TLS setup and
+the first administrator setup before sharing the URL.
+
+See the [shared Mathesar blueprint](../templates/blueprints/mathesar/README.md)
+for recovery, optional upstream configuration, media URL access and verification
+limits. Choosing an external database saves the bundled database's resources; it
+does not remove the shared-media storage requirement.
 
 ## Additional complete presets
 
