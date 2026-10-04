@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,6 +23,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
@@ -38,17 +42,55 @@ const liveS3Image = "chrislusf/seaweedfs:4.06@sha256:a064c6923daf4451c943cec2f43
 const liveBackupPostgres = "docker.io/library/postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
 const liveBackupMySQL = "docker.io/library/mysql:8.4.11@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a"
 
+func logLiveBackupAWSFailure(t *testing.T, stage string, err error) {
+	t.Helper()
+	status := 0
+	var response *smithyhttp.ResponseError
+	if errors.As(err, &response) {
+		status = response.HTTPStatusCode()
+	}
+	code := "unknown"
+	var apiError smithy.APIError
+	if errors.As(err, &apiError) {
+		switch apiError.ErrorCode() {
+		case "AccessDenied", "ContentSHA256Mismatch", "InternalError", "InvalidAccessKeyId", "InvalidRequest", "NoSuchBucket", "NotImplemented", "PreconditionFailed", "RequestTimeout", "ServiceUnavailable", "SignatureDoesNotMatch", "SlowDown", "XAmzContentSHA256Mismatch":
+			code = apiError.ErrorCode()
+		}
+	}
+	t.Logf("S3 %s failed status=%d code=%s", stage, status, code)
+}
+
+func logLiveBackupObjectStoreFailure(t *testing.T, name, stage string, err error) {
+	t.Helper()
+	logLiveBackupAWSFailure(t, stage, err)
+	diagnostic, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	state, stateErr := exec.CommandContext(diagnostic, "docker", "inspect", "--format", "status={{.State.Status}} oom={{.State.OOMKilled}} exit={{.State.ExitCode}}", name).Output()
+	if stateErr == nil && regexp.MustCompile(`^status=[a-z]+ oom=(true|false) exit=[0-9]+\s*$`).Match(state) {
+		t.Log(strings.TrimSpace(string(state)))
+	}
+	port, portErr := exec.CommandContext(diagnostic, "docker", "port", name, "9000/tcp").Output()
+	if portErr == nil && regexp.MustCompile(`^127\.0\.0\.1:[0-9]+\s*$`).Match(port) {
+		t.Log("published=" + strings.TrimSpace(string(port)))
+	}
+	logs, _ := exec.CommandContext(diagnostic, "docker", "logs", "--tail", "40", name).CombinedOutput()
+	if strings.Contains(string(logs), "fail to read /etc/seaweedfs/s3.json") && strings.Contains(string(logs), "permission denied") {
+		t.Log("S3 credential config is unreadable by the fixture process")
+	}
+}
+
 func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, string, *s3.Client) {
 	t.Helper()
 	name := "hakopod-backup-smoke-" + store.NewID()[:10]
 	access := "fixture-access"
 	secret := store.NewID() + store.NewID()
 	config := filepath.Join(t.TempDir(), "s3.json")
+	data := t.TempDir()
 	body, _ := json.Marshal(map[string]any{"identities": []any{map[string]any{"name": "development-fixture", "credentials": []any{map[string]string{"accessKey": access, "secretKey": secret}}, "actions": []string{"Admin", "Read", "Write", "List", "Tagging"}}}})
 	if err := os.WriteFile(config, body, 0600); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.CommandContext(ctx, "docker", "run", "--rm", "-d", "--name", name, "--label", "com.hakopod.test=backups", "--memory=384m", "--cpus=1", "--pids-limit=128", "-p", "127.0.0.1::9000", "-e", "GOMEMLIMIT=256MiB", "--mount", "type=bind,source="+config+",target=/etc/seaweedfs/s3.json,readonly", liveS3Image, "server", "-s3", "-s3.port=9000", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data", "-master.volumeSizeLimitMB=8", "-volume.max=16", "-ip=127.0.0.1", "-ip.bind=0.0.0.0")
+	command := exec.CommandContext(ctx, "docker", "run", "-d", "--name", name, "--label", "com.hakopod.test=backups", "--user", strconv.Itoa(os.Getuid())+":"+strconv.Itoa(os.Getgid()), "--memory=384m", "--cpus=1", "--pids-limit=128", "-p", "127.0.0.1::9000", "-e", "GOMEMLIMIT=256MiB", "--mount", "type=bind,source="+config+",target=/etc/seaweedfs/s3.json,readonly", "--mount", "type=bind,source="+data+",target=/data", liveS3Image, "server", "-s3", "-s3.port=9000", "-s3.config=/etc/seaweedfs/s3.json", "-dir=/data", "-master.volumeSizeLimitMB=8", "-volume.max=16", "-ip=127.0.0.1", "-ip.bind=0.0.0.0")
 	if err := command.Run(); err != nil {
 		t.Fatal("start disposable S3 server", err)
 	}
@@ -73,6 +115,7 @@ func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, s
 		}
 		select {
 		case <-ready.Done():
+			logLiveBackupObjectStoreFailure(t, name, "list readiness", err)
 			t.Fatal("S3 readiness timed out")
 		case <-time.After(time.Second):
 		}
@@ -81,7 +124,7 @@ func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, s
 		t.Fatal("create disposable S3 bucket", err)
 	}
 	for {
-		_, err = client.PutObject(ready, &s3.PutObjectInput{Bucket: aws.String("hakopod-backup-tests"), Key: aws.String("readiness"), Body: strings.NewReader("development fixture")})
+		_, err = client.PutObject(ready, &s3.PutObjectInput{Bucket: aws.String("hakopod-backup-tests"), Key: aws.String("readiness"), Body: strings.NewReader("development fixture"), ContentLength: aws.Int64(int64(len("development fixture")))})
 		if err == nil {
 			break
 		}
@@ -90,13 +133,7 @@ func liveBackupObjectStore(t *testing.T, ctx context.Context) (string, string, s
 		case <-time.After(time.Second):
 			continue
 		}
-		logs, _ := exec.CommandContext(ctx, "docker", "logs", "--tail", "40", name).CombinedOutput()
-		// The fixture logs contain only storage startup and volume allocation facts.
-		for _, line := range strings.Split(string(logs), "\n") {
-			if strings.Contains(line, "volume") || strings.Contains(line, "disk") {
-				t.Log(line)
-			}
-		}
+		logLiveBackupObjectStoreFailure(t, name, "write readiness", err)
 		t.Fatal("S3 write readiness failed")
 	}
 	return endpoint, access, secret, client
@@ -108,7 +145,32 @@ func TestLiveBackupObjectStore(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	liveBackupObjectStore(t, ctx)
+	endpoint, access, secret, client := liveBackupObjectStore(t, ctx)
+	conditional, cancelConditional := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelConditional()
+	objectStore := backup.NewS3(backup.Destination{Endpoint: endpoint, Region: "us-east-1", Bucket: "hakopod-backup-tests", PathStyle: true}, backup.Credentials{AccessKeyID: access, SecretAccessKey: secret})
+	defer objectStore.Close()
+	const content = "conditional development fixture"
+	if _, _, err := objectStore.Put(conditional, "conditional-readiness", strings.NewReader(content), int64(len(content))); err != nil {
+		_, diagnosticErr := client.PutObject(conditional, &s3.PutObjectInput{Bucket: aws.String("hakopod-backup-tests"), Key: aws.String("conditional-diagnostic"), Body: strings.NewReader(content), ContentLength: aws.Int64(int64(len(content))), IfNoneMatch: aws.String("*")})
+		logLiveBackupAWSFailure(t, "conditional write", diagnosticErr)
+		_, headErr := client.HeadObject(conditional, &s3.HeadObjectInput{Bucket: aws.String("hakopod-backup-tests"), Key: aws.String("conditional-readiness")})
+		if headErr == nil {
+			t.Log("conditional object exists after reported write failure")
+		} else {
+			logLiveBackupAWSFailure(t, "conditional object check", headErr)
+		}
+		t.Fatal("conditional S3 write failed")
+	}
+	reader, size, err := objectStore.Get(conditional, "conditional-readiness")
+	if err != nil {
+		t.Fatal("read conditional S3 object", err)
+	}
+	defer reader.Close()
+	got, err := io.ReadAll(io.LimitReader(reader, int64(len(content)+1)))
+	if err != nil || size != int64(len(content)) || string(got) != content {
+		t.Fatal("conditional S3 object did not round trip")
+	}
 }
 
 type liveBackupDatabase struct {
