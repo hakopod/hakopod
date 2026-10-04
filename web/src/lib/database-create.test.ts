@@ -40,11 +40,11 @@ test('creation review blocks unavailable engines and unsupported topology', () =
   assert.match(databaseCreateIssue({ ...redis, replicas: 3 }, 1) || '', /between 1 and 2/)
 })
 
-test('MySQL remains held while its sizing rules stay explicit', () => {
+test('MySQL creation requires a supported version, voting layout and resource allocation', () => {
   const mysql = { ...initialDatabaseSpec, name: 'orders-mysql', engine: 'mysql' as const, version: '8.4', cpu: '500m', memory: '1Gi' }
-  assert.match(databaseCreateIssue(mysql, 0) || '', /available/)
+  assert.equal(databaseCreateIssue(mysql, 0), undefined)
   for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(mysql, step), undefined)
-  assert.match(databaseCreateIssue({ ...mysql, version: '8.0' }, 0) || '', /available/)
+  assert.match(databaseCreateIssue({ ...mysql, version: '8.0' }, 0) || '', /supported database version/)
   for (const replicas of [2, 4, 6]) assert.equal(databaseCreateIssue({ ...mysql, mode: 'cluster', replicas }, 1), undefined)
   for (const replicas of [1, 3, 5]) assert.match(databaseCreateIssue({ ...mysql, mode: 'cluster', replicas }, 1) || '', /voting members/)
   assert.match(databaseCreateIssue({ ...mysql, cpu: '499m' }, 2) || '', /at least 500m/)
