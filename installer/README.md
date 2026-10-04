@@ -310,8 +310,9 @@ Managed Actions is an optional Pro module. See [the setup and lifecycle guide](.
 ## Managed database controllers
 
 The installer kit now carries a `deploy/database-controllers` bundle. Release
-packaging renders PostgreSQL, Redis and MongoDB controller sources with pinned
-checksums and image digests. MySQL, ClickHouse and Oracle Database remain held
+packaging renders PostgreSQL, Redis, MySQL and MongoDB controller sources with
+pinned checksums and image digests. Alpha.50 adds the MySQL controller.
+ClickHouse and Oracle Database remain held
 for a later release. Building that bundle requires
 PyYAML on a Linux build host and `HAKOPOD_REDIS_CONTROLLER_IMAGE` naming the
 separately qualified credential/TLS-safe Redis image. The builder downloads and
@@ -319,18 +320,27 @@ checks the pinned Helm binary itself. Controller installation uses only Python,
 kubectl and the packaged JSON; it does not download charts or install Python
 packages on the target host.
 
-Release builds include Vitess and require native qualification records that match
-the current source and exact runtime images. Packaging stops when those records
-are missing or stale. The Vitess payload contains eight CRDs. Hakopod creates a
-separate, namespace-scoped operator for each Vitess database; this module does
-not install a shared Vitess controller. Development-only bundles may pass
-`--without-vitess`; a kit that omits Vitess cannot enable it.
+The release inventory requires the static `mysql.json` payload and rejects
+missing or unexpected controller files. That payload installs the pinned MySQL
+controller with debug logging set to `0`, automatic password storage disabled
+and no extra helper containers. Use the existing reviewed module workflow for
+production installation. Installing the controller satisfies one MySQL
+admission prerequisite; creation also requires the current pin, a healthy
+rollout, required permissions and valid placement and capacity. It does not by
+itself qualify MySQL or enable Cloud admission.
+
+Vitess remains behind a compiled release gate, so the alpha.50 package
+omits it. Enabling that gate requires native qualification records matching the
+current source and exact runtime images; packaging stops when those records are
+missing or stale. An enabled Vitess payload contains eight CRDs. Hakopod creates
+a separate, namespace-scoped operator for each Vitess database; this module does
+not install a shared Vitess controller. A kit that omits Vitess cannot enable it.
 
 From the matching extracted installer kit on a completed installer-owned host:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mongodb \
+  --engines postgresql redis mysql mongodb \
   --plan /root/hakopod-database-controllers-plan.json
 ```
 
@@ -343,7 +353,7 @@ Then apply that exact plan within 30 minutes:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mongodb \
+  --engines postgresql redis mysql mongodb \
   --apply-reviewed-plan /root/hakopod-database-controllers-plan.json
 ```
 

@@ -1,10 +1,10 @@
 # Managed MySQL
 
-Status: unavailable in `v0.1.0-alpha.47`. Earlier lifecycle, Router TLS and
-private application binding checks passed, but the October 2 qualification run
-failed scaling and timed out before clustered lifecycle and recovery completed.
-Creation remains disabled in the API and dashboard. This guide describes the
-implementation and earlier development evidence, not a released feature.
+Private managed MySQL 8.4 is included in self-hosted `v0.1.0-alpha.50`.
+Install the matching pinned controller before creating a database. Native
+engine and replica-retry tests passed on the named development cluster; their
+exact scope is recorded below. Cloud provisioning requires a separate operator
+rollout and approved capacity.
 
 ## Choose a layout
 
@@ -56,7 +56,39 @@ Per-member CPU, memory, storage, placement and engine version are fixed at
 creation. Recover into a separate database to change them. The selected native
 operator does not safely reconcile arbitrary pod-resource edits. A supported
 replica-count change requires a current healthy observation and a reviewed
-revision. Capacity must remain available during the change.
+revision. Capacity must remain available during the change. Reducing replicas
+does not release the earlier CPU or storage reservation; both remain reserved
+until verified database deletion. After the replica change succeeds, the memory
+reservation follows the completed layout.
+
+### Retry a failed replica change
+
+Open the database's Activity tab and select **Review retry** on the latest
+failed replica change. Hakopod checks whether the controller accepted the
+requested revision. If it did, the retry checks that rollout again. If it did
+not, the previous layout must pass fresh health and topology checks before
+Hakopod can retry the change.
+
+Review the warnings and type the database name to confirm. A retry creates a
+new operation while preserving the requested replica count, configuration
+revision and reservations. Activity keeps the earlier attempt and its failure.
+The database stays unready until native checks pass.
+
+The CLI uses the same review:
+
+```sh
+hakopod database resize-retry-plan DATABASE_ID \
+  --operation-id FAILED_OPERATION_ID --revision CURRENT_REVISION
+hakopod database resize-retry DATABASE_ID \
+  --operation-id FAILED_OPERATION_ID --revision CURRENT_REVISION \
+  --review-id REVIEW_ID --name orders-mysql --idempotency-key SAVED_RETRY_KEY
+```
+
+Keep the exact request and its 8–128 character key before submitting. If the
+connection fails, resend the same request and key to retrieve that attempt.
+If the attempt itself fails, review the latest failed operation and use a new
+key. An expired review must be refreshed. A retry cannot select a different
+replica count or bypass a lost quorum; recover native health first.
 
 ## Connect with verified TLS
 
@@ -149,9 +181,18 @@ are reclaimed. An interrupted or stalled deletion must remain visible as such.
 ## Operator prerequisites
 
 The implementation pins MySQL Operator 26.7.0-2.3.0, server 8.4.12 and Router
-8.4.10 by digest. The verified manifests currently require amd64. The installer
-at `scripts/install-development-mysql-controller.sh` targets only the named
-development cluster; it is not a production installation workflow.
+8.4.10 by digest. The verified manifests currently require amd64. Alpha.50
+packages the pinned controller as `mysql.json`; packaging requires that exact
+payload and fails on a missing or unexpected controller file. Production
+installation follows the reviewed installer-module plan and apply workflow.
+The script at `scripts/install-development-mysql-controller.sh` remains limited
+to the named development cluster.
+
+The packaged controller keeps debug logging at `0`, disables automatic password
+storage and rejects extra helper containers. Installing it satisfies one MySQL
+admission prerequisite. Creation still requires the current pinned controller,
+a healthy controller rollout, required permissions and valid placement and
+capacity.
 
 On gVisor workers, MySQL and its sidecar share a bounded 16Mi socket volume.
 Containerd must pass these exact pod annotations to runsc:
@@ -177,40 +218,26 @@ enabling MySQL does not imply that Vitess is available.
 
 ## Current verification
 
-The retained development logs were inspected again on September 30, 2026.
-`mysql-lifecycle-fixed-live.log` records passing lifecycle and clustered logical
-recovery; recovery took 1272.77 seconds. `mysql-quorum-fixed-live.log` records a
-passing quorum refusal/recovery and bounded credential-log audit in 158.82
-seconds. These are historical passes, not verification of subsequent source
-changes or a production deployment.
+The six native engine cases passed against `7b3842c` on 2026-10-04. They cover
+lifecycle and private application routes; one-, three-, five- and seven-member
+layouts; quorum loss and rejoin; encrypted logical backup and separate-target
+recovery; Router backend identity rejection; bounded credential-log audits;
+and cleanup with the namespace and persistent-volume inventories restored.
+The [release acceptance record](managed-database-release-acceptance.md#mysql-84)
+contains source revisions, immutable images, durations and evidence hashes.
 
-`mysql-scaling-fixed-live.log` verified five, seven and three voting members,
-then timed out waiting after Router replacement. The retained fixture currently
-reports database and Router pods evicted for ephemeral-storage pressure. This
-supports resolving development capacity before repeating the test; it does not
-establish a database recovery or rejoin implementation defect.
+The added replica-retry orchestration uses the unchanged MySQL runtime. Its
+native API/reconciler test passed against `2675ccf`: a retry from the prior
+layout reached five members, and a retry of an accepted change reached three.
+Both retained committed binary data, the original failure and exact-request
+replay. Cleanup reclaimed the fixture namespace and volumes.
 
-Router keeps warning-level logs so metadata certificate failures remain visible.
-Debug logging stays disabled. The native tests inspect complete bounded member,
-initialization, Router and operator logs for this fixture's credential and
-private-key values without printing those logs.
+The full Go suite against disposable PostgreSQL, Go vet, CLI/API/store
+regressions, 52 SDK tests, and dashboard build and 218 tests passed. Independent
+rendered review passed 86 retry UI cases across both themes and desktop/mobile
+widths. The installer candidate passed fresh-install and alpha.48/alpha.49
+upgrade checks on AMD64 and ARM64. These checks do not establish a production
+installation.
 
-The latest recovery-ingress gates and explicit recovery checks against every
-replica still need native acceptance. The standalone
-`TestManagedMySQLRouterBackendTLSLive` test checks the effective Router TLS
-configuration and injects unrelated-issuer and wrong-hostname server identities.
-It must prove that direct server authentication remains available, Router
-rejects the backend identity, and normal routing recovers after restoring the
-certificate. An earlier strict-certificate run passed on October 1, 2026, in
-360.724 seconds. Both unrelated-issuer and wrong-hostname rejection passed;
-normal fixture cleanup left no namespace or persistent-volume reference. This
-result predates the latest source. Reruns exposed hidden certificate details at
-the previous ERROR-only log level and repeated-error suppression in Router.
-The current test uses a fresh UID-checked Router process for each fault and
-requires new certificate-specific evidence. That native rerun passed on
-October 1, 2026, in 262.371 seconds. Both faults, restored routing and complete
-fixture credential-log audits passed. The namespace and its persistent-volume
-references are absent. The audit excludes only proven pre-fixture evictions,
-inspects overlapping current and previous container logs, and rejects lost
-restart history or an operator process change. Scaling and recovery acceptance
-remain pending.
+Public MySQL endpoints are a separate unresolved qualification area. Private
+engine qualification does not enable a public listener or Cloud public access.

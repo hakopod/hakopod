@@ -1,5 +1,95 @@
 # Managed database release acceptance
 
+## MySQL 8.4
+
+Six native MySQL cases passed on 2026-10-04 against the named
+`k3d-hakopod-dev` development cluster, UID
+`f63996ad-2bc2-4e6f-9051-26e03a28cf96`. The tested source was
+`7b3842cbb93bad934d7c7f4329f1bf19407f9493`, tree
+`8987482bbd298b2ab061fea8efcdcad4584b2260`, with templates revision
+`44f3bd6c396039920893592b0f93e5927562121c`.
+
+The immutable runtime references were:
+
+- Operator and sidecars:
+  `container-registry.oracle.com/mysql/community-operator:26.7.0-2.3.0@sha256:01ecaa57bf952850ff9ffd7caeb231a9c3335764fdb12488f132ea4605d8f364`
+- MySQL server:
+  `container-registry.oracle.com/mysql/community-server:8.4.12@sha256:7dcc4add9183664de3a214daf85a50c3ba6cccfd7534f700b6561bf5b41885be`
+- MySQL Router:
+  `container-registry.oracle.com/mysql/community-router:8.4.10@sha256:d704471c2bb78fa833790dc197959c004d09af5aa18f5f153ff40e7268f54043`
+
+The suite checked standalone and clustered lifecycle; authenticated binary
+reads and writes; hostname and issuer verification; plaintext refusal; scoped
+application accounts; replica write refusal; primary replacement; certificate
+renewal and old-CA overlap; separate-target backup and restore; binding and
+revocation; scaling from three to five to seven and back to three members;
+Router replacement; and quorum-loss write refusal with recovery of committed
+data. Router-to-server TLS tests separately rejected an unrelated issuer and
+the wrong hostname before verifying normal routing again.
+
+All six tests passed with no skips. Durations are Go test durations, excluding
+the surrounding evidence and cleanup commands.
+
+| Native test | Seconds | Test log SHA-256 |
+| --- | ---: | --- |
+| `TestManagedMySQLLive` | 821.27 | `f93e31a6addd5692917ed569653dc43db51c04aa5c35827842a8b436df99f30a` |
+| `TestManagedMySQLRecoveryLive` | 538.90 | `da6341d0528962daa979e5c451569d8a1970e225e69a3dc71149faa4eb22ff2d` |
+| `TestManagedMySQLScalingLive` | 665.15 | `9db805983810c4b1c6faf0d2648bfe49cab0535765705a028c819ae7f01cd937` |
+| `TestManagedMySQLRouterBackendTLSLive` | 235.08 | `cb441f40a891478111218ae8eeeed7a24db3fae9b6fb96114e8e9bf5caba306b` |
+| `TestManagedMySQLQuorumLive` | 297.29 | `1437fb86de0be316764015c000283e6ccf289f2a21d422b5d95fdbed9208fc5e` |
+| `TestManagedMySQLBindingLive` | 295.08 | `a46cb8a54c9e90e1144f10ea2967915d8c42922b93026806ce26794d5d6095c5` |
+
+The tracked source archive SHA-256 stayed
+`5bbfc502ce7a983e076ea54e22117f424064e79fa4b8c1e57ffc6ff8d25f21e6`.
+After cleanup, the normalized namespace inventory matched its baseline hash
+`67d297663db8502277c1e10020ef33d754cdf7026558ae4fc6de0c1428d1eea3`,
+and persistent volumes matched
+`28ed6f31aed97e320fad049b3be83e6e2399f2608db0db6eb92e57e5111613db`.
+No fixture database namespace or InnoDBCluster remained. The operator retained
+its pod UID and image with zero restarts. Bounded credential and private-key
+log scans found no matching markers.
+
+The later reviewed retry API, CLI, SDK and dashboard use this unchanged MySQL
+runtime. `TestManagedMySQLResizeRetryLive` passed against source
+`2675ccfff534f4d2b05853662314093ba0a44210`, tree
+`3257c9e0ca04795cabd32a1d8009b123bbc5c5c4`, on the same cluster and templates
+revision. Its Go test duration was 481.39 seconds, with no skips. The test log
+SHA-256 is `d1cdf579be3bc25beb20a91b596920194dc71e5fedad72969d4fb3b3c8f075de`.
+
+This test seeds failed operations only in a disposable control-plane
+PostgreSQL database through the durable claim and step-recording methods. It
+does not patch Kubernetes controller status. A retry from the prior layout
+converged at revision 2 with five native members; a retry after the controller
+accepted the change converged at revision 3 with three. Both preserved the
+committed binary value, original failure and exact-request replay. Deletion
+reclaimed the fixture namespace and volumes. Namespace and PV inventory hashes
+matched the baselines above; the operator retained its UID with zero restarts,
+and the disposable control-plane container was removed. The tracked source
+archive SHA-256 remained
+`c2b54b69243f2c0d2046062788f6098b7de8bd3e913a9be523dd26fbfac6983a`.
+
+The same candidate passed the full Go suite against disposable PostgreSQL,
+Go vet, focused API/store/CLI regressions, 52 SDK tests and generated-contract
+checks, and dashboard build, typecheck and 218 tests. Independent rendered UI
+review passed 86 cases: both themes at 1440, 390 and 320 pixels, MySQL and
+MongoDB retries, invalid or expired reviews, Activity navigation, keyboard and
+touch, failed submissions with retained confirmation and idempotency keys,
+and a successful submission. UI fixtures use explicitly artificial API data;
+they do not replace native acceptance. The UI result SHA-256 is
+`a15d3cdea90ec72d64232208380186ada06a1912019bb7df930e358af66a165c`.
+
+Candidate CI passed in [run 37195062244](https://github.com/hakopod/hakopod/actions/runs/37195062244).
+The alpha.50 installer package, both native smoke jobs, four fresh installs
+and eight alpha.48/alpha.49 upgrade cases passed in
+[run 37195062446](https://github.com/hakopod/hakopod/actions/runs/37195062446).
+The final tag's release workflow separately verifies and attests the published
+archives; candidate checks alone do not establish a published artifact.
+
+These tests ran on AMD64 development nodes sharing one physical VM. They do
+not establish independent-zone or cross-provider availability, a production
+deployment, point-in-time recovery or public MySQL endpoints. See the
+[MySQL guide](managed-mysql.md) for connection and recovery limits.
+
 ## Redis 8
 
 Redis was qualified on 2026-10-02 against the named `k3d-hakopod-dev`
