@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/backup"
@@ -51,6 +53,44 @@ func clickhouseAPISafeDiagnostic(output string) string {
 		return "stage=exec diagnostic=unavailable"
 	}
 	return diagnostic
+}
+
+func clickhouseAPIJobFailureCode(message string) string {
+	switch message {
+	case "S3 object upload failed":
+		return "s3_object_upload"
+	case "S3 multipart creation failed", "S3 multipart part upload failed", "S3 multipart completion failed":
+		return "s3_multipart_upload"
+	case "S3 object download failed":
+		return "s3_object_download"
+	case "backup producer failed", "database dump did not complete":
+		return "archive_producer"
+	case "uploaded database archive could not be verified":
+		return "archive_verification"
+	case "backup manifest upload failed; data cleanup was attempted":
+		return "manifest_upload"
+	case "managed database is not ready for backup", "managed database health could not be verified":
+		return "source_health"
+	case "managed database changed before backup", "managed database topology changed before backup":
+		return "source_changed"
+	case "managed recovery target changed", "managed recovery is not owned by the active backup job", "managed recovery target is not healthy":
+		return "recovery_target"
+	case "backup exceeds configured object size limit":
+		return "archive_size"
+	default:
+		return "unclassified"
+	}
+}
+
+func TestClickhouseAPIJobFailureDiagnosticsAreCredentialSafe(t *testing.T) {
+	if got := clickhouseAPIJobFailureCode("S3 object upload failed"); got != "s3_object_upload" {
+		t.Fatal("known upload failure lost its classification")
+	}
+	for _, message := range []string{"password=private", "S3 object upload failed: secret", strings.Repeat("private", 10000)} {
+		if got := clickhouseAPIJobFailureCode(message); got != "unclassified" {
+			t.Fatal("unexpected job error was not redacted")
+		}
+	}
 }
 
 func TestClickhouseAPIOutputBound(t *testing.T) {
@@ -214,7 +254,7 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint, access, secret, _ := liveBackupObjectStore(t, ctx)
+	endpoint, access, secret, objectClient := liveBackupObjectStore(t, ctx)
 	server := &api.Server{Store: db, Cluster: runtime, Auth: api.AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{23}, 32))}}
 	state := t.TempDir()
 	if err = os.Chmod(state, 0700); err != nil {
@@ -329,6 +369,28 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 	}
 	query(source, "source_create", "CREATE TABLE api_recovery (id UInt64, value String) ENGINE=MergeTree ORDER BY id")
 	query(source, "source_insert_initial", "INSERT INTO api_recovery VALUES (1, unhex('0080FF0D0A'))")
+	jobFailure := func(stage string, job backup.Job, databaseID string) {
+		t.Helper()
+		var databaseStatus, observedStatus string
+		var maintenanceActive bool
+		code := clickhouseAPIJobFailureCode(job.Error)
+		if stage == "backup" && code == "s3_object_upload" {
+			check, cancelCheck := context.WithTimeout(context.Background(), 5*time.Second)
+			_, headErr := objectClient.HeadObject(check, &s3.HeadObjectInput{Bucket: aws.String(destination.Destination.Bucket), Key: aws.String(backup.ObjectKey(destination.Destination, job.ID))})
+			cancelCheck()
+			if headErr == nil {
+				t.Log("backup object exists after reported upload failure")
+			} else {
+				logLiveBackupAWSFailure(t, "failed backup object check", headErr)
+			}
+		}
+		diagnostic, stop := context.WithTimeout(ctx, 3*time.Second)
+		defer stop()
+		if err := db.Pool.QueryRow(diagnostic, `SELECT status,COALESCE(observation->>'status',''),COALESCE(maintenance_lease_until>clock_timestamp(),false) FROM managed_databases WHERE id=$1`, databaseID).Scan(&databaseStatus, &observedStatus, &maintenanceActive); err != nil {
+			t.Fatalf("ClickHouse %s failed code=%s state=unavailable", stage, code)
+		}
+		t.Fatalf("ClickHouse %s failed code=%s database=%s observation=%s maintenance_active=%t", stage, code, databaseStatus, observedStatus, maintenanceActive)
+	}
 
 	var job backup.Job
 	if status, code := client.requestCode("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "clickhouse"}}, &job, "clickhouse-api-backup"); status != 202 {
@@ -350,7 +412,7 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 		if job.Status == "failed" {
-			t.Fatal("ClickHouse backup failed", job.ID, job.Status)
+			jobFailure("backup", job, source.ID)
 		}
 		if job.Status == "succeeded" {
 			break
@@ -383,7 +445,7 @@ func TestLiveManagedClickHouseAPIRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 		if recovery.Status == "failed" {
-			t.Fatal("ClickHouse restore failed", recovery.ID, recovery.Status)
+			jobFailure("restore", recovery, target.ID)
 		}
 		if recovery.Status == "succeeded" {
 			break
