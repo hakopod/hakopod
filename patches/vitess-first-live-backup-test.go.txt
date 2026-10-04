@@ -1,0 +1,58 @@
+package vitessshard
+
+import (
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	planetscalev2 "planetscale.dev/vitess-operator/pkg/apis/planetscale/v2"
+	"planetscale.dev/vitess-operator/pkg/operator/vttablet"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+func TestHakopodFirstLiveBackupRequiresStableOwnedPrimary(t *testing.T) {
+	primary := planetscalev2.VitessTabletStatus{
+		Type: "primary", Running: corev1.ConditionTrue, Ready: corev1.ConditionTrue,
+		Available: corev1.ConditionTrue, DataVolumeBound: corev1.ConditionTrue,
+	}
+	shard := &planetscalev2.VitessShard{Status: planetscalev2.VitessShardStatus{
+		HasMaster: corev1.ConditionTrue, ServingWrites: corev1.ConditionTrue,
+		MasterAlias: "zone1-100", Tablets: map[string]planetscalev2.VitessTabletStatus{"zone1-100": primary},
+	}}
+	if !firstLiveBackupReady(shard) {
+		t.Fatal("stable topology primary was rejected")
+	}
+	checks := map[string]func(*planetscalev2.VitessShard){
+		"not-serving-writes": func(v *planetscalev2.VitessShard) { v.Status.ServingWrites = corev1.ConditionFalse },
+		"foreign-alias": func(v *planetscalev2.VitessShard) { v.Status.MasterAlias = "zone1-999" },
+		"not-primary": func(v *planetscalev2.VitessShard) { s := v.Status.Tablets["zone1-100"]; s.Type = "replica"; v.Status.Tablets["zone1-100"] = s },
+		"not-ready": func(v *planetscalev2.VitessShard) { s := v.Status.Tablets["zone1-100"]; s.Ready = corev1.ConditionFalse; v.Status.Tablets["zone1-100"] = s },
+		"not-available": func(v *planetscalev2.VitessShard) { s := v.Status.Tablets["zone1-100"]; s.Available = corev1.ConditionFalse; v.Status.Tablets["zone1-100"] = s },
+		"volume-unbound": func(v *planetscalev2.VitessShard) { s := v.Status.Tablets["zone1-100"]; s.DataVolumeBound = corev1.ConditionFalse; v.Status.Tablets["zone1-100"] = s },
+	}
+	for name, change := range checks {
+		t.Run(name, func(t *testing.T) {
+			candidate := shard.DeepCopy()
+			change(candidate)
+			if firstLiveBackupReady(candidate) { t.Fatal("unsafe first live backup accepted") }
+		})
+	}
+}
+
+func TestHakopodFirstLiveBackupModePreservesTabletSpec(t *testing.T) {
+	tabletSpec := &vttablet.Spec{}
+	spec := &vttablet.BackupSpec{TabletSpec: tabletSpec, InitialBackup: true}
+	configureFirstLiveBackup(spec)
+	if spec.InitialBackup || !spec.AllowFirstBackup || spec.TabletSpec != tabletSpec {
+		t.Fatal("first live backup mode changed the owned tablet or retained empty initialization")
+	}
+}
+
+func TestHakopodBootstrapStatusTracksSelectedPod(t *testing.T) {
+	desired := client.ObjectKey{Namespace: "database", Name: "first-live"}
+	if !isBootstrapBackup(desired, desired) {
+		t.Fatal("selected first-live pod was not tracked")
+	}
+	if isBootstrapBackup(client.ObjectKey{Namespace: "database", Name: "init"}, desired) {
+		t.Fatal("stale empty-init pod was treated as the selected first-live pod")
+	}
+}

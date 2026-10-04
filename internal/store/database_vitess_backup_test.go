@@ -91,8 +91,8 @@ func TestVitessNativeStorageReservation(t *testing.T) {
 
 func TestVitessAllocationAndBindingTargets(t *testing.T) {
 	d := database.Resource{Status: "ready", Observation: database.Observation{Status: "ready"}, Spec: database.Spec{Engine: "vitess", Mode: "standalone", Shards: 1, Memory: "1Gi", StorageGiB: 5}}
-	if got := DatabaseMemoryReservation(d.Spec); got != 8480<<20 {
-		t.Fatalf("member/recovery memory = %d MiB; want 8480", got>>20)
+	if got := DatabaseMemoryReservation(d.Spec); got != 9504<<20 {
+		t.Fatalf("member/recovery memory = %d MiB; want 9504", got>>20)
 	}
 	if got := DatabaseStorageReservation(d.Spec); got != 18 {
 		t.Fatalf("member/topology/transient storage = %d; want 18", got)

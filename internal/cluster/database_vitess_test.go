@@ -29,10 +29,16 @@ func TestVitessScopedCredentials(t *testing.T) {
 		t.Fatal("internal credentials exposed to gateway users")
 	}
 	init := string(data["init.sql"])
-	if !strings.Contains(init, "GRANT ALL ON app.* TO 'vt_app'@'localhost'") || strings.Contains(init, "GRANT ALL ON *.* TO 'vt_app'") || !strings.Contains(init, "REQUIRE SSL") {
+	if strings.Contains(init, "CREATE DATABASE IF NOT EXISTS app") || !strings.Contains(init, "CREATE DATABASE IF NOT EXISTS _vt;") {
+		t.Fatal("Vitess bootstrap must preserve native fresh-storage detection and metadata setup")
+	}
+	if !strings.Contains(init, "GRANT ALL ON app.* TO 'vt_app'@'localhost'") ||
+		!strings.Contains(init, "GRANT SELECT, CREATE ON _vt.tables TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.tables FROM 'vt_app'@'localhost'") ||
+		!strings.Contains(init, "GRANT SELECT, UPDATE, CREATE ON _vt.schema_migrations TO 'vt_app'@'localhost'; REVOKE CREATE ON _vt.schema_migrations FROM 'vt_app'@'localhost'") ||
+		strings.Contains(init, "GRANT ALL ON *.* TO 'vt_app'") || !strings.Contains(init, "REQUIRE SSL") {
 		t.Fatal("application or replication grants exceed their boundary")
 	}
-	if !strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_allprivs'@'localhost'") || strings.Contains(init, "GRANT ALL ON *.* TO 'vt_allprivs'") || strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_app'") {
+	if !strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_allprivs'@'localhost'") || strings.Contains(init, "GRANT ALL ON *.* TO 'vt_allprivs'") || strings.Contains(init, "GRANT ALL ON _vt.* TO 'vt_app'") || strings.Contains(init, "GRANT INSERT ON _vt.") || strings.Contains(init, "GRANT DELETE ON _vt.") {
 		t.Fatal("Vitess metadata access must stay with the local internal account")
 	}
 }
@@ -71,9 +77,13 @@ func TestVitessPolicyLimitsClientsToGateway(t *testing.T) {
 	}
 }
 
-func TestVitessIncompleteRuntimeFailsClosed(t *testing.T) {
+func TestVitessRuntimeAdmissionMatchesBuild(t *testing.T) {
 	d := vitessTestDatabase()
-	if vitessRuntimeSupported(d.Spec) == nil {
+	err := vitessRuntimeSupported(d.Spec)
+	if (vitessNativeAcceptance || vitessReleaseQualified) && err != nil {
+		t.Fatal("native acceptance build rejected the valid Vitess runtime", err)
+	}
+	if !vitessNativeAcceptance && !vitessReleaseQualified && err == nil {
 		t.Fatal("unaccepted Vitess runtime became available")
 	}
 	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))
@@ -103,6 +113,30 @@ func TestVitessControlRuntimeHasBoundedGoResources(t *testing.T) {
 		}
 		if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "192MiB" || len(values) != 2 {
 			t.Fatal("Vitess control Go runtime budget changed")
+		}
+	}
+}
+
+func TestVitessTabletAndBackupProcessBudgets(t *testing.T) {
+	d := vitessTestDatabase()
+	object := vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))
+	keyspace := object["keyspaces"].([]any)[0].(map[string]any)
+	partition := keyspace["partitionings"].([]any)[0].(map[string]any)["equal"].(map[string]any)
+	pool := partition["shardTemplate"].(map[string]any)["tabletPools"].([]any)[0].(map[string]any)
+	values := map[string]string{}
+	for _, raw := range pool["extraEnv"].([]any) {
+		item := raw.(map[string]any)
+		if value, ok := item["value"].(string); ok {
+			values[item["name"].(string)] = value
+		}
+	}
+	if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "192MiB" {
+		t.Fatal("tablet restore process has no bounded Go budget")
+	}
+	for _, name := range []string{"requests", "limits"} {
+		resources := vitessBackupResources(d.Spec)[name].(map[string]any)
+		if resources["cpu"] != "600m" || resources["memory"] != "1536Mi" {
+			t.Fatal("backup omitted its Go or MySQL process allocation", resources)
 		}
 	}
 }

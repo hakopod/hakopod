@@ -2,7 +2,6 @@ package managedplatform
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -137,8 +136,8 @@ func (s Spec) ValidateSupabase() error {
 		}
 		seen[value] = true
 	}
-	if !regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`).MatchString(c.DatabaseName) {
-		return fmt.Errorf("database_name must contain 1-63 lowercase letters, digits or underscores and begin with a letter")
+	if c.DatabaseName != "postgres" {
+		return fmt.Errorf("database_name must be postgres for this Supabase release")
 	}
 	if c.JWTExpirySeconds < 300 || c.JWTExpirySeconds > 86400 {
 		return fmt.Errorf("jwt_expiry_seconds must be between 300 and 86400")

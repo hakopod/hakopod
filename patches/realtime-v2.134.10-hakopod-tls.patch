@@ -1,0 +1,131 @@
+--- a/config/runtime.exs
++++ b/config/runtime.exs
+@@ -155,9 +155,14 @@
+ 
+ ssl_opts =
+   cond do
+-    db_ssl and is_binary(db_ssl_ca_cert) -> [cacertfile: db_ssl_ca_cert]
+-    db_ssl -> [verify: :verify_none]
+-    true -> false
++    db_ssl and is_binary(db_ssl_ca_cert) ->
++      Realtime.DatabaseTLS.options(db_host, db_ssl_ca_cert)
++
++    db_ssl ->
++      raise "DB_SSL_CA_CERT is required when DB_SSL is enabled"
++
++    true ->
++      false
+   end
+ 
+ metrics_pusher_extra_labels =
+--- a/lib/realtime/database.ex
++++ b/lib/realtime/database.ex
+@@ -71,8 +71,13 @@
+       |> Map.new()
+       |> then(&Map.merge(settings, &1))
+ 
+-    with {:ok, addrtype} <- detect_ip_version(settings["db_host"]) do
+-      ssl = if default_ssl_param(settings), do: [verify: :verify_none], else: false
++    with true <- default_ssl_param(settings),
++         {:ok, addrtype} <- detect_ip_version(settings["db_host"]) do
++      ssl =
++        Realtime.DatabaseTLS.options(
++          settings["db_host"],
++          System.fetch_env!("DB_SSL_CA_CERT")
++        )
+ 
+       {:ok,
+        %__MODULE__{
+@@ -88,6 +93,9 @@
+          socket_options: [addrtype],
+          ssl: ssl
+        }}
++    else
++      false -> {:error, :tls_required}
++      error -> error
+     end
+   end
+ 
+--- a/lib/realtime/database_tls.ex
++++ b/lib/realtime/database_tls.ex
+@@ -0,0 +1,18 @@
++defmodule Realtime.DatabaseTLS do
++  @moduledoc false
++
++  @tls_versions [:"tlsv1.2", :"tlsv1.3"]
++
++  @spec options(String.t(), String.t()) :: keyword()
++  def options(server_name, ca_path) when is_binary(server_name) and is_binary(ca_path) do
++    [
++      verify: :verify_peer,
++      versions: @tls_versions,
++      cacertfile: ca_path,
++      server_name_indication: to_charlist(server_name),
++      customize_hostname_check: [
++        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
++      ]
++    ]
++  end
++end
+--- a/priv/repo/seeds.exs
++++ b/priv/repo/seeds.exs
+@@ -37,7 +37,7 @@
+             "region" => "us-east-1",
+             "poll_interval_ms" => 100,
+             "poll_max_record_bytes" => 1_048_576,
+-            "ssl_enforced" => false
++            "ssl_enforced" => true
+           }
+         }
+       ]
+--- a/test/realtime/database_test.exs
++++ b/test/realtime/database_test.exs
+@@ -383,16 +383,27 @@
+     test "handles SSL properties", %{tenant: tenant} do
+       application_name = "realtime_connect"
+       backoff = :stop
++      previous_ca = System.get_env("DB_SSL_CA_CERT")
++      System.put_env("DB_SSL_CA_CERT", "/etc/hakopod-database-ca/ca.crt")
++
++      on_exit(fn ->
++        if previous_ca,
++          do: System.put_env("DB_SSL_CA_CERT", previous_ca),
++          else: System.delete_env("DB_SSL_CA_CERT")
++      end)
+ 
+       settings = Realtime.PostgresCdc.filter_settings("postgres_cdc_rls", tenant.extensions)
+       settings = Map.put(settings, "ssl_enforced", true)
+       {:ok, settings} = Database.from_settings(settings, application_name, backoff)
+-      assert settings.ssl == [verify: :verify_none]
++      assert settings.ssl[:verify] == :verify_peer
++      assert settings.ssl[:versions] == [:"tlsv1.2", :"tlsv1.3"]
++      assert settings.ssl[:cacertfile] == "/etc/hakopod-database-ca/ca.crt"
++      assert settings.ssl[:server_name_indication] == ~c"127.0.0.1"
++      assert is_function(settings.ssl[:customize_hostname_check][:match_fun], 2)
+ 
+       settings = Realtime.PostgresCdc.filter_settings("postgres_cdc_rls", tenant.extensions)
+       settings = Map.put(settings, "ssl_enforced", false)
+-      {:ok, settings} = Database.from_settings(settings, application_name, backoff)
+-      refute settings.ssl
++      assert {:error, :tls_required} = Database.from_settings(settings, application_name, backoff)
+     end
+   end
+ 
+--- a/test/realtime/database_tls_test.exs
++++ b/test/realtime/database_tls_test.exs
+@@ -0,0 +1,15 @@
++defmodule Realtime.DatabaseTLSTest do
++  use ExUnit.Case, async: true
++
++  alias Realtime.DatabaseTLS
++
++  test "requires peer and hostname verification with the supplied CA" do
++    options = DatabaseTLS.options("db", "/etc/hakopod-database-ca/ca.crt")
++
++    assert options[:verify] == :verify_peer
++    assert options[:versions] == [:"tlsv1.2", :"tlsv1.3"]
++    assert options[:cacertfile] == "/etc/hakopod-database-ca/ca.crt"
++    assert options[:server_name_indication] == ~c"db"
++    assert is_function(options[:customize_hostname_check][:match_fun], 2)
++  end
++end

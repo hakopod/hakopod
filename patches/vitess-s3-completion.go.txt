@@ -1,0 +1,28 @@
+package s3backupstorage
+
+import (
+	"errors"
+	"io"
+	"sync"
+)
+
+// A file occupies its backup worker until S3 confirms the upload. Closing only
+// the input pipe lets subsequent files allocate buffers while uploads overlap.
+type completedUploadWriter struct {
+	*io.PipeWriter
+	done   <-chan error
+	finish func()
+	once   sync.Once
+	err    error
+}
+
+func (w *completedUploadWriter) Close() error {
+	w.once.Do(func() {
+		// Cancellation closes both pipe ends and cancels the SDK request, so
+		// this join also releases an uploader blocked on input or network I/O.
+		pipeErr := w.PipeWriter.Close()
+		w.err = errors.Join(pipeErr, <-w.done)
+		w.finish()
+	})
+	return w.err
+}

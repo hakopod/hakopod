@@ -39,10 +39,12 @@ task_formatter="$(go env GOROOT)/bin/gofmt"
 "$task_formatter" -w go/mysql/flavor_mysql.go go/mysql/flavor_mysql_test.go go/mysql/hakopod_replication_tls_test.go
 "$task_formatter" -w go/vt/vttablet/tabletmanager/semisyncmonitor/monitor.go go/vt/vttablet/tabletmanager/semisyncmonitor/hakopod_account_test.go
 "$task_formatter" -w go/vt/mysqlctl/mysqld.go go/vt/mysqlctl/hakopod_command_log_test.go
+"$task_formatter" -w go/vt/mysqlctl/s3backupstorage/s3.go go/vt/mysqlctl/s3backupstorage/s3_test.go go/vt/mysqlctl/s3backupstorage/hakopod_completion.go go/vt/mysqlctl/s3backupstorage/hakopod_completion_test.go
 go test -count=1 ./go/mysql -run 'TestHakopodReplicationVerifiesIdentity|Test.*(SetReplicationSource|CatchupToGTID)' -timeout=5m
 go test -count=1 ./go/vt/vttablet/tabletmanager/semisyncmonitor -timeout=5m
 go test -count=1 ./go/vt/mysqlctl -run '^TestHakopodProcessLogsExcludeCommandState$' -timeout=5m
-git add --intent-to-add go/mysql/hakopod_replication_tls_test.go go/vt/vttablet/tabletmanager/semisyncmonitor/hakopod_account_test.go go/vt/mysqlctl/hakopod_command_log_test.go
+go test -count=1 ./go/vt/mysqlctl/s3backupstorage -timeout=5m
+git add --intent-to-add go/mysql/hakopod_replication_tls_test.go go/vt/vttablet/tabletmanager/semisyncmonitor/hakopod_account_test.go go/vt/mysqlctl/hakopod_command_log_test.go go/vt/mysqlctl/s3backupstorage/hakopod_completion.go go/vt/mysqlctl/s3backupstorage/hakopod_completion_test.go
 git diff --check
 git diff > "$task_scratch/runtime/upstream.patch"
 cp "$task_root/Dockerfile.vitess-runtime" "$task_scratch/runtime/Dockerfile"
@@ -50,9 +52,9 @@ cp "$task_root/Dockerfile.vitess-runtime" "$task_scratch/runtime/Dockerfile"
 cd "$task_scratch/operator"
 "$task_formatter" -w pkg/operator/vttablet/constants.go pkg/operator/vttablet/mysqlctld.go pkg/operator/vttablet/pod.go pkg/operator/vttablet/hakopod_shared_socket_test.go
 "$task_formatter" -w pkg/operator/vttablet/flags.go pkg/operator/vttablet/hakopod_hostname_test.go
-"$task_formatter" -w pkg/operator/controllermanager/flags.go pkg/operator/controllermanager/hakopod_backup_flags_test.go pkg/controller/vitessshard/reconcile_backup_job.go pkg/controller/vitessbackupstorage/reconcile_subcontroller.go pkg/controller/vitessbackupschedule/vitessbackupschedule_controller.go pkg/controller/vitessbackupschedule/hakopod_backup.go pkg/controller/vitessbackupschedule/hakopod_backup_test.go pkg/controller/vitessbackupschedule/hakopod_api_test.go pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go pkg/operator/vttablet/vtbackup_pod.go pkg/operator/vttablet/hakopod_backup_test.go pkg/operator/vtgate/deployment.go pkg/operator/vtctld/deployment.go pkg/operator/vtorc/deployment.go
+"$task_formatter" -w pkg/operator/controllermanager/flags.go pkg/operator/controllermanager/hakopod_backup_flags_test.go pkg/controller/vitessshard/reconcile_backup_job.go pkg/controller/vitessshard/hakopod_first_live_backup_test.go pkg/controller/vitessbackupstorage/reconcile_subcontroller.go pkg/controller/vitessbackupschedule/vitessbackupschedule_controller.go pkg/controller/vitessbackupschedule/hakopod_backup.go pkg/controller/vitessbackupschedule/hakopod_backup_test.go pkg/controller/vitessbackupschedule/hakopod_api_test.go pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go pkg/operator/vttablet/vtbackup_pod.go pkg/operator/vttablet/hakopod_backup_test.go pkg/operator/vtgate/deployment.go pkg/operator/vtctld/deployment.go pkg/operator/vtorc/deployment.go
 go test -count=1 ./pkg/operator/controllermanager ./pkg/operator/vttablet ./pkg/controller/vitessshard ./pkg/controller/vitessbackupschedule ./pkg/controller/vitessbackupstorage -timeout=5m
-git add --intent-to-add pkg/operator/vttablet/hakopod_shared_socket_test.go pkg/operator/controllermanager/hakopod_backup_flags_test.go pkg/controller/vitessbackupschedule/hakopod_backup.go pkg/controller/vitessbackupschedule/hakopod_backup_test.go pkg/controller/vitessbackupschedule/hakopod_api_test.go pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go pkg/operator/vttablet/hakopod_backup_test.go pkg/operator/vttablet/hakopod_hostname_test.go
+git add --intent-to-add pkg/operator/vttablet/hakopod_shared_socket_test.go pkg/operator/controllermanager/hakopod_backup_flags_test.go pkg/controller/vitessshard/hakopod_first_live_backup_test.go pkg/controller/vitessbackupschedule/hakopod_backup.go pkg/controller/vitessbackupschedule/hakopod_backup_test.go pkg/controller/vitessbackupschedule/hakopod_api_test.go pkg/controller/vitessbackupschedule/hakopod_control_permissions_test.go pkg/operator/vttablet/hakopod_backup_test.go pkg/operator/vttablet/hakopod_hostname_test.go
 git diff --check
 git diff > "$task_scratch/controller/upstream.patch"
 cp "$task_root/Dockerfile.vitess-operator" "$task_scratch/controller/Dockerfile"
@@ -65,7 +67,7 @@ fi
 
 cd "$task_scratch/vitess"
 for binary in vtctld vtctldclient vtgate vttablet vtorc vtbackup mysqlctld; do
-  go build -trimpath -ldflags='-s -w -X vitess.io/vitess/go/vt/servenv.buildGitRev=0f1ed062dec171e0adfab796110549752901e299 -X vitess.io/vitess/go/vt/servenv.buildGitBranch=hakopod-replication-identity-safe-logs-v4' -o "$task_scratch/runtime/bin/$binary" "./go/cmd/$binary"
+  go build -trimpath -ldflags='-s -w -X vitess.io/vitess/go/vt/servenv.buildGitRev=0f1ed062dec171e0adfab796110549752901e299 -X vitess.io/vitess/go/vt/servenv.buildGitBranch=hakopod-bounded-native-backup-v5' -o "$task_scratch/runtime/bin/$binary" "./go/cmd/$binary"
 done
 cd "$task_scratch/operator"
 go build -trimpath -o "$task_scratch/controller/bin/vitess-operator" ./cmd/manager

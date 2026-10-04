@@ -100,7 +100,7 @@ func TestPrepareNeonDeleteReconstructsRuntimeWithoutLiveZones(t *testing.T) {
 		Render:    managedplatform.NeonRenderInput{Spec: spec, PlatformID: platformID, Revision: op.Revision},
 		SecretSnapshots: map[string]map[string][]byte{
 			"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
-			"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(`{"spec":{},"compute_ctl_config":{}}`)},
+			"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(validNeonComputeTemplate)},
 			"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
 		},
 		ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: platformID},
@@ -168,7 +168,7 @@ func TestManagedPlatformClaimReaderAllowsBoundedNeonRevisionRollover(t *testing.
 func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 	render := func(t *testing.T, pageservers, safekeepers, computes int) managedplatform.NeonManifests {
 		t.Helper()
-		spec := managedplatform.Spec{SchemaVersion: 1, Name: "inventory", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: computes, Pageservers: pageservers, Safekeepers: safekeepers, BranchLimit: 64, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-inventory", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "inventory", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
+		spec := managedplatform.Spec{SchemaVersion: 1, Name: "inventory", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: computes, Pageservers: pageservers, Safekeepers: safekeepers, BranchLimit: 1, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-inventory", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "inventory", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
 		for i := 0; i < max(3, pageservers); i++ {
 			spec.Placement.NodeNames = append(spec.Placement.NodeNames, fmt.Sprintf("node-%d", i))
 		}
@@ -185,7 +185,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 		for _, key := range managedplatform.NeonSecretKeys() {
 			spec.Secrets[key] = managedplatform.SecretReference{Name: "neon-" + key, Revision: 1}
 		}
-		manifests, err := managedplatform.RenderNeon(managedplatform.NeonRenderInput{Spec: spec, PlatformID: strings.Repeat("a", 32), Revision: 1, NamespaceUID: types.UID("namespace-uid"), Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 20000, ProxyControlPlaneOrigin: "https://control.example.test", ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}})
+		ca := supabaseGatewayCertificateFixture(t, []string{"control.example.test"}, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))["ca.crt"]
+		manifests, err := managedplatform.RenderNeon(managedplatform.NeonRenderInput{Spec: spec, PlatformID: strings.Repeat("a", 32), Revision: 1, NamespaceUID: types.UID("namespace-uid"), Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 20000, ProxyControlPlaneOrigin: "https://control.example.test", ProxyControlPlaneCAPEM: string(ca), ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,8 +204,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 			t.Fatal("supported Neon topology exceeds the managed platform claim bound")
 		}
 	}
-	assert(t, 2, 3, 1, 45, 61)
-	assert(t, 8, 3, 6, 94, 121)
+	assert(t, 2, 3, 1, 48, 66)
+	assert(t, 8, 3, 6, 97, 126)
 
 	maximum := render(t, 8, 3, 6)
 	immutableRevisionObjects := 0
@@ -214,7 +215,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 		}
 	}
 	kubernetesClaims := len(maximum.Objects) + len(maximum.RequiredSecrets) + 1
-	if immutableRevisionObjects != 14 || kubernetesClaims+immutableRevisionObjects != 116 {
+	// One previous callback secret also remains until the new revision is ready.
+	if immutableRevisionObjects != 16 || kubernetesClaims+immutableRevisionObjects+1 != 124 {
 		t.Fatalf("maximum update rollover inventory changed: Kubernetes=%d old immutable ConfigMaps=%d total=%d", kubernetesClaims, immutableRevisionObjects, kubernetesClaims+immutableRevisionObjects)
 	}
 	if maxSupabaseRuntimeObjects != managedplatform.MaxComponents*5 {

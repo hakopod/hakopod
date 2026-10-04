@@ -85,8 +85,8 @@ initialize a new fixture with old data. The test refuses an existing database
 namespace. A failed fixture can be retained for inspection with
 `HAKOPOD_KEEP_DATABASE_FIXTURES=1`; remove only that owned fixture before retrying.
 
-The tests permit only `k3d-hakopod-dev-server-0` and
-`k3d-hakopod-database-worker-0`. The separate provider smoke node is excluded.
+The tests permit only `k3d-hakopod-dev-server-0`,
+`k3d-hakopod-database-worker-0` and `k3d-hakopod-database-worker-1`.
 They require `HAKOPOD_DATABASE_RECOVERY_TEST=1`,
 `HAKOPOD_DATABASE_VITESS_TEST=1` and `HAKOPOD_TEST_KUBECONFIG` pointing to the
 named development context. Coordinate their resource use with other acceptance
@@ -157,9 +157,14 @@ digests, with `--engine-image` and `--operator-image`. Choose `lifecycle`,
 `recovery`, `reseed` or `revocation` with `--case`. Use a new `--attempt` number
 for each run; the helper refuses to overwrite earlier evidence. Run it inside
 the development VM's bounded systemd unit after coordinating the test lane.
+Pass the protected development cluster receipt and its exact checksum with
+`--cluster-receipt` and `--cluster-receipt-sha256`. Before starting Go, the
+runner binds the live cluster and all three approved node UIDs to that receipt.
+It also requires exactly the eight established, names-accepted, namespaced
+`planetscale.com` resource definitions.
 
 Warm the Go test cache against the exact candidate source before importing the
-images. Import the runtime, operator and etcd images into both permitted nodes,
+images. Import the runtime, operator and etcd images into every selected node,
 including their canonical `repository@sha256:…` references. Then measure the
 space left. Image imports and compilation can consume several GiB even before
 a database starts. Do not lower the kubelet eviction or image collection
@@ -172,7 +177,7 @@ source and target alive together, so its budget must cover both. Include any
 growth expected in the S3 fixture. A PVC request is not a measurement of actual
 space used, and local-path storage does not enforce it as a filesystem limit.
 
-The helper checks the executor and both permitted nodes are Linux on amd64,
+The helper checks the executor and every selected node are Linux on amd64,
 schedulable and free of disk, memory and PID pressure. It reads nodefs and
 imagefs capacity, the kubelet image collection threshold and the exact cached
 image digests. Each filesystem must have the fixture budget available in
@@ -180,6 +185,13 @@ addition to a reserve of at least 12 GiB. A larger reserve applies when required
 by the observed image collection threshold. The protected preflight report
 records these measurements even when the space or image check refuses the run.
 No Go test or database provisioning starts after a rejected preflight.
+
+The runner also reads allocatable CPU and the effective CPU requests of every
+active pod on the selected nodes. It reserves the fixed product envelope used
+by each test topology: 8,450m for lifecycle, 16,900m for simultaneous recovery
+source and target clusters, 6,350m for reseed and 4,900m for revocation. These
+figures include replacement and native backup surge from the production
+database capacity contract. The preflight records and rejects any shortfall.
 
 It records the source inventory before and after the run, the image references,
 the log checksum and the actual Go test events. Raw output stays in a protected

@@ -135,6 +135,14 @@ func TestAcceptanceGuardDetectsFileAndClusterDrift(t *testing.T) {
 	if err := verifyRun(context.Background(), c); err != nil {
 		t.Fatal(err)
 	}
+	active.Store(&c)
+	defer active.Store(nil)
+	if !AllowsUnboundOperatorQualification(context.Background(), "neon") {
+		t.Fatal("verified native run did not allow its unbound operator qualification")
+	}
+	if AllowsUnboundOperatorQualification(context.Background(), "supabase") {
+		t.Fatal("native run allowed another platform kind")
+	}
 	node, err := kube.CoreV1().Nodes().Get(context.Background(), "third", metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +153,9 @@ func TestAcceptanceGuardDetectsFileAndClusterDrift(t *testing.T) {
 	}
 	if verifyRun(context.Background(), c) == nil {
 		t.Fatal("node replacement accepted")
+	}
+	if AllowsUnboundOperatorQualification(context.Background(), "neon") {
+		t.Fatal("drifted native run allowed an unbound operator qualification")
 	}
 	if err := os.WriteFile(path, []byte("package changed"), 0600); err != nil {
 		t.Fatal(err)

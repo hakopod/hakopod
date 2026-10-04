@@ -99,8 +99,9 @@ func sanitizeRecoveryTar(input io.Reader, expected int64) (*os.File, error) {
 }
 
 type SupabaseRecoveryRuntime struct {
-	Cluster *Client
-	Store   *store.Store
+	Cluster               *Client
+	Store                 *store.Store
+	ValidateQualification func(context.Context, platformbackup.Operation) error
 }
 
 var supabaseRecoveryCryptographicSecretKeys = []string{"anon-key", "jwt-secret", "jwt-signing-keys", "jwt-verification-keys", "pg-meta-crypto-key", "pooler-api-jwt-secret", "publishable-key", "realtime-db-encryption-key", "secret-key-base", "service-role-key", "secret-key", "vault-encryption-key"}
@@ -126,6 +127,12 @@ func (r *SupabaseRecoveryRuntime) fence(ctx context.Context) error {
 	}
 	if platformbackup.RecoveryCleanupFromContext(ctx) {
 		return r.Store.FencePlatformRecoveryCleanup(ctx, op)
+	}
+	if r.ValidateQualification == nil {
+		return fmt.Errorf("Supabase recovery qualification is unavailable")
+	}
+	if err := r.ValidateQualification(ctx, op); err != nil {
+		return err
 	}
 	cancelled, err := r.Store.HeartbeatPlatformRecovery(ctx, op)
 	if err != nil {
@@ -229,7 +236,7 @@ func (r *SupabaseRecoveryRuntime) ResolveEmptyTarget(ctx context.Context, op pla
 	}
 	var out strings.Builder
 	query := `DO $$ DECLARE r record; occupied boolean; BEGIN IF (SELECT count(*) FROM auth.users)+(SELECT count(*) FROM storage.objects)+(SELECT count(*) FROM storage.buckets)>0 THEN RAISE EXCEPTION 'target contains Supabase data'; END IF; FOR r IN SELECT schemaname,tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'schema_migrations' LOOP EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I.%I LIMIT 1)',r.schemaname,r.tablename) INTO occupied; IF occupied THEN RAISE EXCEPTION 'target contains application data'; END IF; END LOOP; END $$; SELECT 0;`
-	if err = r.exec(ctx, pod, "database", []string{"psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", target.Spec.Supabase.DatabaseName, "-c", query}, nil, &out); err != nil || strings.TrimSpace(out.String()) != "0" {
+	if err = r.exec(ctx, pod, "database", []string{"psql", "-XAtq", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", target.Spec.Supabase.DatabaseName, "-c", query}, nil, &out); err != nil || strings.TrimSpace(out.String()) != "0" {
 		return fmt.Errorf("recovery requires a separate empty Supabase target")
 	}
 	for _, component := range []struct{ name, path string }{{"storage", "/var/lib/storage"}, {"studio", "/app/snippets"}} {

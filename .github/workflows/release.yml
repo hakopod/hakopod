@@ -98,6 +98,66 @@ jobs:
     with:
       version: ${{ needs.build.outputs.version }}
       artifact_name: release-assets
+  vitess:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore the pinned template source
+        run: git submodule update --init templates
+      - name: Verify the qualified Vitess images and native evidence
+        run: |
+          python3 release/verify-vitess-runtime.py --output .local/vitess-qualified
+          tar --sort=name --mtime="@$(git log -1 --format=%ct)" \
+            --owner=0 --group=0 --numeric-owner -czf .local/managed-vitess-qualification.tar.gz \
+            -C .local vitess-qualified
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: managed-vitess-qualification
+          path: .local/managed-vitess-qualification.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+  supabase:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore the pinned template source
+        run: git submodule update --init templates
+      - name: Verify the qualified Supabase images and native evidence
+        run: |
+          python3 release/verify-supabase-runtime.py --output .local/supabase-qualified
+          tar --sort=name --mtime="@$(git log -1 --format=%ct)" \
+            --owner=0 --group=0 --numeric-owner -czf .local/managed-supabase-qualification.tar.gz \
+            -C .local supabase-qualified
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: managed-supabase-qualification
+          path: .local/managed-supabase-qualification.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+  neon:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore the pinned template source
+        run: git submodule update --init templates
+      - name: Verify the qualified Neon images and native evidence
+        run: |
+          python3 release/verify-neon-runtime.py --output .local/neon-qualified
+          tar --sort=name --mtime="@$(git log -1 --format=%ct)" \
+            --owner=0 --group=0 --numeric-owner -czf .local/managed-neon-qualification.tar.gz \
+            -C .local neon-qualified
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: managed-neon-qualification
+          path: .local/managed-neon-qualification.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
   probe:
     needs: [build, smoke, hosts]
     strategy:
@@ -209,7 +269,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   publish:
-    needs: [build, smoke, hosts, probe-index]
+    needs: [build, smoke, hosts, probe-index, vitess, supabase, neon]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -255,6 +315,30 @@ jobs:
           runpy.run_path('release/host-acceptance.py')['verify_reports'](directory, values, os.environ['RELEASE_VERSION'], os.environ['GITHUB_SHA'])
           target = directory / 'host-acceptance.json'
           target.write_text(json.dumps(values, indent=2) + '\n')
+          publication = runpy.run_path('release/publication.py')
+          (directory / 'SHA256SUMS').write_text(publication['manifest'](directory))
+          publication['verify'](directory)
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: managed-vitess-qualification
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: managed-supabase-qualification
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: managed-neon-qualification
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - name: Include the verified managed runtime provenance archives
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, runpy
+          from pathlib import Path
+          directory = Path('.local/publication') / os.environ['RELEASE_VERSION']
           publication = runpy.run_path('release/publication.py')
           (directory / 'SHA256SUMS').write_text(publication['manifest'](directory))
           publication['verify'](directory)

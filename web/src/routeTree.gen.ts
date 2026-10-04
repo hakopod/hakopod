@@ -73,7 +73,11 @@ import { Route as DatabasesExternalNewRouteImport } from './routes/databases.ext
 import { Route as InfrastructureRegistriesNameRouteImport } from './routes/infrastructure.registries.$name'
 import { Route as InfrastructureRegistriesNewRouteImport } from './routes/infrastructure.registries.new'
 import { Route as NetworksNetworkNameConnectRouteImport } from './routes/networks.$networkName.connect'
+import { Route as PlatformsPlatformIdBackupRouteImport } from './routes/platforms.$platformId.backup'
+import { Route as PlatformsPlatformIdConfigureRouteImport } from './routes/platforms.$platformId.configure'
 import { Route as PlatformsPlatformIdDeleteRouteImport } from './routes/platforms.$platformId.delete'
+import { Route as PlatformsPlatformIdRestoreRouteImport } from './routes/platforms.$platformId.restore'
+import { Route as PlatformsNewStepRouteImport } from './routes/platforms.new.$step'
 import { Route as SettingsDnsProvidersNewRouteImport } from './routes/settings.dns-providers.new'
 import { Route as SettingsGitCallbackRouteImport } from './routes/settings.git.callback'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
@@ -88,6 +92,7 @@ import { Route as BackupsSchedulesScheduleIdEditRouteImport } from './routes/bac
 import { Route as DatabasesExternalExternalDatabaseIdConnectRouteImport } from './routes/databases.external.$externalDatabaseId.connect'
 import { Route as DatabasesExternalExternalDatabaseIdEditRouteImport } from './routes/databases.external.$externalDatabaseId.edit'
 import { Route as InfrastructureNodesNodeTerminalRouteImport } from './routes/infrastructure.nodes.$node.terminal'
+import { Route as PlatformsPlatformIdConfigureStepRouteImport } from './routes/platforms.$platformId.configure.$step'
 import { Route as SettingsDnsProvidersProviderNameEditRouteImport } from './routes/settings.dns-providers.$providerName.edit'
 import { Route as SettingsGitConnectionsConnectionIdRouteImport } from './routes/settings.git.connections.$connectionId'
 import { Route as SettingsGitConnectionsNewRouteImport } from './routes/settings.git.connections.new'
@@ -432,12 +437,35 @@ const NetworksNetworkNameConnectRoute =
     path: '/connect',
     getParentRoute: () => NetworksNetworkNameRoute,
   } as any)
+const PlatformsPlatformIdBackupRoute =
+  PlatformsPlatformIdBackupRouteImport.update({
+    id: '/backup',
+    path: '/backup',
+    getParentRoute: () => PlatformsPlatformIdRoute,
+  } as any)
+const PlatformsPlatformIdConfigureRoute =
+  PlatformsPlatformIdConfigureRouteImport.update({
+    id: '/configure',
+    path: '/configure',
+    getParentRoute: () => PlatformsPlatformIdRoute,
+  } as any)
 const PlatformsPlatformIdDeleteRoute =
   PlatformsPlatformIdDeleteRouteImport.update({
     id: '/delete',
     path: '/delete',
     getParentRoute: () => PlatformsPlatformIdRoute,
   } as any)
+const PlatformsPlatformIdRestoreRoute =
+  PlatformsPlatformIdRestoreRouteImport.update({
+    id: '/restore',
+    path: '/restore',
+    getParentRoute: () => PlatformsPlatformIdRoute,
+  } as any)
+const PlatformsNewStepRoute = PlatformsNewStepRouteImport.update({
+  id: '/$step',
+  path: '/$step',
+  getParentRoute: () => PlatformsNewRoute,
+} as any)
 const SettingsDnsProvidersNewRoute = SettingsDnsProvidersNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -519,6 +547,12 @@ const InfrastructureNodesNodeTerminalRoute =
     path: '/nodes/$node/terminal',
     getParentRoute: () => InfrastructureRoute,
   } as any)
+const PlatformsPlatformIdConfigureStepRoute =
+  PlatformsPlatformIdConfigureStepRouteImport.update({
+    id: '/$step',
+    path: '/$step',
+    getParentRoute: () => PlatformsPlatformIdConfigureRoute,
+  } as any)
 const SettingsDnsProvidersProviderNameEditRoute =
   SettingsDnsProvidersProviderNameEditRouteImport.update({
     id: '/$providerName/edit',
@@ -597,7 +631,7 @@ export interface FileRoutesByFullPath {
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
   '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
-  '/platforms/new': typeof PlatformsNewRoute
+  '/platforms/new': typeof PlatformsNewRouteWithChildren
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -626,7 +660,11 @@ export interface FileRoutesByFullPath {
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/platforms/$platformId/backup': typeof PlatformsPlatformIdBackupRoute
+  '/platforms/$platformId/configure': typeof PlatformsPlatformIdConfigureRouteWithChildren
   '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
+  '/platforms/$platformId/restore': typeof PlatformsPlatformIdRestoreRoute
+  '/platforms/new/$step': typeof PlatformsNewStepRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -641,6 +679,7 @@ export interface FileRoutesByFullPath {
   '/databases/external/$externalDatabaseId/connect': typeof DatabasesExternalExternalDatabaseIdConnectRoute
   '/databases/external/$externalDatabaseId/edit': typeof DatabasesExternalExternalDatabaseIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/platforms/$platformId/configure/$step': typeof PlatformsPlatformIdConfigureStepRoute
   '/settings/dns-providers/$providerName/edit': typeof SettingsDnsProvidersProviderNameEditRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
@@ -685,7 +724,7 @@ export interface FileRoutesByTo {
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
   '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
-  '/platforms/new': typeof PlatformsNewRoute
+  '/platforms/new': typeof PlatformsNewRouteWithChildren
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -714,7 +753,11 @@ export interface FileRoutesByTo {
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/platforms/$platformId/backup': typeof PlatformsPlatformIdBackupRoute
+  '/platforms/$platformId/configure': typeof PlatformsPlatformIdConfigureRouteWithChildren
   '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
+  '/platforms/$platformId/restore': typeof PlatformsPlatformIdRestoreRoute
+  '/platforms/new/$step': typeof PlatformsNewStepRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -729,6 +772,7 @@ export interface FileRoutesByTo {
   '/databases/external/$externalDatabaseId/connect': typeof DatabasesExternalExternalDatabaseIdConnectRoute
   '/databases/external/$externalDatabaseId/edit': typeof DatabasesExternalExternalDatabaseIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/platforms/$platformId/configure/$step': typeof PlatformsPlatformIdConfigureStepRoute
   '/settings/dns-providers/$providerName/edit': typeof SettingsDnsProvidersProviderNameEditRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
@@ -774,7 +818,7 @@ export interface FileRoutesById {
   '/networks/$networkName': typeof NetworksNetworkNameRouteWithChildren
   '/networks/new': typeof NetworksNewRoute
   '/platforms/$platformId': typeof PlatformsPlatformIdRouteWithChildren
-  '/platforms/new': typeof PlatformsNewRoute
+  '/platforms/new': typeof PlatformsNewRouteWithChildren
   '/projects/$project': typeof ProjectsProjectRoute
   '/settings/dns-providers': typeof SettingsDnsProvidersRouteWithChildren
   '/settings/edge': typeof SettingsEdgeRoute
@@ -803,7 +847,11 @@ export interface FileRoutesById {
   '/infrastructure/registries/$name': typeof InfrastructureRegistriesNameRoute
   '/infrastructure/registries/new': typeof InfrastructureRegistriesNewRoute
   '/networks/$networkName/connect': typeof NetworksNetworkNameConnectRoute
+  '/platforms/$platformId/backup': typeof PlatformsPlatformIdBackupRoute
+  '/platforms/$platformId/configure': typeof PlatformsPlatformIdConfigureRouteWithChildren
   '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
+  '/platforms/$platformId/restore': typeof PlatformsPlatformIdRestoreRoute
+  '/platforms/new/$step': typeof PlatformsNewStepRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -818,6 +866,7 @@ export interface FileRoutesById {
   '/databases/external/$externalDatabaseId/connect': typeof DatabasesExternalExternalDatabaseIdConnectRoute
   '/databases/external/$externalDatabaseId/edit': typeof DatabasesExternalExternalDatabaseIdEditRoute
   '/infrastructure/nodes/$node/terminal': typeof InfrastructureNodesNodeTerminalRoute
+  '/platforms/$platformId/configure/$step': typeof PlatformsPlatformIdConfigureStepRoute
   '/settings/dns-providers/$providerName/edit': typeof SettingsDnsProvidersProviderNameEditRoute
   '/settings/git/connections/$connectionId': typeof SettingsGitConnectionsConnectionIdRoute
   '/settings/git/connections/new': typeof SettingsGitConnectionsNewRoute
@@ -893,7 +942,11 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/platforms/$platformId/backup'
+    | '/platforms/$platformId/configure'
     | '/platforms/$platformId/delete'
+    | '/platforms/$platformId/restore'
+    | '/platforms/new/$step'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -908,6 +961,7 @@ export interface FileRouteTypes {
     | '/databases/external/$externalDatabaseId/connect'
     | '/databases/external/$externalDatabaseId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/platforms/$platformId/configure/$step'
     | '/settings/dns-providers/$providerName/edit'
     | '/settings/git/connections/$connectionId'
     | '/settings/git/connections/new'
@@ -981,7 +1035,11 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/platforms/$platformId/backup'
+    | '/platforms/$platformId/configure'
     | '/platforms/$platformId/delete'
+    | '/platforms/$platformId/restore'
+    | '/platforms/new/$step'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -996,6 +1054,7 @@ export interface FileRouteTypes {
     | '/databases/external/$externalDatabaseId/connect'
     | '/databases/external/$externalDatabaseId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/platforms/$platformId/configure/$step'
     | '/settings/dns-providers/$providerName/edit'
     | '/settings/git/connections/$connectionId'
     | '/settings/git/connections/new'
@@ -1069,7 +1128,11 @@ export interface FileRouteTypes {
     | '/infrastructure/registries/$name'
     | '/infrastructure/registries/new'
     | '/networks/$networkName/connect'
+    | '/platforms/$platformId/backup'
+    | '/platforms/$platformId/configure'
     | '/platforms/$platformId/delete'
+    | '/platforms/$platformId/restore'
+    | '/platforms/new/$step'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -1084,6 +1147,7 @@ export interface FileRouteTypes {
     | '/databases/external/$externalDatabaseId/connect'
     | '/databases/external/$externalDatabaseId/edit'
     | '/infrastructure/nodes/$node/terminal'
+    | '/platforms/$platformId/configure/$step'
     | '/settings/dns-providers/$providerName/edit'
     | '/settings/git/connections/$connectionId'
     | '/settings/git/connections/new'
@@ -1571,12 +1635,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NetworksNetworkNameConnectRouteImport
       parentRoute: typeof NetworksNetworkNameRoute
     }
+    '/platforms/$platformId/backup': {
+      id: '/platforms/$platformId/backup'
+      path: '/backup'
+      fullPath: '/platforms/$platformId/backup'
+      preLoaderRoute: typeof PlatformsPlatformIdBackupRouteImport
+      parentRoute: typeof PlatformsPlatformIdRoute
+    }
+    '/platforms/$platformId/configure': {
+      id: '/platforms/$platformId/configure'
+      path: '/configure'
+      fullPath: '/platforms/$platformId/configure'
+      preLoaderRoute: typeof PlatformsPlatformIdConfigureRouteImport
+      parentRoute: typeof PlatformsPlatformIdRoute
+    }
     '/platforms/$platformId/delete': {
       id: '/platforms/$platformId/delete'
       path: '/delete'
       fullPath: '/platforms/$platformId/delete'
       preLoaderRoute: typeof PlatformsPlatformIdDeleteRouteImport
       parentRoute: typeof PlatformsPlatformIdRoute
+    }
+    '/platforms/$platformId/restore': {
+      id: '/platforms/$platformId/restore'
+      path: '/restore'
+      fullPath: '/platforms/$platformId/restore'
+      preLoaderRoute: typeof PlatformsPlatformIdRestoreRouteImport
+      parentRoute: typeof PlatformsPlatformIdRoute
+    }
+    '/platforms/new/$step': {
+      id: '/platforms/new/$step'
+      path: '/$step'
+      fullPath: '/platforms/new/$step'
+      preLoaderRoute: typeof PlatformsNewStepRouteImport
+      parentRoute: typeof PlatformsNewRoute
     }
     '/settings/dns-providers/new': {
       id: '/settings/dns-providers/new'
@@ -1675,6 +1767,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/infrastructure/nodes/$node/terminal'
       preLoaderRoute: typeof InfrastructureNodesNodeTerminalRouteImport
       parentRoute: typeof InfrastructureRoute
+    }
+    '/platforms/$platformId/configure/$step': {
+      id: '/platforms/$platformId/configure/$step'
+      path: '/$step'
+      fullPath: '/platforms/$platformId/configure/$step'
+      preLoaderRoute: typeof PlatformsPlatformIdConfigureStepRouteImport
+      parentRoute: typeof PlatformsPlatformIdConfigureRoute
     }
     '/settings/dns-providers/$providerName/edit': {
       id: '/settings/dns-providers/$providerName/edit'
@@ -1889,25 +1988,59 @@ const NetworksRouteWithChildren = NetworksRoute._addFileChildren(
   NetworksRouteChildren,
 )
 
+interface PlatformsPlatformIdConfigureRouteChildren {
+  PlatformsPlatformIdConfigureStepRoute: typeof PlatformsPlatformIdConfigureStepRoute
+}
+
+const PlatformsPlatformIdConfigureRouteChildren: PlatformsPlatformIdConfigureRouteChildren =
+  {
+    PlatformsPlatformIdConfigureStepRoute:
+      PlatformsPlatformIdConfigureStepRoute,
+  }
+
+const PlatformsPlatformIdConfigureRouteWithChildren =
+  PlatformsPlatformIdConfigureRoute._addFileChildren(
+    PlatformsPlatformIdConfigureRouteChildren,
+  )
+
 interface PlatformsPlatformIdRouteChildren {
+  PlatformsPlatformIdBackupRoute: typeof PlatformsPlatformIdBackupRoute
+  PlatformsPlatformIdConfigureRoute: typeof PlatformsPlatformIdConfigureRouteWithChildren
   PlatformsPlatformIdDeleteRoute: typeof PlatformsPlatformIdDeleteRoute
+  PlatformsPlatformIdRestoreRoute: typeof PlatformsPlatformIdRestoreRoute
 }
 
 const PlatformsPlatformIdRouteChildren: PlatformsPlatformIdRouteChildren = {
+  PlatformsPlatformIdBackupRoute: PlatformsPlatformIdBackupRoute,
+  PlatformsPlatformIdConfigureRoute:
+    PlatformsPlatformIdConfigureRouteWithChildren,
   PlatformsPlatformIdDeleteRoute: PlatformsPlatformIdDeleteRoute,
+  PlatformsPlatformIdRestoreRoute: PlatformsPlatformIdRestoreRoute,
 }
 
 const PlatformsPlatformIdRouteWithChildren =
   PlatformsPlatformIdRoute._addFileChildren(PlatformsPlatformIdRouteChildren)
 
+interface PlatformsNewRouteChildren {
+  PlatformsNewStepRoute: typeof PlatformsNewStepRoute
+}
+
+const PlatformsNewRouteChildren: PlatformsNewRouteChildren = {
+  PlatformsNewStepRoute: PlatformsNewStepRoute,
+}
+
+const PlatformsNewRouteWithChildren = PlatformsNewRoute._addFileChildren(
+  PlatformsNewRouteChildren,
+)
+
 interface PlatformsRouteChildren {
   PlatformsPlatformIdRoute: typeof PlatformsPlatformIdRouteWithChildren
-  PlatformsNewRoute: typeof PlatformsNewRoute
+  PlatformsNewRoute: typeof PlatformsNewRouteWithChildren
 }
 
 const PlatformsRouteChildren: PlatformsRouteChildren = {
   PlatformsPlatformIdRoute: PlatformsPlatformIdRouteWithChildren,
-  PlatformsNewRoute: PlatformsNewRoute,
+  PlatformsNewRoute: PlatformsNewRouteWithChildren,
 }
 
 const PlatformsRouteWithChildren = PlatformsRoute._addFileChildren(

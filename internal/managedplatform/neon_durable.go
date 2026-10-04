@@ -28,6 +28,11 @@ type DurableNeonRuntime struct {
 	lifecycle DurableLifecycle
 }
 
+// Recovery uses the same durable controller routing as ordinary provisioning.
+func (r *DurableNeonRuntime) SetComputeConfigResolver(resolve func(context.Context, string, json.RawMessage) (json.RawMessage, error)) {
+	r.control.config.ResolveComputeConfig = resolve
+}
+
 func NewDurableNeonRuntime(config NeonRuntimeConfig, lifecycle DurableLifecycle) (*DurableNeonRuntime, error) {
 	if lifecycle == nil {
 		return nil, fmt.Errorf("durable Neon runtime requires PostgreSQL lifecycle state")
@@ -625,6 +630,10 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			current[component] = claim
 		}
 		if attached {
+			// A callback can apply new routing before its transaction commits.
+			// A plain resolver read here could still see the previous routing and
+			// roll that change back. Running updates belong to the serialized
+			// controller callback; lifecycle only verifies its owned identity.
 			state.AttachedComputes = append(state.AttachedComputes, target.Name)
 			continue
 		}
@@ -639,11 +648,23 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 		if err = r.lifecycle.Heartbeat(ctx); err != nil {
 			return state, err
 		}
-		ownedConfig, bindErr := bindNeonComputeOwnership(request.ComputeConfig[target.Name], ownershipToken)
+		rawConfig := request.ComputeConfig[target.Name]
+		if r.control.config.ResolveComputeConfig != nil {
+			rawConfig, err = r.control.config.ResolveComputeConfig(ctx, target.Name, rawConfig)
+			if err != nil {
+				return state, err
+			}
+		}
+		ownedConfig, bindErr := bindNeonComputeOwnership(rawConfig, ownershipToken)
 		if bindErr != nil {
 			return state, bindErr
 		}
-		if _, err = r.control.doRawJSONOwned(ctx, target, http.MethodPost, "/configure", ownedConfig, ownershipToken, http.StatusOK); err != nil {
+		if r.control.config.ResolveComputeConfig != nil {
+			err = r.control.configureOwnedCompute(ctx, target, ownedConfig, ownershipToken, request.TenantID, request.TimelineID, statusBody, !owned)
+		} else {
+			_, err = r.control.doRawJSONOwned(ctx, target, http.MethodPost, "/configure", ownedConfig, ownershipToken, http.StatusOK)
+		}
+		if err != nil {
 			return state, fmt.Errorf("configure Neon compute %s left ownership pending: %w", target.Name, err)
 		}
 		status, statusErr := r.control.doJSON(ctx, target, http.MethodGet, "/status", nil, http.StatusOK)
@@ -692,6 +713,20 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	}
 	if _, err := validateNeonLifecycleRequest(request, r.control.config.Computes); err != nil {
 		return err
+	}
+	// A failed initial provision may have created only Kubernetes objects. The
+	// durable store must check all revisions under the delete lease before an
+	// unavailable provider can be skipped; revision-local reads are insufficient.
+	if state, ok := r.lifecycle.(interface {
+		NeonProviderStateEmpty(context.Context) (bool, error)
+	}); ok {
+		empty, err := state.NeonProviderStateEmpty(ctx)
+		if err != nil {
+			return err
+		}
+		if empty {
+			return r.lifecycle.Heartbeat(ctx)
+		}
 	}
 	if err := r.control.verifyOwnershipCapability(ctx); err != nil {
 		return err

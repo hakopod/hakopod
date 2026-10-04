@@ -21,13 +21,23 @@ def environment_fixture(case, images):
     canonical = [reference.split('@')[0].rsplit(':', 1)[0] + '@' + reference.split('@')[1]
                  for reference in [*images.values(), ETCD_IMAGE]]
     return {'schema_version': 1, 'case': case, 'minimum_free_bytes': 12 * 1024 ** 3,
-            'fixture_budget_bytes': 4 * 1024 ** 3, 'host_filesystem': copy.deepcopy(filesystem),
+            'fixture_budget_bytes': 4 * 1024 ** 3,
+            'required_cpu_milli': {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100}[case],
+            'cpu_shortfall_milli': 0, 'host_filesystem': copy.deepcopy(filesystem),
             'nodes': [{'name': name, 'architecture': 'amd64', 'operating_system': 'linux',
                        'schedulable': True, 'image_gc_high_threshold_percent': 85,
                        'conditions': {'Ready': 'True', 'DiskPressure': 'False', 'MemoryPressure': 'False', 'PIDPressure': 'False'},
                        'filesystems': {'nodefs': copy.deepcopy(filesystem), 'imagefs': copy.deepcopy(filesystem)},
-                       'cached_images': sorted(canonical)}
-                      for name in ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')]}
+                       'cached_images': sorted(canonical), 'allocatable_cpu_milli': 10000,
+                       'requested_cpu_milli': 100, 'available_cpu_milli': 9900}
+                      for name in ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')],
+            'cluster': {'uid': 'cluster-a', 'node_uids': {'k3d-hakopod-dev-server-0': 'uid-0',
+                'k3d-hakopod-database-worker-0': 'uid-1', 'k3d-hakopod-database-worker-1': 'uid-2'},
+                'vitess_crds': sorted({'etcdlockservers.planetscale.com', 'vitessbackups.planetscale.com',
+                    'vitessbackupschedules.planetscale.com', 'vitessbackupstorages.planetscale.com',
+                    'vitesscells.planetscale.com', 'vitessclusters.planetscale.com',
+                    'vitesskeyspaces.planetscale.com', 'vitessshards.planetscale.com'}),
+                'receipt_sha256': 'a' * 64}}
 
 
 class VitessReleaseVerificationTest(unittest.TestCase):
@@ -37,7 +47,7 @@ class VitessReleaseVerificationTest(unittest.TestCase):
         self.root = Path(self.temporary.name) / 'source'
         self.directory = Path(self.temporary.name) / 'qualification'
         self.directory.mkdir()
-        for name in ('internal/cluster', 'internal/database', 'internal/backup', 'internal/spec',
+        for name in ('auth', 'cmd/hakopod-server', 'internal/cluster', 'internal/database', 'internal/backup', 'internal/spec',
                      'templates/blueprints/fixture', 'patches', 'scripts', 'release', 'installer'):
             (self.root / name).mkdir(parents=True)
         self.manifest = {'schema_version': 1, 'platform': 'linux/amd64', 'sources': {}, 'images': {}}
@@ -62,6 +72,7 @@ class VitessReleaseVerificationTest(unittest.TestCase):
             self.manifest['images'][kind] = {'reference': image, 'base_image': base, 'binaries': binaries}
             self.manifest['sources'][kind] = {'repository': vitess.SOURCE_REPOSITORIES[kind], 'revision': revision}
         source.append('vitessEtcdImage = "' + ETCD_IMAGE + '"')
+        source.append('vitessReleaseQualified = true')
         (self.root / 'internal/cluster/database_vitess.go').write_text('\n'.join(source))
         for name in ('go.mod', 'go.sum', 'scripts/apply-managed-vitess-patches.py', 'scripts/build-managed-vitess.sh',
                      'scripts/run-development-vitess-acceptance.py', 'release/verify-vitess-runtime.py',
@@ -69,6 +80,7 @@ class VitessReleaseVerificationTest(unittest.TestCase):
             (self.root / name).write_text('test fixture source\n')
         (self.root / 'internal/cluster/live_database_vitess_test.go').write_text('test fixture acceptance source\n')
         for name in ('internal/spec/templates.go', 'internal/cluster/volume_copy.py',
+                     'auth/runtime.go', 'cmd/hakopod-server/main.go',
                      'templates/embed.go', 'templates/catalog.json', 'templates/blueprints/fixture/hakopod.toml',
                      'internal/spec/.embedded-fixture'):
             (self.root / name).write_text('test fixture transitive source\n')
@@ -95,6 +107,17 @@ class VitessReleaseVerificationTest(unittest.TestCase):
 
     def test_accepts_exact_native_source_and_binaries(self):
         self.assertEqual(vitess.validate_metadata(self.directory, self.root), self.manifest)
+
+    def test_inventory_binds_authorization_and_server_bootstrap(self):
+        for name in ('auth/runtime.go', 'cmd/hakopod-server/main.go'):
+            with self.subTest(name=name):
+                self.assertIn(name, self.manifest['source_files'])
+                path = self.root / name
+                original = path.read_text()
+                path.write_text(original + 'changed\n')
+                with self.assertRaisesRegex(ValueError, 'source changed'):
+                    vitess.validate_metadata(self.directory, self.root)
+                path.write_text(original)
 
     def test_rejects_missing_or_repeated_environment_case(self):
         original = copy.deepcopy(self.acceptance['attempts'])
@@ -165,6 +188,15 @@ class VitessReleaseVerificationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'source changed'):
                 vitess.validate_metadata(self.directory, self.root)
             path.write_text(original)
+
+    def test_rejects_qualification_for_a_shipping_source_with_admission_closed(self):
+        path = self.root / 'internal/cluster/database_vitess.go'
+        path.write_text(path.read_text().replace('vitessReleaseQualified = true', 'vitessReleaseQualified = false'))
+        self.manifest['source_files'] = vitess.source_files(self.root)
+        self.acceptance['source_files'] = self.manifest['source_files']
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'admission remains closed'):
+            vitess.validate_metadata(self.directory, self.root)
 
     def test_rejects_symbolic_files_and_directories(self):
         for name, target in (('linked.py', self.root / 'internal/cluster/volume_copy.py'),

@@ -15,6 +15,7 @@ const (
 	MaxCapacityReservations        = 256
 	MaxCapacityPoolWorkloads       = 1000
 	PodMemoryOverheadBytes   int64 = 50 << 20
+	SandboxCPUOverheadMilli  int64 = 20
 )
 
 type Capacity struct {
@@ -32,8 +33,10 @@ func (c Capacity) Fits(limit Capacity) bool {
 }
 
 type CapacityNode struct {
-	Name string `json:"name" toml:"name"`
-	UID  string `json:"uid" toml:"uid"`
+	Name            string `json:"name" toml:"name"`
+	UID             string `json:"uid" toml:"uid"`
+	Architecture    string `json:"architecture" toml:"architecture"`
+	OperatingSystem string `json:"operating_system" toml:"operating_system"`
 }
 
 // CapacityNamespaceOwnership identifies the exact namespace and workload
@@ -79,20 +82,22 @@ type CapacityPoolOwnership struct {
 // CapacityPolicy is trusted operator configuration. It is never accepted from
 // a managed platform request. Capacity is shared with managed databases.
 type CapacityPolicy struct {
-	Enabled      bool           `json:"enabled" toml:"enabled"`
-	Pool         string         `json:"pool" toml:"pool"`
-	Capacity     Capacity       `json:"capacity" toml:"capacity"`
-	Nodes        []CapacityNode `json:"nodes" toml:"nodes"`
-	StorageClass string         `json:"storage_class" toml:"storage_class"`
+	Enabled                bool           `json:"enabled" toml:"enabled"`
+	Pool                   string         `json:"pool" toml:"pool"`
+	SchedulingPool         string         `json:"scheduling_pool,omitempty" toml:"scheduling_pool"`
+	SchedulingRuntimeClass string         `json:"scheduling_runtime_class,omitempty" toml:"scheduling_runtime_class"`
+	Capacity               Capacity       `json:"capacity" toml:"capacity"`
+	Nodes                  []CapacityNode `json:"nodes" toml:"nodes"`
+	StorageClass           string         `json:"storage_class" toml:"storage_class"`
 }
 
 func (p CapacityPolicy) Validate() error {
-	if !p.Enabled || len(validation.IsDNS1123Label(p.Pool)) != 0 || p.Capacity.CPUMilli < 1 || p.Capacity.MemoryBytes < 1 || p.Capacity.StorageGiB < 1 || len(p.Nodes) < 1 || len(p.Nodes) > 48 || len(validation.IsDNS1123Subdomain(p.StorageClass)) != 0 {
+	if !p.Enabled || len(validation.IsDNS1123Label(p.Pool)) != 0 || p.SchedulingPool != "" && len(validation.IsValidLabelValue(p.SchedulingPool)) != 0 || p.SchedulingRuntimeClass != "" && (p.SchedulingPool == "" || len(validation.IsDNS1123Subdomain(p.SchedulingRuntimeClass)) != 0) || p.Capacity.CPUMilli < 1 || p.Capacity.MemoryBytes < 1 || p.Capacity.StorageGiB < 1 || len(p.Nodes) < 1 || len(p.Nodes) > 48 || len(validation.IsDNS1123Subdomain(p.StorageClass)) != 0 {
 		return fmt.Errorf("managed platform capacity policy is unavailable")
 	}
 	seenNames, seenUIDs := map[string]bool{}, map[string]bool{}
 	for _, node := range p.Nodes {
-		if len(validation.IsDNS1123Subdomain(node.Name)) != 0 || node.UID == "" || len(node.UID) > 128 || seenNames[node.Name] || seenUIDs[node.UID] {
+		if len(validation.IsDNS1123Subdomain(node.Name)) != 0 || node.UID == "" || len(node.UID) > 128 || node.Architecture == "" || len(validation.IsQualifiedName(node.Architecture)) != 0 || node.OperatingSystem == "" || len(validation.IsQualifiedName(node.OperatingSystem)) != 0 || seenNames[node.Name] || seenUIDs[node.UID] {
 			return fmt.Errorf("managed platform capacity node identity is invalid")
 		}
 		seenNames[node.Name], seenUIDs[node.UID] = true, true
@@ -120,6 +125,12 @@ func (p CapacityPolicy) Allows(spec Spec, plan Plan) error {
 	}
 	if plan.StorageClass == "" || plan.StorageClass != p.StorageClass {
 		return fmt.Errorf("managed platform storage class is not approved")
+	}
+	if plan.SchedulingPool != p.SchedulingPool {
+		return fmt.Errorf("managed platform scheduling pool is not approved")
+	}
+	if plan.SchedulingRuntimeClass != p.SchedulingRuntimeClass {
+		return fmt.Errorf("managed platform scheduling runtime is not approved")
 	}
 	allowed := make(map[string]bool, len(p.Nodes))
 	for _, node := range p.Nodes {
@@ -202,6 +213,9 @@ func CapacityReservations(spec Spec, plan Plan) ([]CapacityReservation, error) {
 	reservations := make([]CapacityReservation, 0, MaxCapacityReservations)
 	addWorkload := func(key, node string, values ...Resources) error {
 		amount := Capacity{MemoryBytes: PodMemoryOverheadBytes}
+		if plan.SchedulingRuntimeClass != "" {
+			amount.CPUMilli = SandboxCPUOverheadMilli
+		}
 		for _, value := range values {
 			parsed, err := quantityCapacity(value)
 			if err != nil {

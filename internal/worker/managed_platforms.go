@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
@@ -23,6 +24,9 @@ type ManagedPlatformRuntime interface {
 func (w *Worker) runManagedPlatform(parent context.Context) {
 	claimCtx, cancelClaim := context.WithTimeout(parent, 3*time.Second)
 	operation, err := w.Store.ClaimManagedPlatformOperation(claimCtx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		operation, err = w.Store.ClaimManagedPlatformMaintenance(claimCtx)
+	}
 	cancelClaim()
 	if err != nil {
 		return
@@ -45,10 +49,22 @@ func (w *Worker) runManagedPlatform(parent context.Context) {
 
 var managedPlatformSafeCategories = map[string]struct{}{
 	"capacity_admission": {}, "neon_snapshot_mismatch": {}, "neon_snapshot_missing": {},
+	"neon_proxy_activate": {}, "neon_namespace": {}, "neon_claims": {}, "neon_provider_state": {},
+	"neon_runtime_repair": {}, "neon_tls_prepare": {}, "neon_lifecycle_prepare": {}, "neon_lifecycle_deprovision": {},
+	"neon_node_inventory": {}, "neon_recovery_binding": {}, "neon_controller_secret": {}, "neon_render": {},
+	"neon_secret_validate": {}, "neon_secret_apply": {}, "neon_object_apply": {}, "neon_bootstrap_observe": {},
+	"neon_lifecycle_provision": {}, "neon_compute_replay": {}, "neon_serving_observe": {}, "neon_snapshot_prune": {}, "neon_recovery_observe": {},
 	"runtime_unavailable": {}, "snapshot_invalid": {}, "supabase_assets_invalid": {},
+	"supabase_apply_configmap": {}, "supabase_apply_deployment": {},
+	"supabase_apply_networkpolicy": {}, "supabase_apply_pvc": {},
+	"supabase_apply_secret": {}, "supabase_apply_service": {},
+	"supabase_apply_statefulset": {}, "supabase_claims": {},
 	"supabase_database_tls_validation": {}, "supabase_database_url_validation": {},
 	"supabase_gateway_validation": {}, "supabase_snapshot_mismatch": {},
-	"supabase_snapshot_missing": {}, "unsupported_kind": {},
+	"supabase_snapshot_missing": {}, "supabase_namespace": {},
+	"supabase_observe": {}, "supabase_qualification": {}, "neon_qualification": {}, "supabase_render": {}, "unsupported_kind": {},
+	"supabase_rotate_database_credentials": {},
+	"platform_identity":                    {}, "platform_tls_observe": {},
 }
 
 func managedPlatformErrorObservation(err error) (string, string) {
@@ -80,6 +96,9 @@ func managedPlatformErrorObservation(err error) (string, string) {
 	}
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) {
+		if postgresError.Code == "40001" {
+			return "postgres_serialization", fmt.Sprintf("%T", postgresError)
+		}
 		return "postgres_error", fmt.Sprintf("%T", postgresError)
 	}
 	var networkError net.Error

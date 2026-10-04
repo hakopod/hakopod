@@ -165,6 +165,7 @@ func TestNeonRecoveryResourceLifecycleUsesEffectiveOwnership(t *testing.T) {
 	if err = s.SetPlatformRecoveryCleanup(ctx, recovery, true); err != nil {
 		t.Fatal(err)
 	}
+	assertNeonTenantPlacementRestoreBoundary(t, s, targetOwner, recovery, binding)
 	secondaryToken := strings.Repeat("b", 64)
 	secondaryJournal, err := s.PlanNeonRecoveryResource(ctx, recovery, binding, secondary, "replacement-secondary", secondaryToken)
 	if err != nil {

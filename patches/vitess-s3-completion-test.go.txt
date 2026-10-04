@@ -1,0 +1,225 @@
+package s3backupstorage
+
+import (
+	"context"
+	"errors"
+	"io"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"vitess.io/vitess/go/vt/mysqlctl/backupstorage"
+)
+
+type completionClient struct {
+	*s3.Client
+	started chan struct{}
+	release chan struct{}
+	failure error
+	active  atomic.Int32
+	peak    atomic.Int32
+}
+
+func (c *completionClient) PutObject(ctx context.Context, _ *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	if c.started != nil {
+		close(c.started)
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.release:
+		return &s3.PutObjectOutput{}, c.failure
+	}
+}
+
+func (c *completionClient) CreateMultipartUpload(ctx context.Context, _ *s3.CreateMultipartUploadInput, _ ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error) {
+	if c.failure != nil {
+		return nil, c.failure
+	}
+	return &s3.CreateMultipartUploadOutput{UploadId: aws.String("test-upload")}, nil
+}
+
+func (c *completionClient) UploadPart(ctx context.Context, in *s3.UploadPartInput, _ ...func(*s3.Options)) (*s3.UploadPartOutput, error) {
+	active := c.active.Add(1)
+	defer c.active.Add(-1)
+	for previous := c.peak.Load(); active > previous && !c.peak.CompareAndSwap(previous, active); previous = c.peak.Load() {
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(20 * time.Millisecond):
+	}
+	if _, err := io.Copy(io.Discard, in.Body); err != nil {
+		return nil, err
+	}
+	return &s3.UploadPartOutput{ETag: aws.String("part")}, nil
+}
+
+func (c *completionClient) CompleteMultipartUpload(context.Context, *s3.CompleteMultipartUploadInput, ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error) {
+	return &s3.CompleteMultipartUploadOutput{}, nil
+}
+
+func (c *completionClient) AbortMultipartUpload(context.Context, *s3.AbortMultipartUploadInput, ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error) {
+	return &s3.AbortMultipartUploadOutput{}, nil
+}
+
+func completionHandle(client *completionClient) *S3BackupHandle {
+	return &S3BackupHandle{client: client, bs: &S3BackupStorage{params: backupstorage.NoParams()}}
+}
+
+func TestHakopodS3CloseWaitsForUploadAndIsIdempotent(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			client := &completionClient{started: make(chan struct{}), release: make(chan struct{})}
+			if fail {
+				client.failure = errors.New("upload failed")
+			}
+			handle := completionHandle(client)
+			writer, err := handle.AddFile(ctx, "test", 16)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = writer.Write([]byte("backup data")); err != nil {
+				t.Fatal(err)
+			}
+			closed := make(chan error, 1)
+			go func() { closed <- writer.Close() }()
+			select {
+			case <-client.started:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			select {
+			case <-closed:
+				t.Fatal("file completed before S3 upload")
+			case <-time.After(30 * time.Millisecond):
+			}
+			close(client.release)
+			select {
+			case err = <-closed:
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+			if !errors.Is(err, client.failure) {
+				t.Fatalf("close error %v; want %v", err, client.failure)
+			}
+			if again := writer.Close(); !errors.Is(again, client.failure) {
+				t.Fatal("repeated close changed upload result", again)
+			}
+			handle.waitGroup.Wait()
+			if handle.HasErrors() != fail {
+				t.Fatal("upload result was not recorded before close")
+			}
+		})
+	}
+}
+
+func TestHakopodS3CancellationUnblocksInputAndJoinsUploader(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	handle := completionHandle(&completionClient{})
+	writer, err := handle.AddFile(ctx, "test", 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = writer.Write([]byte("backup data")); err != nil {
+		t.Fatal(err)
+	}
+	// The uploader is still reading its first part and no HTTP call exists.
+	cancel()
+	closed := make(chan error, 1)
+	go func() { closed <- writer.Close() }()
+	select {
+	case err = <-closed:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("cancellation was lost", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelled uploader did not join")
+	}
+	handle.waitGroup.Wait()
+}
+
+func TestHakopodS3CancellationJoinsNetworkUpload(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &completionClient{started: make(chan struct{}), release: make(chan struct{})}
+	handle := completionHandle(client)
+	writer, err := handle.AddFile(ctx, "test", 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = writer.Write([]byte("backup data")); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- writer.Close() }()
+	select {
+	case <-client.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("upload did not start")
+	}
+	cancel()
+	select {
+	case err = <-closed:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("network cancellation was lost", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelled network upload did not join")
+	}
+	handle.waitGroup.Wait()
+}
+
+type backupZeros struct{}
+
+func (backupZeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
+
+func TestHakopodS3EarlyUploadFailureUnblocksWriter(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	failure := errors.New("multipart creation failed")
+	handle := completionHandle(&completionClient{failure: failure})
+	writer, err := handle.AddFile(ctx, "test", 12<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.CopyN(writer, backupZeros{}, 12<<20)
+	if !errors.Is(err, failure) {
+		t.Fatal("blocked writer did not receive upload failure", err)
+	}
+	if err = writer.Close(); !errors.Is(err, failure) {
+		t.Fatal("close lost early failure", err)
+	}
+	handle.waitGroup.Wait()
+}
+
+func TestHakopodS3MultipartUsesOneUploadWorker(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	client := &completionClient{}
+	handle := completionHandle(client)
+	writer, err := handle.AddFile(ctx, "test", 20<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = io.CopyN(writer, backupZeros{}, 20<<20); err != nil {
+		t.Fatal(err)
+	}
+	if err = writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if peak := client.peak.Load(); peak != 1 {
+		t.Fatalf("multipart upload used %d concurrent workers", peak)
+	}
+	part, err := calculateUploadPartSize(1 << 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if 2*part > (448-192)<<20 {
+		t.Fatal("maximum supported file parts exceed backup Go budget")
+	}
+}

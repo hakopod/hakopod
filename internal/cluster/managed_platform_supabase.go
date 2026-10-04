@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"reflect"
 	"sort"
@@ -27,6 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 const maxSupabaseRuntimeObjects = managedplatform.MaxComponents * 5
@@ -34,6 +37,11 @@ const maxSupabaseRuntimeObjects = managedplatform.MaxComponents * 5
 var errSupabasePrunePending = errors.New("Supabase snapshot deletion is still in progress")
 
 type ManagedPlatformOperationStore interface {
+	PlatformRuntimeMutationForRepair(context.Context, store.ManagedPlatformOperation, string) (store.PlatformRuntimeRepair, error)
+	ResolvePlatformRuntimeMutationRepair(context.Context, store.ManagedPlatformOperation, store.PlatformRuntimeRepair, bool) error
+	PlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, string) (store.PlatformRuntimeMutation, error)
+	PreparePlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim, store.PlatformRuntimeMutation) error
+	CompletePlatformRuntimeMutation(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim, store.PlatformRuntimeMutation) error
 	CheckManagedPlatformOperation(context.Context, store.ManagedPlatformOperation) error
 	HeartbeatManagedPlatformOperation(context.Context, store.ManagedPlatformOperation) error
 	ClaimPlatformResource(context.Context, store.ManagedPlatformOperation, store.PlatformResourceClaim) error
@@ -84,23 +92,28 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 	}
 	prior, current, err := loadSupabaseClaims(ctx, state, op)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("supabase_claims", err)
 	}
 	ns, err := c.ensureSupabaseNamespace(ctx, state, op, prior, current, before)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("supabase_namespace", err)
 	}
 	request.Render.NamespaceUID = ns.UID
-	claim, err := c.kube.CoreV1().PersistentVolumeClaims(ns.Name).Get(ctx, "supabase-database", metav1.GetOptions{})
-	request.Render.DatabaseClaim = managedplatform.ObservedClaimState{Observed: true}
-	if err == nil {
-		request.Render.DatabaseClaim.UID = claim.UID
-	} else if !apierrors.IsNotFound(err) {
-		return err
+	if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+		return managedPlatformRuntimeError("supabase_claims", err)
+	}
+	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
+		return managedPlatformRuntimeError("platform_identity", err)
+	}
+	if err = c.prepareSupabaseDatabaseClaim(ctx, state, op, ns, &request.Render, prior, current, before); err != nil {
+		return managedPlatformRuntimeError("supabase_claims", err)
 	}
 	manifests, err := managedplatform.RenderSupabase(request.Render)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("supabase_render", err)
+	}
+	if op.Spec.TLSMode == "managed" {
+		manifests.RetainSecretSnapshots = append(manifests.RetainSecretSnapshots, managedplatform.ManagedTLSIssuerSecret)
 	}
 	tlsName := secretSnapshotNameForCluster(request.Render.Spec.Secrets["gateway-tls-certificate"])
 	runtimeName := secretSnapshotNameForCluster(request.Render.Spec.Secrets["envoy-runtime-config"])
@@ -114,31 +127,222 @@ func (c *Client) ReconcileSupabaseOperation(ctx context.Context, state ManagedPl
 	if err = validateSupabaseDatabaseClientURLs(request.SecretSnapshots, request.Render.Spec); err != nil {
 		return managedPlatformRuntimeError("supabase_database_url_validation", err)
 	}
+	if err = validateSupabaseRuntimeSecrets(request.SecretSnapshots, request.Render.Spec); err != nil {
+		return managedPlatformRuntimeError("supabase_runtime_secret_validation", err)
+	}
 	for _, name := range manifests.RequiredSecrets {
 		if err = c.applySupabaseSecret(ctx, state, op, ns, name, request.SecretSnapshots[name], prior, current, before); err != nil {
-			return err
+			return managedPlatformRuntimeError("supabase_apply_secret", err)
 		}
 	}
 	objects := append([]runtime.Object(nil), manifests.Objects...)
+	markerName := "supabase-database-credentials-r" + strconv.FormatInt(op.Revision, 10)
+	var marker *corev1.ConfigMap
+	filtered := objects[:0]
+	for _, object := range objects {
+		if item, ok := object.(*corev1.ConfigMap); ok && item.Name == markerName {
+			marker = item
+			continue
+		}
+		filtered = append(filtered, object)
+	}
+	objects = filtered
+	if marker != nil {
+		key := supabaseClaimKey("configmap", marker.Name)
+		if _, applied := current[key]; !applied && !op.Maintenance {
+			if err = c.rotateSupabaseDatabaseCredentials(ctx, op, ns, request, before); err != nil {
+				return managedPlatformRuntimeError("supabase_rotate_database_credentials", err)
+			}
+			if err = supabaseRotationAcceptanceBoundary(); err != nil {
+				return managedPlatformRuntimeError("supabase_rotate_database_credentials", err)
+			}
+		}
+		if err = c.applySupabaseConfigMap(ctx, state, op, ns, marker, prior, current, before); err != nil {
+			return managedPlatformRuntimeError("supabase_rotate_database_credentials", err)
+		}
+	}
 	sort.SliceStable(objects, func(i, j int) bool { return supabaseApplyRank(objects[i]) < supabaseApplyRank(objects[j]) })
 	for _, object := range objects {
 		if err = c.applySupabaseObject(ctx, op, ns, object, state, prior, current, before); err != nil {
-			return err
+			return managedPlatformRuntimeError(supabaseApplyErrorCategory(object), err)
 		}
 	}
 	observation, err := c.ObserveSupabase(ctx, op, manifests, current)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("supabase_observe", err)
 	}
 	if observation.Status != "ready" {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-ready", "Supabase components are not ready.", supabaseObservationMap(observation))
+	}
+	result := supabaseObservationMap(observation)
+	if op.Spec.TLSMode == "managed" {
+		tlsObservation, err := c.observeManagedPlatformTLS(ctx, state, op, ns, request.Render.Spec, request.SecretSnapshots, current, before)
+		if err != nil {
+			return managedPlatformRuntimeError("platform_tls_observe", err)
+		}
+		result["tls"] = tlsObservation
 	}
 	if err = c.pruneSupabaseSnapshots(ctx, state, op, ns, manifests, prior, current, before); errors.Is(err, errSupabasePrunePending) {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-prune", "Old Supabase snapshots are still being deleted.", supabaseObservationMap(observation))
 	} else if err != nil {
 		return err
 	}
-	return state.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "Supabase runtime is ready in the cluster.", supabaseObservationMap(observation))
+	return state.RecordManagedPlatformStep(ctx, op, "succeeded", "ready", "Supabase runtime is ready in the cluster.", result)
+}
+
+func (c *Client) rotateSupabaseDatabaseCredentials(ctx context.Context, op store.ManagedPlatformOperation, ns *corev1.Namespace, request SupabaseRuntimeRequest, before func() error) error {
+	if c.execConfig == nil {
+		return fmt.Errorf("Supabase database credential rotation transport is unavailable")
+	}
+	ref := request.Render.Spec.Secrets["database-role-bootstrap"]
+	values := request.SecretSnapshots[secretSnapshotNameForCluster(ref)]
+	script := values["value"]
+	if len(values) != 1 {
+		return fmt.Errorf("Supabase database credential rotation script is invalid")
+	}
+	script, err := supabaseDatabaseMigrationScript(script)
+	if err != nil {
+		return err
+	}
+	pods, err := c.kube.CoreV1().Pods(ns.Name).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/managed-by=hakopod,hakopod.io/managed-platform-id=" + op.PlatformID + ",app.kubernetes.io/component=database", Limit: 2})
+	if err != nil {
+		return err
+	}
+	if pods.Continue != "" || len(pods.Items) != 1 {
+		return fmt.Errorf("Supabase database credential rotation requires one owned database pod")
+	}
+	pod := &pods.Items[0]
+	database, err := c.kube.AppsV1().StatefulSets(ns.Name).Get(ctx, "supabase-database", metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if err = verifySupabaseOwned(database, op.PlatformID, ns.UID); err != nil {
+		return err
+	}
+	owners := pod.OwnerReferences
+	if pod.UID == "" || pod.Labels["app.kubernetes.io/managed-by"] != "hakopod" || pod.Labels["hakopod.io/managed-platform-id"] != op.PlatformID || len(owners) != 1 || owners[0].APIVersion != "apps/v1" || owners[0].Kind != "StatefulSet" || owners[0].Name != database.Name || owners[0].UID != database.UID {
+		return fmt.Errorf("Supabase database pod ownership changed before credential rotation")
+	}
+	if pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning || len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "database" {
+		return fmt.Errorf("Supabase database pod is not stable for credential rotation")
+	}
+	ready := false
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == "database" && status.Ready {
+			ready = true
+		}
+	}
+	if !ready {
+		return fmt.Errorf("Supabase database pod is not ready for credential rotation")
+	}
+	if err = before(); err != nil {
+		return err
+	}
+	current, err := c.kube.CoreV1().Pods(ns.Name).Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil || current.UID != pod.UID || current.ResourceVersion != pod.ResourceVersion || current.DeletionTimestamp != nil {
+		return fmt.Errorf("Supabase database pod identity changed before credential rotation")
+	}
+	u := c.restClient().Post().Resource("pods").Namespace(ns.Name).Name(current.Name).SubResource("exec").VersionedParams(&corev1.PodExecOptions{Container: "database", Command: []string{"psql", "-X", "-U", "postgres", "-d", request.Render.PreviousSpec.Supabase.DatabaseName, "-v", "ON_ERROR_STOP=1", "-v", "database_name=" + request.Render.PreviousSpec.Supabase.DatabaseName, "-v", "jwt_expiry=" + strconv.Itoa(request.Render.Spec.Supabase.JWTExpirySeconds), "-f", "-"}, Stdin: true, Stdout: false, Stderr: true}, scheme.ParameterCodec).URL()
+	executor, err := remotecommand.NewSPDYExecutor(c.execConfig, http.MethodPost, u)
+	if err != nil {
+		return fmt.Errorf("Supabase database credential rotation transport failed")
+	}
+	rotationCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err = executor.StreamWithContext(rotationCtx, remotecommand.StreamOptions{Stdin: bytes.NewReader(script), Stderr: io.Discard}); err != nil {
+		return fmt.Errorf("Supabase database credential rotation failed")
+	}
+	return before()
+}
+
+func supabaseDatabaseMigrationScript(roleBootstrap []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(roleBootstrap)
+	if len(trimmed) == 0 || len(trimmed) > 64<<10 || !bytes.HasPrefix(trimmed, []byte("BEGIN;")) || !bytes.HasSuffix(trimmed, []byte("COMMIT;")) {
+		return nil, fmt.Errorf("Supabase database credential rotation script is invalid")
+	}
+	script := append([]byte(nil), bytes.TrimSpace(trimmed[:len(trimmed)-len("COMMIT;")])...)
+	script = append(script, []byte("\nALTER DATABASE :\"database_name\" SET app.settings.jwt_exp TO :'jwt_expiry';\nCOMMIT;\n")...)
+	return script, nil
+}
+
+func (c *Client) prepareSupabaseDatabaseClaim(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, ns *corev1.Namespace, render *managedplatform.SupabaseRenderInput, prior, current map[string]store.PlatformResourceClaim, before func() error) error {
+	render.DatabaseClaim = managedplatform.ObservedClaimState{Observed: true}
+	render.DatabaseClaimFromCurrentCreate = false
+	claim, err := c.kube.CoreV1().PersistentVolumeClaims(ns.Name).Get(ctx, "supabase-database", metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	render.DatabaseClaim.UID = claim.UID
+	if op.Kind == "create" && op.Revision == 1 && render.PreviousSpec == nil {
+		if err = recoverSupabaseCurrentCreateDatabaseClaim(ctx, state, op, ns, claim, prior, current, before); err != nil {
+			return err
+		}
+		render.DatabaseClaimFromCurrentCreate = true
+	}
+	return nil
+}
+
+func recoverSupabaseCurrentCreateDatabaseClaim(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, ns *corev1.Namespace, claim *corev1.PersistentVolumeClaim, prior, current map[string]store.PlatformResourceClaim, before func() error) error {
+	if err := validateSupabaseCurrentCreateDatabaseScope(op, ns, claim); err != nil {
+		return err
+	}
+	if err := verifySupabaseOwned(claim, op.PlatformID, ns.UID); err != nil {
+		return err
+	}
+	key := supabaseClaimKey("pvc", claim.Name)
+	if _, ok := current[key]; !ok {
+		if err := before(); err != nil {
+			return err
+		}
+		if err := claimOrAdvanceSupabaseObject(ctx, state, op, "pvc", claim, prior, current, true); err != nil {
+			return err
+		}
+	}
+	return verifySupabaseCurrentCreateDatabaseClaim(op, ns, claim, current)
+}
+
+func validateSupabaseCurrentCreateDatabaseScope(op store.ManagedPlatformOperation, ns *corev1.Namespace, claim *corev1.PersistentVolumeClaim) error {
+	if op.Kind != "create" || op.Revision != 1 || claim.Name != "supabase-database" || claim.Namespace != ns.Name {
+		return fmt.Errorf("Supabase current create database claim scope changed")
+	}
+	return nil
+}
+
+func verifySupabaseCurrentCreateDatabaseClaim(op store.ManagedPlatformOperation, ns *corev1.Namespace, claim *corev1.PersistentVolumeClaim, current map[string]store.PlatformResourceClaim) error {
+	if err := validateSupabaseCurrentCreateDatabaseScope(op, ns, claim); err != nil {
+		return err
+	}
+	if err := verifySupabaseOwned(claim, op.PlatformID, ns.UID); err != nil {
+		return err
+	}
+	key := supabaseClaimKey("pvc", claim.Name)
+	durable, ok := current[key]
+	if !ok || durable.PlatformID != op.PlatformID || durable.PlatformRevision != op.Revision || durable.Component != key || durable.OwnerOperationID != op.ID || durable.Kind != "runtime_component" || durable.ResourceID != string(claim.UID) || durable.ImmutableGeneration != 1 || durable.ReleasedAt != nil {
+		return fmt.Errorf("Supabase current create database claim identity changed")
+	}
+	return nil
+}
+
+func supabaseApplyErrorCategory(object runtime.Object) string {
+	switch object.(type) {
+	case *corev1.ConfigMap:
+		return "supabase_apply_configmap"
+	case *corev1.PersistentVolumeClaim:
+		return "supabase_apply_pvc"
+	case *corev1.Service:
+		return "supabase_apply_service"
+	case *networkingv1.NetworkPolicy:
+		return "supabase_apply_networkpolicy"
+	case *appsv1.StatefulSet:
+		return "supabase_apply_statefulset"
+	case *appsv1.Deployment:
+		return "supabase_apply_deployment"
+	default:
+		return "supabase_render"
+	}
 }
 
 func (c *Client) ensureSupabaseNamespace(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, prior, current map[string]store.PlatformResourceClaim, before func() error) (*corev1.Namespace, error) {
@@ -411,21 +615,58 @@ func validateSupabaseDatabaseTLS(data map[string][]byte, namespace string) error
 }
 
 func validateSupabaseDatabaseClientURLs(values map[string]map[string][]byte, spec managedplatform.Spec) error {
-	expectedRoles := map[string]string{
-		"auth-database-url":    "supabase_auth_admin",
-		"rest-database-url":    "authenticator",
-		"storage-database-url": "supabase_storage_admin",
+	expected := []struct {
+		key, role, database string
+	}{
+		{"auth-database-url", "supabase_auth_admin", spec.Supabase.DatabaseName},
+		{"rest-database-url", "authenticator", spec.Supabase.DatabaseName},
+		{"storage-database-url", "supabase_storage_admin", spec.Supabase.DatabaseName},
+		{"supavisor-database-url", "pgbouncer", "_supabase"},
 	}
-	for key, expectedRole := range expectedRoles {
-		ref := spec.Secrets[key]
+	for _, item := range expected {
+		ref := spec.Secrets[item.key]
 		data := values[secretSnapshotNameForCluster(ref)]
+		expectedValues := 1
+		if item.key == "supavisor-database-url" {
+			expectedValues = 2
+		}
+		if len(data) != expectedValues || len(data["value"]) == 0 || item.key == "supavisor-database-url" && len(data["password"]) == 0 {
+			return fmt.Errorf("Supabase %s does not contain its exact required values", item.key)
+		}
 		u, err := url.Parse(string(data["value"]))
-		if err != nil || u.Fragment != "" || u.Opaque != "" || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() != "db" || u.Port() != "5432" || u.User == nil || u.User.Username() != expectedRole || u.Path != "/"+spec.Supabase.DatabaseName {
-			return fmt.Errorf("Supabase %s must use its expected database role, database, and TLS hostname", key)
+		if err != nil || u == nil {
+			return fmt.Errorf("Supabase %s must be a valid PostgreSQL URL", item.key)
+		}
+		password, hasPassword := "", false
+		if u.User != nil {
+			password, hasPassword = u.User.Password()
+		}
+		if u.Fragment != "" || u.Opaque != "" || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() != "db" || u.Port() != "5432" || u.User == nil || u.User.Username() != item.role || !hasPassword || password == "" || u.Path != "/"+item.database {
+			return fmt.Errorf("Supabase %s must use its expected database role, database, and TLS hostname", item.key)
+		}
+		if item.key == "supavisor-database-url" && !bytes.Equal([]byte(password), data["password"]) {
+			return fmt.Errorf("Supabase supavisor-database-url password must match its URL credential")
 		}
 		query, err := url.ParseQuery(u.RawQuery)
 		if err != nil || len(query) != 2 || len(query["sslmode"]) != 1 || query["sslmode"][0] != "verify-full" || len(query["sslrootcert"]) != 1 || query["sslrootcert"][0] != "/etc/hakopod-database-ca/ca.crt" {
-			return fmt.Errorf("Supabase %s must use database hostname verification and the mounted CA without connection overrides", key)
+			return fmt.Errorf("Supabase %s must use database hostname verification and the mounted CA without connection overrides", item.key)
+		}
+	}
+	return nil
+}
+
+func validateSupabaseRuntimeSecrets(values map[string]map[string][]byte, spec managedplatform.Spec) error {
+	for _, item := range []struct {
+		name   string
+		length int
+	}{
+		{name: "realtime-db-encryption-key", length: 32},
+		{name: "vault-encryption-key", length: 32},
+	} {
+		ref := spec.Secrets[item.name]
+		data := values[secretSnapshotNameForCluster(ref)]
+		if len(data) != 1 || len(data["value"]) != item.length {
+			return fmt.Errorf("Supabase %s value must be exactly %d bytes", item.name, item.length)
 		}
 	}
 	return nil
@@ -505,7 +746,7 @@ func loadSupabaseClaims(ctx context.Context, state ManagedPlatformOperationStore
 			return nil, nil, fmt.Errorf("managed platform prior resource claim bound exceeded")
 		}
 		for _, claim := range claims {
-			if claim.PlatformID != op.PlatformID || claim.PlatformRevision != op.Revision-1 || claim.ReleasedAt != nil {
+			if claim.PlatformID != op.PlatformID || claim.PlatformRevision < 1 || claim.PlatformRevision >= op.Revision || claim.ReleasedAt != nil {
 				return nil, nil, fmt.Errorf("invalid managed platform prior resource claim")
 			}
 			if op.Spec.Kind == "neon" && neonLifecycleClaimComponent(claim.Component) {
@@ -599,17 +840,17 @@ func reserveSupabaseCreate(ctx context.Context, state ManagedPlatformOperationSt
 
 func claimOrAdvanceSupabaseObject(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, kind string, object metav1.Object, priorClaims, currentClaims map[string]store.PlatformResourceClaim, allowUnclaimed bool) error {
 	key := supabaseClaimKey(kind, object.GetName())
-	if len(key) > 63 || object.GetUID() == "" {
+	if len(key) > 63 || object.GetUID() == "" || platformRuntimeGeneration(kind, object) < 1 {
 		return fmt.Errorf("invalid Supabase runtime object identity")
 	}
 	if claim, ok := currentClaims[key]; ok {
-		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != 1 {
+		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != platformRuntimeGeneration(kind, object) {
 			return fmt.Errorf("Supabase resource claim identity changed for %s", key)
 		}
 		return state.VerifyPlatformResourceClaim(ctx, op, claim)
 	}
 	if claim, ok := priorClaims[key]; ok {
-		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != 1 {
+		if claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != platformRuntimeGeneration(kind, object) {
 			return fmt.Errorf("Supabase resource claim identity changed for %s", key)
 		}
 		if err := state.AdvancePlatformResourceClaim(ctx, op, claim); err != nil {
@@ -620,7 +861,7 @@ func claimOrAdvanceSupabaseObject(ctx context.Context, state ManagedPlatformOper
 		delete(priorClaims, key)
 		return state.VerifyPlatformResourceClaim(ctx, op, claim)
 	}
-	claim := store.PlatformResourceClaim{PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: key, Kind: "runtime_component", ResourceID: string(object.GetUID()), ImmutableGeneration: 1, OwnerOperationID: op.ID}
+	claim := store.PlatformResourceClaim{PlatformID: op.PlatformID, PlatformRevision: op.Revision, Component: key, Kind: "runtime_component", ResourceID: string(object.GetUID()), ImmutableGeneration: platformRuntimeGeneration(kind, object), OwnerOperationID: op.ID}
 	intents, err := state.PlatformResourceIntents(ctx, op, op.Revision)
 	if err != nil {
 		return err
@@ -815,16 +1056,10 @@ func (c *Client) applySupabaseDeployment(ctx context.Context, state ManagedPlatf
 	if err = verifySupabaseOwned(existing, op.PlatformID, ns.UID); err != nil {
 		return err
 	}
-	if err = claimOrAdvanceSupabaseObject(ctx, state, op, "deployment", existing, prior, current, false); err != nil {
-		return err
-	}
 	desired = desired.DeepCopy()
-	desired.ResourceVersion = existing.ResourceVersion
-	if err = before(); err != nil {
-		return err
-	}
-	_, err = api.Update(ctx, desired, metav1.UpdateOptions{})
-	return err
+	return applyPlatformRuntimeMutation(ctx, state, op, "deployment", existing, desired, prior, current, before, func(object runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+		return api.Update(ctx, object.(*appsv1.Deployment), options)
+	})
 }
 
 func (c *Client) applySupabaseStatefulSet(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, ns *corev1.Namespace, desired *appsv1.StatefulSet, prior, current map[string]store.PlatformResourceClaim, before func() error) error {
@@ -852,16 +1087,12 @@ func (c *Client) applySupabaseStatefulSet(ctx context.Context, state ManagedPlat
 	if err = verifySupabaseOwned(existing, op.PlatformID, ns.UID); err != nil {
 		return err
 	}
-	if err = claimOrAdvanceSupabaseObject(ctx, state, op, "statefulset", existing, prior, current, false); err != nil {
-		return err
-	}
 	desired = desired.DeepCopy()
-	desired.ResourceVersion = existing.ResourceVersion
-	if err = before(); err != nil {
-		return err
-	}
-	_, err = api.Update(ctx, desired, metav1.UpdateOptions{})
-	return err
+	// This Kubernetes default is immutable after creation.
+	desired.Spec.PodManagementPolicy = existing.Spec.PodManagementPolicy
+	return applyPlatformRuntimeMutation(ctx, state, op, "statefulset", existing, desired, prior, current, before, func(object runtime.Object, options metav1.UpdateOptions) (runtime.Object, error) {
+		return api.Update(ctx, object.(*appsv1.StatefulSet), options)
+	})
 }
 
 func (c *Client) applySupabaseNetworkPolicy(ctx context.Context, state ManagedPlatformOperationStore, op store.ManagedPlatformOperation, ns *corev1.Namespace, desired *networkingv1.NetworkPolicy, prior, current map[string]store.PlatformResourceClaim, before func() error) error {
@@ -1013,7 +1244,7 @@ func (c *Client) ObserveSupabase(ctx context.Context, op store.ManagedPlatformOp
 
 func verifySupabaseClaimedUID(kind string, object metav1.Object, current map[string]store.PlatformResourceClaim) error {
 	claim, ok := current[supabaseClaimKey(kind, object.GetName())]
-	if !ok || claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != 1 {
+	if !ok || claim.ResourceID != string(object.GetUID()) || claim.ImmutableGeneration != platformRuntimeGeneration(kind, object) {
 		return fmt.Errorf("Supabase readiness claim identity changed for %s", object.GetName())
 	}
 	return nil
@@ -1181,6 +1412,11 @@ func (c *Client) deleteSupabaseOperation(ctx context.Context, state ManagedPlatf
 	nsName := "managed-platform-" + op.PlatformID
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, nsName, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
+		for component := range prior {
+			if err = resolveAbsentTerminalPlatformRuntimeMutation(ctx, state, op, component, prior); err != nil {
+				return err
+			}
+		}
 		for _, intent := range append(priorIntents, currentIntents...) {
 			if intent.ConfirmedAt == nil {
 				if err = state.CancelPlatformResourceIntent(ctx, op, intent); err != nil {
@@ -1269,24 +1505,32 @@ func (c *Client) deleteSupabaseOperation(ctx context.Context, state ManagedPlatf
 			return err
 		}
 	}
+	if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+		return err
+	}
 	for key, claim := range prior {
 		if op.Spec.Kind == "neon" && neonLifecycleClaimComponent(key) {
 			continue
 		}
 		object, findErr := c.supabaseClaimedObject(ctx, ns.Name, key)
-		if apierrors.IsNotFound(findErr) && ns.DeletionTimestamp != nil {
+		if apierrors.IsNotFound(findErr) {
 			if err = state.AdvancePlatformResourceClaim(ctx, op, claim); err != nil {
 				return err
 			}
 			claim.PlatformRevision, claim.OwnerOperationID = op.Revision, op.ID
-			current[key] = claim
+			if ns.DeletionTimestamp != nil {
+				current[key] = claim
+			} else if err = state.ReleasePlatformResourceClaim(ctx, op, claim); err != nil {
+				return err
+			}
 			delete(prior, key)
 			continue
 		}
 		if findErr != nil {
 			return findErr
 		}
-		if string(object.GetUID()) != claim.ResourceID || verifySupabaseDeletionObject(key, object, op.PlatformID, ns.UID) != nil {
+		kind, _, _ := strings.Cut(key, ".")
+		if string(object.GetUID()) != claim.ResourceID || platformRuntimeGeneration(kind, object) != claim.ImmutableGeneration || verifySupabaseDeletionObject(key, object, op.PlatformID, ns.UID) != nil {
 			return fmt.Errorf("Supabase deletion claim identity changed for %s", key)
 		}
 		if err = state.AdvancePlatformResourceClaim(ctx, op, claim); err != nil {
@@ -1304,16 +1548,23 @@ func (c *Client) deleteSupabaseOperation(ctx context.Context, state ManagedPlatf
 			continue
 		}
 		object, findErr := c.supabaseClaimedObject(ctx, ns.Name, key)
-		if apierrors.IsNotFound(findErr) && ns.DeletionTimestamp != nil {
+		if apierrors.IsNotFound(findErr) {
 			if err = state.VerifyPlatformResourceClaim(ctx, op, claim); err != nil {
 				return err
+			}
+			if ns.DeletionTimestamp == nil {
+				if err = state.ReleasePlatformResourceClaim(ctx, op, claim); err != nil {
+					return err
+				}
+				delete(current, key)
 			}
 			continue
 		}
 		if findErr != nil {
 			return findErr
 		}
-		if string(object.GetUID()) != claim.ResourceID {
+		kind, _, _ := strings.Cut(key, ".")
+		if string(object.GetUID()) != claim.ResourceID || platformRuntimeGeneration(kind, object) != claim.ImmutableGeneration {
 			return fmt.Errorf("Supabase deletion claim identity changed for %s", key)
 		}
 		if err = verifySupabaseDeletionObject(key, object, op.PlatformID, ns.UID); err != nil {

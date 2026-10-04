@@ -1,6 +1,7 @@
 package managedplatform
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
@@ -15,6 +16,30 @@ import (
 const testTenant = "11111111111111111111111111111111"
 const testTimeline = "22222222222222222222222222222222"
 const testOperation = "33333333333333333333333333333333"
+
+func TestNeonComputeLifecyclePreservesAdjacentLargeIntegerConfigurations(t *testing.T) {
+	platform, tenant, timeline, state, _ := neonControllerFixture()
+	digests := map[string]bool{}
+	for _, number := range []string{"9223372036854775806", "9223372036854775807"} {
+		raw := json.RawMessage(`{"spec":{"format_version":1,"suspend_timeout_seconds":` + number + `,"tenant_id":"` + tenant + `","timeline_id":"` + timeline + `","storage_auth_token":"test-storage-token","cluster":{"roles":[],"databases":[]}},"compute_ctl_config":{"jwks":{"keys":[]}}}`)
+		routed, err := BindNeonControllerRouting(raw, platform, tenant, timeline, 2, state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		owned, err := bindNeonComputeOwnership(routed, testOperation)
+		if err != nil || !bytes.Contains(owned, []byte(`"suspend_timeout_seconds":`+number)) {
+			t.Fatal("compute mutation changed a provider integer")
+		}
+		digest, err := validateNeonLifecycleRequest(NeonLifecycleRequest{OperationID: testOperation, TenantID: tenant, TimelineID: timeline, CreateTenant: true, ComputeConfig: map[string]json.RawMessage{"compute-0": owned}}, []NeonControlTarget{{Name: "compute-0", Origin: "https://compute.invalid"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if digests[digest] {
+			t.Fatal("distinct provider configurations share a lifecycle digest")
+		}
+		digests[digest] = true
+	}
+}
 
 func TestNeonRuntimeCreatesStorageBeforeAttachingComputeAndPersistsNoSecret(t *testing.T) {
 	var calls []string
@@ -89,9 +114,9 @@ func TestNeonRuntimeCreatesStorageBeforeAttachingComputeAndPersistsNoSecret(t *t
 	}
 }
 
-func TestNeonRuntimeRejectsWrongComputeAttachmentAndKeepsQualificationFalse(t *testing.T) {
-	if capability := NeonRuntimeQualification(); capability.Available || capability.ClusterQualified || capability.PublicQualified {
-		t.Fatal("unqualified Neon runtime became available")
+func TestNeonRuntimeRejectsWrongComputeAttachmentAndKeepsPublicAccessClosed(t *testing.T) {
+	if capability := NeonRuntimeQualification(); capability.Available != NeonReleaseQualified() || capability.ClusterQualified != NeonReleaseQualified() || capability.PublicQualified {
+		t.Fatal("Neon runtime capability differs from its private release qualification")
 	}
 	_, err := validateNeonLifecycleRequest(NeonLifecycleRequest{OperationID: testOperation, TenantID: testTenant, TimelineID: testTimeline, ComputeConfig: map[string]json.RawMessage{"primary": json.RawMessage(`{"spec":{"tenant_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","timeline_id":"` + testTimeline + `","safekeeper_connstrings":["a","b","c"],"storage_auth_token":"token"},"compute_ctl_config":{}}`)}}, []NeonControlTarget{{Name: "primary"}})
 	if err == nil {

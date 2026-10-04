@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	corev1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,10 +20,14 @@ import (
 )
 
 type ManagedPlatformNodeReservation struct {
-	UID        string
-	Capacity   managedplatform.Capacity
-	Ownership  managedplatform.CapacityPoolOwnership
-	Namespaces map[string]managedplatform.CapacityNamespaceOwnership
+	UID                    string
+	Architecture           string
+	OperatingSystem        string
+	SchedulingPool         string
+	SchedulingRuntimeClass string
+	Capacity               managedplatform.Capacity
+	Ownership              managedplatform.CapacityPoolOwnership
+	Namespaces             map[string]managedplatform.CapacityNamespaceOwnership
 }
 
 // DatabaseNodeReservation covers all grants sharing this node. Scopes identify
@@ -301,7 +307,7 @@ func capacityContainersMatch(actual, planned []corev1.Container) bool {
 }
 
 func capacityTemplateMatches(pod corev1.Pod, planned corev1.PodTemplateSpec) bool {
-	if pod.Spec.NodeName == "" || planned.Spec.NodeName != "" && pod.Spec.NodeName != planned.Spec.NodeName || !capacityContainersMatch(pod.Spec.Containers, planned.Spec.Containers) || !capacityContainersMatch(pod.Spec.InitContainers, planned.Spec.InitContainers) {
+	if pod.Spec.NodeName == "" || planned.Spec.NodeName != "" && pod.Spec.NodeName != planned.Spec.NodeName || !reflect.DeepEqual(pod.Spec.RuntimeClassName, planned.Spec.RuntimeClassName) || !capacityContainersMatch(pod.Spec.Containers, planned.Spec.Containers) || !capacityContainersMatch(pod.Spec.InitContainers, planned.Spec.InitContainers) {
 		return false
 	}
 	for key, value := range planned.Spec.NodeSelector {
@@ -318,7 +324,7 @@ func capacityTemplateMatches(pod corev1.Pod, planned corev1.PodTemplateSpec) boo
 }
 
 func capacityTemplatesMatch(actual, planned corev1.PodTemplateSpec) bool {
-	if actual.Spec.NodeName != planned.Spec.NodeName || !capacityContainersMatch(actual.Spec.Containers, planned.Spec.Containers) || !capacityContainersMatch(actual.Spec.InitContainers, planned.Spec.InitContainers) {
+	if actual.Spec.NodeName != planned.Spec.NodeName || !reflect.DeepEqual(actual.Spec.RuntimeClassName, planned.Spec.RuntimeClassName) || !capacityContainersMatch(actual.Spec.Containers, planned.Spec.Containers) || !capacityContainersMatch(actual.Spec.InitContainers, planned.Spec.InitContainers) {
 		return false
 	}
 	for key, value := range planned.Labels {
@@ -331,10 +337,62 @@ func capacityTemplatesMatch(actual, planned corev1.PodTemplateSpec) bool {
 
 func workloadRequestsMatch(spec corev1.PodSpec, expected managedplatform.Capacity) bool {
 	cpu, memory, err := podCapacityUsage(spec)
-	if err != nil || addNodeCapacityUsage(&cpu, &memory, 0, managedplatform.PodMemoryOverheadBytes) != nil {
+	reservedCPU, reservedMemory := int64(0), managedplatform.PodMemoryOverheadBytes
+	if spec.RuntimeClassName != nil {
+		observedCPU, observedMemory, valid := managedPlatformSandboxOverhead(spec.Overhead)
+		if !valid {
+			return false
+		}
+		reservedCPU = managedplatform.SandboxCPUOverheadMilli - observedCPU
+		reservedMemory -= observedMemory
+	}
+	if err != nil || addNodeCapacityUsage(&cpu, &memory, reservedCPU, reservedMemory) != nil {
 		return false
 	}
 	return cpu == expected.CPUMilli && memory == expected.MemoryBytes
+}
+
+func managedPlatformSandboxOverhead(resources corev1.ResourceList) (int64, int64, bool) {
+	maxCPU, maxMemory := resource.MustParse("20m"), resource.MustParse("50Mi")
+	for name, quantity := range resources {
+		if quantity.Sign() < 0 {
+			return 0, 0, false
+		}
+		switch name {
+		case corev1.ResourceCPU:
+			if quantity.Cmp(maxCPU) > 0 {
+				return 0, 0, false
+			}
+		case corev1.ResourceMemory:
+			if quantity.Cmp(maxMemory) > 0 {
+				return 0, 0, false
+			}
+		default:
+			if quantity.Sign() > 0 {
+				return 0, 0, false
+			}
+		}
+	}
+	cpu, memory, err := capacityRequest(resources)
+	return cpu, memory, err == nil
+}
+
+func validateManagedPlatformRuntime(runtime *nodev1.RuntimeClass, node *corev1.Node) error {
+	if runtime == nil || runtime.Overhead == nil {
+		if runtime == nil {
+			return fmt.Errorf("managed platform sandbox is unavailable")
+		}
+	} else if _, _, valid := managedPlatformSandboxOverhead(runtime.Overhead.PodFixed); !valid {
+		return fmt.Errorf("managed platform sandbox overhead exceeds the reserved profile")
+	}
+	if runtime.Scheduling != nil {
+		for key, value := range runtime.Scheduling.NodeSelector {
+			if node == nil || node.Labels[key] != value {
+				return fmt.Errorf("managed platform sandbox scheduling conflicts with the approved node")
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Client) managedPlatformPodReservation(ctx context.Context, pod corev1.Pod, ns *corev1.Namespace, owned managedplatform.CapacityNamespaceOwnership) (string, managedplatform.Capacity, bool, error) {
@@ -613,8 +671,40 @@ func (c *Client) CheckManagedPlatformNodeReservations(ctx context.Context, reser
 	}
 	for name, reservation := range reservations {
 		node, err := c.kube.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
-		if err != nil || reservation.UID == "" || string(node.UID) != reservation.UID || reservation.Capacity.CPUMilli < 1 || reservation.Capacity.MemoryBytes < 1 || len(reservation.Namespaces) > managedplatform.MaxCapacityReservations {
+		if err != nil || reservation.UID == "" || string(node.UID) != reservation.UID || reservation.Architecture == "" || node.Status.NodeInfo.Architecture != reservation.Architecture || reservation.OperatingSystem == "" || node.Status.NodeInfo.OperatingSystem != reservation.OperatingSystem || reservation.Capacity.CPUMilli < 1 || reservation.Capacity.MemoryBytes < 1 || len(reservation.Namespaces) > managedplatform.MaxCapacityReservations {
 			return fmt.Errorf("managed platform reservation node is unavailable or invalid")
+		}
+		ready := false
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+				ready = true
+			}
+		}
+		if !ready || node.Spec.Unschedulable || reservation.SchedulingPool != "" && node.Labels["hakopod.com/pool"] != reservation.SchedulingPool {
+			return fmt.Errorf("managed platform reservation node is not schedulable")
+		}
+		matchedPoolTaint := reservation.SchedulingPool == ""
+		for _, taint := range node.Spec.Taints {
+			if taint.Effect != corev1.TaintEffectNoSchedule && taint.Effect != corev1.TaintEffectNoExecute {
+				continue
+			}
+			if reservation.SchedulingPool != "" && taint.Key == "hakopod.com/pool" && taint.Value == reservation.SchedulingPool && taint.Effect == corev1.TaintEffectNoSchedule {
+				matchedPoolTaint = true
+				continue
+			}
+			return fmt.Errorf("managed platform reservation node has an unexpected blocking taint")
+		}
+		if !matchedPoolTaint {
+			return fmt.Errorf("managed platform reservation node pool taint is unavailable")
+		}
+		if reservation.SchedulingRuntimeClass != "" {
+			if err = c.CheckWorkloadPool(ctx, name, reservation.SchedulingPool, reservation.SchedulingRuntimeClass); err != nil {
+				return err
+			}
+			runtimeClass, runtimeErr := c.kube.NodeV1().RuntimeClasses().Get(ctx, reservation.SchedulingRuntimeClass, metav1.GetOptions{})
+			if runtimeErr != nil || validateManagedPlatformRuntime(runtimeClass, node) != nil {
+				return fmt.Errorf("managed platform sandbox overhead is unavailable or invalid")
+			}
 		}
 		ownership, ownershipErr := capacityOwnership(reservation.Ownership, reservation.Namespaces)
 		if ownershipErr != nil {

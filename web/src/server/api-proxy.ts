@@ -8,7 +8,7 @@ import { forwardGitLabWebhook } from './gitlab-webhook.ts'
 import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
 
 export const allowed = [
-  /^managed-platforms(?:\/(?:catalog|reviews|operations|[a-f0-9]{32}(?:\/(?:operations|recovery-operations))?))?$/,
+  /^managed-platforms(?:\/(?:catalog|reviews|operations|[a-f0-9]{32}(?:\/(?:operations|recovery-operations|trust))?))?$/,
   /^managed-platform-operations\/[a-f0-9]{32}$/,
   /^managed-platform-recovery\/(?:reviews|operations)$/,
   /^managed-platform-recovery-operations\/[a-f0-9]{32}(?:\/cancel)?$/,

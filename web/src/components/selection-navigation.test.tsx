@@ -74,6 +74,12 @@ test('parent navigation uses route context without relying on browser history', 
     assert.deepEqual(parentNavigation(route, { project: 'stale-project' }, undefined, databaseScope), { to: '/databases/external/connection-id', label: 'Back to connection', search: databaseScope })
   assert.equal(parentNavigation('/'), null)
   assert.equal(parentNavigation('/networks'), null)
+  for (const route of ['/platforms/new', '/platforms/new/secrets-2', '/platforms/resource-id'])
+    assert.deepEqual(parentNavigation(route, { project: 'stale-project' }, undefined, databaseScope), { to: '/platforms', label: 'Back to platforms', search: databaseScope })
+  for (const route of ['/platforms/resource-id/backup', '/platforms/resource-id/restore'])
+    assert.deepEqual(parentNavigation(route, { project: 'stale-project' }, undefined, databaseScope), { to: '/platforms/resource-id', label: 'Back to platform', search: { ...databaseScope, tab: 'recovery' } })
+  assert.deepEqual(parentNavigation('/platforms/resource-id/configure/secrets-2', {}, undefined, databaseScope), { to: '/platforms/resource-id', label: 'Back to platform', search: { ...databaseScope, tab: 'configuration' } })
+  assert.deepEqual(parentNavigation('/platforms/resource-id/backup', { project: 'stale-project' }), { to: '/platforms/resource-id', label: 'Back to platform', search: { tab: 'recovery' } })
   assert.deepEqual(parentNavigation('/settings/edge'), {
     to: '/settings',
     label: 'Back to settings',

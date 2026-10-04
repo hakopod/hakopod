@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hakopod/hakopod/internal/database"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -14,14 +15,18 @@ import (
 const (
 	vitessOperatorSource     = "10a3b742c02c38f97d554739d5a257197daa48f9"
 	vitessServerSource       = "0f1ed062dec171e0adfab796110549752901e299"
-	vitessOperatorImage      = "docker.io/planetscale/vitess-operator:v2.16.0@sha256:f0a6f6beec2a5e54872eadc84fca43c3093a076b74dc1a287ad78c35f1c772e2"
-	vitessServerImage        = "docker.io/vitess/lite:v23.0.6@sha256:4a6fee36e049abe76e442eb43d7d198f5fe285d480e1888ee36b3a22b1914a76"
+	vitessOperatorImage      = "ghcr.io/hakopod/managed-vitess-operator:2.16.0-hakopod.9@sha256:b149e8c7d5f44dbeefa4c64afaa9323d07f9f426aec0be9f7e5b77ede26cc107"
+	vitessServerImage        = "ghcr.io/hakopod/managed-vitess-runtime:23.0.6-hakopod.7@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a"
 	vitessEtcdImage          = "quay.io/coreos/etcd:v3.5.17@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
 	vitessComponentLabel     = "hakopod.io/vitess-component"
 	vitessIdentityAnnotation = "hakopod.io/vitess-identity"
 	vitessConfigSecret       = "database-vitess-config"
 	vitessTLSPath            = "/etc/hakopod/tls"
 	vitessConfigPath         = "/etc/hakopod/vitess"
+	// Change this only in the final candidate whose complete native evidence
+	// and exact image digests ship with the release. The acceptance build flag
+	// cannot enable a shipping binary.
+	vitessReleaseQualified = true
 )
 
 var vitessDatabaseResource = schema.GroupVersionResource{Group: "planetscale.com", Version: "v2", Resource: "vitessclusters"}
@@ -38,6 +43,15 @@ func vitessGeneratedName(parts ...string) string {
 
 func vitessResources(cpu, memory string) map[string]any {
 	return map[string]any{"requests": map[string]any{"cpu": cpu, "memory": memory}, "limits": map[string]any{"cpu": cpu, "memory": memory}}
+}
+
+// The backup binary starts mysqld in its own container, so both process
+// budgets must be reserved even though Kubernetes sees a single container.
+func vitessBackupResources(s database.Spec) map[string]any {
+	cpu, memory := resource.MustParse(s.CPU), resource.MustParse(s.Memory)
+	cpu.Add(resource.MustParse(database.VitessTabletCPU))
+	memory.Add(resource.MustParse(database.VitessBackupMemory))
+	return vitessResources(cpu.String(), memory.String())
 }
 
 func vitessClaim(size int64) map[string]any {
@@ -128,7 +142,12 @@ func vitessDatabaseSpec(d database.Resource, resources map[string]any) map[strin
 	tablet["annotations"] = map[string]any{"dev.gvisor.spec.mount.rundir.share": "pod", "dev.gvisor.spec.mount.rundir.type": "tmpfs", "dev.gvisor.spec.mount.rundir.options": "rw,rprivate,size=16777216"}
 	tablet["cell"], tablet["type"], tablet["replicas"] = "local", "replica", int64(1+d.Spec.Replicas)
 	tablet["dataVolumeClaimTemplate"] = vitessClaim(d.Spec.StorageGiB)
-	tablet["extraEnv"] = []any{map[string]any{"name": "POD_NAME", "valueFrom": map[string]any{"fieldRef": map[string]any{"fieldPath": "metadata.name"}}}}
+	// Tablet restore shares this bounded Go process. Backup pods inherit the
+	// environment, then apply their larger, separately reserved Go budget.
+	tablet["extraEnv"] = []any{
+		map[string]any{"name": "POD_NAME", "valueFrom": map[string]any{"fieldRef": map[string]any{"fieldPath": "metadata.name"}}},
+		map[string]any{"name": "GOMAXPROCS", "value": "1"}, map[string]any{"name": "GOMEMLIMIT", "value": "192MiB"},
+	}
 	flags := vitessTabletTLSFlags(d)
 	flags["tablet-hostname"] = "$(POD_NAME)." + ns + ".svc.cluster.local"
 	flags["db-credentials-file"] = vitessConfigPath + "/db-credentials.json"
@@ -161,6 +180,9 @@ func vitessDatabaseSpec(d database.Resource, resources map[string]any) map[strin
 func vitessRuntimeSupported(s database.Spec) error {
 	if err := s.ValidateVitess(); err != nil {
 		return err
+	}
+	if vitessNativeAcceptance || vitessReleaseQualified {
+		return nil
 	}
 	return fmt.Errorf("managed Vitess is unavailable: native replication verification and recovery acceptance are incomplete")
 }

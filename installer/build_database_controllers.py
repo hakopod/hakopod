@@ -134,7 +134,7 @@ def helm_binary(root):
     return path
 
 
-def build(destination, redis_image, include_vitess=False):
+def build(destination, redis_image, include_vitess=True):
     pins=json.loads((HERE/'database-controller-sources.json').read_text())
     if destination.exists():raise ValueError('Use a fresh controller bundle directory')
     if include_vitess:qualify_vitess(HERE.parent)
@@ -159,5 +159,5 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--redis-controller-image',default=os.environ.get('HAKOPOD_REDIS_CONTROLLER_IMAGE') or REDIS_CONTROLLER_IMAGE)
-    parser.add_argument('--include-vitess',action='store_true',help='Require native qualification and include the eight Vitess resource definitions')
+    parser.add_argument('--without-vitess',action='store_false',dest='include_vitess',help='Build a development-only controller bundle without Vitess')
     args=parser.parse_args();build(args.output,args.redis_controller_image,args.include_vitess)

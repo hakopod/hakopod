@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify source-bound development Supabase evidence without enabling it."""
+"""Verify the exact Supabase release runtime and its native evidence."""
 import argparse, hashlib, json, math, os, re, selectors, shutil, signal, subprocess, tempfile, time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,9 +10,9 @@ IMAGE=re.compile(r'[a-z0-9]+(?:[._-][a-z0-9]+)*(?:[.:][a-z0-9]+(?:[._-][a-z0-9]+
 MAX_SOURCE_FILES=4096; MAX_SOURCE_BYTES=128*1024*1024; MAX_REPORT_BYTES=4*1024*1024
 MAX_DOCKER_STDOUT=2*1024*1024; MAX_DOCKER_STDERR=64*1024; DOCKER_TIMEOUT=600
 COMPONENTS={'api-gateway','auth','database','edge-runtime','image-proxy','pooler','postgres-meta','realtime','rest','storage','studio'}
-REQUIRED_CASES={'create-owned-resources','component-image-and-identity','gateway-tls','database-tls-hostname','database-plaintext-refusal','jwt-role-isolation','row-level-security','auth-redirect-and-signup','realtime-authorization','storage-roundtrip','image-transformation','edge-runtime-isolation','studio-admin-isolation','pooler-connection-bounds','pooler-admin-jwt-isolation','network-policy-isolation','restart-persistence','unsafe-rotation-refusal','backup-separate-resource-restore','cancellation-recovery','ownership-fencing','owned-cleanup'}
+REQUIRED_CASES={'create-owned-resources','component-image-and-identity','gateway-tls','database-tls-hostname','database-plaintext-refusal','jwt-role-isolation','row-level-security','auth-redirect-and-signup','realtime-authorization','storage-roundtrip','image-transformation','edge-runtime-isolation','studio-admin-isolation','postgres-meta-public-management','pooler-connection-bounds','pooler-admin-jwt-isolation','network-policy-isolation','restart-persistence','unsafe-rotation-refusal','database-credential-and-jwt-rotation','database-credential-rotation-retry','backup-separate-resource-restore','cancellation-recovery','ownership-fencing','owned-cleanup'}
 REPORT_FIELDS={'schema_version','producer','run_id','context','execution','platform','started_at','finished_at','elapsed_seconds','environment','passed','exit_code','limit_error','source_files','source_files_after','images','identities','embedded_assets','event_file_sha256','log_sha256','test_events','failed_cases','storage_qualification','public_endpoint_qualified','physical_zones_qualified'}
-SOURCE_DIRECTORIES=('internal','templates','cmd/hakopod-server','examples/supabase-native-acceptance'); SOURCE_FILES=('go.mod','go.sum')
+SOURCE_DIRECTORIES=('internal','auth','templates','cmd/hakopod-server','examples/supabase-native-acceptance'); SOURCE_FILES=('go.mod','go.sum')
 PRODUCER={'name':'hakopod-supabase-native-acceptance','schema_version':1,'runner_path':'examples/supabase-native-acceptance/run.sh','producer_path':'examples/supabase-native-acceptance/evidence.py'}
 
 def reject_symlink_ancestors(path):
@@ -71,6 +71,32 @@ def validate_images(images):
     if not isinstance(images,dict) or set(images)!=COMPONENTS: raise ValueError('Supabase qualification requires the complete component image inventory')
     if any(not isinstance(v,str) or not IMAGE.fullmatch(v) or ('.' not in v.split('/',1)[0] and ':' not in v.split('/',1)[0] and v.split('/',1)[0]!='localhost') for v in images.values()): raise ValueError('Supabase qualification images must use fully qualified immutable repository digests')
     return images
+
+def release_runtime_qualified(root,images):
+    path=Path(root)/'internal/managedplatform/supabase_qualification.go'
+    file_hash(path,1024*1024)
+    source=path.read_text()
+    gates=re.findall(r'^func SupabaseReleaseQualified\(\) bool \{ return (true|false) \}$',source,re.MULTILINE)
+    releases=re.findall(r'^const SupabaseReleaseQualificationID = "([^"]+)"$',source,re.MULTILINE)
+    inventories=re.findall(r'^const SupabaseReleaseImageInventorySHA256 = "([a-f0-9]{64})"$',source,re.MULTILINE)
+    tables=re.findall(r'^var supabaseReleaseImages = map\[string\]string\{\n(.*?)^\}',source,re.MULTILINE|re.DOTALL)
+    if len(gates)!=1 or releases!=['supabase-0.8.2-linux-amd64'] or len(inventories)!=1 or len(tables)!=1:
+        raise ValueError('Supabase compiled release contract is missing or malformed')
+    compiled={}
+    for line in tables[0].splitlines():
+        match=re.fullmatch(r'\s*"([a-z-]+)":\s*"([^"]+)",',line)
+        if not match or match[1] in compiled: raise ValueError('Supabase compiled image inventory is malformed')
+        compiled[match[1]]=match[2]
+    validate_images(compiled)
+    digest=hashlib.sha256('\n'.join(name+'='+compiled[name] for name in sorted(COMPONENTS)).encode()).hexdigest()
+    if compiled!=images or digest!=inventories[0]:
+        raise ValueError('Supabase native images differ from the compiled release inventory')
+    return gates[0]=='true'
+
+def capabilities(root,images):
+    # Runtime qualification and a target deployment's approval are separate.
+    # The native run cannot approve another cluster's disks, routing or zones.
+    return {'development_evidence_recorded':True,'release_runtime_qualified':release_runtime_qualified(root,images),'development_cluster_qualified':False,'cluster_qualified':False,'encrypted_storage_class_qualified':False,'public_endpoint_qualified':False,'physical_zones_qualified':False}
 
 def validate_identities(identities,images):
     fields={'uid','gid','image','config_user','process_observation_sha256'}
@@ -152,7 +178,7 @@ def validate_metadata(directory,root=ROOT):
     if not isinstance(manifest.get('files'),dict) or set(manifest['files'])!={'native-acceptance.json','cleanup-receipt.json'}: raise ValueError('Supabase qualification artifact inventory is incomplete')
     for name,digest in manifest['files'].items():
         if not isinstance(digest,str) or not DIGEST.fullmatch(digest) or file_hash(directory/name,MAX_REPORT_BYTES)!=digest: raise ValueError('Supabase qualification artifact checksum changed: '+name)
-    capability=manifest.get('capability'); expected_capability={'development_evidence_recorded':True,'development_cluster_qualified':False,'cluster_qualified':False,'encrypted_storage_class_qualified':False,'public_endpoint_qualified':False,'physical_zones_qualified':False}
+    capability=manifest.get('capability'); expected_capability=capabilities(root,images)
     if not isinstance(capability,dict) or set(capability)!=set(expected_capability) or any(capability[key] is not value for key,value in expected_capability.items()): raise ValueError('Supabase qualification capability boundary is invalid')
     report=read_json(directory/'native-acceptance.json'); cleanup=read_json(directory/'cleanup-receipt.json')
     if manifest['run_id']!=report.get('run_id') or manifest['environment']!=report.get('environment'): raise ValueError('Supabase manifest belongs to another run or environment')
@@ -229,10 +255,13 @@ def atomic_directory(output):
     return Path(tempfile.mkdtemp(prefix='.'+output.name+'-',dir=output.parent)),output
 
 def verify(directory,output,root=ROOT,runner=docker):
-    manifest=validate_metadata(directory,root); verify_images(manifest['images'],manifest['identities'],runner); temporary,output=atomic_directory(output)
+    manifest=validate_metadata(directory,root)
+    if manifest['capability']['release_runtime_qualified'] is not True:
+        raise ValueError('Supabase release gate is closed; candidate evidence cannot qualify a release')
+    verify_images(manifest['images'],manifest['identities'],runner); temporary,output=atomic_directory(output)
     try:
         for name in ['manifest.json',*manifest['files']]: shutil.copyfile(Path(directory)/name,temporary/name)
-        report={'schema_version':2,'platform':'linux/amd64','anonymous_pull_verified':True,'image_config_identities_verified':True,'native_acceptance_reused':True,'development_only':True,'images':manifest['images']}
+        report={'schema_version':2,'platform':'linux/amd64','anonymous_pull_verified':True,'image_config_identities_verified':True,'native_acceptance_reused':True,'release_runtime_qualified':True,'deployment_qualified':False,'images':manifest['images']}
         (temporary/'release-verification.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n'); temporary.rename(output)
     except Exception: shutil.rmtree(temporary,ignore_errors=True); raise
 

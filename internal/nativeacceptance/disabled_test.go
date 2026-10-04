@@ -18,4 +18,7 @@ func TestShippingBinaryRejectsNativeConfiguration(t *testing.T) {
 	if got := Plan("native-run", "development", "neon", plan); got.Capability != plan.Capability {
 		t.Fatal("shipping capability changed")
 	}
+	if AllowsUnboundOperatorQualification(context.Background(), "neon") {
+		t.Fatal("shipping binary allowed an unbound operator qualification")
+	}
 }

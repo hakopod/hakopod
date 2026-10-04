@@ -50,6 +50,50 @@ test('database CA trust follows the authenticated read-only API route', async (t
   assert.equal(mocked.mock.callCount(), 1)
 })
 
+test('platform automation preserves exact routes, bearer scope and review authority', async (t) => {
+  const id = 'a'.repeat(32)
+  const cases = [
+    ['managed-platforms', 'GET'],
+    ['managed-platforms/catalog', 'GET'],
+    [`managed-platforms/${id}`, 'GET'],
+    [`managed-platforms/${id}/trust`, 'GET'],
+    [`managed-platforms/${id}/operations`, 'GET'],
+    [`managed-platforms/${id}/recovery-operations`, 'GET'],
+    ['managed-platforms/reviews', 'POST'],
+    ['managed-platforms/operations', 'POST'],
+    [`managed-platform-operations/${id}`, 'GET'],
+    ['managed-platform-recovery/reviews', 'POST'],
+    ['managed-platform-recovery/operations', 'POST'],
+    [`managed-platform-recovery-operations/${id}`, 'GET'],
+    [`managed-platform-recovery-operations/${id}/cancel`, 'POST'],
+  ]
+  const body = '{"project":"owned","environment":"production","expected_revision":3}'
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    const target = new URL(String(url))
+    assert.ok(cases.some(([path, method]) => target.pathname === `/api/v1/${path}` && init?.method === method))
+    assert.equal(target.search, '?project=owned&environment=production')
+    const headers = new Headers(init?.headers)
+    assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
+    assert.equal(headers.get('Cookie'), null)
+    assert.equal(headers.get('X-Hakopod-Workspace'), id)
+    assert.equal(headers.get('Idempotency-Key'), 'platform-review-fixture')
+    if (init?.method === 'POST') assert.equal(new TextDecoder().decode(init.body as Uint8Array), body)
+    return Response.json({ accepted: true })
+  })
+  for (const [path, method] of cases) {
+    const response = await request(`${path}?project=owned&environment=production`, method, method === 'POST' ? body : undefined, {
+      Cookie: 'ambient-session', 'X-Hakopod-Workspace': id, 'Idempotency-Key': 'platform-review-fixture',
+    })
+    assert.equal(response.status, 200, path)
+    assert.equal(response.headers.get('Cache-Control'), 'no-store')
+    assert.equal((await request(path, method === 'GET' ? 'POST' : 'GET', method === 'GET' ? '{}' : undefined)).status, 405, path)
+  }
+  assert.equal((await request(`managed-platforms/${id}/trust/extra`)).status, 404)
+  assert.equal((await request(`managed-platforms/${id}/credentials`)).status, 404)
+  assert.equal((await request(`managed-platforms/${id}/trust`, 'GET', undefined, { Authorization: '', Cookie: 'ambient-session' })).status, 401)
+  assert.equal(mocked.mock.callCount(), cases.length)
+})
+
 test('public endpoint automation preserves scoped authority, review bodies and method boundaries', async (t) => {
   const id = 'a'.repeat(32)
   const endpoint = 'b'.repeat(32)

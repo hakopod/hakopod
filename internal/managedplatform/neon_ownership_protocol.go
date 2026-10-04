@@ -102,7 +102,7 @@ func parseNeonOwnedResourceID(resourceID string) (string, string, error) {
 // provider independently computes the same hash from its decoded request.
 func neonOwnedRequestHash(kind, externalKey string, body []byte) (string, error) {
 	var value any
-	if err := json.Unmarshal(body, &value); err != nil {
+	if err := decodeNeonJSON(body, &value); err != nil {
 		return "", err
 	}
 	canonical, err := json.Marshal(value)
@@ -118,7 +118,7 @@ func bindNeonComputeOwnership(raw json.RawMessage, token string) (json.RawMessag
 		return nil, fmt.Errorf("Neon compute ownership token is invalid")
 	}
 	var root map[string]any
-	if err := json.Unmarshal(raw, &root); err != nil {
+	if err := decodeNeonJSON(raw, &root); err != nil {
 		return nil, err
 	}
 	spec, ok := root["spec"].(map[string]any)

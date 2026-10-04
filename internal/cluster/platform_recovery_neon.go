@@ -33,9 +33,10 @@ import (
 )
 
 type NeonRecoveryRuntime struct {
-	Store         *store.Store
-	Cluster       *Client
-	EncryptionKey []byte
+	Store                 *store.Store
+	Cluster               *Client
+	EncryptionKey         []byte
+	ValidateQualification func(context.Context, platformbackup.Operation) error
 }
 
 const maxNeonRecoveryWorkloads = 33
@@ -43,6 +44,12 @@ const maxNeonRecoveryWorkloads = 33
 func (r *NeonRecoveryRuntime) fence(ctx context.Context, op platformbackup.Operation) error {
 	if platformbackup.RecoveryCleanupFromContext(ctx) {
 		return r.Store.FencePlatformRecoveryCleanup(ctx, op)
+	}
+	if r.ValidateQualification == nil {
+		return fmt.Errorf("Neon recovery qualification is unavailable")
+	}
+	if err := r.ValidateQualification(ctx, op); err != nil {
+		return err
 	}
 	cancelled, err := r.Store.HeartbeatPlatformRecovery(ctx, op)
 	if err != nil {
@@ -74,14 +81,7 @@ func (a neonRecoveryLifecycle) Operation() managedplatform.DurableOperation {
 	return managedplatform.DurableOperation{ID: a.platform.ID, PlatformID: a.platform.PlatformID, Revision: a.platform.Revision, Kind: a.platform.Kind}
 }
 func (a neonRecoveryLifecycle) Heartbeat(ctx context.Context) error {
-	if platformbackup.RecoveryCleanupFromContext(ctx) {
-		return a.runtime.Store.FencePlatformRecoveryCleanup(ctx, a.recovery)
-	}
-	cancelled, err := a.runtime.Store.HeartbeatPlatformRecovery(ctx, a.recovery)
-	if err == nil && cancelled {
-		return context.Canceled
-	}
-	return err
+	return a.runtime.fence(ctx, a.recovery)
 }
 func (a neonRecoveryLifecycle) Claims(ctx context.Context, revision int64) ([]managedplatform.DurableResourceClaim, error) {
 	if revision != a.platform.Revision {
@@ -190,7 +190,10 @@ func (a neonRecoveryLifecycle) Release(ctx context.Context, claim managedplatfor
 			_, err = a.runtime.Store.MarkNeonRecoveryPriorReleased(ctx, a.recovery, resource.Component, resource.PriorResourceID, resource.PriorGeneration, resource.TransitionToken)
 			return err
 		}
-		if resource.Component == claim.Component && resource.ReplacementResourceID == claim.ResourceID && resource.ReplacementGeneration == claim.ImmutableGeneration {
+		if resource.Component == claim.Component && resource.Kind == claim.Kind && resource.Phase == "confirmed" {
+			if err = a.Verify(ctx, claim); err != nil {
+				return err
+			}
 			if _, err = a.runtime.Store.MarkNeonRecoveryReplacementReleased(ctx, a.recovery, resource.Component, resource.ReplacementResourceID, resource.ReplacementGeneration, resource.TransitionToken); err != nil {
 				return err
 			}
@@ -218,6 +221,15 @@ func (r *NeonRecoveryRuntime) contract(ctx context.Context, id string, revision 
 	if req.Render.PlatformID != id || req.Render.Revision != revision || !bytes.Equal(store.JSON(req.Render.Spec), store.JSON(item.Spec)) {
 		return item, plan, accepted, req, fmt.Errorf("accepted Neon runtime snapshot does not match the platform revision")
 	}
+	if req.Render.Spec.TLSMode == "managed" {
+		claims, err := r.Store.ManagedPlatformRecoveryClaims(ctx, item.ID, item.Revision)
+		if err != nil {
+			return item, plan, accepted, req, err
+		}
+		if err = r.Cluster.readManagedPlatformTLS(ctx, item.ID, &req.Render.Spec, &req.Render.PreviousSpec, &req.SecretSnapshots, claims); err != nil {
+			return item, plan, accepted, req, err
+		}
+	}
 	return item, plan, accepted, req, nil
 }
 
@@ -241,6 +253,9 @@ func (r *NeonRecoveryRuntime) durable(ctx context.Context, recovery platformback
 	if err != nil {
 		return nil, lifecycle, nil, err
 	}
+	if !deprovision {
+		durable.SetComputeConfigResolver(neonControllerComputeResolver(r.Store, item.ID, item.Revision, item.Spec.Neon.Pageservers))
+	}
 	if useBinding {
 		var binding store.NeonRecoveryBinding
 		var bindingErr error
@@ -257,9 +272,15 @@ func (r *NeonRecoveryRuntime) durable(ctx context.Context, recovery platformback
 				safekeepers[i] = fmt.Sprintf("neon-safekeeper-%d.%s.svc:5454", i, "managed-platform-"+item.ID)
 			}
 			for name, raw := range lifecycle.ComputeConfig {
-				lifecycle.ComputeConfig[name], err = bindNeonComputeConfig(raw, binding.TenantID, binding.TimelineID, safekeepers)
+				lifecycle.ComputeConfig[name], err = bindNeonComputeConfig(raw, binding.TenantID, binding.TimelineID, safekeepers, name)
 				if err != nil {
 					return nil, lifecycle, nil, err
+				}
+				if !deprovision {
+					lifecycle.ComputeConfig[name], err = managedplatform.BindNeonTenantAuthentication(lifecycle.ComputeConfig[name], r.EncryptionKey, item.ID, binding.TenantID)
+					if err != nil {
+						return nil, lifecycle, nil, err
+					}
 				}
 			}
 		} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
@@ -300,7 +321,7 @@ func (r *NeonRecoveryRuntime) ResolveSource(ctx context.Context, op platformback
 	if err != nil {
 		return platformbackup.Manifest{}, err
 	}
-	m := platformbackup.Manifest{SchemaVersion: platformbackup.SchemaVersion, Format: platformbackup.NeonFormat, PlatformID: item.ID, PlatformRevision: item.Revision, PlatformSpec: json.RawMessage(store.JSON(item.Spec)), Release: item.Spec.Version, Images: map[string]string{}, SourceNamespace: ns.Name, SourceNamespaceUID: string(ns.UID), Consistency: "computes and proxy stopped; safekeepers checkpointed; every pageserver uploaded through the committed LSN", DestinationID: op.DestinationID, EncryptionRecipient: destination.EncryptionRecipient}
+	m := platformbackup.Manifest{SchemaVersion: platformbackup.SchemaVersion, Format: platformbackup.NeonFormat, PlatformID: item.ID, PlatformRevision: item.Revision, PlatformSpec: json.RawMessage(store.JSON(item.Spec)), Release: item.Spec.Version, Images: map[string]string{}, SourceNamespace: ns.Name, SourceNamespaceUID: string(ns.UID), Consistency: "computes and proxy stopped; safekeepers checkpointed; the attached pageserver uploaded through the committed LSN", DestinationID: op.DestinationID, EncryptionRecipient: destination.EncryptionRecipient}
 	for _, c := range plan.Components {
 		m.Images[c.Name] = c.Image
 	}
@@ -680,6 +701,12 @@ func (r *NeonRecoveryRuntime) VerifyRestoredRuntime(ctx context.Context, op plat
 	if err = r.scaleStorage(ctx, op, item, -1); err != nil {
 		return err
 	}
+	// The target was fenced and all compute pods removed before importing
+	// storage. Start empty controls before configuring the recovered tenant;
+	// each PostgreSQL child receives the recovered tenant's storage token.
+	if err = r.scaleServingWorkloads(ctx, op, item, plan.Namespace, -1, false); err != nil {
+		return err
+	}
 	durable, lifecycle, objects, err := r.durable(ctx, op, item, accepted, request, false, true)
 	if objects != nil {
 		defer objects.Close()
@@ -698,7 +725,11 @@ func (r *NeonRecoveryRuntime) VerifyRestoredRuntime(ctx context.Context, op plat
 	if err != nil {
 		return fmt.Errorf("verify recovered Neon storage boundary: %w", err)
 	}
-	if fence.TenantGeneration != m.Neon.TenantGeneration || fence.TimelineGeneration != m.Neon.TimelineGeneration || fence.CommitLSN != m.Neon.CommitLSN || !bytes.Equal(store.JSON(fence.Pageservers), store.JSON(m.Neon.PageserverRemoteConsistentLSNs)) {
+	checkpointLSN, checkpointErr := parseRecoveryLSNOutput(fence.CommitLSN)
+	requiredLSN, requiredErr := parseRecoveryLSNOutput(m.Neon.CommitLSN)
+	// Starting the restored compute can append WAL. Its verified storage must
+	// contain the artifact's boundary, even when the controller moves it.
+	if fence.TenantID != m.Neon.TenantID || fence.TimelineID != m.Neon.TimelineID || fence.TenantGeneration != m.Neon.TenantGeneration || fence.TimelineGeneration != m.Neon.TimelineGeneration || checkpointErr != nil || requiredErr != nil || checkpointLSN < requiredLSN || len(fence.Pageservers) != 1 {
 		return fmt.Errorf("recovered Neon storage identity or LSN differs from the artifact")
 	}
 	claims, err := r.Store.EffectiveNeonRecoveryClaims(ctx, op)
@@ -724,9 +755,6 @@ func (r *NeonRecoveryRuntime) VerifyRestoredRuntime(ctx context.Context, op plat
 	}
 	endpoint, err := r.Store.NeonProxyEndpoint(ctx, item.ID)
 	if err != nil {
-		return err
-	}
-	if err = r.scaleServingWorkloads(ctx, op, item, plan.Namespace, -1, false); err != nil {
 		return err
 	}
 	compute, err := r.computePod(ctx, op, item, plan.Namespace, request)
@@ -1003,7 +1031,7 @@ func (r *NeonRecoveryRuntime) rebindStoragePrefix(ctx context.Context, op platfo
 		return fmt.Errorf("target Neon namespace ownership changed")
 	}
 	request.Render.NamespaceUID = ns.UID
-	request.Render.Spec.Neon.ObjectStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
+	request.Render.RecoveryStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
 	manifests, err := managedplatform.RenderNeon(request.Render)
 	if err != nil {
 		return err
@@ -1062,25 +1090,12 @@ func (r *NeonRecoveryRuntime) rebindStoragePrefix(ctx context.Context, op platfo
 				}
 			}
 		}
-		if reflect.DeepEqual(current.Spec.Template, *desiredTemplate) && valueOrOne(current.Spec.Replicas) == 0 {
-			continue
-		}
-		token := recoveryTransitionToken(op.ID, name+"-storage-prefix", current.Generation, 0)
-		if _, _, err = r.Store.PreparePlatformRecoveryWorkload(ctx, op, item.ID, "statefulset", name, string(current.UID), current.Generation, valueOrOne(current.Spec.Replicas), 0, claim.ImmutableGeneration, token); err != nil {
-			return err
-		}
-		copy := current.DeepCopy()
-		copy.Spec.Template = *desiredTemplate
-		copy.Spec.Replicas = new(int32)
-		if copy.Annotations == nil {
-			copy.Annotations = map[string]string{}
-		}
-		copy.Annotations["hakopod.io/recovery-transition"] = token
-		updated, updateErr := r.Cluster.kube.AppsV1().StatefulSets(ns.Name).Update(ctx, copy, metav1.UpdateOptions{})
-		if updateErr != nil {
-			return updateErr
-		}
-		if err = r.Store.CompletePlatformRecoveryDeployment(ctx, op, name, string(current.UID), current.Generation, updated.Generation); err != nil {
+		desiredSet := current.DeepCopy()
+		desiredSet.Spec.Template = *desiredTemplate
+		desiredSet.Spec.Replicas = new(int32)
+		if err = applyRecoveryStatefulSetMutation(ctx, r.Store, op, item.ID, current, desiredSet, claim.ImmutableGeneration, func() error { return r.fence(ctx, op) }, func(value *appsv1.StatefulSet, options metav1.UpdateOptions) (*appsv1.StatefulSet, error) {
+			return r.Cluster.kube.AppsV1().StatefulSets(ns.Name).Update(ctx, value, options)
+		}); err != nil {
 			return err
 		}
 	}
@@ -1306,27 +1321,13 @@ func (r *NeonRecoveryRuntime) waitStoragePods(ctx context.Context, platformID, n
 	}
 }
 func (r *NeonRecoveryRuntime) transitionStatefulSet(ctx context.Context, op platformbackup.Operation, item store.ManagedPlatform, set *appsv1.StatefulSet, target int32, claimed int64) error {
-	if err := r.fence(ctx, op); err != nil {
-		return err
-	}
-	current := valueOrOne(set.Spec.Replicas)
-	token := recoveryTransitionToken(op.ID, set.Name, set.Generation, target)
-	_, _, err := r.Store.PreparePlatformRecoveryWorkload(ctx, op, item.ID, "statefulset", set.Name, string(set.UID), set.Generation, current, target, claimed, token)
-	if err != nil {
-		return err
-	}
-	copy := set.DeepCopy()
-	copy.Spec.Replicas = &target
-	if copy.Annotations == nil {
-		copy.Annotations = map[string]string{}
-	}
-	copy.Annotations["hakopod.io/recovery-transition"] = token
-	updated, err := r.Cluster.kube.AppsV1().StatefulSets(set.Namespace).Update(ctx, copy, metav1.UpdateOptions{})
-	if err != nil {
-		return err
-	}
-	return r.Store.CompletePlatformRecoveryDeployment(ctx, op, set.Name, string(set.UID), set.Generation, updated.Generation)
+	desired := set.DeepCopy()
+	desired.Spec.Replicas = &target
+	return applyRecoveryStatefulSetMutation(ctx, r.Store, op, item.ID, set, desired, claimed, func() error { return r.fence(ctx, op) }, func(value *appsv1.StatefulSet, options metav1.UpdateOptions) (*appsv1.StatefulSet, error) {
+		return r.Cluster.kube.AppsV1().StatefulSets(set.Namespace).Update(ctx, value, options)
+	})
 }
+
 func (r *NeonRecoveryRuntime) waitServingPods(ctx context.Context, platformID, namespace string, expected int) error {
 	deadline := time.Now().Add(2 * time.Minute)
 	for {

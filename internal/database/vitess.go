@@ -37,7 +37,10 @@ const (
 	VitessOperatorMemory               = "256Mi"
 	VitessBackupControllerCPU          = "100m"
 	VitessBackupControllerMemory       = "128Mi"
-	VitessMaxTables                    = 128
+	// Two multipart buffers for a 1 TiB file can use 210 MiB. The backup
+	// process also needs room for compression and its ordinary Go heap.
+	VitessBackupMemory = "512Mi"
+	VitessMaxTables    = 128
 )
 
 var vitessIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)

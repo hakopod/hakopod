@@ -71,13 +71,40 @@ func TestNeonProxyAccessReturnsOnlyRequestedRole(t *testing.T) {
 	}
 }
 
+func TestConfiguredNeonProxyAuthorityAcceptsCloudAdminRole(t *testing.T) {
+	const scram = "SCRAM-SHA-256$4096:c2FsdA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	config := NeonProxyEndpointConfig{
+		Enabled:    true,
+		Address:    "neon-compute-0.managed-platform-bootstrap.svc:55433",
+		ServerName: "neon-compute-0.managed-platform-bootstrap.svc",
+		ProjectID:  "bootstrap",
+		BranchID:   "bootstrap",
+		ComputeID:  "compute-0",
+		Roles: map[string]NeonProxyRoleConfig{
+			"cloud_admin": {SCRAMSecret: scram},
+		},
+	}
+	authority, err := NewConfiguredNeonProxyAuthority(strings.Repeat("t", 32), map[string]NeonProxyEndpointConfig{"bootstrap": config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, err := authority.AuthorizeNeonProxy(context.Background(), "bootstrap", "cloud_admin")
+	if err != nil || access.RoleSecret != scram {
+		t.Fatal("configured Neon proxy authority did not preserve the cloud_admin role", err)
+	}
+	config.Roles = map[string]NeonProxyRoleConfig{"cloud admin": {SCRAMSecret: scram}}
+	if _, err = NewConfiguredNeonProxyAuthority(strings.Repeat("t", 32), map[string]NeonProxyEndpointConfig{"bootstrap": config}); err == nil {
+		t.Fatal("configured Neon proxy authority accepted a role with unsafe query characters")
+	}
+}
+
 func TestDatabaseNeonProxyAuthorityDecryptsOwnedRouteAndExactRole(t *testing.T) {
 	key := bytes.Repeat([]byte{9}, 32)
 	const platformID = "11111111111111111111111111111111"
 	const timelineID = "22222222222222222222222222222222"
 	roles := map[string]managedplatform.NeonProxyRoleState{
 		"app": {
-			SCRAMSecret:            "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy",
+			SCRAMSecret:            "SCRAM-SHA-256$4096:c2FsdA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 			AllowedIPs:             []string{"10.0.0.0/8"},
 			AllowedVPCEndpointIDs:  []string{"vpce-123"},
 			BlockPublicConnections: true,

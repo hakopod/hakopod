@@ -429,6 +429,32 @@ func Recovery(project, environment, kind string) bool {
 	return c != nil && time.Now().Before(c.ExpiresAt) && project == c.Project && environment == c.Environment && kind == c.Kind
 }
 
+// AllowsUnboundOperatorQualification admits only the exact, currently verified
+// development run past the production operator-binding startup precondition.
+// It does not qualify the development StorageClass or create a validator.
+func AllowsUnboundOperatorQualification(ctx context.Context, kind string) bool {
+	c := active.Load()
+	return c != nil && Recheck(ctx, c.Project, c.Environment, kind) == nil
+}
+
+// Recheck synchronously proves that the active native-acceptance grant still
+// names the exact scope and that its source, binary, Kubernetes credentials,
+// cluster, and node identities have not changed.
+func Recheck(ctx context.Context, project, environment, kind string) error {
+	c := active.Load()
+	if c == nil || !time.Now().Before(c.ExpiresAt) || project != c.Project || environment != c.Environment || kind != c.Kind {
+		return fmt.Errorf("native acceptance is not active for this exact scope")
+	}
+	if err := verifyRun(ctx, *c); err != nil {
+		return err
+	}
+	current := active.Load()
+	if current != c || !time.Now().Before(c.ExpiresAt) || project != c.Project || environment != c.Environment || kind != c.Kind {
+		return fmt.Errorf("native acceptance changed during identity verification")
+	}
+	return nil
+}
+
 func Watch(ctx context.Context, stop context.CancelFunc) {
 	watch(ctx, stop, 30*time.Second, verifyRun)
 }

@@ -1337,6 +1337,9 @@ export class ManagedPlatformRef {
   get(options: RequestOptions = {}): Promise<Schema["ManagedPlatform"]> {
     return this.context.transport.request("GET", "/managed-platforms/{id}", { ...options, params: { id: this.id } });
   }
+  trust(options: RequestOptions = {}): Promise<Schema["DatabasePublicTrust"]> {
+    return this.context.transport.request("GET", "/managed-platforms/{id}/trust", { ...options, params: { id: this.id } });
+  }
   operations(options: RequestOptions = {}) {
     return this.context.transport.request("GET", "/managed-platforms/{id}/operations", { ...options, params: { id: this.id } });
   }

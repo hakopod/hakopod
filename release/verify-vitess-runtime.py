@@ -63,7 +63,7 @@ def source_files(root):
     paths = [root / 'go.mod', root / 'go.sum']
     # Include transitive packages and embedded data. Keeping the entire internal
     # tree also catches future imports without maintaining another Go parser.
-    for name in ('internal', 'templates'):
+    for name in ('auth', 'cmd/hakopod-server', 'internal', 'templates'):
         directory = root / name
         if directory.is_symlink() or not directory.is_dir():
             raise ValueError('Missing or symbolic qualification source directory: ' + name)
@@ -115,6 +115,14 @@ def source_constant(root, name):
     return match[1]
 
 
+def source_boolean(root, name):
+    text = (root / 'internal/cluster/database_vitess.go').read_text()
+    match = re.search(r'^\s*' + re.escape(name) + r'\s*=\s*(true|false)\s*$', text, re.MULTILINE)
+    if not match:
+        raise ValueError('Missing Vitess release qualification constant: ' + name)
+    return match[1] == 'true'
+
+
 def accepted_test_events(events, required_tests=REQUIRED_TESTS):
     if not isinstance(events, list) or not events or len(events) > 1024:
         raise ValueError('Vitess native acceptance requires bounded Go test events')
@@ -139,7 +147,8 @@ def accepted_test_events(events, required_tests=REQUIRED_TESTS):
 
 def validate_native_environment(environment, case, images):
     if not isinstance(environment, dict) or set(environment) != {
-            'schema_version', 'case', 'minimum_free_bytes', 'fixture_budget_bytes', 'host_filesystem', 'nodes'}:
+            'schema_version', 'case', 'minimum_free_bytes', 'fixture_budget_bytes', 'required_cpu_milli',
+            'cpu_shortfall_milli', 'host_filesystem', 'nodes', 'cluster'}:
         raise ValueError('Vitess native environment evidence is missing or malformed')
     if type(environment['schema_version']) is not int or environment['schema_version'] != 1 or environment['case'] != case:
         raise ValueError('Vitess native environment evidence belongs to another case or schema')
@@ -148,6 +157,9 @@ def validate_native_environment(environment, case, images):
         raise ValueError('Vitess native acceptance requires a 12 GiB filesystem reserve')
     if type(budget) is not int or not 1024 ** 3 <= budget <= 64 * 1024 ** 3:
         raise ValueError('Vitess native acceptance requires a separate fixture disk budget')
+    expected_cpu = {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100}
+    if environment['required_cpu_milli'] != expected_cpu.get(case) or environment['cpu_shortfall_milli'] != 0:
+        raise ValueError('Vitess native acceptance lacks the fixed case CPU envelope')
 
     def capacity(filesystem, high_water=85):
         if not isinstance(filesystem, dict) or set(filesystem) != {'capacity_bytes', 'available_bytes'}:
@@ -163,11 +175,28 @@ def validate_native_environment(environment, case, images):
 
     capacity(environment['host_filesystem'])
     nodes = environment['nodes']
-    names = {'k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0'}
-    if not isinstance(nodes, list) or len(nodes) != 2 or any(not isinstance(node, dict) for node in nodes):
-        raise ValueError('Vitess native evidence requires both development nodes')
-    if any(not isinstance(node.get('name'), str) for node in nodes) or {node['name'] for node in nodes} != names:
-        raise ValueError('Vitess native evidence contains another node')
+    allowed = {'k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0', 'k3d-hakopod-database-worker-1'}
+    if not isinstance(nodes, list) or len(nodes) not in (2, 3) or any(not isinstance(node, dict) for node in nodes):
+        raise ValueError('Vitess native evidence requires two or three development nodes')
+    node_names = [node.get('name') for node in nodes]
+    if any(not isinstance(name, str) or not name for name in node_names) or len(set(node_names)) != len(node_names) or not set(node_names) <= allowed:
+        raise ValueError('Vitess native evidence contains an empty, duplicate, or foreign node')
+    cluster = environment['cluster']
+    expected_crds = {
+        'etcdlockservers.planetscale.com', 'vitessbackups.planetscale.com',
+        'vitessbackupschedules.planetscale.com', 'vitessbackupstorages.planetscale.com',
+        'vitesscells.planetscale.com', 'vitessclusters.planetscale.com',
+        'vitesskeyspaces.planetscale.com', 'vitessshards.planetscale.com',
+    }
+    if (not isinstance(cluster, dict) or set(cluster) != {'uid', 'node_uids', 'vitess_crds', 'receipt_sha256'}
+            or not isinstance(cluster['uid'], str) or not cluster['uid']
+            or not isinstance(cluster['receipt_sha256'], str) or not DIGEST.fullmatch(cluster['receipt_sha256'])
+            or not isinstance(cluster['node_uids'], dict) or set(cluster['node_uids']) != allowed or not set(node_names) <= set(cluster['node_uids'])
+            or any(not isinstance(uid, str) or not uid for uid in cluster['node_uids'].values())
+            or not isinstance(cluster['vitess_crds'], list)
+            or any(not isinstance(name, str) for name in cluster['vitess_crds'])
+            or set(cluster['vitess_crds']) != expected_crds or len(cluster['vitess_crds']) != len(expected_crds)):
+        raise ValueError('Vitess native evidence is not bound to the exact development cluster and CRDs')
     expected_images = set()
     for reference in images:
         repository, digest = reference.rsplit('@', 1)
@@ -176,10 +205,15 @@ def validate_native_environment(environment, case, images):
         expected_images.add(repository + '@' + digest)
     for node in nodes:
         if set(node) != {'name', 'architecture', 'operating_system', 'schedulable', 'conditions',
-                         'image_gc_high_threshold_percent', 'filesystems', 'cached_images'}:
+                         'image_gc_high_threshold_percent', 'filesystems', 'cached_images',
+                         'allocatable_cpu_milli', 'requested_cpu_milli', 'available_cpu_milli'}:
             raise ValueError('Vitess native node evidence is malformed')
         if node['architecture'] != 'amd64' or node['operating_system'] != 'linux' or node['schedulable'] is not True:
             raise ValueError('Vitess native acceptance requires schedulable Linux amd64 nodes')
+        if (type(node['allocatable_cpu_milli']) is not int or type(node['requested_cpu_milli']) is not int
+                or type(node['available_cpu_milli']) is not int or node['allocatable_cpu_milli'] < 1
+                or node['requested_cpu_milli'] < 0 or node['available_cpu_milli'] != node['allocatable_cpu_milli'] - node['requested_cpu_milli']):
+            raise ValueError('Vitess native CPU capacity evidence is invalid')
         if node['conditions'] != {'Ready': 'True', 'DiskPressure': 'False', 'MemoryPressure': 'False', 'PIDPressure': 'False'}:
             raise ValueError('Vitess native acceptance requires healthy development nodes without pressure')
         high_water = node['image_gc_high_threshold_percent']
@@ -191,7 +225,9 @@ def validate_native_environment(environment, case, images):
             capacity(filesystem, high_water)
         cached = node['cached_images']
         if not isinstance(cached, list) or len(cached) != len(expected_images) or any(not isinstance(item, str) for item in cached) or set(cached) != expected_images:
-            raise ValueError('Vitess native acceptance requires every canonical image digest cached on both nodes')
+            raise ValueError('Vitess native acceptance requires every canonical image digest cached on every selected node')
+    if sum(node['available_cpu_milli'] for node in nodes) < environment['required_cpu_milli']:
+        raise ValueError('Vitess native acceptance lacks selected-node CPU capacity')
 
 
 def validate_metadata(directory, root=ROOT):
@@ -200,6 +236,8 @@ def validate_metadata(directory, root=ROOT):
         raise ValueError('Vitess qualification requires schema 1 and native linux/amd64')
     if manifest.get('source_files') != source_files(root):
         raise ValueError('Vitess source changed after native qualification')
+    if not source_boolean(root, 'vitessReleaseQualified'):
+        raise ValueError('Vitess shipping admission remains closed')
     expected_files = {'runtime-upstream.patch', 'operator-upstream.patch', 'native-acceptance.json', 'binary-sha256.txt'}
     if set(manifest.get('files', {})) != expected_files:
         raise ValueError('Vitess qualification must include patches, binary hashes and native acceptance')

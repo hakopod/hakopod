@@ -10,7 +10,7 @@ const NeonVersion = "fa504217c61bbcaf5c512d75830564541f917f8f"
 const NeonProxyControlPlanePatchSHA256 = "e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
 
 var neonComponents = []string{"broker", "compute", "compute-tls", "controller-database", "pageserver", "proxy", "safekeeper", "storage-controller"}
-var neonSecretKeys = []string{"compute-auth", "controller-auth", "controller-database-password", "object-storage", "pageserver-auth", "proxy-auth", "safekeeper-auth"}
+var neonSecretKeys = []string{"broker-auth", "compute-auth", "controller-auth", "controller-database-password", "object-storage", "pageserver-auth", "proxy-auth", "safekeeper-auth"}
 var neonStorageKeys = []string{"compute-cache", "controller-database", "pageserver", "safekeeper"}
 
 func NeonComponents() []string  { return append([]string(nil), neonComponents...) }
@@ -47,8 +47,11 @@ func (s Spec) ValidateNeon() error {
 	if c.PostgresVersion != "17" {
 		return fmt.Errorf("the Neon source candidate requires PostgreSQL 17")
 	}
-	if c.ComputeReplicas < 1 || c.ComputeReplicas > 6 || c.Pageservers < 2 || c.Pageservers > 8 || c.Safekeepers != 3 || c.BranchLimit < 1 || c.BranchLimit > 64 {
-		return fmt.Errorf("Neon requires 1-6 compute replicas, 2-8 pageservers, three safekeepers and a 1-64 branch limit")
+	if c.ComputeReplicas < 1 || c.ComputeReplicas > 6 || c.Pageservers < 2 || c.Pageservers > 8 || c.Safekeepers != 3 {
+		return fmt.Errorf("Neon requires 1-6 compute nodes, 2-8 pageservers and three safekeepers")
+	}
+	if c.BranchLimit != 1 {
+		return fmt.Errorf("this Neon release supports one managed branch per platform")
 	}
 	if err := s.Placement.Validate("cluster", max(3, c.Pageservers)); err != nil {
 		return err
@@ -80,13 +83,13 @@ func PlanNeon(s Spec, images map[string]string) (Plan, error) {
 	}
 	c := s.Neon
 	components := []Component{
-		{Name: "broker", Replicas: 1, Ports: []int32{50051}, SecretKeys: []string{"controller-auth"}},
+		{Name: "broker", Replicas: 1, Ports: []int32{50051}, SecretKeys: []string{"broker-auth"}},
 		{Name: "compute", Replicas: c.ComputeReplicas, Ports: []int32{3081, 55433}, SecretKeys: []string{"compute-auth", "pageserver-auth", "safekeeper-auth"}, StorageKeys: []string{"compute-cache"}},
 		{Name: "compute-tls", Replicas: c.ComputeReplicas, Ports: []int32{3081}, SecretKeys: []string{"compute-auth"}},
 		{Name: "controller-database", Replicas: 1, Ports: []int32{5432}, SecretKeys: []string{"controller-database-password"}, StorageKeys: []string{"controller-database"}},
-		{Name: "pageserver", Replicas: c.Pageservers, Ports: []int32{6400, 9898}, SecretKeys: []string{"pageserver-auth", "object-storage"}, StorageKeys: []string{"pageserver"}},
+		{Name: "pageserver", Replicas: c.Pageservers, Ports: []int32{6400, 9898}, SecretKeys: []string{"pageserver-auth", "controller-auth", "safekeeper-auth", "broker-auth", "object-storage"}, StorageKeys: []string{"pageserver"}},
 		{Name: "proxy", Replicas: 1, Ports: []int32{5432, 7001}, SecretKeys: []string{"proxy-auth"}},
-		{Name: "safekeeper", Replicas: c.Safekeepers, Ports: []int32{5454, 7676}, SecretKeys: []string{"safekeeper-auth", "object-storage"}, StorageKeys: []string{"safekeeper"}},
+		{Name: "safekeeper", Replicas: c.Safekeepers, Ports: []int32{5454, 7676}, SecretKeys: []string{"safekeeper-auth", "broker-auth", "object-storage"}, StorageKeys: []string{"safekeeper"}},
 		{Name: "storage-controller", Replicas: 1, Ports: []int32{6699}, SecretKeys: []string{"controller-auth", "controller-database-password", "pageserver-auth", "safekeeper-auth"}},
 	}
 	for i := range components {

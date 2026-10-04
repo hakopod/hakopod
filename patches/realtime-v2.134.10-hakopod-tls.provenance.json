@@ -1,0 +1,27 @@
+{
+  "builder_digest": "sha256:f431729a164ee50f6e0178f8ce707bdf21763537258c7640f508502c4007293e",
+  "built_oci": {
+    "bytes": 140194816,
+    "config_digest": "sha256:fbed36f50f41254b6985507a82ec7b40b6bcd2ce463548c119d3dc05cddb9826",
+    "manifest_digest": "sha256:ccefaabfbd219a4ab4d40892302a0dafef3c534c24ec47f2011d3a5e792dc302",
+    "platform": "linux/amd64",
+    "repository": "ghcr.io/hakopod/managed-supabase-realtime",
+    "tag": "v2.134.10-hakopod.1",
+    "tar_sha256": "sha256:c5907af441586374af86d9499e14096ae57343ecb1f53d67eb7663c7155f433e"
+  },
+  "node_builder_digest": "sha256:5cbc7caba8c2c0f0bca675d1b61b9f2857e1cf1853c6164ee9dd409501a936e7",
+  "patch": "realtime-v2.134.10-hakopod-tls.patch",
+  "patch_sha256": "6d6a01f493cb265ae32ae792f91bc61ed4cb6d34e5ac984a3ff32e232b942343",
+  "schema_version": 1,
+  "upstream_commit": "ef866244e88428bbd286f3e4ac88eb5e54a41bd4",
+  "upstream_linux_amd64_image_digest": "sha256:c1d078d929608f3eb4d441e30317bbdccc1bfcc1169efa3d1a26d4252417cc76",
+  "upstream_repository": "https://github.com/supabase/realtime.git",
+  "upstream_source_sha256": "bd2c71cb8e6e2fb51568902bb2d7480de2a06ad3d11add80b8d01ca8c8d0ead5",
+  "upstream_tag": "v2.134.10",
+  "verification": {
+    "anonymous_pull": "pending",
+    "focused_tls_options": "passed: compiled image accepted trusted db and rejected wrong issuer, wrong hostname, and plaintext",
+    "native_control_database_tls": "pending",
+    "native_tenant_replication_tls": "pending"
+  }
+}

@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/nativeacceptance"
 	"github.com/hakopod/hakopod/internal/platformbackup"
@@ -14,8 +17,27 @@ type platformRecoveryRequest struct {
 	ConfirmTargetName string                `json:"confirm_target_name"`
 }
 
-func (s *Server) platformRecoveryQualified(project, environment, kind string) bool {
-	return nativeacceptance.Recovery(project, environment, kind) || kind == "supabase" && s.ManagedPlatformRecoveryQualified || kind == "neon" && s.ManagedNeonRecoveryQualified
+func (s *Server) platformRecoveryQualified(ctx context.Context, project, environment, kind string) bool {
+	native := nativeacceptance.Recovery(project, environment, kind)
+	released := kind == "supabase" && s.ManagedPlatformRecoveryQualified || kind == "neon" && s.ManagedNeonRecoveryQualified
+	if !native && (!released || s.ValidateManagedPlatformRecovery == nil) {
+		return false
+	}
+	if s.ValidateManagedPlatformRecovery != nil {
+		bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := s.ValidateManagedPlatformRecovery(bounded, kind); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) validatePlatformRecoveryExecution(ctx context.Context, op platformbackup.Operation, kind string) error {
+	if !s.platformRecoveryQualified(ctx, op.Project, op.Environment, kind) {
+		return fmt.Errorf("managed platform recovery qualification is unavailable or changed")
+	}
+	return nil
 }
 
 func (s *Server) registerPlatformRecoveryRoutes(mux *http.ServeMux) {
@@ -70,8 +92,8 @@ func (s *Server) validatePlatformRecoveryRequest(w http.ResponseWriter, r *http.
 		problem(w, 409, "conflict", "review the current source platform revision")
 		return p, false
 	}
-	if !s.platformRecoveryQualified(in.Project, in.Environment, source.Spec.Kind) {
-		problem(w, 503, "managed_platform_recovery_unavailable", source.Spec.Kind+" recovery remains unavailable until native backup and restore acceptance passes")
+	if !s.platformRecoveryQualified(r.Context(), in.Project, in.Environment, source.Spec.Kind) {
+		problem(w, 503, "managed_platform_recovery_unavailable", source.Spec.Kind+" recovery requires a qualified runtime and current operator storage approval")
 		return p, false
 	}
 	if in.Kind == "restore" {
@@ -101,7 +123,7 @@ func (s *Server) reviewPlatformRecovery(w http.ResponseWriter, r *http.Request) 
 		problem(w, 503, "managed_platform_capacity_unavailable", "managed platform recovery remains unavailable until durable capacity admission is configured")
 		return
 	}
-	if !s.platformRecoveryQualified(in.Project, in.Environment, "supabase") && !s.platformRecoveryQualified(in.Project, in.Environment, "neon") {
+	if !s.platformRecoveryQualified(r.Context(), in.Project, in.Environment, "supabase") && !s.platformRecoveryQualified(r.Context(), in.Project, in.Environment, "neon") {
 		problem(w, 503, "managed_platform_recovery_unavailable", "managed platform recovery remains unavailable until native backup and restore acceptance passes")
 		return
 	}
@@ -134,7 +156,7 @@ func (s *Server) acceptPlatformRecovery(w http.ResponseWriter, r *http.Request) 
 		problem(w, 503, "managed_platform_capacity_unavailable", "managed platform recovery remains unavailable until durable capacity admission is configured")
 		return
 	}
-	if !s.platformRecoveryQualified(in.Project, in.Environment, "supabase") && !s.platformRecoveryQualified(in.Project, in.Environment, "neon") {
+	if !s.platformRecoveryQualified(r.Context(), in.Project, in.Environment, "supabase") && !s.platformRecoveryQualified(r.Context(), in.Project, in.Environment, "neon") {
 		problem(w, 503, "managed_platform_recovery_unavailable", "managed platform recovery remains unavailable until native backup and restore acceptance passes")
 		return
 	}
