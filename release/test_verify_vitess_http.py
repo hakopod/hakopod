@@ -2,6 +2,7 @@
 
 import copy
 import json
+import math
 from pathlib import Path
 import runpy
 import tempfile
@@ -55,7 +56,12 @@ class VitessHTTPReleaseEvidenceTest(unittest.TestCase):
     def test_accepts_and_copies_exact_successful_evidence(self):
         self.write()
         MODULE["verify"](self.evidence, self.output, self.root)
-        self.assertEqual(json.loads((self.output / "http-acceptance.json").read_text()), self.report)
+        self.assertEqual(json.loads((self.output / "vitess-http-acceptance.json").read_text()), self.report)
+
+    def test_validate_only_does_not_copy_evidence(self):
+        self.write()
+        self.assertEqual(MODULE["verify"](self.evidence, root=self.root), self.report)
+        self.assertEqual(list(self.output.iterdir()), [])
 
     def test_closed_gate_does_not_require_evidence(self):
         self.native["source_boolean"] = lambda root, name: False
@@ -77,6 +83,17 @@ class VitessHTTPReleaseEvidenceTest(unittest.TestCase):
         changed["test_events"] = changed["test_events"][:1]
         with self.assertRaises(ValueError):
             MODULE["validate_report"](changed, self.root)
+
+    def test_rejects_nonpositive_nonfinite_or_oversized_elapsed_times(self):
+        for elapsed in (0, -1, math.inf, math.nan, 3601):
+            for target in ("report", "event"):
+                changed = copy.deepcopy(self.report)
+                if target == "report":
+                    changed["elapsed_seconds"] = elapsed
+                else:
+                    changed["test_events"][1]["Elapsed"] = elapsed
+                with self.subTest(target=target, elapsed=elapsed), self.assertRaises(ValueError):
+                    MODULE["validate_report"](changed, self.root)
 
     def test_rejects_mismatched_or_changed_source(self):
         for field in ("runtime_source_files", "runtime_source_files_after",

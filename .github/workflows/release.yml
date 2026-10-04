@@ -326,6 +326,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py verify ".local/publication/$RELEASE_VERSION"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B release/verify-vitess-http.py --evidence ".local/publication/$RELEASE_VERSION/vitess-http-acceptance.json"
           PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'
           import os, runpy
           from pathlib import Path
@@ -350,6 +351,7 @@ jobs:
           directory=".local/publication/$RELEASE_VERSION"
           cp "$ATTESTATION_BUNDLE" "$directory/build-provenance.intoto.jsonl"
           PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py verify "$directory"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B release/verify-vitess-http.py --evidence "$directory/vitess-http-acceptance.json"
           python3 release/publication.py verify "$directory"
           python3 release/bootstrap-version.py "$directory" "$RELEASE_VERSION"
           flags=()

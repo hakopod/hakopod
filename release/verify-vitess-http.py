@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import runpy
 import shutil
@@ -54,9 +55,11 @@ def harness_inventory(root):
     paths.extend(sorted((root / "acceptance/vitess").rglob("*")))
     result, total = {}, 0
     for path in paths:
+        if path.is_symlink():
+            raise ValueError("Vitess HTTP acceptance source must contain regular files only")
         if path.is_dir():
             continue
-        if path.is_symlink() or not path.is_file():
+        if not path.is_file():
             raise ValueError("Vitess HTTP acceptance source must contain regular files only")
         total += path.stat().st_size
         if len(result) >= MAX_HARNESS_FILES or total > MAX_HARNESS_BYTES:
@@ -82,14 +85,16 @@ def validate_report(report, root=ROOT):
         raise ValueError("Vitess HTTP acceptance did not complete successfully")
     if not isinstance(report.get("log_sha256"), str) or not NATIVE["DIGEST"].fullmatch(report["log_sha256"]):
         raise ValueError("Vitess HTTP acceptance log digest is invalid")
-    if type(report.get("elapsed_seconds")) not in (int, float) or not 0 <= report["elapsed_seconds"] <= 3600:
+    if (type(report.get("elapsed_seconds")) not in (int, float)
+            or not math.isfinite(report["elapsed_seconds"]) or not 0 < report["elapsed_seconds"] <= 3600):
         raise ValueError("Vitess HTTP acceptance duration is invalid")
     events = report.get("test_events")
     if (not isinstance(events, list) or len(events) != 2 or any(not isinstance(event, dict) for event in events)
             or [event.get("Action") for event in events] != ["run", "pass"]
             or any(set(event) - {"Time", "Action", "Test", "Elapsed"} for event in events)
             or any(event.get("Test") != "TestVitessHTTPVerticalSlice" or not isinstance(event.get("Time"), str) for event in events)
-            or type(events[1].get("Elapsed")) not in (int, float)):
+            or type(events[1].get("Elapsed")) not in (int, float)
+            or not math.isfinite(events[1]["Elapsed"]) or not 0 < events[1]["Elapsed"] <= 3600):
         raise ValueError("Vitess HTTP acceptance run and pass events are incomplete")
     runtime_sources = NATIVE["source_files"](root)
     harness_sources = harness_inventory(root)
@@ -122,10 +127,12 @@ def verify(evidence=REPORT, output=None, root=ROOT):
     if not NATIVE["source_boolean"](root, "vitessReleaseQualified"):
         return False
     report = validate_report(read_report(evidence), root)
+    if output is None:
+        return report
     output = Path(output)
     if output.is_symlink() or not output.is_dir():
         raise ValueError("Vitess release evidence output directory is unavailable")
-    target = output / "http-acceptance.json"
+    target = output / "vitess-http-acceptance.json"
     if target.exists() or target.is_symlink():
         raise ValueError("Vitess HTTP release evidence already exists")
     shutil.copyfile(evidence, target)
@@ -135,6 +142,6 @@ def verify(evidence=REPORT, output=None, root=ROOT):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence", type=Path, default=REPORT)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
     verify(arguments.evidence, arguments.output)
