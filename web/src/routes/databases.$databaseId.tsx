@@ -400,7 +400,7 @@ function DatabaseConnections({
           Use a cluster-aware Redis client. The controller owns replication and failover.
         </p>
       )}
-      {d.spec.engine === 'vitess' && <p className="db-inline-notice">Vitess uses the MySQL protocol on port 3306 through vtgate. Use app@primary for writes or app@replica for replica reads. Configure the driver with the mounted public CA and hostname verification.</p>}
+      {d.spec.engine === 'vitess' && <p className="db-inline-notice">Vitess uses the MySQL protocol on port 3306 through vtgate. {d.spec.replicas > 0 ? 'Use app@primary for writes or app@replica for replica reads.' : 'Use app@primary for reads and writes.'} Configure the driver with the mounted public CA and hostname verification.</p>}
       {d.spec.engine === 'mysql' && <p className="db-inline-notice">MySQL Router provides explicit write{d.spec.replicas > 0 ? ' and replica' : ''} routes. Clients must reconnect after failover. Configure the driver with the public CA and hostname verification.</p>}
       {d.spec.engine === 'mongodb' && <p className="db-inline-notice">Use a MongoDB driver with replica-set discovery, verified TLS and the public CA. The binding selects primary reads and majority acknowledgement. Retry failed transactions only when safe.</p>}
       {d.spec.pooling && <div className="px-4 py-3 grid gap-3">

@@ -953,7 +953,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                         ))}
                       </div>
                     )}
-                    <Note>vtgate accepts MySQL TLS on port 3306. Use app@primary for writes and app@replica for replica reads. Replica reads may lag.</Note>
+                    <Note>vtgate accepts MySQL TLS on port 3306. {spec.replicas > 0 ? 'Use app@primary for writes and app@replica for replica reads. Replica reads may lag.' : 'Use app@primary for reads and writes.'}</Note>
                   </FormSection>
                 )}
                 <Note>
