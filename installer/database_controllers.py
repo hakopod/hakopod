@@ -107,7 +107,7 @@ def validate_release_availability(bundle,manifest):
             any(type(value) is not bool for value in availability.values()) or
             not isinstance(manifest.get('source_revision'),str) or not re.fullmatch(r'[0-9a-f]{40}',manifest['source_revision'])):
         raise ValueError('Controller bundle requires exact managed runtime availability and source revision')
-    expected={'postgresql.json','redis.json','mongodb.json'}
+    expected={'postgresql.json','redis.json','mysql.json','mongodb.json'}
     if availability['vitess']:expected.add('vitess.json')
     found=set()
     for path in bundle.iterdir():
