@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -148,6 +149,22 @@ func TestSelfHostedCapacitySchedulingReachesDurableReview(t *testing.T) {
 	}
 	if err = policy.Allows(spec, plan); err != nil {
 		t.Fatalf("configured self-hosted plan rejected by its own capacity policy: %v", err)
+	}
+	qualified := managedplatform.SupabaseReleaseQualified()
+	if plan.Capability.Available != qualified || plan.Capability.ClusterQualified != qualified {
+		t.Fatal("configured planner did not preserve the compiled runtime qualification")
+	}
+	if !qualified {
+		if _, err = db.SaveManagedPlatformReview(ctx, principal, item, plan, 0, "create"); !errors.Is(err, store.ErrForbidden) {
+			t.Fatalf("held runtime must refuse durable creation review: %v", err)
+		}
+		var reviews int
+		if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM managed_platform_reviews").Scan(&reviews); err != nil || reviews != 0 {
+			t.Fatal("held runtime persisted a creation review")
+		}
+		// The remaining store check uses a synthetic qualified plan to exercise
+		// capacity persistence while the real planner above keeps creation closed.
+		plan.Capability.Available, plan.Capability.ClusterQualified = true, true
 	}
 	review, err := db.SaveManagedPlatformReview(ctx, principal, item, plan, 0, "create")
 	if err != nil {
