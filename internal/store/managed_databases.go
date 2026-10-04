@@ -72,7 +72,7 @@ func (s *Store) DatabaseOperations(ctx context.Context, p Principal, id string) 
 	if _, err := s.Database(ctx, p, id, false); err != nil {
 		return nil, err
 	}
-	rows, err := s.Pool.Query(ctx, "SELECT "+databaseOperationCols+" FROM managed_database_operations WHERE database_id=$1 ORDER BY created_at DESC,id LIMIT 100", id)
+	rows, err := s.Pool.Query(ctx, "SELECT "+databaseOperationCols+" FROM managed_database_operations WHERE database_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100", id)
 	if err != nil {
 		return nil, err
 	}
@@ -418,8 +418,14 @@ func (s *Store) SaveDatabaseReview(ctx context.Context, p Principal, d database.
 	if !p.AllowsDatabase(d.Project, d.Environment, true) {
 		return "", ErrForbidden
 	}
-	if kind != "resize" && kind != "switchover" || expires.After(time.Now().Add(database.ReviewLifetime+time.Second)) || !expires.After(time.Now()) {
+	if kind != "resize" && kind != "resize-retry" && kind != "switchover" || expires.After(time.Now().Add(database.ReviewLifetime+time.Second)) || !expires.After(time.Now()) {
 		return "", ErrInput
+	}
+	if kind == "resize-retry" {
+		plan, ok := payload.(database.ResizeRetryReview)
+		if !ok || !validDatabaseResizeRetryReview(d, plan) || !plan.ExpiresAt.Equal(expires) {
+			return "", ErrInput
+		}
 	}
 	if kind == "switchover" {
 		plan, ok := payload.(database.OracleSwitchoverReview)

@@ -88,7 +88,7 @@ func run() error {
 	revision := fs.Int64("revision", 0, "successful revision to restore")
 	reviewID := fs.String("review-id", "", "accepted database resize, recovery, connection or switchover review")
 	databaseTargetMember := fs.String("target-member", "", "physical standby member to review for Oracle switchover")
-	databaseOperation := fs.String("operation-id", "", "existing Oracle switchover operation to resume")
+	databaseOperation := fs.String("operation-id", "", "failed replica change or Oracle switchover operation to retry")
 	databasePublicEndpointID := fs.String("public-endpoint-id", "", "database public endpoint ID to revoke")
 	databasePublicEndpointPurpose := fs.String("purpose", "", "public database route purpose from database public-endpoint-capabilities")
 	databasePublicEndpointCIDRs := fs.String("source-cidrs", "", "comma-separated IPv4 CIDRs allowed to connect")
@@ -314,6 +314,10 @@ func run() error {
 	case "external-database":
 		return externalDatabaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), externalDatabaseFlags{CredentialsFile: *externalCredentialsFile, CredentialsStdin: *externalCredentialsStdin, IdempotencyKey: *idem, ReviewID: *reviewID, Name: *name, Revision: *revision, ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable})
 	case "database":
+		if !explicitFile && (fs.Arg(0) == "resize-retry-plan" || fs.Arg(0) == "resize-retry") {
+			// A retry uses its saved specification, not the default application file.
+			*file = ""
+		}
 		return databaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *reviewID, *artifactID, *name, *revision, databaseConnectionFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, HistoryRange: *databaseHistoryRange, JobID: *databaseRecoveryJob, TargetMember: *databaseTargetMember, OperationID: *databaseOperation, PublicEndpointID: *databasePublicEndpointID, PublicEndpointPurpose: *databasePublicEndpointPurpose, PublicEndpointCIDRs: *databasePublicEndpointCIDRs, PublicEndpointRevision: *databasePublicEndpointRevision, PublicEndpointMaxConnections: *databasePublicEndpointMaxConnections, ClusterAware: *databaseClusterAware, Inspected: *databaseInspected, Import: databaseImportFlags{*importDestination, *importEngine, *importVersion, *importCaptured}})
 	case "platform":
 		return managedPlatformCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *name)
@@ -790,6 +794,8 @@ func help() {
   hakopod database show DATABASE_ID
   hakopod database resize-plan DATABASE_ID --file database.toml
   hakopod database resize DATABASE_ID --file database.toml --review-id REVIEW_ID --revision 1
+  hakopod database resize-retry-plan DATABASE_ID --operation-id OPERATION_ID --revision 2
+  hakopod database resize-retry DATABASE_ID --operation-id OPERATION_ID --review-id REVIEW_ID --revision 2 --name DATABASE_NAME --idempotency-key RETRY_KEY
   hakopod database switchover-plan DATABASE_ID --target-member STANDBY_MEMBER
   hakopod database switchover DATABASE_ID --review-id REVIEW_ID --revision 1 --name DATABASE_NAME --idempotency-key RETRY_KEY
   hakopod database switchover-retry DATABASE_ID --operation-id OPERATION_ID --revision 1 --name DATABASE_NAME

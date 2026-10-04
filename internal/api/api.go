@@ -56,10 +56,11 @@ type Server struct {
 	neonProxyConcurrent              chan struct{}
 	nativeProbes                     chan struct{}
 	// Overrides are only set by in-process tests, never by an API request.
-	actionsTestRuntime      actionsRuntime
-	actionsClient           func(string) (runnerProvider, error)
-	actionsBudget           actions.RequestBudget
-	actionsNativeConfigured bool
+	actionsTestRuntime             actionsRuntime
+	actionsClient                  func(string) (runnerProvider, error)
+	actionsBudget                  actions.RequestBudget
+	actionsNativeConfigured        bool
+	databaseResizeRetryTestRuntime databaseResizeRetryRuntime
 	// Native provider configuration is trusted in-process input and remains nil
 	// until paired runtime qualification. Public provider selection stays gated.
 	actionsGitLabClient     func(context.Context, cluster.Target, spec.Service, string) (gitlabRunnerProvider, error)

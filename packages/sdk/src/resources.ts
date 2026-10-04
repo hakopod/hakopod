@@ -1205,6 +1205,57 @@ export class DatabaseRef {
         accepted.switchover.project !== current.project || accepted.switchover.environment !== current.environment)
       throw new HakopodError("The API returned another switchover operation.", "invalid_response");
   }
+  /** Obtain a fresh native-state review for the same failed replica intent. */
+  async resizeRetryPlan(
+    operationId: string,
+    options: RequestOptions = {},
+  ): Promise<{ id: string; plan: Schema["DatabaseResizeRetryReview"] }> {
+    const operation = required(operationId, "replica operation ID");
+    const current = await this.get(options);
+    this.#assertVotingCluster(current);
+    const result = await this.#context.transport.request<{
+      id: string; plan: Schema["DatabaseResizeRetryReview"];
+    }>("POST", "/databases/{id}/resize-retry-plan", {
+      ...options, params: { id: current.id },
+      body: { operation_id: operation, expected_revision: current.revision },
+    });
+    if (result.plan.database_id !== current.id || result.plan.operation_id !== operation ||
+        !["accepted", "prior"].includes(result.plan.state))
+      throw new HakopodError("The API reviewed another replica operation.", "invalid_response");
+    if (result.plan.revision !== current.revision)
+      throw new APIError("The database changed while planning. Review it again.", "revision_conflict", 409);
+    return snapshot(result);
+  }
+  /** Retry a reviewed replica change without changing its spec or revision. */
+  async retryResize(
+    input: { operationId: string; reviewId: string; expectedRevision: number; confirmName: string },
+    options: RequestOptions = {},
+  ): Promise<DatabaseRun> {
+    const operationId = required(input.operationId, "replica operation ID");
+    const reviewId = required(input.reviewId, "replica retry review ID");
+    const expectedRevision = integer(input.expectedRevision, 1, Number.MAX_SAFE_INTEGER, "expectedRevision");
+    const current = await this.get(options);
+    this.#assertVotingCluster(current);
+    if (input.confirmName !== current.spec.name)
+      throw new HakopodError("confirmName must match the database name.", "confirmation_required");
+    if (expectedRevision !== current.revision)
+      throw new APIError("The database changed. Review its current operation again.", "revision_conflict", 409);
+    const key = idempotencyKey(options.idempotencyKey);
+    const accepted = await this.#context.transport.request<DatabaseOperation>(
+      "POST", "/databases/{id}/resize-retry", {
+        ...options, idempotencyKey: key, params: { id: current.id },
+        body: { operation_id: operationId, review_id: reviewId, expected_revision: expectedRevision, confirm_name: input.confirmName },
+      },
+    );
+    if (accepted.database_id !== current.id || accepted.revision !== expectedRevision ||
+        accepted.kind !== "resize-retry" || accepted.id === operationId)
+      throw new HakopodError("The API returned another replica operation.", "invalid_response");
+    return new DatabaseRun(this.#context, accepted.id, accepted.database_id, key);
+  }
+  #assertVotingCluster(current: ManagedDatabase): void {
+    if (!["mysql", "mongodb"].includes(current.spec.engine) || current.spec.mode !== "cluster")
+      throw new HakopodError("Replica retries require a managed MySQL or MongoDB cluster.", "invalid_option");
+  }
   async resizePlan(
     changes: Partial<
       Pick<

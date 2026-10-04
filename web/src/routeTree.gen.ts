@@ -67,6 +67,7 @@ import { Route as DatabasesDatabaseIdConnectRouteImport } from './routes/databas
 import { Route as DatabasesDatabaseIdPublicEndpointsRouteImport } from './routes/databases.$databaseId.public-endpoints'
 import { Route as DatabasesDatabaseIdRecoverRouteImport } from './routes/databases.$databaseId.recover'
 import { Route as DatabasesDatabaseIdResizeRouteImport } from './routes/databases.$databaseId.resize'
+import { Route as DatabasesDatabaseIdResizeRetryRouteImport } from './routes/databases.$databaseId.resize-retry'
 import { Route as DatabasesDatabaseIdSwitchoverRouteImport } from './routes/databases.$databaseId.switchover'
 import { Route as DatabasesExternalExternalDatabaseIdRouteImport } from './routes/databases.external.$externalDatabaseId'
 import { Route as DatabasesExternalNewRouteImport } from './routes/databases.external.new'
@@ -402,6 +403,12 @@ const DatabasesDatabaseIdResizeRoute =
     path: '/resize',
     getParentRoute: () => DatabasesDatabaseIdRoute,
   } as any)
+const DatabasesDatabaseIdResizeRetryRoute =
+  DatabasesDatabaseIdResizeRetryRouteImport.update({
+    id: '/resize-retry',
+    path: '/resize-retry',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
 const DatabasesDatabaseIdSwitchoverRoute =
   DatabasesDatabaseIdSwitchoverRouteImport.update({
     id: '/switchover',
@@ -654,6 +661,7 @@ export interface FileRoutesByFullPath {
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
+  '/databases/$databaseId/resize-retry': typeof DatabasesDatabaseIdResizeRetryRoute
   '/databases/$databaseId/switchover': typeof DatabasesDatabaseIdSwitchoverRoute
   '/databases/external/$externalDatabaseId': typeof DatabasesExternalExternalDatabaseIdRouteWithChildren
   '/databases/external/new': typeof DatabasesExternalNewRoute
@@ -747,6 +755,7 @@ export interface FileRoutesByTo {
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
+  '/databases/$databaseId/resize-retry': typeof DatabasesDatabaseIdResizeRetryRoute
   '/databases/$databaseId/switchover': typeof DatabasesDatabaseIdSwitchoverRoute
   '/databases/external/$externalDatabaseId': typeof DatabasesExternalExternalDatabaseIdRouteWithChildren
   '/databases/external/new': typeof DatabasesExternalNewRoute
@@ -841,6 +850,7 @@ export interface FileRoutesById {
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
+  '/databases/$databaseId/resize-retry': typeof DatabasesDatabaseIdResizeRetryRoute
   '/databases/$databaseId/switchover': typeof DatabasesDatabaseIdSwitchoverRoute
   '/databases/external/$externalDatabaseId': typeof DatabasesExternalExternalDatabaseIdRouteWithChildren
   '/databases/external/new': typeof DatabasesExternalNewRoute
@@ -936,6 +946,7 @@ export interface FileRouteTypes {
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
+    | '/databases/$databaseId/resize-retry'
     | '/databases/$databaseId/switchover'
     | '/databases/external/$externalDatabaseId'
     | '/databases/external/new'
@@ -1029,6 +1040,7 @@ export interface FileRouteTypes {
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
+    | '/databases/$databaseId/resize-retry'
     | '/databases/$databaseId/switchover'
     | '/databases/external/$externalDatabaseId'
     | '/databases/external/new'
@@ -1122,6 +1134,7 @@ export interface FileRouteTypes {
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
+    | '/databases/$databaseId/resize-retry'
     | '/databases/$databaseId/switchover'
     | '/databases/external/$externalDatabaseId'
     | '/databases/external/new'
@@ -1593,6 +1606,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DatabasesDatabaseIdResizeRouteImport
       parentRoute: typeof DatabasesDatabaseIdRoute
     }
+    '/databases/$databaseId/resize-retry': {
+      id: '/databases/$databaseId/resize-retry'
+      path: '/resize-retry'
+      fullPath: '/databases/$databaseId/resize-retry'
+      preLoaderRoute: typeof DatabasesDatabaseIdResizeRetryRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
     '/databases/$databaseId/switchover': {
       id: '/databases/$databaseId/switchover'
       path: '/switchover'
@@ -1893,6 +1913,7 @@ interface DatabasesDatabaseIdRouteChildren {
   DatabasesDatabaseIdPublicEndpointsRoute: typeof DatabasesDatabaseIdPublicEndpointsRoute
   DatabasesDatabaseIdRecoverRoute: typeof DatabasesDatabaseIdRecoverRoute
   DatabasesDatabaseIdResizeRoute: typeof DatabasesDatabaseIdResizeRoute
+  DatabasesDatabaseIdResizeRetryRoute: typeof DatabasesDatabaseIdResizeRetryRoute
   DatabasesDatabaseIdSwitchoverRoute: typeof DatabasesDatabaseIdSwitchoverRoute
 }
 
@@ -1902,6 +1923,7 @@ const DatabasesDatabaseIdRouteChildren: DatabasesDatabaseIdRouteChildren = {
     DatabasesDatabaseIdPublicEndpointsRoute,
   DatabasesDatabaseIdRecoverRoute: DatabasesDatabaseIdRecoverRoute,
   DatabasesDatabaseIdResizeRoute: DatabasesDatabaseIdResizeRoute,
+  DatabasesDatabaseIdResizeRetryRoute: DatabasesDatabaseIdResizeRetryRoute,
   DatabasesDatabaseIdSwitchoverRoute: DatabasesDatabaseIdSwitchoverRoute,
 }
 
