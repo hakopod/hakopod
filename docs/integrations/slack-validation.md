@@ -63,7 +63,7 @@ development VM. Logs are retained under
 | Scope | Result | Evidence |
 | --- | --- | --- |
 | Complete final platform Go suite with disposable PostgreSQL | Passed: `go test -count=1 -p=2 ./...`; 39 package result lines, no failures; live flags remained unset | `platform-final-db-v3.log` |
-| Final legacy Slack gate and notification queue checks | Passed with disposable PostgreSQL after giving the existing Slack success fixture an explicit self-hosted Pro license | `platform-final-focus-v2.log` |
+| Existing notification queue and authorization check | Passed with disposable PostgreSQL after giving its Slack success fixture an explicit self-hosted Pro license; the new legacy gate cases are covered by the complete final suite above | `platform-final-focus-v2.log` |
 | Expanded uncached Slack store checks with disposable PostgreSQL | Passed: `go test -count=1 -v ./internal/store -run Slack`; seven cases, no skips | `platform-db-store-slack-v3.log` |
 | Expanded uncached Slack API checks with disposable PostgreSQL | Passed: `go test -count=1 -v ./internal/api -run Slack`; nine top-level cases, no skips | `platform-db-api-slack-v3.log` |
 | Expanded real-cluster Slack outbox acceptance | Passed: two digest-pinned services deployed twice on `k3d-hakopod-dev`; selected self-hosted and Cloud outbox records verified and the owned preview namespace removed | `platform-live-slack-v3.log` |
