@@ -10,12 +10,12 @@ test('Vitess creation requires recovery configuration and accounts for dedicated
   for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(spec, step), undefined)
   // 5Gi data, 3Gi topology storage and two 5Gi native-backup volumes.
   assert.equal(databaseStorageGiB(spec), 18)
-  assert.ok(Math.abs(databaseRequestedCapacity(spec)!.cpu - 4.9) < 0.000001)
-  assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 8864)
+  assert.ok(Math.abs(databaseRequestedCapacity(spec)!.cpu - 5.1) < 0.000001)
+  assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 9888)
   const cluster = { ...spec, mode: 'cluster' as const, shards: 2, replicas: 1, vitess: { ...spec.vitess, tables: [{ name: 'orders', sharding_column: 'tenant_id' }] } }
   assert.equal(databaseStorageGiB(cluster), 43)
-  assert.ok(Math.abs(databaseRequestedCapacity(cluster)!.cpu - 8.45) < 0.000001)
-  assert.equal(databaseRequestedCapacity(cluster)?.memoryMiB, 15614)
+  assert.ok(Math.abs(databaseRequestedCapacity(cluster)!.cpu - 8.85) < 0.000001)
+  assert.equal(databaseRequestedCapacity(cluster)?.memoryMiB, 17662)
   assert.equal(databaseCreateIssue(cluster, 1), undefined)
   assert.equal(databaseCreateIssue(cluster, 3), undefined)
   assert.match(databaseCreateIssue({ ...cluster, shards: 3 }, 1) || '', /1, 2, 4 or 8/)

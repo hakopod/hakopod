@@ -33,11 +33,12 @@ export function databaseRequestedCapacity(spec: DatabaseSpec) {
       ...capacity,
       cpu: capacity.cpu + memberCPU * (1 + 2 * spec.shards) + 0.1 +
         (vitessGateways(spec) + 1) * 0.25 + (spec.shards + 2) * 0.5 +
-        (vitessTopologyMembers(spec) + 1) * 0.1 + 2 * 0.1 + 0.1,
+        (vitessTopologyMembers(spec) + 1) * 0.1 + 2 * 0.1 + 2 * spec.shards * 0.1 + 0.1,
       memoryMiB: capacity.memoryMiB + memberMemoryMiB * (1 + 2 * spec.shards) +
         (members + 1 + 2 * spec.shards) * 50 + 128 + 256 +
         (vitessGateways(spec) + 1) * (256 + 50) + (spec.shards + 2) * (256 + 50) +
-        (vitessTopologyMembers(spec) + 1) * (256 + 50) + 2 * (256 + 50) + (512 + 50),
+        (vitessTopologyMembers(spec) + 1) * (256 + 50) + 2 * (256 + 50) +
+        2 * spec.shards * 512 + (512 + 50),
     }
   }
   return { ...capacity, cpu: capacity.cpu + (poolers + keeperInstances(spec)) * 0.25 + routerInstances(spec) * 0.1 + oracleBrokerInstances(spec) * 0.1, memoryMiB: capacity.memoryMiB + (poolers + keeperInstances(spec)) * 256 + routerInstances(spec) * 128 + oracleBrokerInstances(spec) * 256 }
