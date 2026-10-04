@@ -126,13 +126,34 @@ func (w *Worker) Run(ctx context.Context) {
 }
 func (w *Worker) run(parent context.Context, c *store.Claim) {
 	defer c.Release()
+	started := time.Now()
 	d := c.Deployment
 	a := c.App
 	timeout := w.Timeout
 	if timeout == 0 {
 		timeout = 10 * time.Minute
 	}
-	ctx, cancelTimeout := context.WithTimeout(parent, timeout)
+	var drainAllowance time.Duration
+	if actionsDrainCandidate(d) {
+		// Preparation only reads immutable releases and bounded slot metadata.
+		// Keep this short before starting the guard, inside the original deadline.
+		prepareCtx, stopPrepare := context.WithDeadline(parent, started.Add(min(timeout, actionsDrainPreparationTimeout)))
+		if err := w.Store.Reauthorize(prepareCtx, d.KeyID, a.Project, a.Environment, a.Name); err != nil {
+			stopPrepare()
+			if errors.Is(err, store.ErrUnauthorized) || errors.Is(err, store.ErrForbidden) {
+				w.finish(parent, c, "cancelled", errAuthority.Error(), map[string]any{"status": "cancelled"})
+			}
+			return
+		}
+		var err error
+		drainAllowance, err = actionsDrainAllowance(prepareCtx, w.Store, d)
+		prepareErr := prepareCtx.Err()
+		stopPrepare()
+		if err != nil || prepareErr != nil {
+			return // A metadata read failure remains resumable with the claim.
+		}
+	}
+	ctx, cancelTimeout := context.WithDeadline(parent, started.Add(timeout+drainAllowance))
 	defer cancelTimeout()
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -258,7 +279,9 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 		w.recoverRelease(parent, ctx, c, target, emit)
 		return
 	}
-	deployCtx, endDeploy := context.WithTimeout(ctx, timeout*2/3)
+	// Add the complete lifetime to both budgets. Taking two thirds of the
+	// expanded outer budget would still interrupt an eligible busy runner.
+	deployCtx, endDeploy := context.WithTimeout(ctx, timeout*2/3+drainAllowance)
 	observation, err := w.Cluster.Deploy(deployCtx, target, emit)
 	endDeploy()
 	if err == nil {
