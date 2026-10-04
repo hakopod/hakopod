@@ -105,16 +105,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Restore the pinned template source
         run: git submodule update --init templates
-      - name: Verify the qualified Vitess images and native evidence
-        run: |
-          python3 release/verify-vitess-runtime.py --output .local/vitess-qualified
-          tar --sort=name --mtime="@$(git log -1 --format=%ct)" \
-            --owner=0 --group=0 --numeric-owner -czf .local/managed-vitess-qualification.tar.gz \
-            -C .local vitess-qualified
+      - name: Retain Vitess qualification or its compiled release hold
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py prepare vitess --output .local/managed-vitess-release-evidence
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: managed-vitess-qualification
-          path: .local/managed-vitess-qualification.tar.gz
+          name: managed-vitess-release-evidence
+          path: .local/managed-vitess-release-evidence/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -125,16 +121,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Restore the pinned template source
         run: git submodule update --init templates
-      - name: Verify the qualified Supabase images and native evidence
-        run: |
-          python3 release/verify-supabase-runtime.py --output .local/supabase-qualified
-          tar --sort=name --mtime="@$(git log -1 --format=%ct)" \
-            --owner=0 --group=0 --numeric-owner -czf .local/managed-supabase-qualification.tar.gz \
-            -C .local supabase-qualified
+      - name: Retain Supabase qualification or its compiled release hold
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py prepare supabase --output .local/managed-supabase-release-evidence
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: managed-supabase-qualification
-          path: .local/managed-supabase-qualification.tar.gz
+          name: managed-supabase-release-evidence
+          path: .local/managed-supabase-release-evidence/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -145,16 +137,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Restore the pinned template source
         run: git submodule update --init templates
-      - name: Verify the qualified Neon images and native evidence
-        run: |
-          python3 release/verify-neon-runtime.py --output .local/neon-qualified
-          tar --sort=name --mtime="@$(git log -1 --format=%ct)" \
-            --owner=0 --group=0 --numeric-owner -czf .local/managed-neon-qualification.tar.gz \
-            -C .local neon-qualified
+      - name: Retain Neon qualification or its compiled release hold
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py prepare neon --output .local/managed-neon-release-evidence
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: managed-neon-qualification
-          path: .local/managed-neon-qualification.tar.gz
+          name: managed-neon-release-evidence
+          path: .local/managed-neon-release-evidence/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -321,21 +309,22 @@ jobs:
           PY
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: managed-vitess-qualification
+          name: managed-vitess-release-evidence
           path: .local/publication/${{ needs.build.outputs.version }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: managed-supabase-qualification
+          name: managed-supabase-release-evidence
           path: .local/publication/${{ needs.build.outputs.version }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: managed-neon-qualification
+          name: managed-neon-release-evidence
           path: .local/publication/${{ needs.build.outputs.version }}
-      - name: Include the verified managed runtime provenance archives
+      - name: Verify managed runtime evidence against the compiled release gates
         env:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
         run: |
-          python3 - <<'PY'
+          PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py verify ".local/publication/$RELEASE_VERSION"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B - <<'PY'
           import os, runpy
           from pathlib import Path
           directory = Path('.local/publication') / os.environ['RELEASE_VERSION']
@@ -358,6 +347,7 @@ jobs:
         run: |
           directory=".local/publication/$RELEASE_VERSION"
           cp "$ATTESTATION_BUNDLE" "$directory/build-provenance.intoto.jsonl"
+          PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py verify "$directory"
           python3 release/publication.py verify "$directory"
           python3 release/bootstrap-version.py "$directory" "$RELEASE_VERSION"
           flags=()

@@ -26,7 +26,7 @@ var neonReleaseImages = map[string]string{
 
 // NeonReleaseQualified changes only after the exact source, image inventory,
 // runtime, recovery and real-cluster evidence pass the release verifier.
-func NeonReleaseQualified() bool { return true }
+func NeonReleaseQualified() bool { return false }
 
 func NeonReleaseImages() map[string]string {
 	images := make(map[string]string, len(neonReleaseImages))

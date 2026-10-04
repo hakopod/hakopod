@@ -44,6 +44,10 @@ def source_fingerprint():
     h = hashlib.sha256()
     for name in ('LICENSE', 'NOTICE'):
         h.update((name + '\0' + host.digest(ROOT / name)).encode())
+    for name in ('release/managed-runtime-availability.py', 'internal/cluster/database_vitess.go',
+                 'internal/managedplatform/supabase_qualification.go', 'internal/managedplatform/neon_qualification.go'):
+        path = ROOT / name
+        h.update((name + '\0' + (host.digest(path) if path.is_file() else 'missing')).encode())
     for folder in ('web', 'packages/ui', 'templates', 'installer', 'scripts', 'deploy', 'release/notices'):
         base = ROOT / folder
         if not base.is_dir(): continue
@@ -151,6 +155,7 @@ def main():
     parser.add_argument('--release-dir', type=Path)
     parser.add_argument('--use-existing-dist', action='store_true', help='Development smoke only: package existing dist with explicitly unknown source freshness')
     args = parser.parse_args()
+    managed_runtimes = runpy.run_path(str(ROOT / 'release/managed-runtime-availability.py'))['release_availability'](ROOT)
     bootstrap.valid_version(args.version)
     if args.upgrade_from is None:
         args.upgrade_from = runpy.run_path(str(ROOT / 'release/upgrade-paths.py'))['sources'](args.version)
@@ -212,7 +217,7 @@ def main():
         shutil.copytree(ROOT / folder, kit / folder, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     # Controller manifests are built from checksummed sources, then shipped as JSON.
     # Installation never needs Helm, PyYAML or network access for these manifests.
-    subprocess.run(['python3', str(ROOT / 'installer/build_database_controllers.py'), '--output', str(kit / 'deploy/database-controllers')], check=True)
+    subprocess.run(['python3', '-B', str(ROOT / 'installer/build_database_controllers.py'), '--output', str(kit / 'deploy/database-controllers')], env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'), check=True)
     (kit / 'scripts').mkdir()
     shutil.copyfile(ROOT / 'scripts/install.sh', kit / 'scripts/install.sh')
     rendered_bootstrap = bootstrap.render((ROOT / 'scripts/installer.sh').read_text(), args.version)
@@ -232,6 +237,7 @@ def main():
         shutil.copyfile(source, destination / ('go-and-lock-provenance.json' if name == 'provenance.json' else name))
     final_state = git_source_state()
     provenance = dict(version=args.version, source_revision=source_state['source_revision'],
+        managed_runtimes=managed_runtimes,
         source_dirty=source_state['source_dirty'] or final_state['source_dirty'],
         source_fingerprint_sha256=before,
         source_changed_during_packaging=before != after or source_state['source_revision'] != final_state['source_revision'],
