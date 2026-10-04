@@ -15,7 +15,7 @@ import (
 const (
 	vitessOperatorSource     = "10a3b742c02c38f97d554739d5a257197daa48f9"
 	vitessServerSource       = "0f1ed062dec171e0adfab796110549752901e299"
-	vitessOperatorImage      = "ghcr.io/hakopod/managed-vitess-operator:2.16.0-hakopod.9@sha256:b149e8c7d5f44dbeefa4c64afaa9323d07f9f426aec0be9f7e5b77ede26cc107"
+	vitessOperatorImage      = "ghcr.io/hakopod/managed-vitess-operator@sha256:275c3ce3794dc5be502450cef38b7ac632a81a4b2f2834f7889b83e28a3cae9b"
 	vitessServerImage        = "ghcr.io/hakopod/managed-vitess-runtime:23.0.6-hakopod.7@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a"
 	vitessEtcdImage          = "quay.io/coreos/etcd:v3.5.17@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
 	vitessComponentLabel     = "hakopod.io/vitess-component"
