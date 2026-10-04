@@ -2287,6 +2287,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/databases/{id}/resize-retry-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology. */
+        post: operations["reviewManagedDatabaseResizeRetry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/resize-retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology. */
+        post: operations["retryManagedDatabaseResize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/databases/{id}/switchover-plan": {
         parameters: {
             query?: never;
@@ -6002,6 +6036,16 @@ export interface components {
             backup?: components["schemas"]["DatabaseBackupEvidence"];
             blocked_reasons: string[];
             warnings: string[];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        DatabaseResizeRetryReview: {
+            operation_id: string;
+            database_id: string;
+            revision: number;
+            /** @enum {string} */
+            state: "accepted" | "prior";
+            resize: components["schemas"]["DatabaseResizePlan"];
             /** Format: date-time */
             expires_at: string;
         };
@@ -13774,6 +13818,89 @@ export interface operations {
                     review_id: string;
                     expected_revision: number;
                     spec: components["schemas"]["ManagedDatabaseSpec"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewManagedDatabaseResizeRetry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    operation_id: string;
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        plan: components["schemas"]["DatabaseResizeRetryReview"];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    retryManagedDatabaseResize: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    operation_id: string;
+                    expected_revision: number;
+                    confirm_name: string;
                 };
             };
         };

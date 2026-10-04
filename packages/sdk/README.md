@@ -176,6 +176,27 @@ shrinks. Delete with `expectedRevision` and `confirmName`; the returned operatio
 remains readable after the database disappears. Database names can be reused
 after deletion, so keep IDs for recovery and long-lived references.
 
+If a MySQL or MongoDB replica change fails, open Activity to find the latest
+failed operation. A retry needs a fresh review of the same requested layout:
+
+```ts
+const retry = await database.resizeRetryPlan(failedOperationId);
+console.log(retry.plan.resize.warnings);
+const attempt = await database.retryResize({
+  operationId: retry.plan.operation_id,
+  reviewId: retry.id,
+  expectedRevision: retry.plan.revision,
+  confirmName: "orders",
+}, { idempotencyKey: savedRetryKey });
+await attempt.wait();
+```
+
+Save the review, request and key before submitting. Resending that exact request
+returns the recorded attempt, including a failed result. Another attempt needs
+a new review and key, using the latest failed operation ID. Retrying preserves
+the desired revision, replica count and reservations. The database becomes ready
+only after native checks pass.
+
 Oracle Enterprise Data Guard has a separate graceful switchover flow. Its
 runtime gate remains closed pending licensed-image acceptance; these methods
 do not make it available on an installation. When enabled, every member must

@@ -14,7 +14,7 @@ export const allowed = [
   /^managed-platform-recovery-operations\/[a-f0-9]{32}(?:\/cancel)?$/,
   /^external-databases(?:\/[a-f0-9]{32}(?:\/(?:connections|trust|connection-plan|connect))?)?$/,
   /^external-database-operations\/[a-f0-9]{32}$/,
-  /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|connections|trust|metrics|credentials|resize-plan|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry|public-endpoint-capabilities|public-endpoint-plan|public-endpoints(?:\/[a-f0-9]{32})?))?)?$/,
+  /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|connections|trust|metrics|credentials|resize-plan|resize-retry-plan|resize-retry|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry|public-endpoint-capabilities|public-endpoint-plan|public-endpoints(?:\/[a-f0-9]{32})?))?)?$/,
   /^database-operations\/[a-f0-9]{32}$/,
   /^database-public-endpoint-operations\/[a-f0-9]{32}$/,
   /^actions\/capabilities$/,

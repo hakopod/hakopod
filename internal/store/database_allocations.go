@@ -415,7 +415,9 @@ func applicationPoolCapacityUsed(ctx context.Context, tx pgx.Tx, pool, except st
 }
 
 func historicalDatabaseCPU(ctx context.Context, tx pgx.Tx, id string, total int64) (int64, error) {
-	history, err := tx.Query(ctx, `SELECT spec FROM managed_database_operations WHERE database_id=$1 ORDER BY revision DESC LIMIT 129`, id)
+	// Retry attempts reuse an existing desired revision and spec. Excluding them
+	// keeps the bounded history about distinct allocation decisions.
+	history, err := tx.Query(ctx, `SELECT spec FROM managed_database_operations WHERE database_id=$1 AND kind<>'resize-retry' ORDER BY revision DESC LIMIT 129`, id)
 	if err != nil {
 		return 0, err
 	}

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -32,10 +33,29 @@ func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/databases/{id}", s.deleteDatabase)
 	mux.HandleFunc("POST /api/v1/databases/{id}/resize-plan", s.databaseResizePlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/resize", s.resizeDatabase)
+	mux.HandleFunc("POST /api/v1/databases/{id}/resize-retry-plan", s.databaseResizeRetryPlan)
+	mux.HandleFunc("POST /api/v1/databases/{id}/resize-retry", s.databaseResizeRetry)
 	mux.HandleFunc("POST /api/v1/databases/{id}/restore-plan", s.managedDatabaseRestorePlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/switchover-plan", s.oracleSwitchoverPlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/switchover", s.oracleSwitchover)
 	mux.HandleFunc("POST /api/v1/databases/{id}/switchover-retry", s.oracleSwitchoverRetry)
+}
+
+type databaseResizeRetryRuntime interface {
+	DatabaseControllerAvailable(context.Context, database.Spec) error
+	DatabaseRevisionApplied(context.Context, database.Resource) (bool, error)
+	ObserveDatabase(context.Context, database.Resource) (database.Observation, error)
+	ValidateDatabaseResize(context.Context, database.Resource, database.Spec) error
+}
+
+func (s *Server) resizeRetryRuntime() databaseResizeRetryRuntime {
+	if s.databaseResizeRetryTestRuntime != nil {
+		return s.databaseResizeRetryTestRuntime
+	}
+	if s.Cluster == nil {
+		return nil
+	}
+	return s.Cluster
 }
 func (s *Server) databaseOperation(w http.ResponseWriter, r *http.Request) {
 	op, err := s.Store.DatabaseOperation(r.Context(), who(r), r.PathValue("id"))
@@ -370,7 +390,7 @@ func (s *Server) reconcileDatabase(parent context.Context) {
 		finish("failed", "credentials", "Database credentials could not be opened with the persistent encryption key.", d.Observation)
 		return
 	}
-	if op.Kind == "resize" {
+	if op.Kind == "resize" || op.Kind == "resize-retry" {
 		applied, e := s.Cluster.DatabaseRevisionApplied(ctx, d)
 		if e != nil {
 			finish("queued", "checking", "Waiting for the database controller.", d.Observation)
@@ -411,6 +431,124 @@ func (s *Server) reconcileDatabase(parent context.Context) {
 	} else {
 		finish("queued", "provisioning", observed.Message, observed)
 	}
+}
+
+func (s *Server) databaseResizeRetryPlan(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		OperationID      string `json:"operation_id"`
+		ExpectedRevision int64  `json:"expected_revision"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	d, err := s.Store.Database(r.Context(), who(r), r.PathValue("id"), true)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	source, err := s.Store.LatestDatabaseResizeOperation(r.Context(), who(r), d.ID)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if source.ID != in.OperationID || d.Status != "failed" || d.Revision != in.ExpectedRevision || source.DatabaseID != d.ID || source.Revision != d.Revision || source.Status != "failed" || (source.Kind != "resize" && source.Kind != "resize-retry") || source.Review == nil || !source.Spec.Equal(d.Spec) || (d.Spec.Engine != "mysql" && d.Spec.Engine != "mongodb") || d.Spec.Mode != "cluster" {
+		problem(w, http.StatusConflict, "database_resize_retry_unavailable", "Only the current failed MySQL or MongoDB replica change can be reviewed for retry.")
+		return
+	}
+	runtime := s.resizeRetryRuntime()
+	if runtime == nil {
+		problem(w, http.StatusServiceUnavailable, "database_controller_unavailable", "The database controller is unavailable.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	if err = runtime.DatabaseControllerAvailable(ctx, d.Spec); err != nil {
+		problem(w, http.StatusServiceUnavailable, "database_controller_unavailable", err.Error())
+		return
+	}
+	applied, err := runtime.DatabaseRevisionApplied(ctx, d)
+	if err != nil {
+		problem(w, http.StatusConflict, "database_resize_retry_unavailable", err.Error())
+		return
+	}
+	resize := *source.Review
+	state := "accepted"
+	if applied {
+		observed, observeErr := runtime.ObserveDatabase(ctx, d)
+		resize.ExpiresAt = time.Now().UTC().Add(database.ReviewLifetime)
+		// This sentinel cannot equal a native prior-topology fingerprint. If the
+		// accepted controller revision rolls back before reconciliation, the
+		// retry fails review instead of replaying a stale topology.
+		resize.TopologyFingerprint = fmt.Sprintf("accepted-revision:%d:%s", d.Revision, observed.TopologyFingerprint)
+		resize.BlockedReasons = []string{}
+		if observeErr != nil || observed.Status != "ready" {
+			resize.Warnings = append(resize.Warnings, "The controller has the accepted revision, but current native health is incomplete or unverified. Retry reconciles the same desired replica change and succeeds only after full native readiness.")
+		}
+	} else {
+		state = "prior"
+		prior := d
+		prior.Spec = source.Review.Current
+		prior.Revision = source.Review.ExpectedRevision
+		prior.Status = "ready"
+		observed, observeErr := runtime.ObserveDatabase(ctx, prior)
+		if observeErr != nil || observed.Status != "ready" {
+			problem(w, http.StatusConflict, "database_resize_retry_unavailable", "The prior reviewed database configuration is not fully healthy.")
+			return
+		}
+		prior.Observation = observed
+		evidence, evidenceErr := s.Store.DatabaseBackupEvidence(ctx, prior.ID, prior.Revision)
+		if evidenceErr != nil {
+			failure(w, evidenceErr)
+			return
+		}
+		resize, err = database.PlanResize(prior, d.Spec, evidence, time.Now().UTC())
+		if err == nil {
+			err = runtime.ValidateDatabaseResize(ctx, prior, d.Spec)
+		}
+		if err != nil || len(resize.BlockedReasons) > 0 {
+			problem(w, http.StatusConflict, "database_resize_retry_unavailable", "Database health, topology or backup evidence no longer permits this replica change.")
+			return
+		}
+	}
+	plan := database.ResizeRetryReview{OperationID: source.ID, DatabaseID: d.ID, Revision: d.Revision, State: state, Resize: resize, ExpiresAt: resize.ExpiresAt}
+	id, err := s.Store.SaveDatabaseReview(ctx, who(r), d, "resize-retry", plan, plan.ExpiresAt)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	write(w, http.StatusOK, map[string]any{"id": id, "plan": plan})
+}
+
+func (s *Server) databaseResizeRetry(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ReviewID         string `json:"review_id"`
+		OperationID      string `json:"operation_id"`
+		ExpectedRevision int64  `json:"expected_revision"`
+		ConfirmName      string `json:"confirm_name"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	d, err := s.Store.Database(r.Context(), who(r), r.PathValue("id"), true)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if in.ConfirmName != d.Spec.Name {
+		problem(w, http.StatusBadRequest, "invalid_request", "confirm_name must match the database name; retry resumes the same replica change")
+		return
+	}
+	idem, ok := backupIdempotency(w, r)
+	if !ok {
+		return
+	}
+	op, err := s.Store.AcceptDatabaseResizeRetry(r.Context(), who(r), d.ID, in.OperationID, in.ReviewID, in.ExpectedRevision, idem)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, http.StatusAccepted, op)
 }
 
 func (s *Server) resizeDatabase(w http.ResponseWriter, r *http.Request) {

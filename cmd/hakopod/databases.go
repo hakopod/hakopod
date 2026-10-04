@@ -24,14 +24,14 @@ type databaseConnectionFlags struct {
 
 func databaseCommand(ctx context.Context, c *client, project, environment string, args []string, file, idem, review, artifact, confirmation string, revision int64, connection databaseConnectionFlags) error {
 	if len(args) == 0 || len(args) > 2 {
-		return fmt.Errorf("database requires list, nodes, show, create, resize-plan, resize, switchover-plan, switchover, switchover-retry, operation, public-endpoint-capabilities, public-endpoint-list, public-endpoint-plan, public-endpoint-publish, public-endpoint-revoke, public-endpoint-operation, delete, credentials, trust, metrics, connections, restore-plan, restore, connection-plan, connect or inspect, followed by an ID where needed")
+		return fmt.Errorf("database requires list, nodes, show, create, resize-plan, resize, resize-retry-plan, resize-retry, switchover-plan, switchover, switchover-retry, operation, public-endpoint-capabilities, public-endpoint-list, public-endpoint-plan, public-endpoint-publish, public-endpoint-revoke, public-endpoint-operation, delete, credentials, trust, metrics, connections, restore-plan, restore, connection-plan, connect or inspect, followed by an ID where needed")
 	}
 	action := args[0]
 	if connection.TargetMember != "" && action != "switchover-plan" {
 		return fmt.Errorf("--target-member applies only to switchover-plan; switchover and retries use the approved target")
 	}
-	if connection.OperationID != "" && action != "switchover-retry" {
-		return fmt.Errorf("--operation-id applies only to switchover-retry")
+	if connection.OperationID != "" && action != "switchover-retry" && action != "resize-retry-plan" && action != "resize-retry" {
+		return fmt.Errorf("--operation-id applies only to database retry commands")
 	}
 	if action == "import-plan" || action == "import" {
 		return databaseImportCommand(ctx, c, args, file, idem, confirmation, connection.Import)
@@ -87,6 +87,17 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 			return fmt.Errorf("public-endpoint-revoke requires --public-endpoint-id and --endpoint-revision")
 		}
 		method, path, body = "DELETE", path+"/"+id+"/public-endpoints/"+connection.PublicEndpointID, map[string]any{"expected_endpoint_revision": connection.PublicEndpointRevision}
+	case "resize-retry-plan", "resize-retry":
+		if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(connection.OperationID) || revision < 1 || file != "" {
+			return fmt.Errorf("replica retries require --operation-id and --revision; the requested layout cannot change")
+		}
+		method, path, body = "POST", path+"/"+id+"/"+action, map[string]any{"operation_id": connection.OperationID, "expected_revision": revision}
+		if action == "resize-retry" {
+			if review == "" || confirmation == "" || len(idem) < 8 || len(idem) > 128 {
+				return fmt.Errorf("resize-retry requires --review-id, --name and an 8–128 character --idempotency-key")
+			}
+			body = map[string]any{"operation_id": connection.OperationID, "expected_revision": revision, "review_id": review, "confirm_name": confirmation}
+		}
 	case "switchover-plan":
 		if connection.TargetMember == "" || len(connection.TargetMember) > 253 {
 			return fmt.Errorf("switchover-plan requires --target-member naming a physical standby member")

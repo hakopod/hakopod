@@ -292,6 +292,15 @@ type ResizePlan struct {
 	ExpiresAt           time.Time       `json:"expires_at"`
 }
 
+type ResizeRetryReview struct {
+	OperationID string     `json:"operation_id"`
+	DatabaseID  string     `json:"database_id"`
+	Revision    int64      `json:"revision"`
+	State       string     `json:"state"`
+	Resize      ResizePlan `json:"resize"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+}
+
 func PlanResize(db Resource, next Spec, evidence *BackupEvidence, now time.Time) (ResizePlan, error) {
 	p := ResizePlan{Current: db.Spec, Proposed: next, ExpectedRevision: db.Revision, TopologyFingerprint: db.Observation.TopologyFingerprint, Backup: evidence, BlockedReasons: []string{}, Warnings: []string{}, ExpiresAt: now.Add(ReviewLifetime)}
 	if err := next.Validate(); err != nil {

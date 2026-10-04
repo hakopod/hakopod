@@ -48,7 +48,7 @@ const routes: [RegExp, string[]][] = [
   [/^databases\/[A-Za-z0-9_-]+$/, ['GET', 'DELETE']],
   [/^databases\/[A-Za-z0-9_-]+\/(?:operations|connections|trust|metrics)$/, ['GET']],
   [
-    /^databases\/[A-Za-z0-9_-]+\/(?:credentials|resize-plan|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry)$/,
+    /^databases\/[A-Za-z0-9_-]+\/(?:credentials|resize-plan|resize-retry-plan|resize-retry|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry)$/,
     ['POST'],
   ],
   [/^database-operations\/[A-Za-z0-9_-]+$/, ['GET']],

@@ -8922,6 +8922,158 @@
         }
       }
     },
+    "/databases/{id}/resize-retry-plan": {
+      "post": {
+        "operationId": "reviewManagedDatabaseResizeRetry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "plan": {
+                      "$ref": "#/components/schemas/DatabaseResizeRetryReview"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "plan"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operation_id": {
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "operation_id",
+                  "expected_revision"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology."
+      }
+    },
+    "/databases/{id}/resize-retry": {
+      "post": {
+        "operationId": "retryManagedDatabaseResize",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_id": {
+                    "type": "string"
+                  },
+                  "operation_id": {
+                    "type": "string"
+                  },
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "confirm_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "review_id",
+                  "operation_id",
+                  "expected_revision",
+                  "confirm_name"
+                ]
+              }
+            }
+          }
+        },
+        "description": "Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology."
+      }
+    },
     "/databases/{id}/switchover-plan": {
       "post": {
         "operationId": "reviewOracleDatabaseSwitchover",
@@ -23599,6 +23751,43 @@
           "topology_fingerprint",
           "blocked_reasons",
           "warnings",
+          "expires_at"
+        ]
+      },
+      "DatabaseResizeRetryReview": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "prior"
+            ]
+          },
+          "resize": {
+            "$ref": "#/components/schemas/DatabaseResizePlan"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "operation_id",
+          "database_id",
+          "revision",
+          "state",
+          "resize",
           "expires_at"
         ]
       },

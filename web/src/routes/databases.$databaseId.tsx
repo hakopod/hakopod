@@ -256,6 +256,7 @@ function Detail() {
                       {op.finished_at && <span>Finished {timestamp(op.finished_at)}</span>}
                     </div>
                     {op.message && <p>{op.message}</p>}
+                    {canManage && op.id === operations.data.items[0]?.id && votingDatabase(d.spec.engine) && d.spec.mode === 'cluster' && d.status === 'failed' && op.revision === d.revision && ['resize', 'resize-retry'].includes(op.kind) && op.status === 'failed' && <Button asChild><Link to="/databases/$databaseId/resize-retry" params={{ databaseId: id }} search={{ ...search, operation: op.id }}>Review retry</Link></Button>}
                     {canManage && op.kind === 'switchover' && op.status === 'failed' && op.switchover && op.phase !== 'switchover' && <Button asChild><Link to="/databases/$databaseId/switchover" params={{ databaseId: id }} search={{ ...search, operation: op.phase === 'review' ? undefined : op.id }}>{op.phase === 'review' ? 'Review current topology' : 'Review retry'}</Link></Button>}
                   </li>
                 ))}
