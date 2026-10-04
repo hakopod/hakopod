@@ -1,11 +1,14 @@
 package cluster
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/database"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func vitessTestDatabase() database.Resource {
@@ -99,7 +102,7 @@ func TestVitessRuntimeAdmissionMatchesBuild(t *testing.T) {
 }
 
 func TestVitessFixtureNodesAcceptExactDedicatedTopology(t *testing.T) {
-	dedicated := []string{"k3d-hakopod-vitess-worker-0", "k3d-hakopod-vitess-worker-1", "k3d-hakopod-vitess-worker-2"}
+	dedicated := append([]string(nil), vitessDedicatedFixtureNodes...)
 	if !validVitessFixtureNodes(dedicated) {
 		t.Fatal("exact dedicated Vitess worker topology was rejected")
 	}
@@ -111,6 +114,71 @@ func TestVitessFixtureNodesAcceptExactDedicatedTopology(t *testing.T) {
 		if validVitessFixtureNodes(nodes) {
 			t.Fatalf("invalid dedicated Vitess topology accepted: %v", nodes)
 		}
+	}
+}
+
+func TestVitessNativeFixturePolicyIsScopedAndSchedulesEveryComponent(t *testing.T) {
+	destination := backup.Destination{ID: strings.Repeat("d", 32), Revision: 7}
+	resolve := vitessNativeFixtureDatabasePolicy(map[string]vitessLiveStorage{
+		"recovery-source": {DatabaseID: strings.Repeat("e", 32), Dedicated: true, Destination: destination},
+	})
+	d := vitessTestDatabase()
+	d.Project = "demo"
+	d.Spec.Name = "vitess-development-recovery-source"
+	d.Spec.Placement.NodeNames = append([]string(nil), vitessDedicatedFixtureNodes...)
+	d.Spec.Vitess.BackupDestinationID = destination.ID
+	d.Spec.Vitess.BackupDestinationRevision = destination.Revision
+	policy, err := resolve(context.Background(), d.Project, d.Environment, d.Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policy.Pool != "vitess-acceptance" || policy.RuntimeClass != "runsc" || policy.StorageClass != "local-path" || !validVitessDedicatedFixtureNodes(policy.NodeNames) {
+		t.Fatal("native fixture policy changed", policy)
+	}
+	object := &unstructured.Unstructured{Object: map[string]any{"spec": vitessDatabaseSpec(d, vitessResources(d.Spec.CPU, d.Spec.Memory))}}
+	applyVitessPolicy(object, d.Spec, policy)
+	count := 0
+	mutateVitessComponents(object, func(item map[string]any, role string) {
+		count++
+		tolerations, ok := item["tolerations"].([]any)
+		if !ok || len(tolerations) != 1 || tolerations[0].(map[string]any)["value"] != "vitess-acceptance" {
+			t.Fatalf("%s omitted the dedicated pool toleration", role)
+		}
+		raw, err := json.Marshal(item["affinity"])
+		if err != nil || !strings.Contains(string(raw), DatabaseDefaultRuntimeLabel) || !strings.Contains(string(raw), "runsc") || !strings.Contains(string(raw), "vitess-acceptance") {
+			t.Fatalf("%s omitted the trusted dedicated-node affinity", role)
+		}
+	})
+	if count != 5 {
+		t.Fatalf("checked %d Vitess component classes, want 5", count)
+	}
+	operator := vitessOperatorObject(d, "namespace-uid")
+	if err := applyVitessOperatorPolicy(operator, d.Spec.Placement.NodeNames, &policy); err != nil {
+		t.Fatal(err)
+	}
+	operatorRaw, err := json.Marshal(operator.Object["spec"])
+	if err != nil || !strings.Contains(string(operatorRaw), DatabaseDefaultRuntimeLabel) || !strings.Contains(string(operatorRaw), "runsc") || !strings.Contains(string(operatorRaw), "vitess-acceptance") || !strings.Contains(string(operatorRaw), "NoSchedule") {
+		t.Fatal("Vitess operator omitted the trusted dedicated-node scheduling policy")
+	}
+
+	for name, mutate := range map[string]func(*database.Resource){
+		"wrong project": func(resource *database.Resource) { resource.Project = "other" },
+		"wrong environment": func(resource *database.Resource) { resource.Environment = "production" },
+		"unknown fixture": func(resource *database.Resource) { resource.Spec.Name = "vitess-development-other" },
+		"wrong destination": func(resource *database.Resource) { resource.Spec.Vitess.BackupDestinationID = strings.Repeat("f", 32) },
+		"partial topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames = resource.Spec.Placement.NodeNames[:2] },
+		"mixed topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames[2] = "k3d-hakopod-dev-server-0" },
+		"duplicate topology": func(resource *database.Resource) { resource.Spec.Placement.NodeNames[2] = resource.Spec.Placement.NodeNames[0] },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := d
+			candidate.Spec.Placement.NodeNames = append([]string(nil), d.Spec.Placement.NodeNames...)
+			candidate.Spec.Vitess = &database.VitessConfig{BackupDestinationID: d.Spec.Vitess.BackupDestinationID, BackupDestinationRevision: d.Spec.Vitess.BackupDestinationRevision}
+			mutate(&candidate)
+			if _, err := resolve(context.Background(), candidate.Project, candidate.Environment, candidate.Spec); err == nil {
+				t.Fatal("unapproved native fixture policy was accepted")
+			}
+		})
 	}
 }
 
