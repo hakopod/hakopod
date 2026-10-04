@@ -331,6 +331,10 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	administrator := httpClient{t: t, ctx: ctx, server: httpServer, token: rootToken}
+	if status, body := administrator.request(http.MethodPost, "/projects/"+project+"/environments", map[string]string{"name": "production"}, nil, ""); status != http.StatusCreated {
+		t.Fatalf("create wrong-scope environment: status=%d body=%s", status, body)
+	}
 	_, wrongToken, err := database.CreateKey(ctx, owner, store.KeyInput{Name: "vitess-http-wrong-scope", Project: project, Environment: "production", Permissions: []string{"deployments:read", "deployments:write"}, ExpiresAt: time.Now().Add(time.Hour)})
 	if err != nil {
 		t.Fatal(err)
