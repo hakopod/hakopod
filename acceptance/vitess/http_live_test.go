@@ -1,3 +1,5 @@
+//go:build hakopod_native_acceptance && linux
+
 package vitess_test
 
 import (
@@ -44,6 +46,7 @@ type storageFixture struct {
 
 type httpClient struct {
 	t      *testing.T
+	ctx    context.Context
 	server *httptest.Server
 	token  string
 }
@@ -66,7 +69,7 @@ func (c httpClient) request(method, path string, input, output any, idempotency 
 	if input != nil {
 		body = bytes.NewReader(store.JSON(input))
 	}
-	request, err := http.NewRequest(method, c.server.URL+"/api/v1"+path, body)
+	request, err := http.NewRequestWithContext(c.ctx, method, c.server.URL+"/api/v1"+path, body)
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -257,7 +260,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	fixtures := loadFixtures(t)
 	nodes := []string{"k3d-hakopod-vitess-worker-0", "k3d-hakopod-vitess-worker-1", "k3d-hakopod-vitess-worker-2"}
 	pool, storageClass := os.Getenv("HAKOPOD_VITESS_ACCEPTANCE_POOL"), os.Getenv("HAKOPOD_VITESS_ACCEPTANCE_STORAGE_CLASS")
-	if pool == "" || storageClass == "" {
+	if pool != "vitess-acceptance" || storageClass != "local-path" {
 		t.Fatal("trusted Vitess acceptance placement policy is required")
 	}
 	runtime, err := cluster.New(kubeconfig, cluster.Options{
@@ -332,7 +335,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := httpClient{t: t, server: httpServer, token: scopedToken}
+	client := httpClient{t: t, ctx: ctx, server: httpServer, token: scopedToken}
 	workers, stopWorkers := context.WithCancel(ctx)
 	databaseDone, applicationDone := make(chan struct{}), make(chan struct{})
 	go func() { defer close(databaseDone); server.RunManagedDatabases(workers) }()
@@ -394,7 +397,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		created = append(created, managed.Resource{ID: operation.DatabaseID, Spec: specification})
 		return waitOperation(t, ctx, client, operation)
 	}
-	wrong := httpClient{t: t, server: httpServer, token: wrongToken}
+	wrong := httpClient{t: t, ctx: ctx, server: httpServer, token: wrongToken}
 	unauthorizedSpec := managed.Spec{SchemaVersion: 1, Name: "vitess-http-denied", Engine: "vitess", Version: "23", Mode: "cluster", Shards: 2, Replicas: 1, CPU: "500m", Memory: "1Gi", StorageGiB: 1, TLS: &managed.TLSConfig{Mode: "required"}, Vitess: &managed.VitessConfig{BackupDestinationID: fixtures["recovery-source"].Destination.ID, BackupDestinationRevision: 1, Tables: []managed.VitessTable{{Name: "records", ShardingColumn: "id"}}}}
 	if status, _ := wrong.request("POST", "/databases", map[string]any{"project": project, "environment": environment, "spec": unauthorizedSpec}, nil, "denied"); status != http.StatusForbidden {
 		t.Fatal("cross-scope database creation was not denied", status)
@@ -402,6 +405,15 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 
 	source := create("vitess-http-source", "recovery-source")
 	target := create("vitess-http-target", "recovery-target")
+	if status, _ := wrong.request("GET", "/databases/"+source.ID, nil, nil, ""); status != http.StatusNotFound {
+		t.Fatal("cross-scope database read was not denied", status)
+	}
+	if status, _ := wrong.request("POST", "/databases/"+source.ID+"/credentials", map[string]any{}, nil, ""); status != http.StatusNotFound {
+		t.Fatal("cross-scope database credentials were not denied", status)
+	}
+	if status, _ := wrong.request("GET", "/databases/"+source.ID+"/trust", nil, nil, ""); status != http.StatusNotFound {
+		t.Fatal("cross-scope database trust was not denied", status)
+	}
 	var credentials map[string]string
 	if status, _ := client.request("POST", "/databases/"+source.ID+"/credentials", map[string]any{}, &credentials, ""); status != http.StatusOK || credentials["password"] == "" {
 		t.Fatal("credentials were not returned", status)
@@ -492,12 +504,22 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 if [ -z "${DATABASE_URL:-}" ]; then exec sleep 86400; fi
 MYSQL_PWD=${DATABASE_URL#mysql://app:}
 MYSQL_PWD=${MYSQL_PWD%%@*}
+test "$DATABASE_URL" = "mysql://app:${MYSQL_PWD}@$1:3306/app@primary"
 export MYSQL_PWD
 result=$(mysql --no-defaults --protocol=TCP --host="$1" --port=3306 --user=app --database=app --connect-timeout=5 --ssl-mode=VERIFY_IDENTITY --ssl-ca="$2" --batch --raw --skip-column-names --execute='SELECT label FROM records WHERE id=1')
 test "$result" = 'नमस्ते / 東京'
 printf 'VITESS_BOUND_TLS_QUERY_OK\n'
 exec sleep 86400`
-	application := spec.Application{SchemaVersion: 1, Name: "vitess-http-client", Services: map[string]spec.Service{"web": {Image: applicationImage, Command: []string{"sh", "-c"}, Args: []string{appScript, "vitess-http-client", source.Observation.Endpoints[0].Host, cluster.DatabaseTrustPath(source.ID)}}}}
+	sourceHost := ""
+	for _, endpoint := range source.Observation.Endpoints {
+		if endpoint.Purpose == "read_write" && endpoint.Port == 3306 {
+			sourceHost = endpoint.Host
+		}
+	}
+	if sourceHost == "" {
+		t.Fatal("Vitess application endpoint is unavailable")
+	}
+	application := spec.Application{SchemaVersion: 1, Name: "vitess-http-client", Services: map[string]spec.Service{"web": {Image: applicationImage, Command: []string{"sh", "-c"}, Args: []string{appScript, "vitess-http-client", sourceHost, cluster.DatabaseTrustPath(source.ID)}}}}
 	var deployment store.Deployment
 	if status, code := client.request("POST", "/deployments", map[string]any{"project": project, "environment": environment, "spec": application, "expected_revision": 0}, &deployment, "vitess-http-client-create"); status != http.StatusAccepted {
 		t.Fatal("application deployment", status, code)
