@@ -159,11 +159,15 @@ func (c *Client) databaseNetworkPolicy(ctx context.Context, d database.Resource,
 	return err
 }
 
-// Reconcile recovery ingress under the ready resource's maintenance lease.
-// Uninspected targets remain closed, including those restored by older versions.
-func (c *Client) ReconcileDatabaseRecoveryAccess(ctx context.Context, d database.Resource, before func() error) error {
-	if d.Status != "ready" || d.Recovery == nil {
+// Refresh API egress and recovery isolation under the ready resource's
+// maintenance lease. Uninspected targets remain closed.
+func (c *Client) ReconcileDatabaseNetworkPolicy(ctx context.Context, d database.Resource, before func() error) error {
+	if d.Status != "ready" {
 		return nil
+	}
+	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
+	if err != nil || ns.DeletionTimestamp != nil || ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
+		return fmt.Errorf("database network namespace ownership could not be verified")
 	}
 	return c.databaseNetworkPolicy(ctx, d, before)
 }

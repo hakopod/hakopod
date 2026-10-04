@@ -598,7 +598,7 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 	if err != nil {
 		return
 	}
-	var identityErr, recoveryAccessErr, nativeStorageErr error
+	var identityErr, networkPolicyErr, nativeStorageErr error
 	if d.Spec.Engine == "vitess" {
 		maintenance, stop := context.WithTimeout(ctx, 20*time.Second)
 		claim, e := s.Store.ClaimDatabaseNativeStorageMaintenance(maintenance, d.ID, d.Revision)
@@ -613,16 +613,20 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 		stop()
 	}
 	renewIdentity := d.Status == "ready" && nativeStorageErr == nil && (d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess") && d.Spec.TLSRequired()
-	reconcileRecoveryAccess := d.Status == "ready" && d.Recovery != nil
-	if renewIdentity || reconcileRecoveryAccess {
+	// Lifecycle readiness, not observed health, permits maintenance: stale API
+	// endpoints can prevent an otherwise ready database from becoming healthy.
+	reconcileNetworkPolicy := d.Status == "ready"
+	if renewIdentity || reconcileNetworkPolicy {
 		maintenance, stop := context.WithTimeout(ctx, 20*time.Second)
 		claim, e := s.Store.ClaimDatabaseMaintenance(maintenance, d.ID, d.Revision)
-		if e == nil && claim != nil {
+		if e != nil {
+			networkPolicyErr = e
+		} else if claim != nil {
 			if renewIdentity {
 				identityErr = s.Cluster.RenewDatabaseIdentity(maintenance, d, func() error { return claim.Check(maintenance) })
 			}
-			if reconcileRecoveryAccess {
-				recoveryAccessErr = s.Cluster.ReconcileDatabaseRecoveryAccess(maintenance, d, func() error { return claim.Check(maintenance) })
+			if reconcileNetworkPolicy {
+				networkPolicyErr = s.Cluster.ReconcileDatabaseNetworkPolicy(maintenance, d, func() error { return claim.Check(maintenance) })
 			}
 			claim.Release()
 		}
@@ -638,9 +642,9 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 	if identityErr != nil && o.TLS != nil {
 		o.TLS.Message = "Automatic certificate renewal could not complete. Check controller availability and certificate expiry."
 	}
-	if recoveryAccessErr != nil {
+	if networkPolicyErr != nil {
 		o.Status = "unknown"
-		o.Message = "Recovery network isolation could not be verified. Reconciliation will retry."
+		o.Message = "Database network policy could not be refreshed. Reconciliation will retry."
 	}
 	if nativeStorageErr != nil || d.Spec.Engine == "vitess" && identityErr != nil {
 		o.Status = "unknown"

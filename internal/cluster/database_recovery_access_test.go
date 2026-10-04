@@ -38,6 +38,9 @@ func TestDatabaseRecoveryNetworkRemainsClosedUntilInspection(t *testing.T) {
 			if engine == "oracle" {
 				d = oracleFixture()
 			}
+			if _, err := c.kube.CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(d.ID), Labels: databaseLabels(d)}}, metav1.CreateOptions{}); err != nil {
+				t.Fatal(err)
+			}
 			for _, tc := range []struct {
 				name, status string
 				recovery     *database.Recovery
@@ -53,12 +56,12 @@ func TestDatabaseRecoveryNetworkRemainsClosedUntilInspection(t *testing.T) {
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					d.Status, d.Recovery = tc.status, tc.recovery
-					// Exercise ordinary reconciliation as well as the recovery hook:
+					// Exercise ordinary reconciliation as well as the maintenance hook:
 					// neither path may bypass the durable inspection gate.
 					if err := c.databaseNetworkPolicy(context.Background(), d, func() error { return nil }); err != nil {
 						t.Fatal(err)
 					}
-					if err := c.ReconcileDatabaseRecoveryAccess(context.Background(), d, func() error { return nil }); err != nil {
+					if err := c.ReconcileDatabaseNetworkPolicy(context.Background(), d, func() error { return nil }); err != nil {
 						t.Fatal(err)
 					}
 					if recoveryApplicationIngress(t, c, d) != tc.open {
@@ -72,7 +75,7 @@ func TestDatabaseRecoveryNetworkRemainsClosedUntilInspection(t *testing.T) {
 			}
 			d.Status, d.Recovery.RestoredAt, d.Recovery.InspectedAt = "ready", &stamp, &stamp
 			lostLease := errors.New("maintenance lease ended")
-			if err := c.ReconcileDatabaseRecoveryAccess(context.Background(), d, func() error { return lostLease }); !errors.Is(err, lostLease) {
+			if err := c.ReconcileDatabaseNetworkPolicy(context.Background(), d, func() error { return lostLease }); !errors.Is(err, lostLease) {
 				t.Fatal("recovery access ignored its maintenance lease")
 			}
 			if recoveryApplicationIngress(t, c, d) {
@@ -85,7 +88,7 @@ func TestDatabaseRecoveryNetworkRemainsClosedUntilInspection(t *testing.T) {
 				t.Fatal(err)
 			}
 			d.Recovery = &database.Recovery{JobID: "older-job", RestoredAt: &stamp}
-			if err := c.ReconcileDatabaseRecoveryAccess(context.Background(), d, func() error { return nil }); err != nil {
+			if err := c.ReconcileDatabaseNetworkPolicy(context.Background(), d, func() error { return nil }); err != nil {
 				t.Fatal(err)
 			}
 			if recoveryApplicationIngress(t, c, d) {

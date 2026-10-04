@@ -157,7 +157,7 @@ func TestManagedMongoDBRecoveryLive(t *testing.T) {
 	}
 	stamp := time.Now().UTC()
 	target.Status, target.Recovery.RestoredAt = "ready", &stamp
-	if err = c.ReconcileDatabaseRecoveryAccess(ctx, target, func() error { return ctx.Err() }); err != nil {
+	if err = c.ReconcileDatabaseNetworkPolicy(ctx, target, func() error { return ctx.Err() }); err != nil {
 		t.Fatal(err)
 	}
 	policy, err = c.kube.NetworkingV1().NetworkPolicies(DatabaseNamespace(target.ID)).Get(ctx, "database", metav1.GetOptions{})
@@ -172,7 +172,7 @@ func TestManagedMongoDBRecoveryLive(t *testing.T) {
 		}
 	}
 	target.Recovery.InspectedAt = &stamp
-	if err = c.ReconcileDatabaseRecoveryAccess(ctx, target, func() error { return ctx.Err() }); err != nil {
+	if err = c.ReconcileDatabaseNetworkPolicy(ctx, target, func() error { return ctx.Err() }); err != nil {
 		t.Fatal(err)
 	}
 	policy, err = c.kube.NetworkingV1().NetworkPolicies(DatabaseNamespace(target.ID)).Get(ctx, "database", metav1.GetOptions{})

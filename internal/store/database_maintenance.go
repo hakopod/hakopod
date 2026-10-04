@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// DatabaseMaintenanceClaim fences certificate maintenance and recovery network
+// DatabaseMaintenanceClaim fences certificate maintenance and database network
 // reconciliation against lifecycle operations and backups. Claims expire after 25s.
 type DatabaseMaintenanceClaim struct {
 	store         *Store
