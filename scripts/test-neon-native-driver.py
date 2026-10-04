@@ -126,12 +126,36 @@ class Tests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
             driver.delete.assert_called_once_with("a"*32,"source",240)
             receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertEqual(receipt["status"],"incomplete"); self.assertFalse(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["owned_persistent_volumes"][0]["uid"],"pv-uid"); self.assertEqual(receipt["remaining_persistent_volumes"][0]["uid"],"pv-uid")
+            driver.command.assert_not_called()
+            retained=json.loads((Path(directory)/"cleanup-transport-retained.json").read_text()); self.assertEqual(retained["status"],"retained"); self.assertEqual(retained["run_id"],driver.run_id); self.assertEqual(retained["resources"],receipt["resources"]); self.assertEqual(retained["failure_categories"],["persistent-volumes"])
     def test_cleanup_reports_large_volume_inventory_as_unverified(self):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
             driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.command=mock.Mock(return_value="")
             driver.k=mock.Mock(side_effect=[json.dumps({"items":[{}]*513}),json.dumps({"items":[]})])
             with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
             receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertFalse(receipt["persistent_volume_claim_refs_absent"])
+            driver.command.assert_not_called(); self.assertTrue((Path(directory)/"cleanup-transport-retained.json").is_file())
+    def test_cleanup_retains_transport_until_deletion_and_resource_audits_complete(self):
+        pid,opid="a"*32,"b"*32; namespace="managed-platform-"+pid
+        empty=json.dumps({"items":[]})
+        referenced={"metadata":{"name":"owned-pv","uid":"pv-uid"},"spec":{"claimRef":{"namespace":namespace,"name":"data"}}}
+        cases=(
+            ("delete-timeout",RuntimeError("operation exceeded its time bound"),[empty,"",empty],[pid]),
+            ("remaining-namespace",None,[empty,"namespace/"+namespace,empty],[pid]),
+            ("new-volume-reference",None,[empty,"",json.dumps({"items":[referenced]})],["persistent-volumes"]),
+            ("initial-volume-audit-error",None,[RuntimeError("inventory unavailable"),"",empty],["persistent-volumes"]),
+            ("final-volume-audit-error",None,[empty,"",RuntimeError("inventory unavailable")],["persistent-volumes"]),
+            ("namespace-audit-error",None,[empty,RuntimeError("namespace unavailable"),empty],[pid]),
+        )
+        for label,delete_error,inventory,failures in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+                driver=self.bare_driver(); driver.platforms=[(pid,"source",opid)]; driver.bound={pid:("namespace-uid",opid)}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None
+                driver.claim_namespace=mock.Mock(return_value=False); driver.delete=mock.Mock(side_effect=delete_error); driver.command=mock.Mock(); driver.k=mock.Mock(side_effect=inventory)
+                with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
+                driver.delete.assert_called_once_with(pid,"source",240); driver.command.assert_not_called(); self.assertFalse(driver.cleanup_completed)
+                receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); retained=json.loads((Path(directory)/"cleanup-transport-retained.json").read_text())
+                self.assertEqual(receipt["status"],"incomplete"); self.assertEqual(receipt["failure_categories"],failures)
+                self.assertEqual(retained,{"schema_version":1,"status":"retained","run_id":driver.run_id,"resources":receipt["resources"],"failure_categories":failures})
     def test_main_records_termination_and_suppresses_reentrant_signals_during_cleanup(self):
         driver=mock.Mock(); driver.run.side_effect=DRIVER.TerminationRequested("termination signal received")
         handlers={DRIVER.signal.SIGINT:mock.Mock(),DRIVER.signal.SIGTERM:mock.Mock()}
@@ -436,6 +460,8 @@ class Tests(unittest.TestCase):
             self.assertIsNone(driver.pending_lifecycle); self.assertTrue(driver.cleanup_completed)
             receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text())
             self.assertTrue(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["owned_persistent_volumes"],[]); self.assertEqual(receipt["status"],"verified")
+            driver.command.assert_called_once_with(driver.bridge_argv("cleanup"),120); self.assertFalse((Path(directory)/"cleanup-transport-retained.json").exists())
+            driver.cleanup(); driver.command.assert_called_once()
     def test_recovery_receipt_requires_exact_operation_artifact_and_scope_binding(self):
         driver=self.bare_driver(); source,target="1"*32,"2"*32; operation,artifact="3"*32,"4"*32
         value={"operation_id":operation,"status":"succeeded","artifact_id":artifact,"manifest_sha256":"5"*64,"source_platform_id":source,"source_revision":7,"source_namespace_uid":"source-uid","target_platform_id":target,"target_revision":9,"format":"hakopod-neon-recovery-v1","parts":["tenant.json","timeline.json","remote-storage.tar"],"neon":{"tenant_id":"6"*32}}
