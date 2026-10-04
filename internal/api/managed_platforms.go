@@ -34,6 +34,7 @@ func (s *Server) registerManagedPlatformRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/managed-platforms", s.managedPlatforms)
 	mux.HandleFunc("GET /api/v1/managed-platforms/catalog", s.managedPlatformCatalog)
 	mux.HandleFunc("GET /api/v1/managed-platforms/{id}", s.managedPlatform)
+	mux.HandleFunc("GET /api/v1/managed-platforms/{id}/trust", s.managedPlatformTrust)
 	mux.HandleFunc("GET /api/v1/managed-platforms/{id}/operations", s.managedPlatformOperations)
 	mux.HandleFunc("GET /api/v1/managed-platform-operations/{id}", s.managedPlatformOperation)
 	mux.HandleFunc("POST /api/v1/managed-platforms/reviews", s.reviewManagedPlatform)
@@ -126,6 +127,12 @@ func (s *Server) reviewManagedPlatform(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		item.Project, item.Environment = current.Project, current.Environment
+		if in.Kind == "update" && current.Spec.Kind == "neon" {
+			if err := managedplatform.ValidateNeonResourceUpdate(current.Spec, in.Spec); err != nil {
+				problem(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
+		}
 		if in.Kind == "delete" {
 			item.Spec = current.Spec
 		}
@@ -201,6 +208,12 @@ func (s *Server) acceptManagedPlatform(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Kind == "delete" {
 			item.Spec = current.Spec
+		}
+		if in.Kind == "update" && current.Spec.Kind == "neon" {
+			if err := managedplatform.ValidateNeonResourceUpdate(current.Spec, in.Spec); err != nil {
+				problem(w, http.StatusBadRequest, "invalid_request", err.Error())
+				return
+			}
 		}
 	}
 	plan, err := s.ManagedPlatformPlanner.PlanManagedPlatform(r.Context(), principal, item, in.ExpectedRevision, in.Kind)

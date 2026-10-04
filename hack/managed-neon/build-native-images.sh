@@ -1,17 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo=$(cd "$script_directory/../.." && pwd)
+
 readonly UPSTREAM_COMMIT="fa504217c61bbcaf5c512d75830564541f917f8f"
-readonly PATCHED_TREE="8fcaa8600a9da41870d6f74478cfdfcd53fb2dd6"
-readonly SOURCE_ARCHIVE_SHA256="0a364b86e81faefca56c7dcf56e2057767c63cb396d653775d7596fcd343e209"
+readonly PATCHED_TREE="3358ae2e6529d42fe723ed566678978665d3b7a6"
+readonly POSTGRES_COMMIT="1e01fcea2a6b38180021aa83e0051d95286d9096"
+readonly CONSUMER_PATCH_ID="627583b85d7c0f624245e3ac6a240e775a5eed01"
+readonly SOURCE_ARCHIVE_SHA256="159a483577cdc75896ded03d5a2d472b94d87fd827a2c263715b5972b7dd565e"
 readonly PROXY_PATCH_SHA256="e9a1df309106d166adfc0982500f6500df220dbc6173761c48c7c2038563fbd6"
 readonly OWNERSHIP_PATCH_SHA256="a7d464f88f374480eedde78efa4c8ea4d12928fbc11104aea710e2b9691491f4"
+readonly POSTGRES_PATCH_SHA256="47f90f03bc3aa0893b952049d86da54713843abdc94b74166a33c67bfb95a3e6"
+readonly CONSUMER_PATCH_SHA256="f425b69c6d20153ea3fbba2633d53adc77007f4d84468423d3544bc5fff11e60"
+readonly TRANSPORT_PATCH_SHA256="3d4c6ee5a7d30a77f8ab44520b6e370829e12b41f827c99d4120f0158bf506fa"
+readonly RECONFIGURE_PATCH_SHA256="96b5f4e211186ea60281128029c668ad12bb6d3cf3a552879363fe24750458c9"
+readonly PLACEMENT_PATCH_SHA256="9c20c7c2491e367be87f8aae5483b7f4e1158e276c065b336f9a1040282f073a"
+readonly FILESYSTEM_PATCH_SHA256="2cab4695d0d4e7029bbe2c9523d42929c4c9a19a2c25dd5e7064e830882e1256"
+readonly APPLYING_DELETE_PATCH_SHA256="e86ee6ac05bbb4efe05349563b96ea520dc574a2b9ea04adfd9687829040a204"
 readonly DEFAULT_MINIMUM_FREE_GIB=12
-readonly BUILDER_MEMORY_BYTES=7516192768
-readonly BUILDER_NAME="hakopod-neon-bounded"
-readonly BUILDER_CONTAINER="hakopod-neon-buildkit"
-readonly BUILDER_ADDRESS="tcp://127.0.0.1:12347"
+readonly BUILDER_MEMORY_BYTES="${HAKOPOD_NEON_BUILDER_MEMORY_BYTES:-7516192768}"
+readonly BUILDER_CPU_QUOTA="${HAKOPOD_NEON_BUILDER_CPU_QUOTA:-100000}"
+readonly BUILDER_MAX_PARALLELISM="${HAKOPOD_NEON_BUILDER_MAX_PARALLELISM:-1}"
+readonly BUILDER_NAME="${HAKOPOD_NEON_BUILDER_NAME:-hakopod-neon-bounded}"
+readonly BUILDER_CONTAINER="${HAKOPOD_NEON_BUILDER_CONTAINER:-hakopod-neon-buildkit}"
+readonly BUILDER_ADDRESS="${HAKOPOD_NEON_BUILDER_ADDRESS:-tcp://127.0.0.1:12347}"
 readonly BUILDKIT_IMAGE="moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea"
+readonly BUILD_TOOLS_DIGEST="sha256:07e617fce699ae4d2fd9b6c46ee2583340fbce4a98c4cedccf04f12d30e63a62"
 
 usage() {
   cat >&2 <<'EOF'
@@ -21,7 +36,7 @@ PHASE is one of:
   storage         Build the image containing storage_controller, pageserver,
                   safekeeper, and proxy.
   compute-tools   Build the compute-tools stage only.
-  compute-runtime Build the PG17 compute image with all upstream extensions.
+  compute-runtime Build the PG17.11 core compute image without optional extensions.
 
 Images remain in the VM-local Docker daemon. Run phases sequentially.
 EOF
@@ -29,6 +44,20 @@ EOF
 }
 
 [[ $# == 3 ]] || usage
+[[ "$BUILDER_MEMORY_BYTES" =~ ^[1-9][0-9]*$ && "$BUILDER_CPU_QUOTA" =~ ^[1-9][0-9]*$ && "$BUILDER_MAX_PARALLELISM" =~ ^[1-9][0-9]*$ ]] || {
+  echo "refusing build: invalid builder resource limit" >&2
+  exit 2
+}
+[[ "$BUILDER_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ && "$BUILDER_CONTAINER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || {
+  echo "refusing build: invalid builder identity" >&2
+  exit 2
+}
+[[ "$BUILDER_ADDRESS" =~ ^tcp://127\.0\.0\.1:[1-9][0-9]{0,4}$ ]] || {
+  echo "refusing build: builder must bind a loopback TCP address" >&2
+  exit 2
+}
+builder_port=${BUILDER_ADDRESS##*:}
+(( builder_port <= 65535 )) || { echo "refusing build: builder port is out of range" >&2; exit 2; }
 source_archive=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 [[ -f "$source_archive" ]] || usage
 output_directory=$(mkdir -p "$2" && cd "$2" && pwd)
@@ -63,9 +92,9 @@ build() {
   buildkit_root=$(mkdir -p "$buildkit_root" && cd "$buildkit_root" && pwd)
   if ! sudo docker container inspect "$BUILDER_CONTAINER" >/dev/null 2>&1; then
     sudo docker run --detach --name "$BUILDER_CONTAINER" --privileged \
-      --network host --memory "$BUILDER_MEMORY_BYTES" --memory-swap "$BUILDER_MEMORY_BYTES" --cpu-period 100000 --cpu-quota 100000 \
+      --network host --memory "$BUILDER_MEMORY_BYTES" --memory-swap "$BUILDER_MEMORY_BYTES" --cpu-period 100000 --cpu-quota "$BUILDER_CPU_QUOTA" \
       --volume "$buildkit_root:/var/lib/buildkit" "$BUILDKIT_IMAGE" \
-      --addr "$BUILDER_ADDRESS" >/dev/null
+      --addr "$BUILDER_ADDRESS" --oci-max-parallelism "$BUILDER_MAX_PARALLELISM" >/dev/null
   fi
   if ! sudo docker buildx inspect "$BUILDER_NAME" >/dev/null 2>&1; then
     sudo docker buildx create --name "$BUILDER_NAME" --driver remote \
@@ -76,20 +105,35 @@ build() {
     sudo docker inspect "$BUILDER_CONTAINER" \
       --format '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.CpuPeriod}} {{.HostConfig.CpuQuota}} {{.HostConfig.NetworkMode}} {{range .Mounts}}{{if eq .Destination "/var/lib/buildkit"}}{{.Source}}{{end}}{{end}}'
   )
-  [[ "$memory" == "$BUILDER_MEMORY_BYTES" && "$memory_swap" == "$BUILDER_MEMORY_BYTES" && "$cpu_period" == 100000 && "$cpu_quota" == 100000 && \
+  [[ "$memory" == "$BUILDER_MEMORY_BYTES" && "$memory_swap" == "$BUILDER_MEMORY_BYTES" && "$cpu_period" == 100000 && "$cpu_quota" == "$BUILDER_CPU_QUOTA" && \
     "$network_mode" == host && "$mounted_root" == "$buildkit_root" ]] || {
     echo "refusing build: $BUILDER_CONTAINER does not have the required resource or scratch-storage limits" >&2
     exit 1
   }
   sudo docker inspect "$BUILDER_CONTAINER" \
     | cat >"$output_directory/builder-inspect.json"
-  sudo docker buildx build --builder "$BUILDER_NAME" --load --progress=plain \
+  archive="$output_directory/${phase}.oci.tar"
+  base_archive="$output_directory/${phase}.base.oci.tar"
+  [[ ! -e "$archive" && ! -e "$base_archive" ]] || { echo "refusing build: OCI archive already exists" >&2; exit 1; }
+  sudo docker buildx build --builder "$BUILDER_NAME" --platform linux/amd64 --provenance=false --sbom=false \
+    --output "type=oci,dest=$base_archive" --progress=plain \
     --metadata-file "$output_directory/${phase}-build-metadata.json" \
-    --label "org.opencontainers.image.revision=$UPSTREAM_COMMIT" \
+    --label "org.opencontainers.image.source=https://github.com/hakopod/hakopod" \
+    --label "io.hakopod.neon.upstream-repository=https://github.com/neondatabase/neon" \
+    --label "io.hakopod.neon.upstream-commit=$UPSTREAM_COMMIT" \
     --label "io.hakopod.neon.patched-tree=$PATCHED_TREE" \
+    --label "io.hakopod.neon.postgres-commit=$POSTGRES_COMMIT" \
+    --label "io.hakopod.neon.consumer-patch-id=$CONSUMER_PATCH_ID" \
     --label "io.hakopod.neon.source-archive-sha256=$SOURCE_ARCHIVE_SHA256" \
     --label "io.hakopod.neon.proxy-patch-sha256=$PROXY_PATCH_SHA256" \
     --label "io.hakopod.neon.ownership-patch-sha256=$OWNERSHIP_PATCH_SHA256" \
+    --label "io.hakopod.neon.postgres-patch-sha256=$POSTGRES_PATCH_SHA256" \
+    --label "io.hakopod.neon.consumer-patch-sha256=$CONSUMER_PATCH_SHA256" \
+    --label "io.hakopod.neon.transport-patch-sha256=$TRANSPORT_PATCH_SHA256" \
+    --label "io.hakopod.neon.reconfigure-patch-sha256=$RECONFIGURE_PATCH_SHA256" \
+    --label "io.hakopod.neon.placement-patch-sha256=$PLACEMENT_PATCH_SHA256" \
+    --label "io.hakopod.neon.filesystem-patch-sha256=$FILESYSTEM_PATCH_SHA256" \
+    --label "io.hakopod.neon.applying-delete-patch-sha256=$APPLYING_DELETE_PATCH_SHA256" \
     "$@" &
   build_pid=$!
   while kill -0 "$build_pid" 2>/dev/null; do
@@ -104,12 +148,15 @@ build() {
   done
   wait "$build_pid"
   require_disk_reserve
+  python3 "$repo/release/wrap-runtime-oci.py" --input "$base_archive" --output "$archive" --user 1000:1000 \
+    --label "org.opencontainers.image.source=https://github.com/hakopod/hakopod" >/dev/null
+  sudo docker image load --input "$archive" >/dev/null
 }
 
 case "$phase" in
   storage)
     image="hakopod/neon-storage:${UPSTREAM_COMMIT:0:8}-${PATCHED_TREE:0:8}"
-    build --build-arg "GIT_VERSION=$UPSTREAM_COMMIT" --tag "$image" "$source_directory" \
+    build --build-arg "GIT_VERSION=$UPSTREAM_COMMIT" --build-arg "TAG=pinned@$BUILD_TOOLS_DIGEST" --tag "$image" "$source_directory" \
       >"$output_directory/storage-build.log" 2>&1
     ;;
   compute-tools)
@@ -119,9 +166,10 @@ case "$phase" in
       >"$output_directory/compute-tools-build.log" 2>&1
     ;;
   compute-runtime)
-    image="hakopod/neon-compute-v17:${UPSTREAM_COMMIT:0:8}-${PATCHED_TREE:0:8}"
+    image="hakopod/neon-compute-v17:pg17.11-${POSTGRES_COMMIT:0:8}-${CONSUMER_PATCH_ID:0:8}-${PATCHED_TREE:0:8}"
     build --file "$source_directory/compute/compute-node.Dockerfile" \
-      --build-arg PG_VERSION=v17 --build-arg EXTENSIONS=all --tag "$image" "$source_directory" \
+      --build-arg PG_VERSION=v17 --build-arg EXTENSIONS=none \
+      --build-arg "BUILD_TAG=hakopod-pg17.11-${POSTGRES_COMMIT:0:8}" --tag "$image" "$source_directory" \
       >"$output_directory/compute-runtime-build.log" 2>&1
     ;;
   *) usage ;;
@@ -131,13 +179,32 @@ sudo docker image inspect "$image" | cat >"$output_directory/${phase}-image-insp
 printf '%s\n' "$image" >"$output_directory/${phase}-image.txt"
 source_hash_after=$(sha256sum "$source_archive" | cut -d' ' -f1)
 [[ "$source_hash_after" == "$source_hash_before" ]]
-image_config_digest=$(sudo docker image inspect "$image" --format '{{.Id}}')
-image_manifest_digest=$(python3 - "$output_directory/${phase}-build-metadata.json" <<'PY'
+read -r image_manifest_digest image_config_digest < <(python3 - "$output_directory/${phase}-build-metadata.json" "$output_directory/${phase}.oci.tar" <<'PY'
 import json
+import re
 import sys
+import tarfile
+
+digest_pattern = re.compile(r"sha256:[0-9a-f]{64}")
 with open(sys.argv[1], encoding="utf-8") as stream:
     metadata = json.load(stream)
-print(metadata.get("containerimage.digest", "unavailable"))
+metadata_digest = metadata.get("containerimage.digest", "")
+if not isinstance(metadata_digest, str) or not digest_pattern.fullmatch(metadata_digest):
+    raise SystemExit("build metadata does not contain a SHA-256 manifest digest")
+with tarfile.open(sys.argv[2]) as archive:
+    index = json.load(archive.extractfile("index.json"))
+    manifests = index.get("manifests", [])
+    if len(manifests) != 1 or not digest_pattern.fullmatch(manifests[0].get("digest", "")):
+        raise SystemExit("OCI archive does not contain one SHA-256 image manifest")
+    manifest_digest = manifests[0]["digest"]
+    manifest = json.load(archive.extractfile("blobs/sha256/" + manifest_digest[7:]))
+    config_digest = manifest.get("config", {}).get("digest", "")
+    if not isinstance(config_digest, str) or not digest_pattern.fullmatch(config_digest):
+        raise SystemExit("OCI archive manifest does not contain a SHA-256 config digest")
+    config = json.load(archive.extractfile("blobs/sha256/" + config_digest[7:]))
+    if config.get("config", {}).get("Labels", {}).get("io.hakopod.managed-runtime.base-manifest") != metadata_digest:
+        raise SystemExit("numeric-user wrapper is not bound to the BuildKit manifest")
+print(manifest_digest, config_digest)
 PY
 )
 cat >"$output_directory/${phase}-provenance.txt" <<EOF
@@ -147,6 +214,16 @@ source_archive_sha256_before=$source_hash_before
 source_archive_sha256_after=$source_hash_after
 proxy_patch_sha256=$PROXY_PATCH_SHA256
 ownership_patch_sha256=$OWNERSHIP_PATCH_SHA256
+postgres_patch_sha256=$POSTGRES_PATCH_SHA256
+consumer_patch_sha256=$CONSUMER_PATCH_SHA256
+transport_patch_sha256=$TRANSPORT_PATCH_SHA256
+reconfigure_patch_sha256=$RECONFIGURE_PATCH_SHA256
+placement_patch_sha256=$PLACEMENT_PATCH_SHA256
+filesystem_patch_sha256=$FILESYSTEM_PATCH_SHA256
+applying_delete_patch_sha256=$APPLYING_DELETE_PATCH_SHA256
+postgres_commit=$POSTGRES_COMMIT
+consumer_patch_id=$CONSUMER_PATCH_ID
+storage_build_tools_digest=$BUILD_TOOLS_DIGEST
 image=$image
 image_manifest_digest=$image_manifest_digest
 image_config_digest=$image_config_digest

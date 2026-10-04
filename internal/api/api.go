@@ -48,11 +48,13 @@ type Server struct {
 	PlatformRecovery                 *platformbackup.Service
 	ManagedPlatformRecoveryQualified bool
 	ManagedNeonRecoveryQualified     bool
+	ValidateManagedPlatformRecovery  func(context.Context, string) error
 	ProcessLogs                      *serverlogs.Buffer
 	ManagedPlatformPlanner           ManagedPlatformPlanner
 	ManagedPlatformRuntime           ManagedPlatformRuntime
 	NeonProxyAuthority               NeonProxyAuthority
 	neonProxyConcurrent              chan struct{}
+	nativeProbes                     chan struct{}
 	// Overrides are only set by in-process tests, never by an API request.
 	actionsTestRuntime      actionsRuntime
 	actionsClient           func(string) (runnerProvider, error)
@@ -96,10 +98,12 @@ func (s *Server) Handler() http.Handler {
 	s.concurrent = make(chan struct{}, 64)
 	s.streams = make(chan struct{}, 16)
 	s.neonProxyConcurrent = make(chan struct{}, 32)
+	s.nativeProbes = make(chan struct{}, 1)
 	s.databaseImports = make(chan struct{}, 2)
 	s.tlsIssuerChanges = make(chan struct{}, 2)
 	mux := http.NewServeMux()
 	s.registerNeonProxyControlPlane(mux)
+	s.registerNeonController(mux)
 	mux.HandleFunc("POST /api/v1/build-registry/authorize", s.authorizeBuildRegistry)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { write(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +124,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerBackupRoutes(routes)
 	s.registerDatabaseRoutes(routes)
 	s.registerManagedPlatformRoutes(routes)
+	s.registerNativeProbeRoutes(routes)
 	s.registerExternalDatabaseRoutes(routes)
 	s.registerAlarmRoutes(routes)
 	s.registerNotificationRoutes(routes)

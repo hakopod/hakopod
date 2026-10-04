@@ -274,9 +274,16 @@ memory target within that allocation. Each etcd voter adds 100m CPU, 256Mi and a
 The namespace operator adds 100m CPU and 256Mi; its backup storage controller
 adds 100m CPU and 128Mi.
 
+A backup container runs both vtbackup and MySQL. It reserves the configured
+MySQL resources plus 100m CPU and 512Mi for vtbackup, with a 448MiB Go memory
+target. Backup and restore handle one file at a time. S3 uses one upload worker,
+and closing a file waits for the upload result before releasing that file's
+worker. This limits multipart buffers to two parts; the supported 1TiB maximum
+can require about 210MiB of buffers. Tablets use a separate 192MiB Go target.
+
 Admission also needs replacement and backup headroom. Initial and scheduled
 backup cleanup can overlap, so the current conservative contract reserves two
-extra MySQL-sized jobs and two data-sized scratch claims per shard. These are
+backup jobs, including vtbackup overhead, and two data-sized scratch claims per shard. These are
 capacity reservations, not a promise that every resource is always running.
 
 Deletion pauses the namespace operator after the database deletion request is

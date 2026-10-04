@@ -1,0 +1,498 @@
+#!/usr/bin/env python3
+"""Pure contract tests for the destructive Neon native driver."""
+import copy, importlib.util, io, itertools, json, os, re, tempfile, unittest, urllib.error
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parent.parent
+TEST_TMP = Path(os.environ.get("TMPDIR", "/tmp"))
+spec = importlib.util.spec_from_file_location("neon_driver", ROOT / "examples/neon-native-acceptance/driver.py")
+DRIVER = importlib.util.module_from_spec(spec); spec.loader.exec_module(DRIVER)
+
+def neon(name, prefix):
+    return {"schema_version":1,"name":name,"kind":"neon","neon":{"safekeepers":3,"pageservers":2,"compute_replicas":1,"object_storage_prefix":prefix}}
+
+class Args:
+    api_url="http://127.0.0.1:8800"
+    destination_id="c"*32; destination_revision=1
+
+class Tests(unittest.TestCase):
+    def fixture(self, directory):
+        base=Path(directory); args=Args()
+        work_parent=Path("/srv/hakopod-backup-scratch") if str(TEST_TMP).startswith("/srv/hakopod-backup-scratch/") else Path("/tmp")
+        args.work_dir=str(work_parent/("hakopod-neon-native-"+base.name))
+        images={name:"registry.example/neon-"+name+"@sha256:"+"d"*64 for name in DRIVER.COMPONENTS}
+        identities={name:{"uid":10001,"gid":10001,"image":image} for name,image in images.items()}
+        for field,value in (("source_spec",neon("source","source-prefix")),("target_spec",neon("target","target-prefix")),("cancellation_target_spec",neon("cancel-target","cancel-prefix")),("images",images),("identities",identities)):
+            path=base/(field+".json"); path.write_text(json.dumps(value)); setattr(args,field,str(path))
+        return args
+    @mock.patch.object(DRIVER,"validate_attestation",return_value={})
+    @mock.patch.object(DRIVER.sys,"platform","linux")
+    @mock.patch.object(DRIVER.os,"uname",return_value=mock.Mock(machine="x86_64"))
+    def test_exact_contract(self,_uname,_attestation):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            args=self.fixture(directory)
+            source,target,cancellation=DRIVER.validate_contract(args); self.assertEqual((source["name"],target["name"],cancellation["name"]),("source","target","cancel-target"))
+    @mock.patch.object(DRIVER,"validate_attestation",return_value={})
+    @mock.patch.object(DRIVER.sys,"platform","linux")
+    @mock.patch.object(DRIVER.os,"uname",return_value=mock.Mock(machine="x86_64"))
+    def test_rejects_shared_restore_prefix(self,_uname,_attestation):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            args=self.fixture(directory); target=DRIVER.load(args.target_spec); target["neon"]["object_storage_prefix"]="source-prefix"; Path(args.target_spec).write_text(json.dumps(target))
+            with self.assertRaisesRegex(RuntimeError,"not separate"): DRIVER.validate_contract(args)
+    @mock.patch.object(DRIVER,"validate_attestation",return_value={})
+    @mock.patch.object(DRIVER.sys,"platform","linux")
+    @mock.patch.object(DRIVER.os,"uname",return_value=mock.Mock(machine="x86_64"))
+    def test_rejects_reused_cancellation_target(self,_uname,_attestation):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            args=self.fixture(directory); cancellation=DRIVER.load(args.cancellation_target_spec); cancellation["neon"]["object_storage_prefix"]="target-prefix"; Path(args.cancellation_target_spec).write_text(json.dumps(cancellation))
+            with self.assertRaisesRegex(RuntimeError,"not separate"): DRIVER.validate_contract(args)
+    @mock.patch.object(DRIVER,"validate_attestation",return_value={})
+    @mock.patch.object(DRIVER.sys,"platform","linux")
+    @mock.patch.object(DRIVER.os,"uname",return_value=mock.Mock(machine="x86_64"))
+    def test_rejects_mutable_image(self,_uname,_attestation):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            args=self.fixture(directory); images=DRIVER.load(args.images); images["proxy"]="registry.example/proxy:latest"; Path(args.images).write_text(json.dumps(images))
+            with self.assertRaisesRegex(RuntimeError,"pinned"): DRIVER.validate_contract(args)
+    @mock.patch.object(DRIVER,"validate_attestation",return_value={})
+    @mock.patch.object(DRIVER.sys,"platform","linux")
+    @mock.patch.object(DRIVER.os,"uname",return_value=mock.Mock(machine="x86_64"))
+    def test_rejects_unbounded_work_path(self,_uname,_attestation):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            args=self.fixture(directory); args.work_dir="/var/tmp/hakopod-neon-native-test"
+            with self.assertRaisesRegex(RuntimeError,"bounded"): DRIVER.validate_contract(args)
+    def test_atomic_refuses_overwrite(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            path=Path(directory)/"event.json"; DRIVER.atomic(path,{"ok":True})
+            with self.assertRaisesRegex(RuntimeError,"not fresh"): DRIVER.atomic(path,{"ok":False})
+    def test_protected_text_rejects_symbolic_and_oversized_inputs(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            root=Path(directory); token=root/"token"; token.write_text("protected-token-value"); token.chmod(0o600)
+            self.assertEqual(DRIVER.protected_text(token),"protected-token-value")
+            symbolic=root/"symbolic"; symbolic.symlink_to(token)
+            with self.assertRaisesRegex(RuntimeError,"symbolic"): DRIVER.protected_text(symbolic)
+            token.unlink(); token.write_bytes(b"x"*4097); token.chmod(0o600)
+            with self.assertRaisesRegex(RuntimeError,"unbounded"): DRIVER.protected_text(token)
+    def test_command_rejects_unbounded_input_and_output(self):
+        driver=self.bare_driver()
+        with self.assertRaisesRegex(RuntimeError,"input"):
+            driver.command(["true"],data=b"x"*(DRIVER.MAX_COMMAND_INPUT+1))
+        with self.assertRaisesRegex(RuntimeError,"output withheld"):
+            driver.command([os.environ.get("PYTHON","python3"),"-c","import os; os.write(1,b'x'*(3<<20))"])
+    def test_command_rejects_timeout_and_malformed_argv(self):
+        driver=self.bare_driver()
+        with self.assertRaisesRegex(RuntimeError,"timeout"):
+            driver.command(["true"],timeout=0)
+        with self.assertRaisesRegex(RuntimeError,"malformed"):
+            driver.command(["true","bad\x00argument"])
+        observed=driver.command([os.environ.get("PYTHON","python3"),"-c","import sys; sys.stderr.write('classified failure'); raise SystemExit(3)"],expected=(3,),capture_stderr=True)
+        self.assertEqual(observed,"classified failure")
+    @mock.patch.object(DRIVER.subprocess,"Popen")
+    def test_command_terminates_child_when_signal_interrupts_wait(self,popen):
+        process=mock.MagicMock(); process.communicate.side_effect=DRIVER.TerminationRequested("stop"); popen.return_value=process
+        driver=self.bare_driver()
+        with self.assertRaises(DRIVER.TerminationRequested): driver.command(["command"])
+        process.terminate.assert_called_once(); process.wait.assert_called_once_with(timeout=5)
+    def bare_driver(self):
+        driver=DRIVER.Driver.__new__(DRIVER.Driver); driver.a=mock.Mock(api_url="http://127.0.0.1:8800",scheduling_policy=""); driver.token="protected-token-value"; return driver
+    def test_bridge_forwards_trusted_scheduling_separately_for_every_action(self):
+        driver=self.bare_driver(); driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.gate_attestation="/protected/gate"
+        for action in ("verify-scheduling","allow","probe-start","probe-verify-wrong","probe-stop","cleanup"):
+            plain=driver.bridge_argv(action,"--platform-id","a"*32)
+            self.assertNotIn("--scheduling-policy",plain)
+            driver.a.scheduling_policy="/protected/policy"
+            self.assertEqual(driver.bridge_argv(action,"--platform-id","a"*32),plain+["--scheduling-policy","/protected/policy","--gate-attestation","/protected/gate"])
+            driver.a.scheduling_policy=""
+    def test_create_tracks_accepted_operation_and_binds_namespace_before_failure(self):
+        driver=self.bare_driver(); driver.a.project="native-neon"; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.platforms=[]; driver.bound={}
+        pid,opid="a"*32,"b"*32; spec=neon("source","source-prefix")
+        review={"blocked":False,"platform":{"id":pid,"project":"native-neon","environment":"development","spec":spec},"review":{"id":"c"*32,"expected_revision":0}}
+        driver.api=mock.Mock(side_effect=[review,{"id":opid,"platform_id":pid,"kind":"create"},{"status":"failed"}]); driver.command=mock.Mock(return_value="")
+        driver.k=mock.Mock(return_value=json.dumps({"metadata":{"name":"managed-platform-"+pid,"uid":"namespace-uid","labels":{"hakopod.io/owner-operation-id":opid}}}))
+        with self.assertRaisesRegex(RuntimeError,"terminal state"): driver.create(spec)
+        self.assertEqual(driver.platforms,[(pid,"source",opid)]); self.assertEqual(driver.bound[pid],("namespace-uid",opid))
+    def test_claim_namespace_fails_closed_on_foreign_operation(self):
+        driver=self.bare_driver(); driver.bound={}; pid,opid="a"*32,"b"*32
+        driver.k=mock.Mock(return_value=json.dumps({"metadata":{"name":"managed-platform-"+pid,"uid":"foreign-uid","labels":{"hakopod.io/owner-operation-id":"c"*32}}}))
+        with self.assertRaisesRegex(RuntimeError,"ownership differs"): driver.claim_namespace(pid,opid)
+        self.assertEqual(driver.bound,{})
+    def test_cleanup_rejects_owned_namespace_persistent_volume_claim(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.platforms=[("a"*32,"source","b"*32)]; driver.bound={}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None
+            driver.claim_namespace=mock.Mock(return_value=False); driver.delete=mock.Mock(); driver.command=mock.Mock(return_value="")
+            namespace="managed-platform-"+"a"*32
+            owned={"metadata":{"name":"owned-pv","uid":"pv-uid"},"spec":{"claimRef":{"namespace":namespace,"name":"data"}}}
+            driver.k=mock.Mock(side_effect=[json.dumps({"items":[owned]}),"",json.dumps({"items":[{"metadata":owned["metadata"],"spec":{}}]})])
+            with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
+            driver.delete.assert_called_once_with("a"*32,"source",240)
+            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertEqual(receipt["status"],"incomplete"); self.assertFalse(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["owned_persistent_volumes"][0]["uid"],"pv-uid"); self.assertEqual(receipt["remaining_persistent_volumes"][0]["uid"],"pv-uid")
+            driver.command.assert_not_called()
+            retained=json.loads((Path(directory)/"cleanup-transport-retained.json").read_text()); self.assertEqual(retained["status"],"retained"); self.assertEqual(retained["run_id"],driver.run_id); self.assertEqual(retained["resources"],receipt["resources"]); self.assertEqual(retained["failure_categories"],["persistent-volumes"])
+    def test_cleanup_reports_large_volume_inventory_as_unverified(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.command=mock.Mock(return_value="")
+            driver.k=mock.Mock(side_effect=[json.dumps({"items":[{}]*513}),json.dumps({"items":[]})])
+            with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
+            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); self.assertFalse(receipt["persistent_volume_claim_refs_absent"])
+            driver.command.assert_not_called(); self.assertTrue((Path(directory)/"cleanup-transport-retained.json").is_file())
+    def test_cleanup_retains_transport_until_deletion_and_resource_audits_complete(self):
+        pid,opid="a"*32,"b"*32; namespace="managed-platform-"+pid
+        empty=json.dumps({"items":[]})
+        referenced={"metadata":{"name":"owned-pv","uid":"pv-uid"},"spec":{"claimRef":{"namespace":namespace,"name":"data"}}}
+        cases=(
+            ("delete-timeout",RuntimeError("operation exceeded its time bound"),[empty,"",empty],[pid]),
+            ("remaining-namespace",None,[empty,"namespace/"+namespace,empty],[pid]),
+            ("new-volume-reference",None,[empty,"",json.dumps({"items":[referenced]})],["persistent-volumes"]),
+            ("initial-volume-audit-error",None,[RuntimeError("inventory unavailable"),"",empty],["persistent-volumes"]),
+            ("final-volume-audit-error",None,[empty,"",RuntimeError("inventory unavailable")],["persistent-volumes"]),
+            ("namespace-audit-error",None,[empty,RuntimeError("namespace unavailable"),empty],[pid]),
+        )
+        for label,delete_error,inventory,failures in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+                driver=self.bare_driver(); driver.platforms=[(pid,"source",opid)]; driver.bound={pid:("namespace-uid",opid)}; driver.run_id="c"*32; driver.evidence=Path(directory); driver.cleanup_started=False; driver.cleanup_completed=False; driver.pending_lifecycle=None; driver.pending_revocation=None; driver.foreign=None
+                driver.claim_namespace=mock.Mock(return_value=False); driver.delete=mock.Mock(side_effect=delete_error); driver.command=mock.Mock(); driver.k=mock.Mock(side_effect=inventory)
+                with self.assertRaisesRegex(RuntimeError,"cleanup is incomplete"): driver.cleanup()
+                driver.delete.assert_called_once_with(pid,"source",240); driver.command.assert_not_called(); self.assertFalse(driver.cleanup_completed)
+                receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text()); retained=json.loads((Path(directory)/"cleanup-transport-retained.json").read_text())
+                self.assertEqual(receipt["status"],"incomplete"); self.assertEqual(receipt["failure_categories"],failures)
+                self.assertEqual(retained,{"schema_version":1,"status":"retained","run_id":driver.run_id,"resources":receipt["resources"],"failure_categories":failures})
+    def test_main_records_termination_and_suppresses_reentrant_signals_during_cleanup(self):
+        driver=mock.Mock(); driver.run.side_effect=DRIVER.TerminationRequested("termination signal received")
+        handlers={DRIVER.signal.SIGINT:mock.Mock(),DRIVER.signal.SIGTERM:mock.Mock()}
+        def install(number,handler):
+            previous=handlers[number]; handlers[number]=handler; return previous
+        with mock.patch.object(DRIVER,"parse",return_value=mock.Mock()), mock.patch.object(DRIVER,"Driver",return_value=driver), mock.patch.object(DRIVER.signal,"signal",side_effect=install) as signal_call:
+            self.assertEqual(DRIVER.main([]),1)
+        driver.record_failure.assert_called_once_with("termination-requested"); driver.cleanup.assert_called_once()
+        ignored=[call for call in signal_call.call_args_list if call.args[1] is DRIVER.signal.SIG_IGN]
+        self.assertEqual({call.args[0] for call in ignored},{DRIVER.signal.SIGINT,DRIVER.signal.SIGTERM})
+    def test_main_ignores_signals_before_normal_cleanup(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=mock.Mock(); driver.evidence=Path(directory); handlers={DRIVER.signal.SIGINT:mock.Mock(),DRIVER.signal.SIGTERM:mock.Mock()}
+            def install(number,handler): previous=handlers[number]; handlers[number]=handler; return previous
+            def cleanup(): self.assertIs(handlers[DRIVER.signal.SIGINT],DRIVER.signal.SIG_IGN); self.assertIs(handlers[DRIVER.signal.SIGTERM],DRIVER.signal.SIG_IGN)
+            driver.cleanup.side_effect=cleanup; driver.command.return_value=""
+            with mock.patch.object(DRIVER,"parse",return_value=mock.Mock(source="/source")), mock.patch.object(DRIVER,"Driver",return_value=driver), mock.patch.object(DRIVER.signal,"signal",side_effect=install):
+                self.assertEqual(DRIVER.main([]),0)
+    def test_runtime_uses_neon_roles_and_numbered_services(self):
+        driver=self.bare_driver(); driver.run_id="a"*32; driver.source_spec=neon("source","source-prefix")
+        roles=("storage-controller","pageserver","safekeeper","compute","proxy")
+        pods=[]
+        for role in roles:
+            containers=[{"name":role}]
+            if role=="compute": containers.append({"name":"compute-tls"})
+            pods.append({"metadata":{"labels":{"hakopod.io/neon-role":role}},"spec":{"containers":containers}})
+        driver.pods=mock.Mock(return_value=("managed-platform-id",pods))
+        service_names=("neon-storage-controller","neon-proxy","neon-pageserver-0","neon-pageserver-1","neon-safekeeper-0","neon-safekeeper-1","neon-safekeeper-2","neon-compute-0","neon-compute-0-control")
+        driver.k=mock.Mock(return_value=json.dumps({"items":[{"metadata":{"name":name}} for name in service_names]}))
+        observation={"tenant_id":"b"*32,"timeline_id":"c"*32,"tenant_generation":1,"timeline_generation":1,"compute_ids":["d"*32],"tenant_created":True,"timeline_created":True,"compute_started":True,"compute_stopped":True,"timeline_deleted":True,"tenant_deleted":True,"tls":{"client_verification_enforced":True,"server_verified":True,"plaintext_refused":True,"services":list(roles)+["broker","controller-database","compute-sql"],"compute_sql_names":["compute-0"]}}
+        driver.native={"e"*32:dict(observation,compute_names=["compute-0"])}
+        driver.api=mock.Mock(return_value={"observation":observation})
+        tls,lifecycle=driver.runtime("e"*32,"namespace-uid")
+        self.assertTrue(tls["plaintext_refused"]); self.assertEqual(lifecycle["compute_names"],["compute-0"])
+        for names in (None,[],["compute-1"],["compute-0","compute-0"]):
+            driver.native["e"*32]["tls"]["compute_sql_names"]=names
+            with self.assertRaisesRegex(RuntimeError,"compute SQL TLS"): driver.runtime("e"*32,"namespace-uid")
+    def test_runtime_rejects_absent_native_probe_evidence(self):
+        driver=self.bare_driver(); driver.run_id="a"*32; driver.source_spec=neon("source","source-prefix"); driver.native={}
+        driver.pods=mock.Mock(return_value=("managed-platform-id",[]))
+        with self.assertRaises(RuntimeError): driver.runtime("e"*32,"namespace-uid")
+    def test_compute_pod_requires_nonempty_ready_status_and_primary_identity(self):
+        driver=self.bare_driver(); driver.source_spec=neon("source","prefix"); pid="e"*32
+        empty={"metadata":{"name":"empty","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":"compute-0"}},"status":{}}
+        driver.pods=mock.Mock(return_value=("namespace",[empty]))
+        with self.assertRaisesRegex(RuntimeError,"ready compute"): driver.compute_pod(pid)
+        ready={"metadata":{"name":"primary","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":"compute-0"}},"status":{"containerStatuses":[{"ready":True}],"conditions":[{"type":"Ready","status":"True"}]}}
+        driver.pods.return_value=("namespace",[ready]); self.assertEqual(driver.compute_pod(pid),("namespace","primary"))
+    def test_ownership_requests_read_only_native_probe(self):
+        driver=self.bare_driver(); driver.run_id="a"*32; driver.native={}; driver.foreign=None
+        pid="e"*32; opid="f"*32
+        driver.namespace=mock.Mock(return_value={"metadata":{"uid":"namespace-uid","labels":{"hakopod.io/owner-operation-id":opid}}})
+        driver.namespace_uid=mock.Mock(return_value="sentinel-uid")
+        driver.k=mock.Mock(side_effect=["1"*32+"\n"+"2"*32+"\n"+"3"*32,json.dumps({"data":{"owner":"foreign"}})])
+        driver.command=mock.Mock(return_value="")
+        current={"revision":1}; probe={"platform_id":pid,"platform_revision":1,"namespace_uid":"namespace-uid","ownership_capability_verified":True,"wrong_owner_refused":True,"wrong_deletion_token_refused":True}
+        driver.api=mock.Mock(side_effect=[current,probe])
+        result=driver.ownership(pid,opid)
+        self.assertTrue(result["foreign_owner_refused"])
+        self.assertEqual(driver.api.call_args_list[1].args,("POST","/api/v1/managed-platforms/"+pid+"/native-probe",{"expected_revision":1}))
+    @mock.patch.object(DRIVER.ssl,"create_default_context")
+    @mock.patch.object(DRIVER.socket,"create_connection")
+    @mock.patch.object(DRIVER.Driver,"proxy_forward")
+    def test_proxy_auth_binds_platform_endpoint_in_startup_options(self,proxy_forward,create_connection,create_context):
+        platform_id="e"*32; raw=mock.MagicMock(); raw.recv.return_value=b"S"; create_connection.return_value=raw
+        connection=mock.MagicMock(); connection.__enter__.return_value=connection; connection.recv.return_value=b"R"; create_context.return_value.wrap_socket.return_value=connection
+        driver=self.bare_driver(); driver.a.kubeconfig="/protected/kubeconfig"
+        self.assertEqual(driver.proxy_auth_message("managed-platform-"+platform_id,"deployment/hakopod-neon-wrong-ca",15433,Path("/protected/ca.crt"),platform_id),b"R")
+        proxy_forward.assert_called_once_with(platform_id,local_port=15433,probe=True)
+        payload=connection.sendall.call_args.args[0]
+        self.assertEqual(payload[8:],b"user\x00cloud_admin\x00database\x00postgres\x00options\x00endpoint="+platform_id.encode()+b"\x00\x00")
+    @mock.patch.object(DRIVER.socket,"create_connection")
+    @mock.patch.object(DRIVER.Driver,"proxy_forward")
+    def test_authenticated_proxy_query_verifies_tls_identity_and_keeps_password_out_of_argv(self,proxy_forward,_connect):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.root=Path(directory); driver.a.psql="/usr/bin/psql"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.local_port=25432
+            driver.platform_ca=mock.Mock(return_value=Path(directory)/"platform-ca.crt")
+            password=Path(directory)/"password"; password.write_text("native-test-credential"); password.chmod(0o600); driver.proxy_passwords={"a"*32:str(password)}
+            driver.command=mock.Mock(return_value="cloud_admin:postgres\n")
+            forward=mock.MagicMock(); proxy_forward.return_value=forward
+            with mock.patch.dict(DRIVER.os.environ,{"PGSERVICE":"untrusted-service","PGSSLMODE":"disable","PSQLRC":"/untrusted/rc"}):
+                driver.authenticated_proxy_query("a"*32)
+            argv=driver.command.call_args.args[0]; environment=driver.command.call_args.kwargs["env"]
+            self.assertNotIn("native-test-credential"," ".join(argv)); self.assertEqual(environment["PGPASSWORD"],"native-test-credential")
+            self.assertEqual(environment["PGOPTIONS"],"endpoint="+"a"*32)
+            self.assertFalse({"PGSERVICE","PSQLRC"}&set(environment))
+            self.assertEqual(environment["PGHOST"],"neon-proxy"); self.assertEqual(environment["PGHOSTADDR"],"127.0.0.1"); self.assertEqual(environment["PGSSLMODE"],"verify-full")
+            proxy_forward.assert_called_once_with("a"*32,lifetime=180); forward.__exit__.assert_called_once()
+            driver.command.return_value="unexpected:postgres\n"
+            with self.assertRaisesRegex(RuntimeError,"identity differs"): driver.authenticated_proxy_query("a"*32)
+            self.assertEqual(forward.__exit__.call_count,2)
+    def test_isolation_uses_distinct_endpoint_credentials_and_rejects_cross_scope(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            source,target="a"*32,"b"*32; source_password=Path(directory)/"source"; target_password=Path(directory)/"target"
+            source_password.write_text("source-secret"); target_password.write_text("target-secret"); source_password.chmod(0o600); target_password.chmod(0o600)
+            driver=self.bare_driver(); driver.run_id="c"*32; driver.bound={source:("source-uid","op"),target:("target-uid","op")}; driver.proxy_passwords={source:str(source_password),target:str(target_password)}; driver.native={source:{"tenant_id":"1"*32,"timeline_id":"2"*32}}
+            driver.api=mock.Mock(side_effect=[{"revision":1},{"platform_id":target,"platform_revision":1,"tenant_id":"3"*32,"timeline_id":"4"*32}])
+            driver.proxy_query=mock.Mock(side_effect=["marker","t","","",""])
+            result=driver.isolation_and_credentials(source,target,"marker")
+            self.assertTrue(result["cross_platform_credentials_refused"])
+            calls=driver.proxy_query.call_args_list
+            self.assertEqual(calls[0].args[1],"source-secret"); self.assertEqual(calls[1].args[1],"target-secret")
+            self.assertEqual((calls[3].args[0],calls[3].args[1]),(target,"source-secret")); self.assertEqual((calls[4].args[0],calls[4].args[1]),(source,"target-secret"))
+    def test_compute_roles_probes_primary_and_read_only_replica(self):
+        driver=self.bare_driver(); pid="a"*32; driver.run_id="b"*32; driver.bound={pid:("namespace-uid","operation")}
+        pods=[{"metadata":{"name":"primary-pod","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":"compute-0"}}},{"metadata":{"name":"replica-pod","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":"compute-1"}}}]
+        driver.pods=mock.Mock(return_value=("managed-platform-"+pid,pods)); driver.sql=mock.Mock(side_effect=["off","on","","marker"])
+        result=driver.compute_roles(pid,"marker")
+        self.assertEqual((result["primary_compute"],result["replica_compute"]),("compute-0","compute-1"))
+        self.assertFalse(driver.sql.call_args_list[2].kwargs["expect_success"])
+    def test_wal_quorum_restores_both_safekeepers_before_reporting_failure(self):
+        driver=self.bare_driver(); pid="a"*32; driver.run_id="b"*32; driver.bound={pid:("namespace-uid","operation")}; driver.proxy_password=mock.Mock(return_value="secret")
+        sets={"items":[{"metadata":{"name":"neon-safekeeper-"+str(i),"uid":"set-"+str(i),"labels":{"hakopod.io/neon-role":"safekeeper"}},"spec":{"replicas":1}} for i in range(3)]}
+        pods={"items":[{"metadata":{"uid":"pod-"+str(i),"ownerReferences":[{"kind":"StatefulSet","name":"neon-safekeeper-"+str(i),"uid":"set-"+str(i)}]}} for i in range(3)]}
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps(pods),"","","","","",""])
+        driver.absent_safekeepers=mock.Mock(return_value=True)
+        driver.proxy_query=mock.Mock(side_effect=["","0","INSERT 0 1\nyes"])
+        result=driver.wal_quorum_fencing(pid)
+        self.assertTrue(result["quorum_restored"])
+        scale_calls=[call.args for call in driver.k.call_args_list if "scale" in call.args]
+        self.assertEqual(scale_calls[-2:],[('-n','managed-platform-'+pid,'scale','statefulset/neon-safekeeper-1','--current-replicas=0','--replicas=1'),('-n','managed-platform-'+pid,'scale','statefulset/neon-safekeeper-2','--current-replicas=0','--replicas=1')])
+        self.assertEqual(driver.absent_safekeepers.call_count,3)
+        driver.k.reset_mock(side_effect=True); driver.k.side_effect=[json.dumps(sets),json.dumps(pods),"","","","","",""]
+        driver.absent_safekeepers.side_effect=[True,False]
+        driver.proxy_query.reset_mock()
+        with self.assertRaisesRegex(RuntimeError,"changed before the write"): driver.wal_quorum_fencing(pid)
+        driver.proxy_query.assert_not_called()
+        self.assertEqual(len([call for call in driver.k.call_args_list if "--replicas=1" in call.args]),2)
+        driver.k.reset_mock(side_effect=True); driver.k.side_effect=[json.dumps(sets),json.dumps(pods),"","","","","",""]; driver.absent_safekeepers.side_effect=None; driver.absent_safekeepers.return_value=True
+        driver.proxy_query=mock.Mock(side_effect=["","1"])
+        with self.assertRaisesRegex(RuntimeError,"committed despite its refusal"): driver.wal_quorum_fencing(pid)
+        self.assertEqual(driver.proxy_query.call_count,2)
+    def test_wal_absence_requires_zero_replicas_exact_owners_and_no_replacement_pods(self):
+        driver=self.bare_driver(); stopped={"neon-safekeeper-1":"set-1","neon-safekeeper-2":"set-2"}
+        sets={"items":[{"metadata":{"name":name,"uid":uid},"spec":{"replicas":0}} for name,uid in stopped.items()]}
+        replacement={"metadata":{"name":"neon-safekeeper-1-0","uid":"replacement","ownerReferences":[{"kind":"StatefulSet","name":"neon-safekeeper-1","uid":"set-1"}]}}
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps({"items":[replacement]})])
+        self.assertFalse(driver.absent_safekeepers("namespace",stopped,{"old-1","old-2"}))
+        self.assertNotIn("-l",driver.k.call_args.args)
+        running=copy.deepcopy(sets); running["items"][0]["spec"]["replicas"]=1
+        driver.k=mock.Mock(return_value=json.dumps(running)); self.assertFalse(driver.absent_safekeepers("namespace",stopped,{"old-1","old-2"}))
+        replaced=copy.deepcopy(sets); replaced["items"][0]["metadata"]["uid"]="foreign-set"
+        driver.k=mock.Mock(return_value=json.dumps(replaced))
+        with self.assertRaisesRegex(RuntimeError,"ownership changed"): driver.absent_safekeepers("namespace",stopped,{"old-1","old-2"})
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps({"items":[]})]); self.assertTrue(driver.absent_safekeepers("namespace",stopped,{"old-1","old-2"}))
+    def connection_fixture(self,mode="valid",maximum=64):
+        driver=self.bare_driver(); driver.run_id="b"*32; pid="a"*32; driver.bound={pid:("namespace-uid","operation")}; driver.a.psql="/usr/bin/psql"; driver.a.kubeconfig="/protected/kubeconfig"; driver.a.local_port=25432
+        driver.proxy_password=mock.Mock(return_value="secret"); driver.proxy_environment=mock.Mock(return_value={}); driver.proxy_query=mock.Mock(side_effect=[str(maximum),"1"])
+        forward=mock.MagicMock(); forward.start.return_value=forward; driver.proxy_forward=mock.Mock(return_value=forward)
+        clients=[]; successful=maximum-5 if mode=="non-superuser" else maximum-4; baseline=[1] if mode=="non-superuser" else [1,2,3,4]
+        def launch(argv,**kwargs):
+            process=mock.MagicMock(); process.status=None; process.poll.side_effect=lambda:process.status; process.terminate.side_effect=lambda:setattr(process,"status",-15)
+            if argv[0]=="kubectl": return process
+            output=kwargs["stdout"]
+            if "-c" not in argv:
+                def observe(data):
+                    if b"ready" in data:
+                        capacity={"max_connections":maximum,"superuser_reserved_connections":4,"reserved_connections":0,"role_superuser":mode!="non-superuser","role_reserved":False,"baseline_pids":baseline}
+                        output.write(("hakopod-capacity:"+json.dumps(capacity)+"\nhakopod-observer-ready\n").encode())
+                    else:
+                        attempt=re.search(rb"hakopod-active-([0-9]+):",data)[1].decode()
+                        count=successful-1 if mode=="missing-backend" or mode=="delayed-sleep" and attempt=="0" else successful
+                        current_baseline=baseline+[5] if mode=="baseline-drift" else baseline
+                        output.write(("".join("hakopod-active-"+attempt+":"+str(100+i)+"\n" for i in range(count))+"hakopod-baseline-"+attempt+":"+json.dumps(current_baseline)+"\nhakopod-observer-complete-"+attempt+"\n").encode())
+                    output.flush()
+                process.stdin.write.side_effect=observe; return process
+            index=len(clients); clients.append(process)
+            if index<successful:
+                if mode!="unflushed-marker": output.write(("hakopod-held:"+str(100+index)+"\n").encode()); output.flush()
+            else:
+                process.status=2; output.write(b"FATAL: password authentication failed\n" if mode=="authentication-failure" else b"FATAL: sorry, too many clients already\n"); output.flush()
+            return process
+        return driver,pid,launch,clients
+    def test_connection_limit_requires_flushed_markers_and_independent_live_backend_count(self):
+        driver,pid,launch,clients=self.connection_fixture()
+        with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch) as popen, mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"):
+            result=driver.connection_limits(pid)
+        self.assertEqual(result["concurrent_connections"],60); self.assertEqual(result["backend_pids"],list(range(100,160))); self.assertTrue(result["sleeping_backends_verified"])
+        child=popen.call_args_list[2].args[0]; self.assertEqual(child.count("-c"),2); self.assertIn("SELECT pg_sleep(45)",child)
+        self.assertTrue(all(process.status is not None for process in clients))
+        driver.proxy_forward.assert_called_once_with(pid,maximum=74)
+        driver.proxy_forward.return_value.close.assert_called_once()
+        driver.proxy_forward.return_value.check_healthy.assert_called_once()
+        driver,pid,launch,clients=self.connection_fixture("delayed-sleep")
+        with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"):
+            self.assertEqual(driver.connection_limits(pid)["concurrent_connections"],60)
+        driver,pid,launch,clients=self.connection_fixture("non-superuser")
+        with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"):
+            result=driver.connection_limits(pid)
+            self.assertEqual(result["concurrent_connections"],59); self.assertEqual(result["effective_connection_limit"],60); self.assertFalse(result["role_superuser"])
+    def test_connection_limit_carrier_covers_maximum_clients_and_observer(self):
+        driver,pid,launch,clients=self.connection_fixture(maximum=120)
+        with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.time,"sleep"):
+            result=driver.connection_limits(pid)
+        self.assertEqual(len(clients),128)
+        self.assertEqual(result["concurrent_connections"],116)
+        driver.proxy_forward.assert_called_once_with(pid,maximum=130)
+        self.assertTrue(all(process.status is not None for process in clients))
+    def test_connection_limit_rejects_unflushed_unconnected_or_unclassified_clients(self):
+        for mode,message in (("unflushed-marker","did not authenticate"),("missing-backend","independently observed"),("authentication-failure","unexpected reason"),("baseline-drift","baseline changed")):
+            with self.subTest(mode=mode):
+                driver,pid,launch,clients=self.connection_fixture(mode)
+                with mock.patch.object(DRIVER.subprocess,"Popen",side_effect=launch), mock.patch.object(DRIVER.socket,"create_connection"), mock.patch.object(DRIVER.time,"sleep"), mock.patch.object(DRIVER.time,"monotonic",side_effect=itertools.count(step=.2)):
+                    with self.assertRaisesRegex(RuntimeError,message): driver.connection_limits(pid)
+                self.assertTrue(all(process.status is not None for process in clients))
+                self.assertEqual(driver.proxy_query.call_count,1)
+    def resource_update_fixture(self):
+        driver=self.bare_driver(); pid="a"*32; driver.run_id="b"*32; driver.a.project="native-neon"; driver.bound={pid:("namespace-uid","create-operation")}
+        value=neon("target","target-prefix"); value["neon"]["compute_replicas"]=2; value["resources"]={"compute":{"cpu":"500m","memory":"1Gi"}}; driver.target_spec=value
+        current={"id":pid,"project":"native-neon","environment":"development","revision":3,"spec":copy.deepcopy(value)}
+        updated=copy.deepcopy(value); updated["resources"]["compute"]["cpu"]="600m"; changed=dict(current,revision=4,spec=updated)
+        before={"platform_id":pid,"platform_revision":3,"namespace_uid":"namespace-uid","tenant_id":"c"*32,"timeline_id":"d"*32,"tenant_generation":5,"timeline_generation":6}; after=dict(before,platform_revision=4)
+        reviewed={"blocked":False,"platform":{"id":pid,"spec":updated},"review":{"id":"e"*32,"expected_revision":3}}
+        responses=[current,before,reviewed,{"id":"f"*32},changed,{"error":{"code":"conflict"}},{"error":{"code":"invalid_request"}},changed,after]
+        driver.api=mock.Mock(side_effect=responses); driver.namespace=mock.Mock(return_value={"metadata":{"uid":"namespace-uid"}}); driver.wait=mock.Mock(return_value={"id":"f"*32,"platform_id":pid,"kind":"update","revision":4})
+        driver.compute_cpu=mock.Mock(side_effect=[{name:{"pod_uid":name+suffix,"cpu_millis":cpu} for name in ("compute-0","compute-1")} for suffix,cpu in (("-old",500),("-new",600))]); driver.compute_roles=mock.Mock(return_value={"primary_compute":"compute-0","replica_compute":"compute-1","replica_read_only":True,"replica_write_refused":True,"replica_caught_up":True}); driver.proxy_query=mock.Mock(side_effect=["marker","written"]); driver.proxy_password=mock.Mock(return_value="secret"); driver.compute_pod=mock.Mock(return_value=("namespace","primary")); driver.sql=mock.Mock(return_value="")
+        return driver,pid,responses
+    def test_restored_resource_update_uses_review_and_new_stale_key_preserving_topology(self):
+        driver,pid,responses=self.resource_update_fixture(); result=driver.restored_resource_update(pid,"marker")
+        self.assertEqual((result["revision_before"],result["revision_after"]),(3,4)); self.assertEqual(result["compute_cpu_millis_after"],600)
+        calls=driver.api.call_args_list; update=calls[3]; stale=calls[5]; topology=calls[6]
+        self.assertEqual(update.args[2],stale.args[2]); self.assertNotEqual(update.args[3],stale.args[3]); self.assertEqual(stale.kwargs["expected"],(409,))
+        self.assertEqual(topology.args[2]["expected_revision"],4); self.assertEqual(topology.args[2]["spec"]["neon"]["compute_replicas"],3); self.assertEqual(topology.kwargs["expected"],(400,))
+        self.assertEqual(driver.target_spec["resources"]["compute"]["cpu"],"500m"); driver.compute_cpu.assert_has_calls([mock.call(pid,500),mock.call(pid,600)])
+    def test_restored_resource_update_rejects_revision_drift_identity_loss_and_wrong_failures(self):
+        for index,key,replacement,message in ((4,"revision",5,"exactly one revision"),(8,"tenant_generation",9,"changed restored identity"),(5,"error",{"code":"forbidden"},"unexpected reason"),(6,"error",{"code":"conflict"},"unexpected reason")):
+            with self.subTest(index=index,key=key):
+                driver,pid,responses=self.resource_update_fixture(); responses[index][key]=replacement
+                with self.assertRaisesRegex(RuntimeError,message): driver.restored_resource_update(pid,"marker")
+    def test_compute_cpu_checks_actual_ready_owned_pod_requests_and_limits(self):
+        driver=self.bare_driver(); pid="a"*32
+        sets={"items":[{"metadata":{"name":"neon-compute-"+str(i),"uid":"set-"+str(i)}} for i in range(2)]}; pods=[]
+        for i in range(2):
+            pods.append({"metadata":{"name":"pod-"+str(i),"uid":"pod-uid-"+str(i),"labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":"compute-"+str(i)},"ownerReferences":[{"kind":"StatefulSet","name":"neon-compute-"+str(i),"uid":"set-"+str(i)}]},"spec":{"containers":[{"name":"compute","resources":{"requests":{"cpu":"600m"},"limits":{"cpu":"600m"}}}]},"status":{"containerStatuses":[{"ready":True}],"conditions":[{"type":"Ready","status":"True"}]}})
+        driver.k=mock.Mock(return_value=json.dumps(sets)); driver.pods=mock.Mock(return_value=("namespace",pods)); self.assertEqual(driver.compute_cpu(pid,600)["compute-1"]["cpu_millis"],600)
+        pods[1]["spec"]["containers"][0]["resources"]["requests"]["cpu"]="500m"
+        with self.assertRaisesRegex(RuntimeError,"actual pod CPU"): driver.compute_cpu(pid,600)
+    def test_restart_waits_for_exact_owned_primary_and_storage_replacements(self):
+        driver=self.bare_driver(); pid="a"*32; driver.a.kubeconfig="/protected/kubeconfig"; driver.run_id="b"*32; namespace="managed-platform-"+pid
+        probe={"platform_id":pid,"platform_revision":4,"namespace_uid":"namespace-uid","ownership_capability_verified":True,"attached_pageserver":"pageserver-1","attached_pageserver_node_id":2,"tenant_id":"1"*32,"tenant_generation":7}
+        driver.api=mock.Mock(side_effect=lambda method,path,*args: {"revision":4} if method=="GET" else probe)
+        def pod(component,uid,ready=True,owner=None):
+            role="compute" if component.startswith("compute") else "pageserver"
+            return {"metadata":{"name":"neon-"+component+"-0","uid":uid,"labels":{"hakopod.io/neon-role":role,"app.kubernetes.io/component":component},"ownerReferences":[{"kind":"StatefulSet","name":"neon-"+component,"uid":owner or "set-"+component}]},"status":{"containerStatuses":[{"ready":True}] if ready else [],"conditions":[{"type":"Ready","status":"True"}]}}
+        before=[pod("compute-0","old-primary"),pod("compute-1","unchanged-replica"),pod("pageserver-1","old-storage"),pod("pageserver-0","unchanged-storage")]
+        not_ready=[pod("compute-0","new-primary",False),before[1],pod("pageserver-1","new-storage",False),before[3]]
+        ready=[pod("compute-0","new-primary"),before[1],pod("pageserver-1","new-storage"),before[3]]
+        relabeled=copy.deepcopy(before[0]); relabeled["metadata"].pop("labels")
+        driver.pods=mock.Mock(return_value=(namespace,before))
+        sets={"items":[{"metadata":{"name":"neon-"+component,"uid":"set-"+component}} for component in ("compute-0","compute-1","pageserver-0","pageserver-1")]}
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),*[json.dumps({"items":items}) for items in ([before[1]],not_ready,ready+[relabeled],ready)]]); driver.namespace=mock.Mock(return_value={"metadata":{"uid":"namespace-uid"}}); driver.command=mock.Mock(return_value=""); driver.sql=mock.Mock(side_effect=["","hakopod-"+driver.run_id])
+        with mock.patch.object(DRIVER.time,"sleep"): result=driver.restart(pid,"namespace-uid")
+        self.assertEqual(result["compute_pod_uids_after"],["new-primary"]); self.assertEqual(driver.k.call_count,5); self.assertTrue(result["old_pods_absent"])
+        self.assertEqual(result["restarted_components"],{"pageserver":"pageserver-1","compute":"compute-0"})
+        self.assertTrue(all("-l" not in call.args for call in driver.k.call_args_list[1:]))
+        self.assertEqual([json.loads(call.kwargs["data"])["preconditions"]["uid"] for call in driver.command.call_args_list],["old-primary","old-storage"])
+        driver.k=mock.Mock(side_effect=[json.dumps(sets),json.dumps({"items":[pod("compute-0","foreign-primary",owner="foreign-set"),pod("pageserver-1","new-storage")]})]); driver.sql=mock.Mock(return_value="")
+        with self.assertRaisesRegex(RuntimeError,"replacement ownership changed"): driver.restart(pid,"namespace-uid")
+        driver.api=mock.Mock(side_effect=[{"revision":4},probe,dict(probe,attached_pageserver="pageserver-0",attached_pageserver_node_id=1)])
+        driver.k=mock.Mock(return_value=json.dumps(sets)); driver.command.reset_mock()
+        with self.assertRaisesRegex(RuntimeError,"moved before"): driver.restart(pid,"namespace-uid")
+        driver.command.assert_not_called()
+    def test_tenant_migration_requires_owned_move_and_both_sql_paths(self):
+        driver=self.bare_driver(); pid="a"*32; uid="namespace-uid"; driver.run_id="b"*32
+        probe={"platform_id":pid,"platform_revision":4,"namespace_uid":uid,"ownership_capability_verified":True,"attached_pageserver":"pageserver-0","attached_pageserver_node_id":1,"tenant_id":"1"*32,"timeline_id":"2"*32,"tenant_generation":7}
+        moved={"platform_id":pid,"platform_revision":4,"namespace_uid":uid,"tenant_id":"1"*32,"timeline_id":"2"*32,"source_node_id":1,"destination_node_id":2,"generation_before":7,"generation_after":8,"tenant_owner_unchanged":True,"controller_move_completed":True,"compute_names":["compute-0","compute-1"],"compute_routing_verified":True}
+        after=dict(probe,attached_pageserver="pageserver-1",attached_pageserver_node_id=2,tenant_generation=8)
+        def pod(component):
+            return {"metadata":{"name":"neon-"+component+"-0","labels":{"hakopod.io/neon-role":"compute","app.kubernetes.io/component":component},"ownerReferences":[{"kind":"StatefulSet","name":"neon-"+component,"uid":"set-"+component}]},"status":{"containerStatuses":[{"ready":True}]}}
+        pods=[pod("compute-0"),pod("compute-1")]; namespace="managed-platform-"+pid
+        driver.pods=mock.Mock(return_value=(namespace,pods));driver.namespace=mock.Mock(return_value={"metadata":{"uid":uid}})
+        driver.k=mock.Mock(return_value=json.dumps({"items":[{"metadata":{"name":"neon-"+component,"uid":"set-"+component}} for component in ("compute-0","compute-1")]}))
+        def prepare(observation):
+            driver.api=mock.Mock(side_effect=[{"revision":4,"spec":{"neon":{"pageservers":2}}},probe,observation,after])
+            driver.sql=mock.Mock(side_effect=["","hakopod-migration-"+driver.run_id,"hakopod-migration-"+driver.run_id])
+        prepare(moved);result=driver.tenant_migration(pid,uid)
+        self.assertTrue(result["primary_sql_verified"] and result["replica_sql_verified"])
+        self.assertEqual(driver.api.call_args_list[2].args,("POST","/api/v1/managed-platforms/"+pid+"/native-migrate",{"expected_revision":4,"namespace_uid":uid,"source_node_id":1,"destination_node_id":2}))
+        for changed in (dict(moved,generation_after=7),dict(moved,tenant_owner_unchanged=False),dict(moved,compute_names=["compute-0"]),dict(moved,namespace_uid="foreign")):
+            prepare(changed)
+            with self.assertRaisesRegex(RuntimeError,"observation is not exact"):driver.tenant_migration(pid,uid)
+        prepare(moved);driver.sql=mock.Mock(side_effect=["","missing","hakopod-migration-"+driver.run_id])
+        with self.assertRaisesRegex(RuntimeError,"SQL on both"):driver.tenant_migration(pid,uid)
+    def test_object_store_fault_requires_bounded_absolute_command(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            command=Path(directory)/"command.json"; driver=self.bare_driver(); driver.a.object_store_fault_command_file=str(command); driver.command=mock.Mock(return_value="running\n")
+            command.write_text(json.dumps(["relative-helper"]));
+            with self.assertRaisesRegex(RuntimeError,"malformed"): driver.object_store_fault("status")
+            command.write_text(json.dumps(["/protected/object-store-fault.py","--fixed"])); self.assertEqual(driver.object_store_fault("status"),"running")
+            self.assertEqual(driver.command.call_args.args[0],["/protected/object-store-fault.py","--fixed","status"])
+    def test_object_store_outage_cancels_nonterminal_operation_and_restores_service(self):
+        driver=self.bare_driver(); driver.run_id="b"*32; source="a"*32; driver.bound={source:("namespace-uid","operation")}; driver.object_store_fault=mock.Mock(side_effect=["stopped","started","running"])
+        driver.api=mock.Mock(side_effect=[{"review":{"id":"review"}},{"id":"c"*32},{"status":"running"},{},]); driver.wait=mock.Mock(side_effect=[RuntimeError("operation exceeded its time bound"),{"status":"cancelled"}])
+        with self.assertRaisesRegex(RuntimeError,"time bound"): driver.object_store_outage({"source_platform_id":source})
+        self.assertEqual(driver.object_store_fault.call_args_list,[mock.call("stop"),mock.call("start")])
+        self.assertEqual(driver.api.call_args_list[-1].args[1],"/api/v1/managed-platform-recovery-operations/"+"c"*32+"/cancel")
+    def test_cleanup_records_lifecycle_only_after_namespaces_are_absent(self):
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as directory:
+            driver=self.bare_driver(); driver.platforms=[]; driver.bound={}; driver.run_id="a"*32; driver.pending_lifecycle={"created":True,"branch_created":True}; driver.pending_revocation=None; driver.foreign=None; driver.a.control_plane_bridge="/protected/bridge"; driver.a.kubeconfig="/protected/kubeconfig"; driver.cleanup_started=False; driver.cleanup_completed=False; driver.evidence=Path(directory)
+            driver.record=mock.Mock(); driver.command=mock.Mock(return_value=""); driver.k=mock.Mock(return_value=json.dumps({"items":[]})); driver.cleanup()
+            driver.record.assert_called_once_with("tenant-timeline-compute-lifecycle",{"created":True,"stopped":True,"deleted":True,"branch_created":True,"branch_deleted":True})
+            self.assertIsNone(driver.pending_lifecycle); self.assertTrue(driver.cleanup_completed)
+            receipt=json.loads((Path(directory)/"cleanup-attempt.json").read_text())
+            self.assertTrue(receipt["persistent_volume_claim_refs_absent"]); self.assertEqual(receipt["owned_persistent_volumes"],[]); self.assertEqual(receipt["status"],"verified")
+            driver.command.assert_called_once_with(driver.bridge_argv("cleanup"),120); self.assertFalse((Path(directory)/"cleanup-transport-retained.json").exists())
+            driver.cleanup(); driver.command.assert_called_once()
+    def test_recovery_receipt_requires_exact_operation_artifact_and_scope_binding(self):
+        driver=self.bare_driver(); source,target="1"*32,"2"*32; operation,artifact="3"*32,"4"*32
+        value={"operation_id":operation,"status":"succeeded","artifact_id":artifact,"manifest_sha256":"5"*64,"source_platform_id":source,"source_revision":7,"source_namespace_uid":"source-uid","target_platform_id":target,"target_revision":9,"format":"hakopod-neon-recovery-v1","parts":["tenant.json","timeline.json","remote-storage.tar"],"neon":{"tenant_id":"6"*32}}
+        self.assertEqual(driver.recovery_receipt(value,operation,artifact,source,7,"source-uid",target,9),value["neon"])
+        for field,replacement in (("operation_id","7"*32),("artifact_id","8"*32),("source_namespace_uid","wrong"),("target_revision",10)):
+            changed=dict(value); changed[field]=replacement
+            with self.assertRaisesRegex(RuntimeError,"receipt binding"): driver.recovery_receipt(changed,operation,artifact,source,7,"source-uid",target,9)
+    def test_cancellation_receipt_requires_exact_terminal_binding(self):
+        driver=self.bare_driver(); driver.a.project="native-neon"; driver.cancellation_target_spec=neon("cancel","cancel-prefix"); source,target="1"*32,"2"*32; operation,artifact="3"*32,"4"*32
+        value={"schema_version":1,"operation_id":operation,"project":"native-neon","environment":"development","source_platform_id":source,"source_revision":7,"target_platform_id":target,"target_revision":9,"artifact_id":artifact,"manifest_sha256":"5"*64,"tenant_id":"6"*32,"timeline_id":"7"*32,"tenant_generation":1,"timeline_generation":2,"journal_entries":2,"journal_phase_counts":{"complete":2,"empty_complete":0,"untouched_complete":0},"cleanup_pending":False,"operation_authority_refused":True,"namespace_uid":"target-uid","deployment_count":1,"statefulset_count":6,"workload_replicas_zero":True,"pods_absent":True,"staging_prefix_empty":True}
+        self.assertIs(driver.cancellation_receipt(value,operation,artifact,"5"*64,source,7,target,9,"target-uid"),value)
+        for field,replacement in (("operation_id","8"*32),("manifest_sha256","9"*64),("namespace_uid","wrong"),("pods_absent",False)):
+            changed=dict(value); changed[field]=replacement
+            with self.assertRaisesRegex(RuntimeError,"cancellation receipt binding"): driver.cancellation_receipt(changed,operation,artifact,"5"*64,source,7,target,9,"target-uid")
+    def test_wait_phase_refuses_terminal_operation_before_cleanup_journal(self):
+        driver=self.bare_driver(); driver.api=mock.Mock(return_value={"status":"cancelled","phase":"cancelled"})
+        with self.assertRaisesRegex(RuntimeError,"before the required phase"): driver.wait_phase("/api/v1/managed-platform-recovery-operations/"+"1"*32,{"target-admitted"},1)
+    @mock.patch.object(DRIVER.HTTP,"open")
+    def test_api_binds_exact_path_and_headers(self,open_request):
+        response=mock.MagicMock(); response.__enter__.return_value=response; response.status=200; response.read.return_value=b'{"ok":true}'
+        response.geturl.return_value="http://127.0.0.1:8800/api/v1/check"; open_request.return_value=response
+        self.assertEqual(self.bare_driver().api("POST","/api/v1/check",{"a":1},"fixed-key"),{"ok":True})
+        request=open_request.call_args.args[0]; self.assertEqual(request.full_url,"http://127.0.0.1:8800/api/v1/check"); self.assertEqual(request.get_header("Idempotency-key"),"fixed-key"); self.assertEqual(request.data,b'{"a":1}')
+    @mock.patch.object(DRIVER.HTTP,"open")
+    def test_api_rejects_redirect(self,open_request):
+        open_request.side_effect=urllib.error.HTTPError("http://127.0.0.1:8800/api/v1/x",302,"redirect",{},io.BytesIO(b'{}'))
+        with self.assertRaisesRegex(RuntimeError,"unexpected"): self.bare_driver().api("GET","/api/v1/x")
+    @mock.patch.object(DRIVER.HTTP,"open")
+    def test_api_rejects_oversized_body(self,open_request):
+        response=mock.MagicMock(); response.__enter__.return_value=response; response.status=200; response.read.return_value=b'x'*((1<<20)+1)
+        response.geturl.return_value="http://127.0.0.1:8800/api/v1/x"; open_request.return_value=response
+        with self.assertRaisesRegex(RuntimeError,"unexpected"): self.bare_driver().api("GET","/api/v1/x")
+
+if __name__ == "__main__": unittest.main()

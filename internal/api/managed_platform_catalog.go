@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/store"
@@ -21,14 +22,62 @@ type ManagedPlatformCatalogPlanner interface {
 	ManagedPlatformCatalog(context.Context, store.Principal, string, string) (ManagedPlatformCatalog, error)
 }
 
-func (p *NativeManagedPlatformPlanner) ManagedPlatformCatalog(_ context.Context, principal store.Principal, project, environment string) (ManagedPlatformCatalog, error) {
+func (p *NativeManagedPlatformPlanner) ManagedPlatformCatalog(ctx context.Context, principal store.Principal, project, environment string) (ManagedPlatformCatalog, error) {
 	if !principal.AllowsManagedPlatform(project, environment, false) {
 		return ManagedPlatformCatalog{}, store.ErrForbidden
 	}
+	nodes := p.CatalogNodes
+	if p.CatalogCapacity != nil {
+		capacity, err := p.CatalogCapacity(ctx, project, environment)
+		if err != nil {
+			return ManagedPlatformCatalog{}, err
+		}
+		if err = capacity.Validate(); err != nil {
+			return ManagedPlatformCatalog{}, err
+		}
+		if capacity.StorageClass != p.ApprovedEncryptedStorageClass {
+			return ManagedPlatformCatalog{}, store.ErrForbidden
+		}
+		nodes = capacity.Nodes
+	}
+	items := managedplatform.CatalogEntries()
+	for index := range items {
+		switch items[index].Kind {
+		case "supabase":
+			items[index].Capability = scopedPlatformCapability(ctx, "Supabase", managedplatform.SupabaseReleaseQualified(), items[index].Capability, p.ValidateSupabaseQualification)
+		case "neon":
+			items[index].Capability = scopedPlatformCapability(ctx, "Neon", managedplatform.NeonReleaseQualified(), items[index].Capability, p.ValidateNeonQualification)
+		}
+	}
 	return ManagedPlatformCatalog{Project: project, Environment: environment, StorageClass: p.ApprovedEncryptedStorageClass,
-		Nodes:            append([]managedplatform.CapacityNode{}, p.CatalogNodes...),
+		Nodes:            append([]managedplatform.CapacityNode{}, nodes...),
 		SecretReferences: append([]managedplatform.SecretReference{}, p.CatalogSecrets[project][environment]...),
-		Items:            managedplatform.CatalogEntries()}, nil
+		Items:            items}, nil
+}
+
+func scopedPlatformCapability(ctx context.Context, name string, released bool, capability managedplatform.Capability, validate func(context.Context) error) managedplatform.Capability {
+	capability, _ = reviewedPlatformCapability(ctx, name, released, capability, validate)
+	return capability
+}
+
+func reviewedPlatformCapability(ctx context.Context, name string, released bool, capability managedplatform.Capability, validate func(context.Context) error) (managedplatform.Capability, error) {
+	// A qualified release does not imply that this installation is approved.
+	capability.Available, capability.ClusterQualified, capability.PublicQualified = false, false, false
+	if validate == nil {
+		capability.Reason = name + " requires a reviewed operator qualification binding"
+		return capability, nil
+	}
+	bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := validate(bounded); err != nil {
+		capability.Reason = name + " operator qualification does not match this cluster"
+		return capability, err
+	}
+	if released {
+		capability.Available, capability.ClusterQualified = true, true
+		capability.Reason = name + " is qualified for this cluster; public endpoints remain unavailable"
+	}
+	return capability, nil
 }
 
 func (s *Server) managedPlatformCatalog(w http.ResponseWriter, r *http.Request) {

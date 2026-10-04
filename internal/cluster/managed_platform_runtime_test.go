@@ -40,6 +40,40 @@ func TestManagedPlatformSnapshotIsAuthenticatedAndDoesNotExposeSecrets(t *testin
 	}
 }
 
+func TestSupabaseRuntimeRechecksQualification(t *testing.T) {
+	bindingErr := errors.New("binding changed")
+	key := bytes.Repeat([]byte{9}, 32)
+	create := store.ManagedPlatformOperation{PlatformID: strings.Repeat("a", 32), Revision: 1, Kind: "create", Spec: managedplatform.Spec{Kind: "supabase"}}
+	sealed, err := SealManagedPlatformSnapshot(key, create.PlatformID, create.Revision, create.Kind, ManagedPlatformSnapshot{Supabase: &SupabaseRuntimeRequest{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	create.EncryptedSnapshot = sealed
+	runtime := &ManagedPlatformRuntime{Cluster: &Client{}, EncryptionKey: key, ValidateSupabaseQualification: func(context.Context) error { return bindingErr }}
+	err = runtime.ReconcileManagedPlatform(context.Background(), nil, create)
+	var categorized *ManagedPlatformRuntimeError
+	if !errors.As(err, &categorized) || categorized.SafeCategory() != "supabase_qualification" || !errors.Is(err, bindingErr) {
+		t.Fatalf("create did not fail at the live qualification boundary: %v", err)
+	}
+}
+
+func TestNeonRuntimeRechecksQualification(t *testing.T) {
+	bindingErr := errors.New("Neon binding changed")
+	key := bytes.Repeat([]byte{9}, 32)
+	create := store.ManagedPlatformOperation{PlatformID: strings.Repeat("b", 32), Revision: 1, Kind: "create", Spec: managedplatform.Spec{Kind: "neon"}}
+	sealed, err := SealManagedPlatformSnapshot(key, create.PlatformID, create.Revision, create.Kind, ManagedPlatformSnapshot{Neon: &NeonRuntimeRequest{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	create.EncryptedSnapshot = sealed
+	runtime := &ManagedPlatformRuntime{Cluster: &Client{}, EncryptionKey: key, ValidateNeonQualification: func(context.Context) error { return bindingErr }}
+	err = runtime.ReconcileManagedPlatform(context.Background(), nil, create)
+	var categorized *ManagedPlatformRuntimeError
+	if !errors.As(err, &categorized) || categorized.SafeCategory() != "neon_qualification" || !errors.Is(err, bindingErr) {
+		t.Fatalf("create did not fail at the live Neon qualification boundary: %v", err)
+	}
+}
+
 func TestManagedCloudCapacityGuardFencesPlatformReconciliation(t *testing.T) {
 	runtime := &ManagedPlatformRuntime{}
 	state := &store.Store{ManagedCloud: true}

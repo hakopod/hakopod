@@ -52,6 +52,15 @@ func (a neonLifecycleAdapter) Operation() managedplatform.DurableOperation {
 func (a neonLifecycleAdapter) Heartbeat(ctx context.Context) error {
 	return a.state.HeartbeatManagedPlatformOperation(ctx, a.op)
 }
+func (a neonLifecycleAdapter) NeonProviderStateEmpty(ctx context.Context) (bool, error) {
+	state, ok := a.state.(interface {
+		NeonProviderStateEmpty(context.Context, store.ManagedPlatformOperation) (bool, error)
+	})
+	if !ok {
+		return false, nil
+	}
+	return state.NeonProviderStateEmpty(ctx, a.op)
+}
 func (a neonLifecycleAdapter) Claims(ctx context.Context, revision int64) ([]managedplatform.DurableResourceClaim, error) {
 	values, err := a.state.PlatformResourceClaims(ctx, a.op, revision)
 	if err != nil {
@@ -125,6 +134,7 @@ func (c *Client) neonAvailabilityZones(ctx context.Context, spec managedplatform
 		return nil, fmt.Errorf("Neon availability-zone inventory is unavailable without explicit placement.node_names")
 	}
 	zones := make([]string, members)
+	safekeeperZones := make(map[string]bool, 3)
 	for i, name := range spec.Placement.NodeNames[:members] {
 		node, err := c.kube.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
@@ -141,9 +151,24 @@ func (c *Client) neonAvailabilityZones(ctx context.Context, spec managedplatform
 		if node.Name != name || node.DeletionTimestamp != nil || !ready || len(utilvalidation.IsDNS1123Label(zone)) != 0 {
 			return nil, fmt.Errorf("Neon placement node %s has no ready trusted availability-zone identity", name)
 		}
+		// Safekeeper i uses placement node i. Extra pageserver placements
+		// cannot compensate for a repeated zone among these three members.
+		if i < 3 {
+			if safekeeperZones[zone] {
+				return nil, fmt.Errorf("Neon requires the first three placement nodes to be in distinct availability zones")
+			}
+			safekeeperZones[zone] = true
+		}
 		zones[i] = zone
 	}
 	return zones, nil
+}
+
+// ValidateNeonPlacement checks live storage topology before a create or update
+// is reviewed and again before its immutable runtime snapshot is sealed.
+func (c *Client) ValidateNeonPlacement(ctx context.Context, spec managedplatform.Spec) error {
+	_, err := c.neonAvailabilityZones(ctx, spec)
+	return err
 }
 
 func (c *Client) neonLifecycleZones(ctx context.Context, kind string, spec managedplatform.Spec) ([]string, error) {
@@ -173,14 +198,46 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	}
 	if op.Kind == "delete" {
 		if err := durableStore.RevokeNeonProxyEndpoint(ctx, op); err != nil {
-			return err
+			return managedPlatformRuntimeError("neon_proxy_activate", err)
 		}
 		ns, namespaceErr := c.kube.CoreV1().Namespaces().Get(ctx, "managed-platform-"+op.PlatformID, metav1.GetOptions{})
 		if namespaceErr != nil && !apierrors.IsNotFound(namespaceErr) {
-			return namespaceErr
+			return managedPlatformRuntimeError("neon_namespace", namespaceErr)
 		}
 		if apierrors.IsNotFound(namespaceErr) || ns.DeletionTimestamp != nil {
 			return c.deleteSupabaseOperation(ctx, state, op, before)
+		}
+		prior, current, err := loadSupabaseClaims(ctx, state, op)
+		if err != nil {
+			return managedPlatformRuntimeError("neon_claims", err)
+		}
+		namespaceClaim, claimed := current["namespace."+ns.Name]
+		if !claimed {
+			namespaceClaim, claimed = prior["namespace."+ns.Name]
+		}
+		if claimed && namespaceClaim.ResourceID != string(ns.UID) {
+			return fmt.Errorf("Neon deletion namespace claim identity changed")
+		}
+		// Initial provisioning can fail before managed TLS or compute authority
+		// is attached. Only a fenced all-revision absence proof permits owned
+		// Kubernetes cleanup without preparing those provider credentials.
+		empty, err := (neonLifecycleAdapter{state: state, op: op}).NeonProviderStateEmpty(ctx)
+		if err != nil {
+			return managedPlatformRuntimeError("neon_provider_state", err)
+		}
+		if empty {
+			if err = before(); err != nil {
+				return err
+			}
+			return c.deleteSupabaseOperation(ctx, state, op, before)
+		}
+		if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+			return managedPlatformRuntimeError("neon_runtime_repair", err)
+		}
+		if request.Render.Spec.TLSMode == "managed" {
+			if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
+				return managedPlatformRuntimeError("neon_tls_prepare", err)
+			}
 		}
 		zones, err := c.neonLifecycleZones(ctx, op.Kind, request.Render.Spec)
 		if err != nil {
@@ -188,10 +245,10 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 		}
 		lifecycle, runtimeRequest, _, err := prepareNeonLifecycle(ctx, request, state, encryptionKey, zones)
 		if err != nil {
-			return err
+			return managedPlatformRuntimeError("neon_lifecycle_prepare", err)
 		}
 		if err = lifecycle.Deprovision(ctx, runtimeRequest); err != nil {
-			return err
+			return managedPlatformRuntimeError("neon_lifecycle_deprovision", err)
 		}
 		return c.deleteSupabaseOperation(ctx, state, op, before)
 	}
@@ -200,74 +257,101 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	}
 	zones, err := c.neonLifecycleZones(ctx, op.Kind, request.Render.Spec)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_node_inventory", err)
 	}
 	if bindings, ok := state.(neonRecoveryBindingStore); ok {
 		binding, bindingErr := bindings.NeonRecoveryBindingForLifecycle(ctx, op)
 		if bindingErr == nil {
-			request.Render.Spec.Neon.ObjectStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
+			request.Render.RecoveryStoragePrefix = strings.TrimSuffix(binding.StagingPrefix, "/")
 		} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
-			return fmt.Errorf("read Neon recovery binding: %w", bindingErr)
+			return managedPlatformRuntimeError("neon_recovery_binding", bindingErr)
 		}
-	}
-	lifecycle, runtimeRequest, route, err := prepareNeonLifecycle(ctx, request, state, encryptionKey, zones)
-	if err != nil {
-		return err
 	}
 	prior, current, err := loadSupabaseClaims(ctx, state, op)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_claims", err)
 	}
 	ns, err := c.ensureSupabaseNamespace(ctx, state, op, prior, current, before)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_namespace", err)
 	}
 	request.Render.NamespaceUID = ns.UID
+	if err = c.repairTerminalPlatformRuntime(ctx, state, op, ns, prior, before); err != nil {
+		return managedPlatformRuntimeError("neon_runtime_repair", err)
+	}
+	if err = c.prepareManagedPlatformTLS(ctx, state, op, ns, &request.Render.Spec, &request.Render.PreviousSpec, &request.SecretSnapshots, prior, current, before); err != nil {
+		return managedPlatformRuntimeError("neon_tls_prepare", err)
+	}
+	lifecycle, runtimeRequest, route, err := prepareNeonLifecycle(ctx, request, state, encryptionKey, zones)
+	if err != nil {
+		return managedPlatformRuntimeError("neon_lifecycle_prepare", err)
+	}
+	if err = prepareNeonControllerSecret(&request, encryptionKey); err != nil {
+		return managedPlatformRuntimeError("neon_controller_secret", err)
+	}
 	manifests, err := managedplatform.RenderNeon(request.Render)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_render", err)
 	}
-	if err = validateNeonSecretSnapshot(request.SecretSnapshots, manifests.RequiredSecrets, request.Render.Spec); err != nil {
-		return err
+	if op.Spec.TLSMode == "managed" {
+		manifests.RetainSecretSnapshots = append(manifests.RetainSecretSnapshots, managedplatform.ManagedTLSIssuerSecret)
+	}
+	if err = validateNeonSecretSnapshot(request.SecretSnapshots, manifests.RequiredSecrets, request.Render.Spec, request.Render.PlatformID); err != nil {
+		return managedPlatformRuntimeError("neon_secret_validate", err)
 	}
 	for _, name := range manifests.RequiredSecrets {
 		if err = c.applySupabaseSecret(ctx, state, op, ns, name, request.SecretSnapshots[name], prior, current, before); err != nil {
-			return err
+			return managedPlatformRuntimeError("neon_secret_apply", err)
 		}
 	}
 	objects := append([]runtime.Object(nil), manifests.Objects...)
 	sort.SliceStable(objects, func(i, j int) bool { return supabaseApplyRank(objects[i]) < supabaseApplyRank(objects[j]) })
 	for _, object := range objects {
 		if err = c.applySupabaseObject(ctx, op, ns, object, state, prior, current, before); err != nil {
-			return err
+			return managedPlatformRuntimeError("neon_object_apply", err)
 		}
 	}
 	bootstrap, err := c.observeNeon(ctx, op, manifests, current, false)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_bootstrap_observe", err)
 	}
 	if bootstrap.Status != "ready" {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-bootstrap", "Neon infrastructure is not ready for lifecycle provisioning.", neonObservationMap(bootstrap))
 	}
-	if _, err = lifecycle.Provision(ctx, runtimeRequest); err != nil {
-		return err
+	if !op.Maintenance {
+		if _, err = lifecycle.Provision(ctx, runtimeRequest); err != nil {
+			return managedPlatformRuntimeError("neon_lifecycle_provision", err)
+		}
+	} else if err = c.replayNeonComputes(ctx, state, encryptionKey, op); err != nil {
+		return managedPlatformRuntimeError("neon_compute_replay", err)
 	}
 	observation, err := c.ObserveNeon(ctx, op, manifests, current)
 	if err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_serving_observe", err)
 	}
 	if observation.Status != "ready" {
 		return state.RecordManagedPlatformStep(ctx, op, "queued", "waiting-ready", "Neon serving components are not ready.", neonObservationMap(observation))
 	}
+	result := neonObservationMap(observation)
+	if op.Spec.TLSMode == "managed" {
+		tlsObservation, err := c.observeManagedPlatformTLS(ctx, state, op, ns, request.Render.Spec, request.SecretSnapshots, current, before)
+		if err != nil {
+			return managedPlatformRuntimeError("platform_tls_observe", err)
+		}
+		result["tls"] = tlsObservation
+	}
 	prune := managedplatform.SupabaseManifests{PruneConfigMapsBeforeRevision: manifests.PruneConfigMapsBeforeRevision, RetainSecretSnapshots: manifests.RetainSecretSnapshots}
 	if err = c.pruneSupabaseSnapshots(ctx, state, op, ns, prune, prior, current, before); err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_snapshot_prune", err)
+	}
+	if op.Maintenance {
+		return state.RecordManagedPlatformStep(ctx, op, "succeeded", "runtime-ready", "Neon runtime maintenance is verified.", result)
 	}
 	// A second pass must re-observe every durable identity without issuing a new
 	// create before the proxy route becomes visible.
 	recovered, err := lifecycle.Provision(ctx, runtimeRequest)
 	if err != nil {
-		return fmt.Errorf("Neon recovery observation failed: %w", err)
+		return managedPlatformRuntimeError("neon_recovery_observe", err)
 	}
 	if !recovered.Complete {
 		return fmt.Errorf("Neon recovery observation did not complete")
@@ -278,9 +362,8 @@ func (c *Client) ReconcileNeonOperation(ctx context.Context, state ManagedPlatfo
 	}
 	record := store.NeonProxyEndpointRecord{EndpointID: route.EndpointID, PlatformID: op.PlatformID, PlatformRevision: op.Revision, OwnerOperationID: op.ID, Generation: op.Revision, Enabled: route.Enabled, Address: route.Address, ServerName: route.ServerName, ProjectID: route.ProjectID, BranchID: route.BranchID, ComputeID: route.ComputeID, EncryptedRoles: sealedRoles}
 	if err = durableStore.ActivateNeonProxyEndpoint(ctx, op, record); err != nil {
-		return err
+		return managedPlatformRuntimeError("neon_proxy_activate", err)
 	}
-	result := neonObservationMap(observation)
 	result["tenant_id"] = recovered.TenantID
 	result["timeline_id"] = recovered.TimelineID
 	result["safekeeper_count"] = recovered.SafekeeperCount
@@ -319,7 +402,13 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 	if err != nil {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
 	}
-	computeToken, err := secret("compute-auth", "token")
+	deprovisionOnly := op.Kind == "delete"
+	var computeToken []byte
+	if deprovisionOnly {
+		computeToken, err = managedplatform.NeonComputeAuthenticationToken(encryptionKey, op.PlatformID)
+	} else {
+		computeToken, err = secret("compute-auth", "token")
+	}
 	if err != nil {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
 	}
@@ -327,8 +416,19 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 	if err != nil {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
 	}
+	var pageserverToken []byte
+	if _, present := request.Render.Spec.Secrets["pageserver-auth"]; present || op.Kind != "delete" {
+		pageserverToken, err = secret("pageserver-auth", "token")
+		if err != nil {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
+		}
+	}
 	roots := x509.NewCertPool()
-	for _, logical := range []string{"controller-auth", "compute-auth", "safekeeper-auth"} {
+	trust := []string{"controller-auth", "compute-auth", "safekeeper-auth"}
+	if len(pageserverToken) > 0 {
+		trust = append(trust, "pageserver-auth")
+	}
+	for _, logical := range trust {
 		pem, readErr := secret(logical, "ca.crt")
 		if readErr != nil {
 			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, readErr
@@ -337,8 +437,15 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, fmt.Errorf("Neon secret %s contains an invalid CA bundle", logical)
 		}
 	}
-	deprovisionOnly := op.Kind == "delete"
-	config := managedplatform.NeonRuntimeConfig{StorageController: managedplatform.NeonControlTarget{Name: "storage-controller", Origin: "https://neon-storage-controller." + namespace + ".svc:6699", Token: string(controllerToken)}, SafekeeperToken: string(safekeeperToken), RequestTimeout: 20 * time.Second, RootCAs: roots, DeprovisionOnly: deprovisionOnly}
+	config := managedplatform.NeonRuntimeConfig{StorageController: managedplatform.NeonControlTarget{Name: "storage-controller", Origin: "https://neon-storage-controller." + namespace + ".svc:6699", Token: string(controllerToken)}, SafekeeperToken: string(safekeeperToken), PageserverToken: string(pageserverToken), RequestTimeout: 2 * time.Minute, RootCAs: roots, DeprovisionOnly: deprovisionOnly}
+	if reader, ok := bindings.(neonControllerStateReader); ok && !deprovisionOnly {
+		writer, ok := bindings.(neonControllerStateStore)
+		if !ok {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, fmt.Errorf("Neon initial routing requires durable controller state")
+		}
+		config.ResolveComputeConfig = neonControllerComputeResolver(reader, op.PlatformID, op.Revision, request.Render.Spec.Neon.Pageservers)
+		config.ObserveTimelineRouting = neonControllerTimelineObserver(writer, op)
+	}
 	if !deprovisionOnly && len(zones) < max(3, request.Render.Spec.Neon.Pageservers) {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, fmt.Errorf("Neon availability-zone inventory is unavailable")
 	}
@@ -370,16 +477,26 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 	for _, node := range config.Safekeepers {
 		safekeepers = append(safekeepers, node.Host+":5454")
 	}
-	template, err := secret("compute-auth", "config.json")
-	if err != nil {
-		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
+	var template []byte
+	if !deprovisionOnly {
+		template, err = secret("compute-auth", "config.json")
+		if err != nil {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, err
+		}
 	}
-	lifecycleRequest = managedplatform.NeonLifecycleRequest{OperationID: op.ID, TenantID: tenantID, TimelineID: timelineID, CreateTenant: true, ComputeConfig: map[string]json.RawMessage{}}
+	lifecycleRequest = managedplatform.NeonLifecycleRequest{OperationID: op.ID, TenantID: tenantID, TimelineID: timelineID, CreateTenant: !deprovisionOnly, ComputeConfig: map[string]json.RawMessage{}}
 	for i := 0; i < request.Render.Spec.Neon.ComputeReplicas; i++ {
 		name := "compute-" + strconv.Itoa(i)
 		controlHost := "neon-" + name + "-control." + namespace + ".svc"
 		config.Computes = append(config.Computes, managedplatform.NeonControlTarget{Name: name, Origin: "https://" + controlHost + ":3081", Token: string(computeToken)})
-		raw, configErr := bindNeonComputeConfig(template, tenantID, timelineID, safekeepers)
+		if deprovisionOnly {
+			continue
+		}
+		raw, configErr := bindNeonComputeConfig(template, tenantID, timelineID, safekeepers, name)
+		if configErr != nil {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, configErr
+		}
+		raw, configErr = managedplatform.BindNeonTenantAuthentication(raw, encryptionKey, op.PlatformID, tenantID)
 		if configErr != nil {
 			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, configErr
 		}
@@ -398,26 +515,15 @@ func neonDeterministicID(platformID, purpose string) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekeepers []string) (json.RawMessage, error) {
-	var root map[string]any
-	if err := json.Unmarshal(template, &root); err != nil {
-		return nil, fmt.Errorf("decode Neon compute configuration: %w", err)
+func bindNeonComputeConfig(template []byte, tenantID, timelineID string, safekeepers []string, computeName string) (json.RawMessage, error) {
+	ordinal, err := strconv.Atoi(strings.TrimPrefix(computeName, "compute-"))
+	if err != nil || ordinal < 0 || ordinal > 5 || computeName != "compute-"+strconv.Itoa(ordinal) {
+		return nil, fmt.Errorf("Neon compute identity is invalid")
 	}
-	spec, ok := root["spec"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("Neon compute configuration requires a spec object")
-	}
-	spec["tenant_id"] = tenantID
-	spec["timeline_id"] = timelineID
-	spec["safekeeper_connstrings"] = append([]string(nil), safekeepers...)
-	encoded, err := json.Marshal(root)
-	if err != nil || len(encoded) > 1<<20 {
-		return nil, fmt.Errorf("Neon compute configuration is invalid")
-	}
-	return encoded, nil
+	return managedplatform.BindNeonComputeRuntime(template, tenantID, timelineID, safekeepers, ordinal > 0)
 }
 
-func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []string, spec managedplatform.Spec) error {
+func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []string, spec managedplatform.Spec, platformID string) error {
 	if len(values) != len(names) {
 		return fmt.Errorf("resolved Neon secret snapshot is incomplete")
 	}
@@ -438,9 +544,10 @@ func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []str
 		}
 	}
 	required := map[string][]string{
+		"broker-auth":                  {"tls.crt", "tls.key", "ca.crt"},
 		"compute-auth":                 {"config.json", "token", "tls.crt", "tls.key", "ca.crt"},
-		"controller-auth":              {"token", "public-key.pem", "tls.crt", "tls.key", "ca.crt"},
-		"controller-database-password": {"value"},
+		"controller-auth":              {"token", "upcall-token", "public-key.pem", "tls.crt", "tls.key", "ca.crt"},
+		"controller-database-password": {"value", "tls.crt", "tls.key", "ca.crt"},
 		"object-storage":               {"access-key-id", "secret-access-key"},
 		"pageserver-auth":              {"token", "public-key.pem", "tls.crt", "tls.key", "ca.crt"},
 		"proxy-auth":                   {"token", "tls.crt", "tls.key"},
@@ -462,7 +569,7 @@ func validateNeonSecretSnapshot(values map[string]map[string][]byte, names []str
 			}
 		}
 	}
-	return nil
+	return validateNeonTLSSecretSnapshots(values, spec, platformID, time.Now())
 }
 
 func (c *Client) ObserveNeon(ctx context.Context, op store.ManagedPlatformOperation, manifests managedplatform.NeonManifests, current map[string]store.PlatformResourceClaim) (NeonRuntimeObservation, error) {
@@ -481,10 +588,12 @@ func neonDeploymentObserved(item *appsv1.Deployment, serving bool) bool {
 }
 
 func neonStatefulSetObserved(item *appsv1.StatefulSet, serving bool) bool {
-	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas || item.Status.CurrentRevision != item.Status.UpdateRevision {
+	if item == nil || item.Generation != item.Status.ObservedGeneration || item.Spec.Replicas == nil || item.Status.Replicas != *item.Spec.Replicas || item.Status.UpdatedReplicas != *item.Spec.Replicas {
 		return false
 	}
-	return !serving || item.Status.ReadyReplicas == *item.Spec.Replicas
+	// Kubernetes advances CurrentRevision after every updated Pod is ready.
+	// Lifecycle-configured StatefulSets must bootstrap before that can happen.
+	return !serving || item.Status.CurrentRevision == item.Status.UpdateRevision && item.Status.ReadyReplicas == *item.Spec.Replicas
 }
 
 func (c *Client) observeNeon(ctx context.Context, op store.ManagedPlatformOperation, manifests managedplatform.NeonManifests, current map[string]store.PlatformResourceClaim, serving bool) (NeonRuntimeObservation, error) {

@@ -30,7 +30,7 @@ resources:
                       type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
                     log_format:
                       text_format_source:
-                        inline_string: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT% - - [%START_TIME(%d/%b/%Y:%H:%M:%S %z)%] \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%\" %RESPONSE_CODE% %BYTES_SENT% \"%REQ(REFERER)%\" \"%REQ(USER-AGENT)%\"\n"
+                        inline_string: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT% - - [%START_TIME(%d/%b/%Y:%H:%M:%S %z)%] \"%REQ(:METHOD)% %PROTOCOL%\" %RESPONSE_CODE% %BYTES_SENT%\n"
 
               route_config:
                 name: supabase_route
@@ -651,7 +651,8 @@ resources:
                     '@type': >-
                       type.googleapis.com/envoy.extensions.filters.http.basic_auth.v3.BasicAuth
                     users:
-                      inline_string: '${DASHBOARD_BASIC_AUTH}'
+                      inline_string: |
+                        ${DASHBOARD_BASIC_AUTH}
 
                 # Copies ?apikey=... from the URL into the apikey header when clients omit the header.
                 - name: envoy.filters.http.lua

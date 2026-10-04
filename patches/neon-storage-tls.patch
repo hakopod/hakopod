@@ -1,0 +1,543 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 55c2d3f..1d31191 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1365,6 +1365,7 @@ dependencies = [
+  "pageserver_page_api",
+  "postgres",
+  "postgres-types",
++ "postgres_connection",
+  "postgres_initdb",
+  "postgres_versioninfo",
+  "regex",
+@@ -5130,7 +5131,11 @@ dependencies = [
+  "anyhow",
+  "itertools 0.10.5",
+  "once_cell",
++ "rustls 0.23.29",
++ "rustls-pemfile 2.1.1",
++ "tokio",
+  "tokio-postgres",
++ "tokio-postgres-rustls",
+  "url",
+ ]
+ 
+@@ -6444,6 +6449,7 @@ dependencies = [
+  "pem",
+  "postgres-protocol",
+  "postgres_backend",
++ "postgres_connection",
+  "postgres_ffi",
+  "postgres_ffi_types",
+  "postgres_versioninfo",
+diff --git a/compute_tools/Cargo.toml b/compute_tools/Cargo.toml
+index 37b3d54..da8ea64 100644
+--- a/compute_tools/Cargo.toml
++++ b/compute_tools/Cargo.toml
+@@ -48,6 +48,7 @@ postgres.workspace = true
+ regex.workspace = true
+ reqwest = { workspace = true, features = ["json"] }
+ ring = "0.17"
++postgres_connection.workspace = true
+ scopeguard.workspace = true
+ serde.workspace = true
+ serde_with.workspace = true
+diff --git a/compute_tools/src/compute.rs b/compute_tools/src/compute.rs
+index 5ed2395..10f00d2 100644
+--- a/compute_tools/src/compute.rs
++++ b/compute_tools/src/compute.rs
+@@ -20,6 +20,7 @@ use pageserver_page_api::{self as page_api, BaseBackupCompression};
+ use postgres;
+ use postgres::NoTls;
+ use postgres::error::SqlState;
++use postgres_connection::storage_tls_config;
+ use remote_storage::{DownloadError, RemotePath};
+ use std::collections::{HashMap, HashSet};
+ use std::ffi::OsString;
+@@ -1338,7 +1339,13 @@ impl ComputeNode {
+         let shard0_connstr = spec
+             .pageserver_conninfo
+             .shard_url(ShardNumber(0), PageserverProtocol::Libpq)?;
+-        let mut config = postgres::Config::from_str(shard0_connstr)?;
++        let (shard0_connstr, tls) = if self.ownership.enabled() {
++            let (connstr, tls) = storage_tls_config(shard0_connstr)?;
++            (connstr, Some(tls))
++        } else {
++            (shard0_connstr.to_owned(), None)
++        };
++        let mut config = postgres::Config::from_str(&shard0_connstr)?;
+ 
+         // Use the storage auth token from the config file, if given.
+         // Note: this overrides any password set in the connection string.
+@@ -1356,7 +1363,10 @@ impl ComputeNode {
+         ));
+ 
+         // Connect to pageserver
+-        let mut client = config.connect(NoTls)?;
++        let mut client = match tls {
++            Some(tls) => config.connect(tls)?,
++            None => config.connect(NoTls)?,
++        };
+         let connected = Instant::now();
+ 
+         let basebackup_cmd = match lsn {
+@@ -1471,7 +1481,10 @@ impl ComputeNode {
+         let quorum = sk_configs.len() / 2 + 1;
+         for (id, config) in sk_configs {
+             let timeout = tokio::time::Duration::from_millis(100);
+-            let task = tokio::time::timeout(timeout, ping_safekeeper(id, config));
++            let task = tokio::time::timeout(
++                timeout,
++                ping_safekeeper(id, config, self.ownership.enabled()),
++            );
+             tasks.push(tokio::spawn(task));
+         }
+ 
+diff --git a/compute_tools/src/sync_sk.rs b/compute_tools/src/sync_sk.rs
+index 6c34864..10e6814 100644
+--- a/compute_tools/src/sync_sk.rs
++++ b/compute_tools/src/sync_sk.rs
+@@ -1,5 +1,6 @@
+ // Utils for running sync_safekeepers
+ use anyhow::Result;
++use postgres_connection::storage_tls_connector;
+ use tracing::info;
+ use utils::lsn::Lsn;
+ 
+@@ -15,21 +16,36 @@ pub struct TimelineStatusOkResponse {
+     commit_lsn: Lsn,
+ }
+ 
+-/// Get a safekeeper's metadata for our timeline. The id is only used for logging
++/// Get a safekeeper's metadata for our timeline. The id is only used for logging.
++/// Hakopod-owned computes require authenticated TLS; ordinary upstream development
++/// keeps the existing plaintext connection behavior.
+ pub async fn ping_safekeeper(
+     id: String,
+-    config: tokio_postgres::Config,
++    mut config: tokio_postgres::Config,
++    require_storage_tls: bool,
+ ) -> Result<TimelineStatusResponse> {
+     // TODO add retries
+ 
+     // Connect
+     info!("connecting to {}", id);
+-    let (client, conn) = config.connect(tokio_postgres::NoTls).await?;
+-    tokio::spawn(async move {
+-        if let Err(e) = conn.await {
+-            eprintln!("connection error: {e}");
+-        }
+-    });
++    let client = if require_storage_tls {
++        config.ssl_mode(tokio_postgres::config::SslMode::Require);
++        let (client, connection) = config.connect(storage_tls_connector(None)?).await?;
++        tokio::spawn(async move {
++            if let Err(e) = connection.await {
++                eprintln!("connection error: {e}");
++            }
++        });
++        client
++    } else {
++        let (client, connection) = config.connect(tokio_postgres::NoTls).await?;
++        tokio::spawn(async move {
++            if let Err(e) = connection.await {
++                eprintln!("connection error: {e}");
++            }
++        });
++        client
++    };
+ 
+     // Query
+     info!("querying {}", id);
+@@ -87,7 +103,6 @@ pub fn check_if_synced(responses: Vec<TimelineStatusResponse>) -> Option<Lsn> {
+         info!("not synced. {:?} {:?}", flush_min, flush_max);
+         return None;
+     }
+-
+     // Check that commit == flush
+     if commit_max != flush_max {
+         info!("not synced. {:?} {:?}", commit_max, flush_max);
+diff --git a/libs/postgres_connection/Cargo.toml b/libs/postgres_connection/Cargo.toml
+index 462fb4a..21d0258 100644
+--- a/libs/postgres_connection/Cargo.toml
++++ b/libs/postgres_connection/Cargo.toml
+@@ -8,7 +8,11 @@ license.workspace = true
+ anyhow.workspace = true
+ itertools.workspace = true
+ tokio-postgres.workspace = true
++tokio-postgres-rustls.workspace = true
++rustls = { workspace = true, features = ["ring"] }
++rustls-pemfile.workspace = true
+ url.workspace = true
+ 
+ [dev-dependencies]
+ once_cell.workspace = true
++tokio = { workspace = true, features = ["rt"] }
+diff --git a/libs/postgres_connection/src/lib.rs b/libs/postgres_connection/src/lib.rs
+index 2388303..ac2c035 100644
+--- a/libs/postgres_connection/src/lib.rs
++++ b/libs/postgres_connection/src/lib.rs
+@@ -2,10 +2,183 @@
+ #![deny(clippy::undocumented_unsafe_blocks)]
+ use std::borrow::Cow;
+ use std::fmt;
++use std::fs::File;
++use std::io::{BufReader, Read};
++use std::path::PathBuf;
++use std::sync::Arc;
+ 
+ use anyhow::{Context, bail};
+ use itertools::Itertools;
+ use url::Host;
++use url::Url;
++
++const MAX_STORAGE_CA_BYTES: u64 = 1024 * 1024;
++const MAX_STORAGE_CA_CERTIFICATES: usize = 64;
++
++/// Parse a storage connection URI and create a connector that verifies both the
++/// configured CA and the server hostname. Storage connections never fall back
++/// to plaintext.
++pub fn storage_tls_config(
++    connection_uri: &str,
++) -> anyhow::Result<(String, tokio_postgres_rustls::MakeRustlsConnect)> {
++    let mut uri = Url::parse(connection_uri).context("invalid storage PostgreSQL URI")?;
++    let mut sslmode = None;
++    let mut root = None;
++    let mut retained = Vec::new();
++    for (key, value) in uri.query_pairs() {
++        match key.as_ref() {
++            "sslmode" => {
++                if sslmode.is_some() {
++                    bail!("storage PostgreSQL URI contains duplicate sslmode parameters");
++                }
++                sslmode = Some(value.into_owned());
++            }
++            "sslrootcert" => {
++                if root.is_some() {
++                    bail!("storage PostgreSQL URI contains duplicate sslrootcert parameters");
++                }
++                root = Some(PathBuf::from(value.into_owned()));
++            }
++            _ => retained.push((key.into_owned(), value.into_owned())),
++        }
++    }
++    if sslmode.as_deref() != Some("verify-full") {
++        bail!("storage PostgreSQL URI requires sslmode=verify-full");
++    }
++    let connector = storage_tls_connector(root)?;
++    uri.query_pairs_mut()
++        .clear()
++        .extend_pairs(retained)
++        .append_pair("sslmode", "require");
++    Ok((uri.into(), connector))
++}
++
++/// Load the storage CA used for internal provider PostgreSQL connections.
++pub fn storage_tls_connector(
++    root: Option<PathBuf>,
++) -> anyhow::Result<tokio_postgres_rustls::MakeRustlsConnect> {
++    let root = root
++        .or_else(|| std::env::var_os("NEON_STORAGE_CA_FILE").map(PathBuf::from))
++        .context("storage connection requires sslrootcert or NEON_STORAGE_CA_FILE")?;
++    let file = File::open(&root).context("open storage CA file")?;
++    let mut contents = Vec::new();
++    file.take(MAX_STORAGE_CA_BYTES + 1)
++        .read_to_end(&mut contents)
++        .context("read storage CA file")?;
++    if contents.len() as u64 > MAX_STORAGE_CA_BYTES {
++        bail!("storage CA file exceeds size limit");
++    }
++    let mut reader = BufReader::new(contents.as_slice());
++    let certificates = rustls_pemfile::certs(&mut reader)
++        .collect::<Result<Vec<_>, _>>()
++        .context("parse storage CA file")?;
++    if certificates.is_empty() {
++        bail!("storage CA file contains no certificates");
++    }
++    if certificates.len() > MAX_STORAGE_CA_CERTIFICATES {
++        bail!("storage CA file contains too many certificates");
++    }
++    let mut roots = rustls::RootCertStore::empty();
++    for certificate in certificates {
++        roots
++            .add(certificate)
++            .context("add storage CA certificate")?;
++    }
++    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
++        rustls::crypto::ring::default_provider(),
++    ))
++    .with_safe_default_protocol_versions()
++    .context("select storage TLS protocol versions")?
++    .with_root_certificates(roots)
++    .with_no_client_auth();
++    Ok(tokio_postgres_rustls::MakeRustlsConnect::new(tls))
++}
++
++#[cfg(test)]
++mod tests_storage_tls {
++    use std::fs;
++    use std::str::FromStr;
++
++    use anyhow::Context;
++
++    use super::{MAX_STORAGE_CA_BYTES, storage_tls_config, storage_tls_connector};
++
++    #[test]
++    fn strict_uri_rejects_missing_and_duplicate_tls_parameters() {
++        let missing = storage_tls_config("postgresql://storage.example/test")
++            .err()
++            .unwrap();
++        assert!(missing.to_string().contains("sslmode=verify-full"));
++
++        let duplicate_mode = storage_tls_config(
++            "postgresql://storage.example/test?sslmode=verify-full&sslmode=verify-full",
++        )
++        .err()
++        .unwrap();
++        assert!(duplicate_mode.to_string().contains("duplicate sslmode"));
++
++        let duplicate_root = storage_tls_config(
++            "postgresql://storage.example/test?sslmode=verify-full&sslrootcert=a&sslrootcert=b",
++        )
++        .err()
++        .unwrap();
++        assert!(duplicate_root.to_string().contains("duplicate sslrootcert"));
++    }
++
++    #[test]
++    fn ca_file_size_is_bounded() {
++        let path = std::env::temp_dir().join(format!(
++            "neon-storage-ca-size-{}-{}",
++            std::process::id(),
++            std::thread::current().name().unwrap_or("test")
++        ));
++        fs::write(&path, vec![b'x'; MAX_STORAGE_CA_BYTES as usize + 1]).unwrap();
++        let error = storage_tls_connector(Some(path.clone())).err().unwrap();
++        fs::remove_file(path).unwrap();
++        assert!(error.to_string().contains("exceeds size limit"));
++    }
++
++    #[tokio::test]
++    async fn live_strict_storage_tls_matrix() {
++        if std::env::var_os("HAKOPOD_STORAGE_TLS_LIVE").is_none() {
++            return;
++        }
++
++        async fn connect(name: &str) -> anyhow::Result<tokio_postgres::Client> {
++            let uri = std::env::var(name).context("missing live storage TLS test URI")?;
++            let (uri, tls) = storage_tls_config(&uri)?;
++            let config = tokio_postgres::Config::from_str(&uri)?;
++            let (client, connection) = config.connect(tls).await?;
++            tokio::spawn(async move {
++                let _ = connection.await;
++            });
++            Ok(client)
++        }
++
++        let client = connect("HAKOPOD_STORAGE_TLS_POSITIVE_URI").await.unwrap();
++        let row = client.query_one("SELECT 1", &[]).await.unwrap();
++        assert_eq!(row.get::<_, i32>(0), 1);
++        println!("trusted CA and matching hostname: connected");
++
++        for (name, outcome) in [
++            ("HAKOPOD_STORAGE_TLS_WRONG_CA_URI", "wrong CA: rejected"),
++            (
++                "HAKOPOD_STORAGE_TLS_WRONG_HOST_URI",
++                "wrong hostname: rejected",
++            ),
++            (
++                "HAKOPOD_STORAGE_TLS_PLAINTEXT_URI",
++                "plaintext endpoint: rejected",
++            ),
++        ] {
++            assert!(
++                connect(name).await.is_err(),
++                "{name} unexpectedly connected"
++            );
++            println!("{outcome}");
++        }
++    }
++}
+ 
+ /// Parses a string of format either `host:port` or `host` into a corresponding pair.
+ ///
+diff --git a/pageserver/src/tenant/timeline/walreceiver/walreceiver_connection.rs b/pageserver/src/tenant/timeline/walreceiver/walreceiver_connection.rs
+index 7ec5aa3..036faf3 100644
+--- a/pageserver/src/tenant/timeline/walreceiver/walreceiver_connection.rs
++++ b/pageserver/src/tenant/timeline/walreceiver/walreceiver_connection.rs
+@@ -1,6 +1,7 @@
+ //! Actual Postgres connection handler to stream WAL to the server.
+ 
+ use std::error::Error;
++use std::future::Future;
+ use std::pin::pin;
+ use std::str::FromStr;
+ use std::sync::Arc;
+@@ -12,7 +13,7 @@ use chrono::{NaiveDateTime, Utc};
+ use fail::fail_point;
+ use futures::StreamExt;
+ use postgres_backend::is_expected_io_error;
+-use postgres_connection::PgConnectionConfig;
++use postgres_connection::{PgConnectionConfig, storage_tls_connector};
+ use postgres_ffi::WAL_SEGMENT_SIZE;
+ use postgres_ffi::v14::xlog_utils::normalize_lsn;
+ use postgres_ffi::waldecoder::WalDecodeError;
+@@ -142,22 +143,43 @@ pub(super) async fn handle_walreceiver_connection(
+     // Connect to the database in replication mode.
+     info!("connecting to {wal_source_connconf:?}");
+ 
+-    let (replication_client, connection) = {
++    let (replication_client, connection): (
++        Client,
++        std::pin::Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static>>,
++    ) = {
+         let mut config = wal_source_connconf.to_tokio_postgres_config();
+         config.application_name(format!("pageserver-{}", timeline.conf.id.0).as_str());
+         config.replication_mode(tokio_postgres::config::ReplicationMode::Physical);
+-        match time::timeout(connect_timeout, config.connect(tokio_postgres::NoTls)).await {
+-            Ok(client_and_conn) => client_and_conn?,
+-            Err(_elapsed) => {
+-                // Timing out to connect to a safekeeper node could happen long time, due to
+-                // many reasons that pageserver cannot control.
+-                // Do not produce an error, but make it visible, that timeouts happen by logging the `event.
+-                info!(
+-                    "Timed out while waiting {connect_timeout:?} for walreceiver connection to open"
+-                );
+-                return Ok(());
++        let client_and_conn = if timeline.conf.hakopod_ownership_v1 {
++            config.ssl_mode(tokio_postgres::config::SslMode::Require);
++            match time::timeout(
++                connect_timeout,
++                config.connect(storage_tls_connector(None)?),
++            )
++            .await
++            {
++                Ok(Ok((client, connection))) => (client, Box::pin(connection) as _),
++                Ok(Err(error)) => return Err(error.into()),
++                Err(_elapsed) => {
++                    info!(
++                        "Timed out while waiting {connect_timeout:?} for walreceiver connection to open"
++                    );
++                    return Ok(());
++                }
+             }
+-        }
++        } else {
++            match time::timeout(connect_timeout, config.connect(tokio_postgres::NoTls)).await {
++                Ok(Ok((client, connection))) => (client, Box::pin(connection) as _),
++                Ok(Err(error)) => return Err(error.into()),
++                Err(_elapsed) => {
++                    info!(
++                        "Timed out while waiting {connect_timeout:?} for walreceiver connection to open"
++                    );
++                    return Ok(());
++                }
++            }
++        };
++        client_and_conn
+     };
+ 
+     debug!("connected!");
+diff --git a/safekeeper/Cargo.toml b/safekeeper/Cargo.toml
+index 964f581..8ab372f 100644
+--- a/safekeeper/Cargo.toml
++++ b/safekeeper/Cargo.toml
+@@ -60,6 +60,7 @@ postgres_backend.workspace = true
+ postgres_ffi.workspace = true
+ postgres_ffi_types.workspace = true
+ postgres_versioninfo.workspace = true
++postgres_connection.workspace = true
+ pq_proto.workspace = true
+ remote_storage.workspace = true
+ safekeeper_api.workspace = true
+diff --git a/safekeeper/src/recovery.rs b/safekeeper/src/recovery.rs
+index 577a2f6..4d5fffc 100644
+--- a/safekeeper/src/recovery.rs
++++ b/safekeeper/src/recovery.rs
+@@ -2,11 +2,13 @@
+ //! provide it, i.e. safekeeper lags too much.
+ 
+ use std::fmt;
++use std::future::Future;
+ use std::pin::pin;
+ use std::time::SystemTime;
+ 
+ use anyhow::{Context, bail};
+ use futures::StreamExt;
++use postgres_connection::storage_tls_connector;
+ use postgres_protocol::message::backend::ReplicationMessage;
+ use reqwest::Certificate;
+ use safekeeper_api::Term;
+@@ -350,7 +352,6 @@ async fn recovery_stream(
+     start_streaming_at: Lsn,
+     conf: &SafeKeeperConf,
+ ) -> anyhow::Result<String> {
+-    // TODO: pass auth token
+     let connection_conf_args = ConnectionConfigArgs {
+         protocol: PostgresClientProtocol::Vanilla,
+         ttid: tli.ttid,
+@@ -358,7 +359,10 @@ async fn recovery_stream(
+         shard_count: None,
+         shard_stripe_size: None,
+         listen_pg_addr_str: &donor.pg_connstr,
+-        auth_token: None,
++        auth_token: conf
++            .sk_auth_token
++            .as_ref()
++            .map(|token| token.get_contents()),
+         availability_zone: None,
+     };
+     let cfg = wal_stream_connection_config(connection_conf_args)?;
+@@ -368,17 +372,29 @@ async fn recovery_stream(
+     cfg.replication_mode(tokio_postgres::config::ReplicationMode::Physical);
+ 
+     let connect_timeout = Duration::from_millis(10000);
+-    let (client, connection) = match time::timeout(
+-        connect_timeout,
+-        cfg.connect(tokio_postgres::NoTls),
+-    )
+-    .await
+-    {
+-        Ok(client_and_conn) => client_and_conn?,
+-        Err(_elapsed) => {
+-            bail!(
+-                "timed out while waiting {connect_timeout:?} for connection to peer safekeeper to open"
+-            );
++    let (client, connection): (
++        tokio_postgres::Client,
++        std::pin::Pin<Box<dyn Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static>>,
++    ) = if conf.hakopod_ownership_v1 {
++        cfg.ssl_mode(tokio_postgres::config::SslMode::Require);
++        match time::timeout(connect_timeout, cfg.connect(storage_tls_connector(None)?)).await {
++            Ok(Ok((client, connection))) => (client, Box::pin(connection) as _),
++            Ok(Err(error)) => return Err(error.into()),
++            Err(_elapsed) => {
++                bail!(
++                    "timed out while waiting {connect_timeout:?} for connection to peer safekeeper to open"
++                );
++            }
++        }
++    } else {
++        match time::timeout(connect_timeout, cfg.connect(tokio_postgres::NoTls)).await {
++            Ok(Ok((client, connection))) => (client, Box::pin(connection) as _),
++            Ok(Err(error)) => return Err(error.into()),
++            Err(_elapsed) => {
++                bail!(
++                    "timed out while waiting {connect_timeout:?} for connection to peer safekeeper to open"
++                );
++            }
+         }
+     };
+     trace!("connected to {:?}", donor);
+diff --git a/compute_tools/src/http/middleware/authorize.rs b/compute_tools/src/http/middleware/authorize.rs
+--- a/compute_tools/src/http/middleware/authorize.rs
++++ b/compute_tools/src/http/middleware/authorize.rs
+@@ -151,7 +151,7 @@
+     ) -> Result<TokenData<ComputeClaims>> {
+         debug_assert!(!jwks.keys.is_empty());
+ 
+-        debug!("verifying token {}", token);
++        debug!("verifying authorization token");
+ 
+         for jwk in jwks.keys.iter() {
+             let decoding_key = match DecodingKey::from_jwk(jwk) {

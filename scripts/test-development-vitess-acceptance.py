@@ -1,16 +1,21 @@
 """Read-only native runner preflight regressions. These do not use Kubernetes."""
 import copy
+import hashlib
 import importlib.util
 from pathlib import Path
 import subprocess
+import runpy
 from types import SimpleNamespace
 import unittest
+import json
+import tempfile
 from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location('vitess_acceptance', Path(__file__).with_name('run-development-vitess-acceptance.py'))
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
+verifier = runpy.run_path(str(Path(__file__).parents[1] / 'release/verify-vitess-runtime.py'))
 
 
 class NativePreflightTests(unittest.TestCase):
@@ -19,6 +24,7 @@ class NativePreflightTests(unittest.TestCase):
                        'operator': 'ghcr.io/hakopod/operator:2@sha256:' + '2' * 64,
                        'etcd': 'quay.io/coreos/etcd:3@sha256:' + '3' * 64}
         self.inventory = [{'metadata': {'name': name}, 'status': {
+            'allocatable': {'cpu': '5'},
             'nodeInfo': {'architecture': 'amd64', 'operatingSystem': 'linux'},
             'conditions': [{'type': kind, 'status': status} for kind, status in (
                 ('Ready', 'True'), ('DiskPressure', 'False'), ('MemoryPressure', 'False'), ('PIDPressure', 'False'))]}}
@@ -30,6 +36,8 @@ class NativePreflightTests(unittest.TestCase):
             return {'node': {'fs': filesystem, 'runtime': {'imageFs': filesystem}}}
         if command[-1].endswith('/configz'):
             return {'kubeletconfig': {'imageGCHighThresholdPercent': 85}}
+        if 'pods' in command:
+            return {'items': []}
         return {'images': [{'repoDigests': [runner.canonical_image(reference)]} for reference in self.images.values()]}
 
     def collect(self, metadata=None, inventory=None):
@@ -40,14 +48,23 @@ class NativePreflightTests(unittest.TestCase):
                 self.inventory if inventory is None else inventory, self.images, 'lifecycle', 4)
         return report, commands
 
+    def qualified_environment(self, report):
+        report['cluster'] = {'uid': 'cluster-a',
+            'node_uids': {name: 'uid-' + str(index) for index, name in enumerate(runner.ALLOWED_NODES)},
+            'vitess_crds': sorted(runner.VITESS_CRDS), 'receipt_sha256': 'a' * 64}
+        return report
+
     def test_uses_canonical_digests_and_records_real_node_measurements(self):
         report, commands = self.collect()
         self.assertEqual(report['fixture_budget_bytes'], 4 * runner.GIB)
+        self.assertEqual(report['required_cpu_milli'], 8850)
+        self.assertEqual(report['cpu_shortfall_milli'], 0)
         for node in report['nodes']:
             self.assertEqual(node['conditions']['DiskPressure'], 'False')
             self.assertEqual(node['filesystems']['imagefs']['available_bytes'], 20 * runner.GIB)
             self.assertEqual(node['image_gc_high_threshold_percent'], 85)
             self.assertEqual(node['cached_images'], sorted(runner.canonical_image(image) for image in self.images.values()))
+            self.assertEqual(node['available_cpu_milli'], 5000)
         inspections = [item.args[0] for item in commands.call_args_list if item.args[0][0] == 'docker']
         self.assertEqual(len(inspections), 2)
         self.assertTrue(all(command[2] in runner.NODES and command[3:] == ['crictl', 'images', '-o', 'json'] for command in inspections))
@@ -85,10 +102,93 @@ class NativePreflightTests(unittest.TestCase):
                     runner.native_environment(Path('/fixture'), ['kubectl'], inventory, self.images, 'lifecycle', 4)
                 command.assert_not_called()
 
+    def test_two_or_three_exact_nodes_are_accepted(self):
+        self.assertEqual(runner.fixture_nodes(','.join(runner.NODES)), runner.NODES)
+        self.assertEqual(runner.fixture_nodes(','.join(runner.ALLOWED_NODES)), runner.ALLOWED_NODES)
+
+    def test_empty_duplicate_single_or_foreign_node_sets_are_rejected(self):
+        for value in ('', runner.NODES[0], runner.NODES[0]+','+runner.NODES[0], runner.NODES[0]+',provider-smoke'):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                runner.fixture_nodes(value)
+
+    def test_release_verifier_accepts_worker_pair_and_all_three_nodes(self):
+        third = copy.deepcopy(self.inventory[0])
+        third['metadata']['name'] = 'k3d-hakopod-database-worker-1'
+        for inventory, names in (([copy.deepcopy(self.inventory[1]), third], runner.ALLOWED_NODES[1:]),
+                                 (self.inventory + [third], runner.ALLOWED_NODES)):
+            disk = SimpleNamespace(total=78 * runner.GIB, free=20 * runner.GIB)
+            with patch.object(runner.shutil, 'disk_usage', return_value=disk), patch.object(runner, 'command_json', side_effect=self.metadata):
+                report = runner.native_environment(Path('/fixture'), ['kubectl'], inventory, self.images, 'lifecycle', 4, names)
+            self.qualified_environment(report)
+            verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
+
+    def test_release_verifier_rejects_duplicate_and_foreign_nodes(self):
+        report, _ = self.collect()
+        self.qualified_environment(report)
+        for names in (['k3d-hakopod-dev-server-0'] * 2,
+                      ['k3d-hakopod-dev-server-0', 'provider-smoke']):
+            bad = copy.deepcopy(report)
+            for node, name in zip(bad['nodes'], names):
+                node['name'] = name
+            with self.assertRaises(ValueError):
+                verifier['validate_native_environment'](bad, 'lifecycle', list(self.images.values()))
+
     def test_registry_port_survives_tag_removal(self):
         digest = '@sha256:' + 'a' * 64
         self.assertEqual(runner.canonical_image('registry.test:5000/repo:2' + digest), 'registry.test:5000/repo' + digest)
         self.assertEqual(runner.canonical_image('registry.test:5000/repo' + digest), 'registry.test:5000/repo' + digest)
+
+    def test_fixed_case_cpu_envelopes_reject_short_selected_capacity(self):
+        constrained = copy.deepcopy(self.inventory)
+        for node in constrained:
+            node['status']['allocatable']['cpu'] = '3500m'
+        report, _ = self.collect(inventory=constrained)
+        self.assertEqual(report['required_cpu_milli'], 8850)
+        self.assertEqual(report['cpu_shortfall_milli'], 1850)
+        self.qualified_environment(report)
+        with self.assertRaises(ValueError):
+            verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
+
+    def test_cpu_request_uses_regular_sum_or_largest_init_plus_overhead(self):
+        pod = {'spec': {'containers': [{'resources': {'requests': {'cpu': '250m'}}},
+                                       {'resources': {'requests': {'cpu': '100m'}}}],
+                        'initContainers': [{'resources': {'requests': {'cpu': '500m'}}}],
+                        'overhead': {'cpu': '25m'}}}
+        self.assertEqual(runner.pod_cpu_milli(pod), 525)
+
+    def test_cluster_prerequisites_bind_receipt_identity_and_exact_crds(self):
+        receipt = {'context': 'k3d-hakopod-dev', 'cluster_uid': 'cluster-a',
+                   'node_uids': {name: 'uid-' + str(index) for index, name in enumerate(runner.ALLOWED_NODES)}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'cluster.json'
+            raw = (json.dumps(receipt) + '\n').encode()
+            path.write_bytes(raw)
+            def metadata(command):
+                if 'namespace' in command:
+                    return {'metadata': {'uid': 'cluster-a'}}
+                if 'nodes' in command:
+                    return {'items': [{'metadata': {'name': name, 'uid': uid}} for name, uid in receipt['node_uids'].items()]}
+                return {'items': [{'metadata': {'name': name}, 'spec': {'group': 'planetscale.com', 'scope': 'Namespaced'},
+                                   'status': {'conditions': [{'type': 'Established', 'status': 'True'}, {'type': 'NamesAccepted', 'status': 'True'}]}}
+                                  for name in runner.VITESS_CRDS]}
+            with patch.object(runner, 'command_json', side_effect=metadata):
+                result = runner.cluster_prerequisites(['kubectl'], path, hashlib.sha256(raw).hexdigest(), runner.NODES)
+            self.assertEqual(set(result['vitess_crds']), runner.VITESS_CRDS)
+
+    def test_cluster_prerequisites_reject_missing_crd_or_changed_identity(self):
+        receipt = {'context': 'k3d-hakopod-dev', 'cluster_uid': 'cluster-a',
+                   'node_uids': {name: 'uid-' + str(index) for index, name in enumerate(runner.ALLOWED_NODES)}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'cluster.json'
+            raw = json.dumps(receipt).encode()
+            path.write_bytes(raw)
+            responses = [
+                {'metadata': {'uid': 'cluster-a'}},
+                {'items': [{'metadata': {'name': name, 'uid': uid}} for name, uid in receipt['node_uids'].items()]},
+                {'items': [{'metadata': {'name': name}} for name in sorted(runner.VITESS_CRDS)[:-1]]},
+            ]
+            with patch.object(runner, 'command_json', side_effect=responses), self.assertRaises(RuntimeError):
+                runner.cluster_prerequisites(['kubectl'], path, hashlib.sha256(raw).hexdigest(), runner.NODES)
 
     def test_go_overlays_workspaces_and_target_overrides_are_removed(self):
         ambient = {'PATH': '/usr/bin', 'GOFLAGS': '-overlay=/unreviewed.json -tags=unreviewed',

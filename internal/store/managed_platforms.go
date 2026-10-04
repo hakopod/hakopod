@@ -78,6 +78,8 @@ type ManagedPlatformOperation struct {
 	Lease                string                `json:"-"`
 	LeaseUntil           *time.Time            `json:"-"`
 	Attempt              int                   `json:"attempt"`
+	Maintenance          bool                  `json:"-"`
+	MaintenanceID        string                `json:"-"`
 }
 
 type ManagedPlatformReview struct {
@@ -493,6 +495,9 @@ func (s *Store) AcceptManagedPlatform(ctx context.Context, p Principal, item Man
 		return empty, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044269)"); err != nil {
+		return empty, err
+	}
 	if err = lockManagedPlatformMutations(ctx, tx, item.ID); err != nil {
 		return empty, err
 	}
@@ -520,6 +525,9 @@ func (s *Store) AcceptManagedPlatform(ctx context.Context, p Principal, item Man
 		return redactManagedPlatformOperation(op), tx.Commit(ctx)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
+		return empty, err
+	}
+	if err = rejectPlatformRuntimeLifecycleOverlapTx(ctx, tx, []string{item.ID}); err != nil {
 		return empty, err
 	}
 	if err = validateManagedPlatformIntent(item, plan, expected, kind); err != nil {

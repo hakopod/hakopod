@@ -13,6 +13,7 @@ import { SelectField } from '../components/ui/select'
 import { engineName, expectedMembers, shardedDatabase } from '../lib/database-view'
 import { timestamp } from '../lib/api'
 import { projectRouteScopeMatches } from '../lib/projects'
+import { DatabaseResourceNavigation } from '../components/database-resource-navigation'
 
 export const Route = createFileRoute('/databases')({
   validateSearch: databaseSearch,
@@ -63,6 +64,7 @@ function Databases() {
           )
         }
       />
+      <DatabaseResourceNavigation active="databases" scope={scope}/>
       {!scopeMatches ? (
         <Empty
           title="Workspace unavailable"

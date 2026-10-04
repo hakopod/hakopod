@@ -78,6 +78,7 @@ func TestSupabaseCandidateRejectsUnsafeConfiguration(t *testing.T) {
 		func(s *Spec) { s.Supabase.PublicURL = "https://data.example.test:8443" },
 		func(s *Spec) { s.Supabase.PublicURL = "https://data.example.test/%2e%2e" },
 		func(s *Spec) { s.Supabase.RedirectURLs = []string{"https://app.example.test/callback"} },
+		func(s *Spec) { s.Supabase.DatabaseName = "custom" },
 		func(s *Spec) { s.Placement.Spread = "nodes" },
 		func(s *Spec) { s.Supabase.EmailSignup = true },
 		func(s *Spec) { s.Supabase.SMTPSecret = &SecretReference{Name: "smtp", Revision: 1} },

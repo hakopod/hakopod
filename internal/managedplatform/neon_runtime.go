@@ -44,11 +44,14 @@ type NeonControlTarget struct {
 // The storage controller is the only component called directly for tenant,
 // timeline, pageserver, and safekeeper placement.
 type NeonRuntimeConfig struct {
+	ResolveComputeConfig                     func(context.Context, string, json.RawMessage) (json.RawMessage, error)
+	ObserveTimelineRouting                   func(context.Context, NeonTimelineRoutingObservation) error
 	StorageController                        NeonControlTarget
 	Computes                                 []NeonControlTarget
 	Pageservers                              []NeonPageserverRegistration
 	Safekeepers                              []NeonSafekeeperRegistration
 	SafekeeperToken                          string
+	PageserverToken                          string
 	StateDirectory                           string
 	RequestTimeout                           time.Duration
 	RootCAs                                  *x509.CertPool
@@ -119,6 +122,9 @@ type NeonLifecycleState struct {
 // API store, object-storage recovery, backup/restore, and real-cluster cases
 // have all passed. Exercising this adapter alone cannot change that gate.
 func NeonRuntimeQualification() Capability {
+	if NeonReleaseQualified() {
+		return Capability{Available: true, ClusterQualified: true, PublicQualified: false, Reason: "Neon is qualified for private cluster use; public endpoints remain unavailable"}
+	}
 	return Capability{Available: false, ClusterQualified: false, PublicQualified: false, Reason: "Neon runtime, durable API state, object-storage recovery, backup and real-cluster acceptance remain unqualified"}
 }
 
@@ -159,7 +165,7 @@ func NewNeonRuntime(config NeonRuntimeConfig) (*NeonRuntime, error) {
 	if config.RootCAs == nil {
 		return nil, fmt.Errorf("Neon runtime requires an explicit control-plane CA pool")
 	}
-	transport := &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: config.RootCAs}, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 4, IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: config.RequestTimeout / 2, MaxResponseHeaderBytes: 32 << 10}
+	transport := &http.Transport{Proxy: nil, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: config.RootCAs}, MaxIdleConns: 8, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 4, IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: config.RequestTimeout, MaxResponseHeaderBytes: 32 << 10}
 	client := &http.Client{Transport: transport, Timeout: config.RequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return fmt.Errorf("Neon control redirects are not permitted")
 	}}
@@ -345,6 +351,15 @@ func (r *NeonRuntime) Provision(ctx context.Context, request NeonLifecycleReques
 	return state, err
 }
 
+func decodeNeonJSON(raw []byte, value any) error {
+	if !json.Valid(raw) {
+		return fmt.Errorf("invalid Neon configuration JSON")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	return decoder.Decode(value)
+}
+
 func validateNeonLifecycleRequest(request NeonLifecycleRequest, targets []NeonControlTarget) (string, error) {
 	if !neonID.MatchString(request.OperationID) || !neonID.MatchString(request.TenantID) || !neonID.MatchString(request.TimelineID) {
 		return "", fmt.Errorf("operation, tenant, and timeline IDs must be 32 lowercase hexadecimal characters")
@@ -368,7 +383,7 @@ func validateNeonLifecycleRequest(request NeonLifecycleRequest, targets []NeonCo
 			return "", fmt.Errorf("compute %s: %w", target.Name, err)
 		}
 		var value any
-		if err := json.Unmarshal(raw, &value); err != nil {
+		if err := decodeNeonJSON(raw, &value); err != nil {
 			return "", err
 		}
 		encoded, err := json.Marshal(value)
@@ -398,6 +413,7 @@ func validateNeonLifecycleRequest(request NeonLifecycleRequest, targets []NeonCo
 func validateComputeConfig(raw json.RawMessage, tenantID, timelineID string) error {
 	var root struct {
 		Spec *struct {
+			Mode         string   `json:"mode"`
 			TenantID     string   `json:"tenant_id"`
 			TimelineID   string   `json:"timeline_id"`
 			Safekeepers  []string `json:"safekeeper_connstrings"`
@@ -411,8 +427,15 @@ func validateComputeConfig(raw json.RawMessage, tenantID, timelineID string) err
 	if root.Spec == nil || root.Spec.TenantID != tenantID || root.Spec.TimelineID != timelineID {
 		return fmt.Errorf("compute spec must attach the requested tenant and timeline")
 	}
-	if len(root.Spec.Safekeepers) < 3 || len(root.Spec.Safekeepers) > 8 {
-		return fmt.Errorf("compute spec requires 3-8 safekeeper connections")
+	if root.Spec.Mode == "Replica" {
+		if len(root.Spec.Safekeepers) != 0 {
+			return fmt.Errorf("replica compute must not run walproposer")
+		}
+		if err := validateNeonReplicaWALSettings(raw); err != nil {
+			return err
+		}
+	} else if root.Spec.Mode != "" && root.Spec.Mode != "Primary" || len(root.Spec.Safekeepers) != 3 {
+		return fmt.Errorf("primary compute requires 3 safekeeper connections")
 	}
 	seen := map[string]bool{}
 	for _, connection := range root.Spec.Safekeepers {
@@ -595,6 +618,13 @@ func (r *NeonRuntime) requestWithOwnership(ctx context.Context, target NeonContr
 }
 
 func (r *NeonRuntime) requestWithTokens(ctx context.Context, target NeonControlTarget, method, path string, body []byte, ownershipToken, deletionToken string) ([]byte, int, error) {
+	return r.requestWithSpecCAS(ctx, target, method, path, body, ownershipToken, deletionToken, "")
+}
+
+func (r *NeonRuntime) requestWithSpecCAS(ctx context.Context, target NeonControlTarget, method, path string, body []byte, ownershipToken, deletionToken, expectedSpec string) ([]byte, int, error) {
+	if expectedSpec != "" && (!validLowerHex(expectedSpec, 64) || !validNeonComputeOwnershipToken(ownershipToken)) {
+		return nil, 0, fmt.Errorf("invalid Neon compute configuration fence")
+	}
 	requestURI, err := url.ParseRequestURI(path)
 	if err != nil || !strings.HasPrefix(requestURI.Path, "/") || requestURI.Fragment != "" {
 		return nil, 0, fmt.Errorf("invalid Neon control path")
@@ -619,6 +649,9 @@ func (r *NeonRuntime) requestWithTokens(ctx context.Context, target NeonControlT
 	}
 	if deletionToken != "" {
 		req.Header.Set(neonDeletionHeader, deletionToken)
+	}
+	if expectedSpec != "" {
+		req.Header.Set("hakopod-expected-spec-sha256", expectedSpec)
 	}
 	resp, err := r.client.Do(req)
 	if err != nil {

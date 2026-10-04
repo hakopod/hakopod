@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/hakopod/hakopod/internal/managedplatform"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,6 +18,9 @@ var managedPlatformComponent = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.:-]{0,61}
 const managedPlatformOperationQualifiedColumns = `o.id,o.platform_id,o.revision,o.kind,o.status,o.phase,o.message,o.desired_spec,o.resolved_plan,o.encrypted_snapshot,o.review,o.review_id,o.authority_fingerprint,o.created_at,o.started_at,o.finished_at,o.identity_id,o.key_id,o.lease,o.lease_until,o.attempt`
 
 func (s *Store) managedPlatformOperationFenceTx(ctx context.Context, tx pgx.Tx, supplied ManagedPlatformOperation) (ManagedPlatformOperation, string, string, error) {
+	if supplied.Maintenance {
+		return s.managedPlatformMaintenanceFenceTx(ctx, tx, supplied)
+	}
 	var project, environment string
 	var stored ManagedPlatformOperation
 	row := tx.QueryRow(ctx, `SELECT `+managedPlatformOperationQualifiedColumns+`,p.project,p.environment
@@ -47,6 +52,12 @@ func (s *Store) managedPlatformOperationFenceTx(ctx context.Context, tx pgx.Tx, 
 }
 
 func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatformOperation, error) {
+	return retryManagedPlatformTransaction(ctx, func() (ManagedPlatformOperation, error) {
+		return s.claimManagedPlatformOperation(ctx)
+	})
+}
+
+func (s *Store) claimManagedPlatformOperation(ctx context.Context) (ManagedPlatformOperation, error) {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return ManagedPlatformOperation{}, err
@@ -56,7 +67,8 @@ func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatf
 		return ManagedPlatformOperation{}, err
 	}
 	var active int
-	if err = tx.QueryRow(ctx, "SELECT count(*) FROM managed_platform_operations WHERE status='running' AND lease_until>=clock_timestamp()").Scan(&active); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM managed_platform_operations WHERE status='running' AND lease_until>=clock_timestamp())+
+		(SELECT count(*) FROM managed_platform_maintenance WHERE status='running' AND lease_until>=clock_timestamp())`).Scan(&active); err != nil {
 		return ManagedPlatformOperation{}, err
 	}
 	if active >= 8 {
@@ -74,8 +86,16 @@ func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatf
 		WHERE (o.status='queued' OR o.status='running' AND o.lease_until<clock_timestamp()) AND o.next_attempt_at<=clock_timestamp() AND o.attempt<240
 		AND p.revision=o.revision AND p.deleted_at IS NULL
 		AND NOT EXISTS(SELECT 1 FROM managed_platform_operations active WHERE active.platform_id=o.platform_id AND active.status='running' AND active.lease_until>=clock_timestamp())
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_maintenance maintenance WHERE maintenance.platform_id=o.platform_id AND maintenance.status='running' AND maintenance.lease_until>=clock_timestamp())
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_recovery_operations recovery WHERE (recovery.source_platform_id=o.platform_id OR recovery.target_platform_id=o.platform_id) AND recovery.status IN ('queued','running'))
 		ORDER BY o.next_attempt_at,o.created_at,o.id FOR UPDATE OF o SKIP LOCKED LIMIT 1)
 		RETURNING `+managedPlatformOperationColumns, lease))
+	if errors.Is(err, pgx.ErrNoRows) {
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return op, commitErr
+		}
+		return op, err
+	}
 	if err != nil {
 		return op, err
 	}
@@ -106,6 +126,10 @@ func (s *Store) ClaimManagedPlatformOperation(ctx context.Context) (ManagedPlatf
 }
 
 func (s *Store) CheckManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.checkManagedPlatformOperation(ctx, op) })
+}
+
+func (s *Store) checkManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return err
@@ -118,6 +142,10 @@ func (s *Store) CheckManagedPlatformOperation(ctx context.Context, op ManagedPla
 }
 
 func (s *Store) HeartbeatManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.heartbeatManagedPlatformOperation(ctx, op) })
+}
+
+func (s *Store) heartbeatManagedPlatformOperation(ctx context.Context, op ManagedPlatformOperation) error {
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return err
@@ -126,7 +154,11 @@ func (s *Store) HeartbeatManagedPlatformOperation(ctx context.Context, op Manage
 	if op, _, _, err = s.managedPlatformOperationFenceTx(ctx, tx, op); err != nil {
 		return err
 	}
-	tag, err := tx.Exec(ctx, "UPDATE managed_platform_operations SET lease_until=clock_timestamp()+interval '30 seconds' WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>clock_timestamp()", op.ID, op.Lease)
+	query, id := "UPDATE managed_platform_operations SET lease_until=clock_timestamp()+interval '30 seconds' WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>clock_timestamp()", op.ID
+	if op.Maintenance {
+		query, id = "UPDATE managed_platform_maintenance SET lease_until=clock_timestamp()+interval '30 seconds',updated_at=now() WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>clock_timestamp()", op.MaintenanceID
+	}
+	tag, err := tx.Exec(ctx, query, id, op.Lease)
 	if err != nil {
 		return err
 	}
@@ -137,6 +169,15 @@ func (s *Store) HeartbeatManagedPlatformOperation(ctx context.Context, op Manage
 }
 
 func (s *Store) RecordManagedPlatformStep(ctx context.Context, op ManagedPlatformOperation, status, phase, message string, observation map[string]any) error {
+	return retryManagedPlatformWrite(ctx, func() error {
+		return s.recordManagedPlatformStep(ctx, op, status, phase, message, observation)
+	})
+}
+
+func (s *Store) recordManagedPlatformStep(ctx context.Context, op ManagedPlatformOperation, status, phase, message string, observation map[string]any) error {
+	if op.Maintenance {
+		return s.recordManagedPlatformMaintenanceStep(ctx, op, status, phase, message, observation)
+	}
 	if status != "queued" && status != "succeeded" && status != "failed" && status != "cancelled" || len(phase) > 64 || len(message) > 512 {
 		return ErrInput
 	}
@@ -193,6 +234,14 @@ func (s *Store) RecordManagedPlatformStep(ctx context.Context, op ManagedPlatfor
 	if tag.RowsAffected() != 1 {
 		return ErrConflict
 	}
+	if status == "succeeded" && op.Kind != "delete" && (op.Spec.Kind == "neon" || op.Spec.TLSMode == "managed") {
+		_, err = tx.Exec(ctx, `INSERT INTO managed_platform_maintenance(id,platform_id,revision,operation_id,next_attempt_at)
+			VALUES($1,$2,$3,$4,clock_timestamp()+CASE WHEN $5::text='neon' THEN interval '30 seconds' ELSE interval '12 hours' END)
+			ON CONFLICT(platform_id) DO UPDATE SET revision=EXCLUDED.revision,operation_id=EXCLUDED.operation_id,status='idle',phase='scheduled',message='',observation='{}',attempt=0,next_attempt_at=EXCLUDED.next_attempt_at,lease='',lease_until=NULL,updated_at=now()`, NewID(), op.PlatformID, op.Revision, op.ID, op.Spec.Kind)
+		if err != nil {
+			return err
+		}
+	}
 	return tx.Commit(ctx)
 }
 
@@ -236,6 +285,9 @@ func managedPlatformClaimComponentAllowed(op ManagedPlatformOperation, component
 		return name == op.Plan.Namespace
 	}
 	if resourceKind == "secret" {
+		if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) {
+			return true
+		}
 		for _, ref := range op.Spec.Secrets {
 			if name == fmt.Sprintf("%s-r%d", ref.Name, ref.Revision) {
 				return true
@@ -244,7 +296,7 @@ func managedPlatformClaimComponentAllowed(op ManagedPlatformOperation, component
 		return false
 	}
 	if resourceKind == "configmap" {
-		for _, base := range []string{"supabase-database-bootstrap", "supabase-envoy-public", "supabase-functions", "supabase-pooler"} {
+		for _, base := range []string{"supabase-database-bootstrap", "supabase-database-credentials", "supabase-envoy-public", "supabase-functions", "supabase-pooler"} {
 			if name == fmt.Sprintf("%s-r%d", base, op.Revision) {
 				return true
 			}
@@ -256,7 +308,15 @@ func managedPlatformClaimComponentAllowed(op ManagedPlatformOperation, component
 		return ok && storage[name]
 	}
 	if resourceKind == "networkpolicy" {
-		return name == "supabase-default-deny-and-internal" || name == "supabase-envoy-ingress" || name == "supabase-edge-approved-https"
+		if name == "supabase-default-deny-and-internal" || name == "supabase-envoy-ingress" || name == "supabase-edge-approved-https" {
+			return true
+		}
+		for planned := range components {
+			if name == "supabase-"+planned+"-internal" {
+				return true
+			}
+		}
+		return false
 	}
 	for planned := range components {
 		workload := "supabase-" + planned
@@ -314,6 +374,12 @@ func managedNeonClaimComponentAllowed(op ManagedPlatformOperation, components ma
 		return name == "managed-platform-"+op.PlatformID
 	}
 	if resourceKind == "secret" {
+		if managedplatform.ManagedTLSSecretAllowed(op.Spec, name) {
+			return true
+		}
+		if components["storage-controller"] && name == managedplatform.NeonControllerCallbackSecretName(op.Revision) {
+			return true
+		}
 		for _, ref := range op.Spec.Secrets {
 			if name == fmt.Sprintf("%s-r%d", ref.Name, ref.Revision) {
 				return true
@@ -322,10 +388,33 @@ func managedNeonClaimComponentAllowed(op ManagedPlatformOperation, components ma
 		return false
 	}
 	if resourceKind == "configmap" {
+		if component == "configmap.neon-proxy-control-plane-ca-r"+fmt.Sprint(op.Revision) && components["proxy"] {
+			return true
+		}
+		if component == "configmap.neon-controller-database-r"+fmt.Sprint(op.Revision) && components["controller-database"] {
+			return true
+		}
 		if components["pageserver"] && indexed("configmap.neon-pageserver-%d-r"+fmt.Sprint(op.Revision), op.Spec.Neon.Pageservers) {
 			return true
 		}
-		return components["compute"] && components["compute-tls"] && indexed("configmap.neon-compute-%d-tls-r"+fmt.Sprint(op.Revision), op.Spec.Neon.ComputeReplicas)
+		if !components["compute"] || !components["compute-tls"] {
+			return false
+		}
+		for i := 0; i < op.Spec.Neon.ComputeReplicas; i++ {
+			base := fmt.Sprintf("neon-compute-%d-tls-r%d", i, op.Revision)
+			// Retain admission for owned snapshots created before content addressing.
+			if name == base {
+				return true
+			}
+			digest, ok := strings.CutPrefix(name, base+"-")
+			if !ok || len(digest) != 16 || strings.IndexFunc(digest, func(r rune) bool {
+				return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f')
+			}) != -1 {
+				continue
+			}
+			return true
+		}
+		return false
 	}
 	if resourceKind == "pvc" {
 		if name == "neon-controller-database" && components["controller-database"] {
@@ -363,6 +452,7 @@ func managedNeonClaimComponentAllowed(op ManagedPlatformOperation, components ma
 			"neon-proxy-control-plane-egress",
 			"neon-storage-controller-control-ingress",
 			"neon-compute-control-ingress",
+			"neon-pageserver-control-ingress",
 			"neon-safekeeper-control-ingress",
 			"neon-broker-internal",
 			"neon-controller-database-internal",
@@ -431,6 +521,12 @@ func scanPlatformResourceIntent(row pgx.Row) (PlatformResourceIntent, error) {
 // external create. A reservation remains pending after an ambiguous provider
 // response and must never be interpreted as ownership.
 func (s *Store) ReservePlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, requested PlatformResourceIntent) (PlatformResourceIntent, error) {
+	return retryManagedPlatformTransaction(ctx, func() (PlatformResourceIntent, error) {
+		return s.reservePlatformResourceIntent(ctx, op, requested)
+	})
+}
+
+func (s *Store) reservePlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, requested PlatformResourceIntent) (PlatformResourceIntent, error) {
 	if !validPlatformResourceIntent(op, requested, false) {
 		return PlatformResourceIntent{}, ErrInput
 	}
@@ -485,6 +581,10 @@ func (s *Store) ReservePlatformResourceIntent(ctx context.Context, op ManagedPla
 // ConfirmPlatformResourceIntent atomically converts one pending intent into
 // an exact ownership claim derived from a validated provider response.
 func (s *Store) ConfirmPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.confirmPlatformResourceIntent(ctx, op, intent, claim) })
+}
+
+func (s *Store) confirmPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent, claim PlatformResourceClaim) error {
 	if !validPlatformResourceIntent(op, intent, true) || !validPlatformResourceClaim(op, claim) || intent.Component != claim.Component || intent.Kind != claim.Kind {
 		return ErrInput
 	}
@@ -541,6 +641,12 @@ func (s *Store) ConfirmPlatformResourceIntent(ctx context.Context, op ManagedPla
 }
 
 func (s *Store) PlatformResourceIntents(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceIntent, error) {
+	return retryManagedPlatformTransaction(ctx, func() ([]PlatformResourceIntent, error) {
+		return s.platformResourceIntents(ctx, op, revision)
+	})
+}
+
+func (s *Store) platformResourceIntents(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceIntent, error) {
 	if revision < 1 || revision != op.Revision && revision != op.Revision-1 {
 		return nil, ErrInput
 	}
@@ -582,6 +688,10 @@ func (s *Store) PlatformResourceIntents(ctx context.Context, op ManagedPlatformO
 // CancelPlatformResourceIntent releases a still-pending reservation only.
 // Callers must first prove that the external object does not exist.
 func (s *Store) CancelPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.cancelPlatformResourceIntent(ctx, op, intent) })
+}
+
+func (s *Store) cancelPlatformResourceIntent(ctx context.Context, op ManagedPlatformOperation, intent PlatformResourceIntent) error {
 	if !managedPlatformID.MatchString(intent.ID) || intent.PlatformID != op.PlatformID || intent.PlatformRevision != op.Revision && intent.PlatformRevision != op.Revision-1 || !managedPlatformComponent.MatchString(intent.Component) || len(intent.ExternalKey) < 1 || len(intent.ExternalKey) > 255 || intent.OwnerOperationID == "" {
 		return ErrInput
 	}
@@ -618,6 +728,10 @@ func (s *Store) CancelPlatformResourceIntent(ctx context.Context, op ManagedPlat
 }
 
 func (s *Store) ClaimPlatformResource(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.claimPlatformResource(ctx, op, claim) })
+}
+
+func (s *Store) claimPlatformResource(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
 	if !validPlatformResourceClaim(op, claim) {
 		return ErrInput
 	}
@@ -671,12 +785,17 @@ func (s *Store) ClaimPlatformResource(ctx context.Context, op ManagedPlatformOpe
 	return tx.Commit(ctx)
 }
 
+// Asking for the prior revision includes older claims still owned after a
+// failed operation. The same resource bound and current-operation fence apply.
 func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceClaim, error) {
+	return retryManagedPlatformTransaction(ctx, func() ([]PlatformResourceClaim, error) {
+		return s.platformResourceClaims(ctx, op, revision)
+	})
+}
+
+func (s *Store) platformResourceClaims(ctx context.Context, op ManagedPlatformOperation, revision int64) ([]PlatformResourceClaim, error) {
 	if revision < 1 || revision != op.Revision && revision != op.Revision-1 {
 		return nil, ErrInput
-	}
-	if err := s.CheckManagedPlatformOperation(ctx, op); err != nil {
-		return nil, err
 	}
 	tx, err := s.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
@@ -686,16 +805,9 @@ func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOp
 	if op, _, _, err = s.managedPlatformOperationFenceTx(ctx, tx, op); err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT r.platform_id,r.platform_revision,r.component,r.resource_kind,
-		COALESCE(o.replacement_resource_id,r.resource_id),COALESCE(o.replacement_generation,r.immutable_generation),r.owner_operation_id,r.released_at
-		FROM platform_component_resources r
-		LEFT JOIN platform_component_recovery_overrides o ON o.platform_id=r.platform_id AND o.platform_revision=r.platform_revision AND o.component=r.component AND o.resource_kind=r.resource_kind
-			AND o.phase IN ('confirmed','adopted') AND o.replacement_released_at IS NULL
-		WHERE r.platform_id=$1 AND r.platform_revision=$2 AND r.released_at IS NULL
-		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=r.platform_id AND pending.platform_revision=r.platform_revision AND pending.component=r.component AND pending.resource_kind=r.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
-		AND EXISTS(SELECT 1 FROM managed_platform_operations o JOIN managed_platforms p ON p.id=o.platform_id
-			WHERE o.id=$3 AND o.platform_id=$1 AND o.revision=$4 AND o.lease=$5 AND o.status='running' AND o.lease_until>clock_timestamp() AND p.revision=o.revision AND p.deleted_at IS NULL)
-		ORDER BY r.component,r.resource_kind LIMIT $6`, op.PlatformID, revision, op.ID, op.Revision, op.Lease, MaxManagedPlatformResources+1)
+	rows, err := tx.Query(ctx, `SELECT `+platformResourceClaimColumns+` FROM effective_platform_component_resources
+		WHERE platform_id=$1 AND (platform_revision=$2 OR $2=$3-1 AND platform_revision<$2)
+		ORDER BY component,resource_kind LIMIT $4`, op.PlatformID, revision, op.Revision, MaxManagedPlatformResources+1)
 	if err != nil {
 		return nil, err
 	}
@@ -721,6 +833,10 @@ func (s *Store) PlatformResourceClaims(ctx context.Context, op ManagedPlatformOp
 }
 
 func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.verifyPlatformResourceClaim(ctx, op, claim) })
+}
+
+func (s *Store) verifyPlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
 	if !validPlatformResourceClaim(op, claim) {
 		return ErrInput
 	}
@@ -740,12 +856,9 @@ func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatf
 		return ErrInput
 	}
 	var valid bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_resources r
-		LEFT JOIN platform_component_recovery_overrides o ON o.platform_id=r.platform_id AND o.platform_revision=r.platform_revision AND o.component=r.component AND o.resource_kind=r.resource_kind AND o.phase IN ('confirmed','adopted') AND o.replacement_released_at IS NULL
-		WHERE r.platform_id=$1 AND r.platform_revision=$2 AND r.component=$3 AND r.resource_kind=$4
-		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=r.platform_id AND pending.platform_revision=r.platform_revision AND pending.component=r.component AND pending.resource_kind=r.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
-		AND COALESCE(o.replacement_resource_id,r.resource_id)=$5 AND COALESCE(o.replacement_generation,r.immutable_generation)=$6
-		AND r.owner_operation_id=$7 AND r.released_at IS NULL)`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&valid); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM effective_platform_component_resources
+		WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND resource_kind=$4
+		AND resource_id=$5 AND immutable_generation=$6 AND owner_operation_id=$7)`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&valid); err != nil {
 		return err
 	}
 	if !valid {
@@ -755,7 +868,11 @@ func (s *Store) VerifyPlatformResourceClaim(ctx context.Context, op ManagedPlatf
 }
 
 func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, prior PlatformResourceClaim) error {
-	if prior.PlatformID != op.PlatformID || prior.PlatformRevision != op.Revision-1 || prior.ImmutableGeneration < 1 || !managedPlatformComponent.MatchString(prior.Component) || len(prior.ResourceID) < 1 || len(prior.ResourceID) > 255 || prior.OwnerOperationID == "" {
+	return retryManagedPlatformWrite(ctx, func() error { return s.advancePlatformResourceClaim(ctx, op, prior) })
+}
+
+func (s *Store) advancePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, prior PlatformResourceClaim) error {
+	if prior.PlatformID != op.PlatformID || prior.PlatformRevision < 1 || prior.PlatformRevision >= op.Revision || prior.ImmutableGeneration < 1 || !managedPlatformComponent.MatchString(prior.Component) || len(prior.ResourceID) < 1 || len(prior.ResourceID) > 255 || prior.OwnerOperationID == "" {
 		return ErrInput
 	}
 	if prior.Kind != "neon_tenant" && prior.Kind != "neon_timeline" && prior.Kind != "runtime_component" {
@@ -779,21 +896,26 @@ func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	if !managedPlatformClaimComponentAllowed(priorOperation, prior.Component, prior.Kind) {
 		return ErrInput
 	}
-	var baseResourceID string
-	var baseGeneration int64
-	var overrideOperationID string
-	err = tx.QueryRow(ctx, `SELECT b.resource_id,b.immutable_generation,COALESCE(r.recovery_operation_id,'') FROM platform_component_resources b
-		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind
-			AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$6 AND r.replacement_generation=$7
-		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.component=$3 AND b.resource_kind=$4 AND b.owner_operation_id=$5 AND b.released_at IS NULL
-		AND (b.resource_id=$6 AND b.immutable_generation=$7 OR r.recovery_operation_id IS NOT NULL) FOR UPDATE OF b`, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration).Scan(&baseResourceID, &baseGeneration, &overrideOperationID)
+	var pending bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM managed_platform_runtime_mutations WHERE platform_id=$1 AND platform_revision=$2 AND component=$3 AND completed_at IS NULL)`, prior.PlatformID, prior.PlatformRevision, prior.Component).Scan(&pending); err != nil {
+		return err
+	}
+	if pending {
+		return ErrConflict
+	}
+	var baseResourceID, sourceResourceID, overrideOperationID string
+	var baseGeneration, sourceGeneration int64
+	err = tx.QueryRow(ctx, `SELECT e.base_resource_id,e.base_generation,e.source_resource_id,e.source_generation,COALESCE(e.recovery_operation_id,'') FROM effective_platform_component_resources e
+		JOIN platform_component_resources b USING(platform_id,platform_revision,component,resource_kind)
+		WHERE e.platform_id=$1 AND e.platform_revision=$2 AND e.component=$3 AND e.resource_kind=$4 AND e.owner_operation_id=$5
+		AND e.resource_id=$6 AND e.immutable_generation=$7 FOR UPDATE OF b`, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration).Scan(&baseResourceID, &baseGeneration, &sourceResourceID, &sourceGeneration, &overrideOperationID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
 	}
 	if err != nil {
 		return err
 	}
-	if overrideOperationID == "" {
+	if overrideOperationID == "" && baseResourceID == prior.ResourceID && baseGeneration == prior.ImmutableGeneration {
 		tag, err := tx.Exec(ctx, `UPDATE platform_component_resources SET platform_revision=$1,owner_operation_id=$2
 			WHERE platform_id=$3 AND platform_revision=$4 AND component=$5 AND resource_kind=$6 AND resource_id=$7 AND immutable_generation=$8 AND owner_operation_id=$9 AND released_at IS NULL`, op.Revision, op.ID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, prior.OwnerOperationID)
 		if err != nil {
@@ -823,12 +945,14 @@ func (s *Store) AdvancePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	if _, err = tx.Exec(ctx, `INSERT INTO platform_component_resources(platform_id,platform_revision,component,resource_kind,resource_id,immutable_generation,owner_operation_id) VALUES($1,$2,$3,$4,$5,$6,$7)`, op.PlatformID, op.Revision, prior.Component, prior.Kind, prior.ResourceID, prior.ImmutableGeneration, op.ID); err != nil {
 		return err
 	}
-	tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='adopted',adopted_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND prior_owner_operation_id=$6 AND replacement_resource_id=$7 AND replacement_generation=$8 AND phase='confirmed' AND replacement_released_at IS NULL`, overrideOperationID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, prior.ResourceID, prior.ImmutableGeneration)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() != 1 {
-		return ErrConflict
+	if overrideOperationID != "" {
+		tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='adopted',adopted_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND prior_owner_operation_id=$6 AND replacement_resource_id=$7 AND COALESCE(runtime_generation,replacement_generation)=$8 AND phase='confirmed' AND replacement_released_at IS NULL`, overrideOperationID, prior.PlatformID, prior.PlatformRevision, prior.Component, prior.Kind, prior.OwnerOperationID, sourceResourceID, sourceGeneration)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrConflict
+		}
 	}
 	if err = propagateNeonRecoveryLineageTx(ctx, tx, prior.PlatformID, prior.PlatformRevision, op.Revision, overrideOperationID); err != nil {
 		return err
@@ -895,6 +1019,10 @@ func propagateNeonRecoveryLineageTx(ctx context.Context, tx pgx.Tx, platformID s
 }
 
 func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
+	return retryManagedPlatformWrite(ctx, func() error { return s.releasePlatformResourceClaim(ctx, op, claim) })
+}
+
+func (s *Store) releasePlatformResourceClaim(ctx context.Context, op ManagedPlatformOperation, claim PlatformResourceClaim) error {
 	if !validPlatformResourceClaim(op, claim) {
 		return ErrInput
 	}
@@ -913,12 +1041,12 @@ func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlat
 	if !allowed {
 		return ErrInput
 	}
-	var intentID, baseResourceID, recoveryOperationID string
-	var baseGeneration int64
-	if err = tx.QueryRow(ctx, `SELECT COALESCE(b.intent_id,''),b.resource_id,b.immutable_generation,COALESCE(r.recovery_operation_id,'') FROM platform_component_resources b
-		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL AND r.replacement_resource_id=$5 AND r.replacement_generation=$6
-		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.component=$3 AND b.resource_kind=$4 AND b.owner_operation_id=$7 AND b.released_at IS NULL
-		AND (b.resource_id=$5 AND b.immutable_generation=$6 OR r.recovery_operation_id IS NOT NULL) FOR UPDATE OF b`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&intentID, &baseResourceID, &baseGeneration, &recoveryOperationID); errors.Is(err, pgx.ErrNoRows) {
+	var intentID, baseResourceID, sourceResourceID, recoveryOperationID string
+	var baseGeneration, sourceGeneration int64
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(e.intent_id,''),e.base_resource_id,e.base_generation,e.source_resource_id,e.source_generation,COALESCE(e.recovery_operation_id,'') FROM effective_platform_component_resources e
+		JOIN platform_component_resources b USING(platform_id,platform_revision,component,resource_kind)
+		WHERE e.platform_id=$1 AND e.platform_revision=$2 AND e.component=$3 AND e.resource_kind=$4 AND e.owner_operation_id=$7
+		AND e.resource_id=$5 AND e.immutable_generation=$6 FOR UPDATE OF b`, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration, claim.OwnerOperationID).Scan(&intentID, &baseResourceID, &baseGeneration, &sourceResourceID, &sourceGeneration, &recoveryOperationID); errors.Is(err, pgx.ErrNoRows) {
 		return ErrConflict
 	}
 	if err != nil {
@@ -933,7 +1061,7 @@ func (s *Store) ReleasePlatformResourceClaim(ctx context.Context, op ManagedPlat
 		return ErrConflict
 	}
 	if recoveryOperationID != "" {
-		tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='replacement_released',replacement_released_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND replacement_resource_id=$6 AND replacement_generation=$7 AND phase='confirmed' AND replacement_released_at IS NULL`, recoveryOperationID, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, claim.ResourceID, claim.ImmutableGeneration)
+		tag, err = tx.Exec(ctx, `UPDATE platform_component_recovery_overrides SET phase='replacement_released',replacement_released_at=now(),updated_at=now() WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component=$4 AND resource_kind=$5 AND replacement_resource_id=$6 AND COALESCE(runtime_generation,replacement_generation)=$7 AND phase='confirmed' AND replacement_released_at IS NULL`, recoveryOperationID, claim.PlatformID, claim.PlatformRevision, claim.Component, claim.Kind, sourceResourceID, sourceGeneration)
 		if err != nil {
 			return err
 		}

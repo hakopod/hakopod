@@ -140,7 +140,7 @@ exec 4<&0
 cat <&3 & reader=$!
 cat <&4 >&3 & writer=$!
 trap 'kill "$reader" "$writer" 2>/dev/null || true; wait "$reader" "$writer" 2>/dev/null || true' EXIT
-wait -n "$reader" "$writer" || true`
+while kill -0 "$reader" 2>/dev/null && kill -0 "$writer" 2>/dev/null; do sleep 0.02; done`
 
 func (c *Client) clickhousePublicEndpointStream(ctx context.Context, d database.Resource, member database.Member, address string, port int) (net.Conn, error) {
 	ip, err := netip.ParseAddr(address)

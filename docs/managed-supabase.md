@@ -10,6 +10,10 @@ imgproxy, postgres-meta, Studio, Edge Runtime and Supavisor. Every service must
 have a bounded resource allocation and an immutable image digest before a plan
 can be produced.
 
+This release supports the fixed application database name `postgres`. Its
+pinned initialization assets target that database explicitly, so other names
+are rejected during review instead of reaching Kubernetes.
+
 Candidate admission reserves at least 500m CPU and 2 GiB memory for PostgreSQL,
 and 250m CPU and 512 MiB memory each for Realtime and Supavisor. These are
 Hakopod safety floors for later acceptance, not upstream sizing guarantees or
@@ -74,19 +78,40 @@ hashes. Restore targets a separate empty Supabase resource.
 
 ## Renderer candidate
 
-The renderer embeds and verifies the SHA-256 digest of the exact 23-file inventory from upstream commit
-`d6c81b66c9999cb121dd8876f541313d484f157f`. It puts non-secret bootstrap
-and service files in immutable ConfigMaps. It deliberately does not run the
+The renderer starts from the audited assets at upstream commit
+`d6c81b66c9999cb121dd8876f541313d484f157f` and verifies the SHA-256 digest
+of every reviewed asset. Hakopod changes the Compose-only Realtime hostname,
+makes the isolated `pgbouncer` role own only the `_supavisor` metadata schema,
+adds a separate owned Realtime post-migration step, and freezes the Edge Runtime
+router and its exact JOSE dependency into a reproducible offline bundle. The
+source, resolved JSR metadata and dependency license remain in the reviewed
+inventory. Non-secret bootstrap and service files use immutable ConfigMaps. It deliberately does not run the
 upstream Envoy entrypoint because that script substitutes credentials through
 `sed`. A trusted secret-resolution step must instead create the immutable
 `envoy-runtime-config` Secret snapshot containing `lds.yaml` before apply.
+
+Run `scripts/build-supabase-edge-bundle.py` on the build VM to reproduce the
+Edge bundle. It uses the digest-pinned runtime image twice with separate empty
+module caches, requires byte-identical ESZIP output, fetches only the pinned
+JOSE 6.2.12 metadata and license, and records all source and output digests.
+The frozen bundle has also started in a container with networking disabled:
+an unauthenticated request and a malformed bearer token were rejected with
+HTTP 401, while a correctly signed token passed authentication and reached the
+missing-function response with HTTP 404. This proves the bundled router can
+authenticate requests without downloading dependencies at startup. It does
+not prove Kubernetes NetworkPolicy enforcement, function execution, external
+egress, or a full-stack deployment.
 
 Database clients do not share the owner password. Auth, Edge Runtime,
 PostgREST, Realtime, Storage, postgres-meta and Supavisor each receive a
 separately scoped credential snapshot. A trusted bootstrap step must render
 those same distinct role credentials into the `database-role-bootstrap`
-Secret as `99-roles.sql`; the upstream shared-password `roles.sql` remains in
-the audited inventory but is not mounted. Secret bodies never enter the plan,
+Secret. Hakopod mounts it as `init-scripts/99-z-hakopod-role-passwords.sql`.
+An earlier init script creates the empty `_realtime` schema, so the role
+bootstrap can transfer its ownership after creating the Realtime roles. The
+upstream migrations then run, followed by Hakopod's final Realtime ownership
+and parameter grant. The upstream shared-password `roles.sql` remains in the
+audited inventory but is not mounted. Secret bodies never enter the plan,
 ConfigMaps or renderer output other than Secret references.
 
 The renderer requires an image-qualified non-root UID and GID for every pinned
@@ -96,9 +121,7 @@ provide the namespace UID observed immediately before apply. The reconciler
 must reject a changed UID and verify each object's complete owner chain. Only
 the API gateway accepts traffic from a namespace labelled as Hakopod managed
 ingress; the renderer creates no public route, and public routing must require
-TLS. Kubernetes Service names match the upstream internal names. The only
-asset adaptation changes the Compose-only Realtime hostname in `cds.yaml` to
-the same-namespace `realtime` Service.
+TLS. Kubernetes Service names match the upstream internal names.
 
 Email signup and every non-empty SMTP secret reference are rejected by
 admission until a bounded SMTP egress contract is implemented. Edge Functions have no external network access by default. An
@@ -110,16 +133,36 @@ Runtime Deno cache is capped at 1 GiB at `/var/cache/deno`.
 
 Initial provisioning requires platform revision 1 and an observed absence of
 the database claim. Once a database claim UID exists, rendering requires the
-previous complete spec. Secret rotation and changes to `database_name` or
-`jwt_expiry_seconds` are rejected because PostgreSQL init scripts do not
-run again for a populated data claim. This remains blocked until reconciliation
-can update roles transactionally, roll clients, verify them, and revoke the old
-credentials on failure-safe boundaries. `jwt.sql` is likewise first-boot-only;
-the database does not receive the JWT signing secret. After a successful
-rollout, reconciliation must prune owned ConfigMaps older than the reported
-revision threshold and prune owned Secret snapshots outside the reported
-retain set. It must never prune before all workloads reference and observe the
-new revision.
+previous complete spec. The database name remains immutable. Runtime settings,
+database TLS and gateway TLS may change through a reviewed revision. A JWT
+expiry change updates the database setting in the same durable transaction and
+completion journal used for database credential changes. Gateway
+TLS and its Envoy configuration must change together. Database credentials
+rotate only as one complete bundle containing the role bootstrap and every
+database client reference. Reconciliation creates the immutable snapshots,
+applies the bounded bootstrap transaction through the exact owned database pod,
+records an immutable non-secret completion marker, rolls clients, verifies the
+revision and then removes old snapshots. A retry may repeat the idempotent SQL
+when the transaction committed before its marker was recorded.
+
+Legacy JWT and API keys remain immutable until dual-key verification and token
+retirement are implemented. The pg-meta, Realtime and pooler encryption keys
+remain immutable until their stored data can be re-encrypted. Storage access
+keys remain immutable until the object store can prove an overlap window.
+Realtime's AES-256-GCM database encryption key and the pooler's vault encryption
+key must each contain exactly 32 bytes. Realtime writes new encrypted values
+with GCM. Create, update and recovery reject other lengths before applying
+workload Secrets.
+The pinned Realtime image uses the mounted database CA with peer and `db`
+hostname verification for both its control repository and its seeded tenant
+replication connection. The self-host tenant must keep TLS enforcement enabled;
+an encrypted socket without certificate and hostname verification is not an
+accepted database connection.
+`jwt.sql` remains first-boot-only; the database does not receive the JWT signing
+secret. After a successful rollout, reconciliation prunes owned ConfigMaps
+older than the reported revision threshold and owned Secret snapshots outside
+the reported retain set. It never prunes before all workloads reference and
+observe the new revision.
 
 Readiness follows the upstream component health checks, including migrations
 and dependency-aware endpoints. Startup and liveness use the local listening
@@ -148,9 +191,10 @@ named with an immutable name and revision, so another project cannot retrieve
 one by guessing its name. Secret bodies are authenticated and encrypted before
 database storage and redacted from API reads.
 
-VM validation passed the renderer and lifecycle tests, the store and API
-suites, worker tests and focused vet checks. The CLI, SDK and dashboard also
-passed their checks. A database-only native preflight passed empty-volume
+VM validation passed the current renderer and lifecycle tests, the store and
+API suites, worker tests and focused vet checks. The CLI, SDK and dashboard
+also passed their checks. These development checks used the reviewed source;
+they are not availability evidence. A database-only native preflight passed empty-volume
 startup, role isolation, private encryption-key permissions and persistence
 through pod replacement. It did not run the other ten components or test a
 full platform restore. Full-stack native acceptance remains required.
@@ -162,8 +206,11 @@ configuration. The database-only native preflight reported PostgreSQL
 separate CA-signed database certificate, verifies its key and both database DNS
 names, stages TLS files atomically, and configures PostgreSQL to refuse plaintext
 TCP connections. Auth, REST and Storage URLs must verify the database hostname
-against the mounted CA. Source tests and independent review passed; these
-controls have not yet passed native full-stack acceptance.
+against the mounted CA. Source tests and independent review passed for these
+controls. The prepared full-stack source and input receipt are
+review-window-bound and must be regenerated from the final source immediately
+before the run; an older receipt must not be reused. These controls have not
+yet passed native full-stack acceptance.
 
 Supavisor is configured with a separately generated `pooler-api-jwt-secret`
 for its administrative API, while NetworkPolicy denies application traffic to
@@ -183,8 +230,9 @@ and execution rechecks resource ownership before every command. Recovery v13
 passed archive and cluster tests, 17 real PostgreSQL store/API test events
 without skips, and vet on the isolated validation VM. These tests cover durable
 operation and archive behavior; they do not prove a full Supabase stack restore.
-Native backup/restore tests remain required. Secret rotation
-and recovery remain unavailable until their lifecycle and native tests pass.
+Native backup/restore tests remain required. Database credential rotation and
+recovery remain unavailable for release until their native lifecycle tests
+pass.
 
 The development-only native harness under
 `examples/supabase-native-acceptance` refuses any context except

@@ -1,6 +1,7 @@
 package managedplatform
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,98 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+func TestSupabaseRendererUsesFrozenOfflineEdgeBundle(t *testing.T) {
+	manifests, err := RenderSupabase(rendererFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var functionsConfig *corev1.ConfigMap
+	var functionsDeployment *appsv1.Deployment
+	for _, object := range manifests.Objects {
+		switch object := object.(type) {
+		case *corev1.ConfigMap:
+			if strings.HasPrefix(object.Name, "supabase-functions-") {
+				functionsConfig = object
+			}
+		case *appsv1.Deployment:
+			if object.Name == "supabase-edge-runtime" {
+				functionsDeployment = object
+			}
+		}
+	}
+	if functionsConfig == nil || functionsDeployment == nil {
+		t.Fatal("functions ConfigMap or deployment is missing")
+	}
+	bundle := functionsConfig.Data[assetKey("functions/main.eszip.b64")]
+	if bundle == "" {
+		t.Fatal("functions ConfigMap omits the frozen Edge Runtime bundle")
+	}
+	serialized, err := json.Marshal(functionsConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(serialized) >= 1024*1024 {
+		t.Fatalf("functions ConfigMap is %d bytes, exceeding the Kubernetes 1 MiB limit", len(serialized))
+	}
+	for name, value := range functionsConfig.Data {
+		if (name == assetKey("functions/deno.jsonc") || name == assetKey("functions/hello/index.ts")) && (strings.Contains(value, "jsr:") || strings.Contains(value, "npm:")) {
+			t.Fatalf("mounted function asset %s retains a runtime registry import", name)
+		}
+	}
+	router := functionsConfig.Data[assetKey("functions/main/index.ts")]
+	verifyAt := strings.Index(router, "if (req.method !== 'OPTIONS' && VERIFY_JWT)")
+	dispatchAt := strings.Index(router, "EdgeRuntime.userWorkers.create")
+	if verifyAt < 0 || dispatchAt < 0 || verifyAt >= dispatchAt {
+		t.Fatal("Edge router does not verify JWTs before user-worker dispatch")
+	}
+	for _, forbidden := range []string{"req.clone()", "console.error(e)", "MAX_WORKER_RETRIES"} {
+		if strings.Contains(router, forbidden) {
+			t.Fatalf("Edge router retains unsafe request or error handling %q", forbidden)
+		}
+	}
+
+	pod := functionsDeployment.Spec.Template.Spec
+	if len(pod.Containers) != 1 || !containsSequence(pod.Containers[0].Args, []string{"--main-service", "/home/deno/functions/main.eszip"}) {
+		t.Fatal("Edge Runtime does not start from the frozen ESZIP")
+	}
+	var seed *corev1.Container
+	for i := range pod.InitContainers {
+		if pod.InitContainers[i].Name == "seed-functions" {
+			seed = &pod.InitContainers[i]
+			break
+		}
+	}
+	if seed == nil || len(seed.Args) != 1 {
+		t.Fatal("functions bundle seed init container is missing")
+	}
+	command := seed.Args[0]
+	for _, required := range []string{"base64 -d /seed/main.eszip.b64 > /target/.main.eszip.tmp", "chmod 0444 /target/.main.eszip.tmp", "mv /target/.main.eszip.tmp /target/main.eszip"} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("functions seed command omits %q", required)
+		}
+	}
+	if strings.Contains(command, "if [ ! -e /target/main.eszip ]") {
+		t.Fatal("functions seed command can preserve a stale bundle across revisions")
+	}
+}
+
+func containsSequence(values, sequence []string) bool {
+	for i := 0; i+len(sequence) <= len(values); i++ {
+		match := true
+		for j := range sequence {
+			if values[i+j] != sequence[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
 
 func rendererFixture() SupabaseRenderInput {
 	spec := supabaseCandidateSpec()
@@ -211,7 +304,7 @@ func TestSupabaseRendererWiresRequiredRuntimeConfiguration(t *testing.T) {
 	expect := map[string]map[string]string{
 		"auth":         {"GOTRUE_API_HOST": "0.0.0.0", "API_EXTERNAL_URL": "https://data.example.test/auth/v1", "GOTRUE_SITE_URL": "https://app.example.test"},
 		"rest":         {"PGRST_DB_SCHEMAS": "public,storage,graphql_public", "PGRST_DB_MAX_ROWS": "1000"},
-		"realtime":     {"DB_HOST": "db", "DB_PORT": "5432", "DB_USER": "hakopod_realtime"},
+		"realtime":     {"DB_HOST": "db", "DB_PORT": "5432", "DB_USER": "hakopod_realtime", "DB_ENC_WRITE_GCM": "true"},
 		"storage":      {"POSTGREST_URL": "http://rest:3000", "IMGPROXY_URL": "http://imgproxy:5001", "STORAGE_PUBLIC_URL": "https://data.example.test"},
 		"edge-runtime": {"SUPABASE_URL": "https://api-gw:8443", "VERIFY_JWT": "true"},
 	}
@@ -226,10 +319,22 @@ func TestSupabaseRendererWiresRequiredRuntimeConfiguration(t *testing.T) {
 			}
 		}
 	}
-	if got := containers["edge-runtime"].Args; len(got) != 5 || got[4] != "/home/deno/functions/main" {
+	if got := containers["edge-runtime"].Args; len(got) != 5 || got[4] != "/home/deno/functions/main.eszip" {
 		t.Fatal("Edge Runtime command is incomplete")
 	}
 	realtime := containers["realtime"]
+	var realtimeEncryptionKey corev1.EnvVar
+	for _, item := range realtime.Env {
+		if item.Name == "DB_ENC_KEY_GCM" {
+			realtimeEncryptionKey = item
+		}
+		if item.Name == "DB_ENC_KEY" {
+			t.Fatal("Realtime still receives the legacy AES-128-ECB encryption key")
+		}
+	}
+	if realtimeEncryptionKey.ValueFrom == nil || realtimeEncryptionKey.ValueFrom.SecretKeyRef == nil || realtimeEncryptionKey.ValueFrom.SecretKeyRef.Key != "value" {
+		t.Fatal("Realtime AES-256-GCM encryption key is not wired from the immutable secret snapshot")
+	}
 	if len(realtime.Command) != 2 || realtime.Command[0] != "/bin/sh" || len(realtime.Args) != 1 || !strings.Contains(realtime.Args[0], "/app/bin/migrate") || !strings.Contains(realtime.Args[0], "exec /app/bin/server") || strings.Contains(realtime.Args[0], "sudo") || strings.Contains(realtime.Args[0], "set -x") || strings.Contains(realtime.Args[0], "/app/run.sh") {
 		t.Fatal("Realtime did not bypass the privileged or credential-logging entrypoint")
 	}
@@ -255,8 +360,12 @@ func TestSupabaseRendererEnforcesSharedVolumeAndStorageContracts(t *testing.T) {
 			continue
 		}
 		pod := deployment.Spec.Template.Spec
-		if pod.NodeSelector["kubernetes.io/hostname"] != "worker-a" {
-			t.Fatalf("%s is not pinned with the shared RWO claims", deployment.Name)
+		assertScheduledOnNode(t, pod, "worker-a")
+		if pod.NodeSelector["kubernetes.io/arch"] != "amd64" {
+			t.Fatalf("%s does not select the qualified amd64 architecture", deployment.Name)
+		}
+		if pod.NodeSelector["kubernetes.io/os"] != "linux" {
+			t.Fatalf("%s does not select the qualified Linux operating system", deployment.Name)
 		}
 		if deployment.Name == "supabase-studio" {
 			for _, mount := range pod.Containers[0].VolumeMounts {
@@ -278,14 +387,19 @@ func TestSupabaseRendererEnforcesSharedVolumeAndStorageContracts(t *testing.T) {
 }
 
 func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
-	manifests, err := RenderSupabase(rendererFixture())
+	fixture := rendererFixture()
+	manifests, err := RenderSupabase(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var pod *corev1.PodSpec
+	var bootstrap *corev1.ConfigMap
 	for _, object := range manifests.Objects {
 		if stateful, ok := object.(*appsv1.StatefulSet); ok && stateful.Name == "supabase-database" {
 			pod = &stateful.Spec.Template.Spec
+		}
+		if config, ok := object.(*corev1.ConfigMap); ok && strings.HasPrefix(config.Name, "supabase-database-bootstrap-") {
+			bootstrap = config
 		}
 	}
 	if pod == nil || len(pod.Containers) != 1 {
@@ -305,15 +419,40 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 	if environment["PGDATA"] != "/var/lib/postgresql/data/pgdata" {
 		t.Fatal("database PGDATA does not use the UID-owned child directory")
 	}
-	want := map[string]bool{
-		"/docker-entrypoint-initdb.d/migrations/97-_supabase.sql":                  false,
-		"/docker-entrypoint-initdb.d/migrations/99-logs.sql":                       false,
-		"/docker-entrypoint-initdb.d/migrations/99-pooler.sql":                     false,
-		"/docker-entrypoint-initdb.d/migrations/99-realtime.sql":                   false,
-		"/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql":                 false,
-		"/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql":                      false,
-		"/docker-entrypoint-initdb.d/init-scripts/99-z-hakopod-role-passwords.sql": false,
+	if bootstrap == nil || bootstrap.Data["99-z-hakopod-realtime-owner.sql"] != supabaseRealtimeOwnerSQL {
+		t.Fatal("database bootstrap does not keep Hakopod's post-migration ownership step separate from upstream assets")
 	}
+	if bootstrap.Data["99-y-hakopod-realtime-schema.sql"] != "CREATE SCHEMA IF NOT EXISTS _realtime;\n" {
+		t.Fatal("database bootstrap does not create the Realtime schema before the role bootstrap")
+	}
+	if !strings.Contains(bootstrap.Data["99-z-hakopod-realtime-owner.sql"], "GRANT SET ON PARAMETER log_min_messages TO supabase_realtime_admin;") {
+		t.Fatal("Realtime owner cannot apply its pinned list_changes migration")
+	}
+	if !strings.Contains(fixture.Assets["api/envoy/lds.template.yaml"], "inline_string: |\n                        ${DASHBOARD_BASIC_AUTH}\n") {
+		t.Fatal("Envoy basic-auth user list is not newline terminated htpasswd data")
+	}
+	envoyTemplate := fixture.Assets["api/envoy/lds.template.yaml"]
+	if strings.Contains(envoyTemplate, "%REQ_WITHOUT_QUERY(") || strings.Contains(envoyTemplate, "%REQ(REFERER)%") || strings.Contains(envoyTemplate, "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%") || strings.Contains(envoyTemplate, "%REQ(:PATH)%") || strings.Contains(envoyTemplate, "%REQ(USER-AGENT)%") {
+		t.Fatal("Envoy access logging can expose request targets or header credentials")
+	}
+	if bootstrap.Data[assetKey("db/realtime.sql")] != rendererFixture().Assets["db/realtime.sql"] {
+		t.Fatal("Hakopod ownership setup modified the pinned upstream realtime migration")
+	}
+	if !strings.Contains(bootstrap.Data[assetKey("db/pooler.sql")], "alter schema _supavisor owner to pgbouncer;") {
+		t.Fatal("Supavisor metadata role does not own its isolated schema")
+	}
+	want := map[string]bool{
+		"/docker-entrypoint-initdb.d/migrations/97-_supabase.sql":                   false,
+		"/docker-entrypoint-initdb.d/migrations/99-logs.sql":                        false,
+		"/docker-entrypoint-initdb.d/migrations/99-pooler.sql":                      false,
+		"/docker-entrypoint-initdb.d/migrations/99-realtime.sql":                    false,
+		"/docker-entrypoint-initdb.d/migrations/99-z-hakopod-realtime-owner.sql":    false,
+		"/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql":                  false,
+		"/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql":                       false,
+		"/docker-entrypoint-initdb.d/init-scripts/99-y-hakopod-realtime-schema.sql": false,
+		"/docker-entrypoint-initdb.d/init-scripts/99-z-hakopod-role-passwords.sql":  false,
+	}
+	var schemaPath, rolePath string
 	for _, mount := range container.VolumeMounts {
 		if mount.MountPath == "/docker-entrypoint-initdb.d" {
 			t.Fatal("database assets hide the image bootstrap launcher")
@@ -324,6 +463,15 @@ func TestSupabaseDatabasePreservesImageBootstrapLayout(t *testing.T) {
 			}
 			want[mount.MountPath] = true
 		}
+		if mount.SubPath == "99-y-hakopod-realtime-schema.sql" {
+			schemaPath = mount.MountPath
+		}
+		if mount.SubPath == "99-z-hakopod-role-passwords.sql" {
+			rolePath = mount.MountPath
+		}
+	}
+	if !strings.HasPrefix(schemaPath, "/docker-entrypoint-initdb.d/init-scripts/") || !strings.HasPrefix(rolePath, "/docker-entrypoint-initdb.d/init-scripts/") || schemaPath >= rolePath {
+		t.Fatal("Realtime schema prerequisite must run in the same init phase before the role bootstrap")
 	}
 	for path, found := range want {
 		if !found {
@@ -583,10 +731,23 @@ func TestSupabaseDatabaseKeyInitializerExecutesSafely(t *testing.T) {
 		if err := os.WriteFile(key, []byte(strings.Repeat("b", 64)), 0640); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.Chmod(key, 0640); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.Stat(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before.Mode().Perm() != 0640 {
+			t.Fatalf("wrong-mode fixture has mode %04o", before.Mode().Perm())
+		}
 		if err := runSupabaseKeyInitializer(init, directory); err == nil {
 			t.Fatal("wrong-mode key was accepted")
 		}
-		info, _ := os.Stat(key)
+		info, err := os.Stat(key)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if info.Mode().Perm() != 0640 {
 			t.Fatal("wrong-mode key permissions were silently changed")
 		}
@@ -862,8 +1023,110 @@ func TestSupabaseRendererRejectsUncoordinatedSecretRotation(t *testing.T) {
 	changedSetting.PreviousSpec = &prior
 	changedSetting.Revision = 2
 	changedSetting.Spec.Supabase.JWTExpirySeconds++
-	if _, err := RenderSupabase(changedSetting); err == nil {
-		t.Fatal("first-boot-only database setting update was accepted")
+	changedSettingResult, err := RenderSupabase(changedSetting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settingMarker := false
+	for _, object := range changedSettingResult.Objects {
+		marker, ok := object.(*corev1.ConfigMap)
+		if ok && marker.Name == "supabase-database-credentials-r2" {
+			settingMarker = len(marker.Data["reference_fingerprint"]) == 64
+		}
+	}
+	if !settingMarker {
+		t.Fatal("JWT expiry update has no durable database migration marker")
+	}
+	databaseRotation := rendererFixture()
+	prior = databaseRotation.Spec
+	prior.Secrets = cloneMap(databaseRotation.Spec.Secrets)
+	priorConfig = *databaseRotation.Spec.Supabase
+	prior.Supabase = &priorConfig
+	databaseRotation.DatabaseClaim = ObservedClaimState{Observed: true, UID: "database-claim-uid"}
+	databaseRotation.PreviousSpec = &prior
+	databaseRotation.Revision = 2
+	for _, key := range supabaseDatabaseCredentialKeys {
+		ref := databaseRotation.Spec.Secrets[key]
+		ref.Revision++
+		databaseRotation.Spec.Secrets[key] = ref
+	}
+	rotated, err := RenderSupabase(databaseRotation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markerFound := false
+	for _, object := range rotated.Objects {
+		marker, ok := object.(*corev1.ConfigMap)
+		if !ok || marker.Name != "supabase-database-credentials-r2" {
+			continue
+		}
+		markerFound = len(marker.Data["reference_fingerprint"]) == 64 && len(marker.Data) == 1 && marker.Immutable != nil && *marker.Immutable
+	}
+	if !markerFound {
+		t.Fatal("database credential rotation has no immutable non-secret completion marker")
+	}
+	unsafeKey := rendererFixture()
+	prior = unsafeKey.Spec
+	prior.Secrets = cloneMap(unsafeKey.Spec.Secrets)
+	priorConfig = *unsafeKey.Spec.Supabase
+	prior.Supabase = &priorConfig
+	unsafeKey.DatabaseClaim = ObservedClaimState{Observed: true, UID: "database-claim-uid"}
+	unsafeKey.PreviousSpec = &prior
+	unsafeKey.Revision = 2
+	ref := unsafeKey.Spec.Secrets["jwt-secret"]
+	ref.Revision++
+	unsafeKey.Spec.Secrets["jwt-secret"] = ref
+	if _, err := RenderSupabase(unsafeKey); err == nil {
+		t.Fatal("JWT secret rotation without a migration protocol was accepted")
+	}
+}
+
+func TestSupabaseRendererAllowsOnlyBoundCurrentCreateDatabaseClaim(t *testing.T) {
+	in := rendererFixture()
+	in.DatabaseClaim = ObservedClaimState{Observed: true, UID: types.UID("database-claim-uid")}
+	in.DatabaseClaimFromCurrentCreate = true
+	if _, err := RenderSupabase(in); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := in
+	missing.DatabaseClaim.UID = ""
+	if _, err := RenderSupabase(missing); err == nil {
+		t.Fatal("missing current-create database claim was accepted")
+	}
+
+	wrongRevision := in
+	wrongRevision.Revision = 2
+	if _, err := RenderSupabase(wrongRevision); err == nil {
+		t.Fatal("later revision claimed current-create provisioning")
+	}
+
+	withPrevious := in
+	previous := in.Spec
+	withPrevious.PreviousSpec = &previous
+	if _, err := RenderSupabase(withPrevious); err == nil {
+		t.Fatal("update claimed current-create provisioning")
+	}
+}
+
+func TestSupabaseDatabaseMigrationFingerprintCoversExpiryAndCredentialReferences(t *testing.T) {
+	base := rendererFixture().Spec
+	original := supabaseDatabaseCredentialFingerprint(base)
+	expiry := base
+	expiry.Secrets = cloneMap(base.Secrets)
+	expiryConfig := *base.Supabase
+	expiry.Supabase = &expiryConfig
+	expiry.Supabase.JWTExpirySeconds++
+	if supabaseDatabaseCredentialFingerprint(expiry) == original {
+		t.Fatal("JWT expiry did not change the database migration fingerprint")
+	}
+	credentials := base
+	credentials.Secrets = cloneMap(base.Secrets)
+	ref := credentials.Secrets["auth-database-url"]
+	ref.Revision++
+	credentials.Secrets["auth-database-url"] = ref
+	if supabaseDatabaseCredentialFingerprint(credentials) == original {
+		t.Fatal("database credential reference did not change the migration fingerprint")
 	}
 }
 

@@ -331,6 +331,10 @@ func TestUpgradeRelayAllowsOwnedNamespacesAndStreamsBothDirections(t *testing.T)
 			if frame := <-clientFrames; frame != "client-frame" {
 				t.Fatalf("client frame = %q", frame)
 			}
+			if err = connection.Close(); err != nil {
+				t.Fatal(err)
+			}
+			waitUpgradeIdle(t, proxy)
 		})
 	}
 	state := proxy.state.snapshot(proxy.options.mode)

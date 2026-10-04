@@ -2,6 +2,6 @@ FROM docker.io/planetscale/vitess-operator:v2.16.0@sha256:f0a6f6beec2a5e54872ead
 
 LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
       io.hakopod.vitess.operator-upstream="10a3b742c02c38f97d554739d5a257197daa48f9" \
-      io.hakopod.vitess.patch="native-backup-tls-canonical-hostname-shared-socket-v6"
+      io.hakopod.vitess.patch="native-backup-tls-canonical-hostname-shared-socket-first-live-resources-v8"
 
 COPY --chmod=0755 bin/vitess-operator /usr/local/bin/vitess-operator

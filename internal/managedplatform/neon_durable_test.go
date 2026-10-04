@@ -102,6 +102,39 @@ func durableNeonRequest() NeonLifecycleRequest {
 	return NeonLifecycleRequest{OperationID: testOperation, TenantID: testTenant, TimelineID: testTimeline, CreateTenant: true, ComputeConfig: map[string]json.RawMessage{"primary": raw}}
 }
 
+func durableNeonDeleteRequest() NeonLifecycleRequest {
+	return NeonLifecycleRequest{OperationID: testOperation, TenantID: testTenant, TimelineID: testTimeline, ComputeConfig: map[string]json.RawMessage{}}
+}
+
+func TestDurableNeonDeletionRejectsMalformedLifecycleIdentities(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*DurableOperation, *NeonLifecycleRequest)
+	}{
+		{name: "operation", mutate: func(op *DurableOperation, request *NeonLifecycleRequest) {
+			op.ID = "ABC"
+			request.OperationID = op.ID
+		}},
+		{name: "tenant", mutate: func(_ *DurableOperation, request *NeonLifecycleRequest) { request.TenantID = strings.Repeat("A", 32) }},
+		{name: "timeline", mutate: func(_ *DurableOperation, request *NeonLifecycleRequest) { request.TimelineID = strings.Repeat("g", 32) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			events := []string{}
+			op := DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 2, Kind: "delete"}
+			request := durableNeonDeleteRequest()
+			test.mutate(&op, &request)
+			lifecycle := &durableNeonFixture{op: op, claims: map[string]DurableResourceClaim{}, intents: map[string]DurableResourceIntent{}, events: &events}
+			runtime := &DurableNeonRuntime{lifecycle: lifecycle, control: &NeonRuntime{config: NeonRuntimeConfig{DeprovisionOnly: true}}}
+			if err := runtime.Deprovision(context.Background(), request); err == nil || !strings.Contains(err.Error(), "32 lowercase hexadecimal") {
+				t.Fatalf("malformed deletion identity was accepted: %v", err)
+			}
+			if len(events) != 0 || lifecycle.claimsCalls != 0 || lifecycle.intentsCalls != 0 {
+				t.Fatal("malformed deletion identity reached durable or provider state")
+			}
+		})
+	}
+}
+
 func TestDurableNeonProvisionChecksCompleteOwnershipCapabilityBeforeState(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -169,7 +202,7 @@ func TestDurableNeonAmbiguousTenantCreateRecoversOnlyItsMatchingIntent(t *testin
 			events = append(events, "post:tenant")
 			tenantCreated = true
 			w.WriteHeader(http.StatusInternalServerError)
-		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline:
+		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline, "GET /v1/tenant/" + testTenant + "/timeline/" + testTimeline:
 			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
 			t.Fatalf("unexpected storage request %s %s", request.Method, request.URL.Path)
@@ -225,6 +258,8 @@ func TestDurableNeonRejectsForeignProviderTokenForPendingTenant(t *testing.T) {
 		switch request.Method + " " + request.URL.Path {
 		case "GET /control/v1/hakopod/ownership":
 			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
+		case "POST /v1/tenant":
+			w.WriteHeader(http.StatusConflict)
 		case "GET /control/v1/tenant/" + testTenant:
 			_, _ = w.Write([]byte(`{"ownership_token":"ffffffffffffffffffffffffffffffff","ownership_state":"completed"}`))
 		case "POST /debug/v1/inspect":
@@ -248,10 +283,10 @@ func TestDurableNeonRejectsForeignProviderTokenForPendingTenant(t *testing.T) {
 	}
 	runtime := durableNeonRuntimeForTest(t, storage, compute, lifecycle)
 	runtime.control.config.allowUnqualifiedOwnershipProtocolForTest = false
-	if _, err := runtime.Provision(context.Background(), durableNeonRequest()); err == nil || !strings.Contains(err.Error(), "different ownership token") {
+	if _, err := runtime.Provision(context.Background(), durableNeonRequest()); err == nil || !strings.Contains(err.Error(), "resume Neon tenant left a pending intent") {
 		t.Fatalf("foreign provider ownership was accepted: %v", err)
 	}
-	if lifecycle.intents["tenant"].Confirmed || len(lifecycle.claims) != 0 || len(events) != 0 {
+	if lifecycle.intents["tenant"].Confirmed || len(lifecycle.claims) != 0 || strings.Join(events, "|") != "heartbeat" {
 		t.Fatal("foreign provider ownership was converted into a durable claim")
 	}
 }
@@ -266,17 +301,19 @@ func TestDurableNeonValidatesProviderIdentitiesBeforeConfirmingClaims(t *testing
 			_, _ = w.Write([]byte(`{"protocol":"hakopod-ownership-v1","tenant_delete_protocol":"prepare-v1","mutations":["tenant","timeline","pageserver_registration","safekeeper_registration"]}`))
 		case "GET /control/v1/tenant/" + testTenant:
 			if tenantCreated {
-				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"ownership_token":"` + fixtureIntentID("tenant") + `","ownership_state":"completed"}`))
 			} else {
 				w.WriteHeader(http.StatusNotFound)
 			}
+		case "POST /debug/v1/inspect":
+			_, _ = w.Write([]byte(`{"attachment":[7,11]}`))
 		case "POST /v1/tenant":
 			if request.Header.Get(neonOwnershipHeader) != fixtureIntentID("tenant") {
 				t.Fatal("tenant create omitted its durable ownership token")
 			}
 			tenantCreated = true
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":11,"generation":7}],"ownership_token":"` + fixtureIntentID("tenant") + `","ownership_state":"completed"}`))
+			_, _ = w.Write([]byte(`{"shards":[{"shard_id":"` + testTenant + `","node_id":99,"generation":0}],"ownership_token":"` + fixtureIntentID("tenant") + `","ownership_state":"completed"}`))
 		case "GET /control/v1/tenant/" + testTenant + "/timeline/" + testTimeline:
 			if timelineCreated {
 				_, _ = w.Write([]byte(`{"shards":[{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `"}]}`))
@@ -372,7 +409,7 @@ func TestDurableNeonDeletionRejectsChangedTenantAttachmentBeforeMutation(t *test
 		"timeline":        {PlatformID: op.PlatformID, PlatformRevision: 1, Component: "timeline", Kind: "neon_timeline", ResourceID: strings.Repeat("c", 64), ImmutableGeneration: 13, OwnerOperationID: strings.Repeat("b", 32)},
 		"compute-primary": {PlatformID: op.PlatformID, PlatformRevision: 1, Component: "compute-primary", Kind: "runtime_component", ResourceID: computeClaimID, ImmutableGeneration: 1, OwnerOperationID: strings.Repeat("b", 32)},
 	}, intents: map[string]DurableResourceIntent{}, events: &events}
-	if err = durableNeonRuntimeForTest(t, storage, compute, lifecycle).Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err = durableNeonRuntimeForTest(t, storage, compute, lifecycle).Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("changed tenant generation and node did not block deletion")
 	}
 }
@@ -515,6 +552,13 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 				status = http.StatusNoContent
 			case request.URL.Host == "storage.test" && request.Method == http.MethodDelete && request.URL.Path == "/v1/tenant/"+testTenant:
 				if request.URL.Query().Get("validate_only") == "true" {
+					if !tenantPresent {
+						if request.Header.Get(neonOwnershipHeader) != tenantToken {
+							t.Fatal("tenant tombstone check omitted its durable ownership token")
+						}
+						body = "null"
+						break
+					}
 					tenantDeletePreflights++
 					if !computeAttached || request.Header.Get(neonOwnershipHeader) != tenantToken {
 						t.Fatal("tenant deletion preflight ran after mutation or omitted its durable ownership token")
@@ -556,7 +600,7 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 	for component, claim := range lifecycle.claims {
 		claimsBefore[component] = claim
 	}
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("foreign remote descendant did not block deletion")
 	}
 	if !tenantPresent || !controllerTimelinePresent || !safekeeperTimelinePresent || !computeAttached || tenantDeletes != 0 || timelineDeletes != 0 {
@@ -569,7 +613,7 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 		t.Fatal("failed tenant preflight advanced or released ownership claims")
 	}
 	rejectTenantDeletePreflight = false
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("failed tenant deletion fence preparation did not block deletion")
 	}
 	if !tenantPresent || !controllerTimelinePresent || !safekeeperTimelinePresent || !computeAttached || tenantDeletes != 0 || timelineDeletes != 0 || !reflect.DeepEqual(lifecycle.claims, claimsBefore) || len(events) != 0 {
@@ -580,14 +624,14 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 	// pageserver timeline teardown but preceded safekeeper cleanup.
 	tenantDeletionToken = "55555555555555555555555555555555"
 	controllerTimelinePresent = false
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err != nil {
 		t.Fatal(err)
 	}
 	if tenantDeletePreflights != 3 || tenantDeletePreparations != 2 || tenantDeletes != 1 || timelineDeletes != 1 || tenantDescribeCalls != 4 || timelineDescribeCalls != 4 || safekeeperTimelineCalls != 12 {
 		t.Fatalf("owned deletion did not preflight, prepare, and recheck provider state: tenant preflights=%d tenant preparations=%d tenant deletes=%d timeline deletes=%d tenant describes=%d timeline describes=%d safekeeper timeline describes=%d", tenantDeletePreflights, tenantDeletePreparations, tenantDeletes, timelineDeletes, tenantDescribeCalls, timelineDescribeCalls, safekeeperTimelineCalls)
 	}
-	if _, ok := lifecycle.claims["tenant"]; ok {
-		t.Fatal("tenant claim was not released after the verified delete")
+	if _, ok := lifecycle.claims["tenant"]; !ok {
+		t.Fatal("tenant tombstone authority was released before namespace absence")
 	}
 	if _, ok := lifecycle.claims["timeline"]; ok {
 		t.Fatal("timeline claim was not released after the verified delete")
@@ -702,16 +746,16 @@ func TestDurableNeonDeleteConfigurationUsesClaimedEndpointsWithoutLiveZones(t *t
 	}
 }
 
-func TestDurableNeonRequestTimeoutLeavesLeaseMargin(t *testing.T) {
+func TestDurableNeonRequestTimeoutRemainsBounded(t *testing.T) {
 	events := []string{}
 	lifecycle := &durableNeonFixture{op: DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"}, claims: map[string]DurableResourceClaim{}, intents: map[string]DurableResourceIntent{}, events: &events}
 	config := NeonRuntimeConfig{
 		StorageController: NeonControlTarget{Name: "storage", Origin: "https://storage.example.test", Token: "storage-secret-token"},
 		Computes:          []NeonControlTarget{{Name: "primary", Origin: "https://compute.example.test", Token: "compute-secret-token"}},
-		RequestTimeout:    21 * time.Second, RootCAs: x509.NewCertPool(), allowMissingStorageRegistrationsForTest: true,
+		RequestTimeout:    2*time.Minute + time.Second, RootCAs: x509.NewCertPool(), allowMissingStorageRegistrationsForTest: true,
 	}
 	if _, err := NewDurableNeonRuntime(config, lifecycle); err == nil {
-		t.Fatal("provider request timeout was allowed to consume the 30-second operation lease")
+		t.Fatal("provider request timeout exceeded the bounded reconciliation budget")
 	}
 }
 
@@ -941,21 +985,21 @@ func TestDurableNeonDeletionResumesAfterClaimsWereReleased(t *testing.T) {
 		}
 		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})}}}
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err != nil {
 		t.Fatalf("deletion did not resume after tenant, timeline, and compute claims were released: %v", err)
 	}
 	if len(lifecycle.claims) != len(pageservers)+len(safekeepers) {
 		t.Fatal("storage registration claims were released before namespace deletion")
 	}
 	registrationsPresent = false
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err != nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err != nil {
 		t.Fatalf("authenticated missing storage registrations were not treated as already deleted: %v", err)
 	}
 	if len(lifecycle.claims) != len(pageservers)+len(safekeepers) {
 		t.Fatal("missing storage registration claims were released before namespace deletion")
 	}
 	attached = true
-	if err := runtime.Deprovision(context.Background(), durableNeonRequest()); err == nil {
+	if err := runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err == nil {
 		t.Fatal("attached compute without an ownership claim was accepted")
 	}
 }

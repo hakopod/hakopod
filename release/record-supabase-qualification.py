@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record development-only, producer-bound Supabase native evidence."""
+"""Record source-bound Supabase native evidence and its release boundary."""
 import argparse, json, runpy, shutil, tempfile
 from pathlib import Path
 VERIFIER=runpy.run_path(str(Path(__file__).with_name('verify-supabase-runtime.py')))
@@ -16,9 +16,9 @@ def assemble(source,report_path,cleanup_path,output):
     try:
         shutil.copyfile(report_path,temporary/'native-acceptance.json'); shutil.copyfile(cleanup_path,temporary/'cleanup-receipt.json')
         tooling={'recorder_sha256':VERIFIER['file_hash'](source/'release/record-supabase-qualification.py'),'verifier_sha256':VERIFIER['file_hash'](source/'release/verify-supabase-runtime.py'),'runner_sha256':runner_hash,'producer_sha256':producer_hash}
-        manifest={'schema_version':2,'platform':'linux/amd64','run_id':report['run_id'],'environment':report['environment'],'source_files':sources,'images':images,'identities':identities,'embedded_assets':assets,'tooling':tooling,'evidence':{'producer':report['producer'],'event_file_sha256':report['event_file_sha256'],'log_sha256':report['log_sha256']},'files':{name:VERIFIER['file_hash'](temporary/name,VERIFIER['MAX_REPORT_BYTES']) for name in ('native-acceptance.json','cleanup-receipt.json')},'capability':{'development_evidence_recorded':True,'development_cluster_qualified':False,'cluster_qualified':False,'encrypted_storage_class_qualified':False,'public_endpoint_qualified':False,'physical_zones_qualified':False}}
-        (temporary/'manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n'); temporary.rename(output)
-        VERIFIER['validate_metadata'](output,source); return manifest
+        manifest={'schema_version':2,'platform':'linux/amd64','run_id':report['run_id'],'environment':report['environment'],'source_files':sources,'images':images,'identities':identities,'embedded_assets':assets,'tooling':tooling,'evidence':{'producer':report['producer'],'event_file_sha256':report['event_file_sha256'],'log_sha256':report['log_sha256']},'files':{name:VERIFIER['file_hash'](temporary/name,VERIFIER['MAX_REPORT_BYTES']) for name in ('native-acceptance.json','cleanup-receipt.json')},'capability':VERIFIER['capabilities'](source,images)}
+        (temporary/'manifest.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+        VERIFIER['validate_metadata'](temporary,source); temporary.rename(output); return manifest
     except Exception:
         shutil.rmtree(temporary,ignore_errors=True); raise
 

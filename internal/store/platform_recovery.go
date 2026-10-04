@@ -184,13 +184,7 @@ func (s *Store) ManagedPlatformRecoveryContract(ctx context.Context, id string, 
 	return item, plan, err
 }
 func (s *Store) ManagedPlatformRecoveryClaims(ctx context.Context, id string, revision int64) (map[string]PlatformResourceClaim, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT b.platform_id,b.platform_revision,b.component,b.resource_kind,
-		COALESCE(r.replacement_resource_id,b.resource_id),COALESCE(r.replacement_generation,b.immutable_generation),b.owner_operation_id,b.released_at
-		FROM platform_component_resources b
-		LEFT JOIN platform_component_recovery_overrides r ON r.platform_id=b.platform_id AND r.platform_revision=b.platform_revision AND r.component=b.component AND r.resource_kind=b.resource_kind AND r.phase='confirmed' AND r.replacement_released_at IS NULL
-		WHERE b.platform_id=$1 AND b.platform_revision=$2 AND b.released_at IS NULL
-		AND NOT EXISTS(SELECT 1 FROM platform_component_recovery_overrides pending WHERE pending.platform_id=b.platform_id AND pending.platform_revision=b.platform_revision AND pending.component=b.component AND pending.resource_kind=b.resource_kind AND pending.phase IN ('prior_released','reserved','replacement_released','complete','empty_complete'))
-		ORDER BY b.component,b.resource_kind LIMIT $3`, id, revision, MaxManagedPlatformResources+1)
+	rows, err := s.Pool.Query(ctx, `SELECT `+platformResourceClaimColumns+` FROM effective_platform_component_resources WHERE platform_id=$1 AND platform_revision=$2 ORDER BY component,resource_kind LIMIT $3`, id, revision, MaxManagedPlatformResources+1)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +204,7 @@ func (s *Store) ManagedPlatformRecoveryClaims(ctx context.Context, id string, re
 }
 func (s *Store) ManagedPlatformRecoveryCurrentClaim(ctx context.Context, id, component string) (PlatformResourceClaim, error) {
 	var c PlatformResourceClaim
-	err := s.Pool.QueryRow(ctx, `SELECT r.platform_id,r.platform_revision,r.component,r.resource_kind,r.resource_id,r.immutable_generation,r.owner_operation_id,r.released_at FROM platform_component_resources r JOIN managed_platforms p ON p.id=r.platform_id AND p.revision=r.platform_revision WHERE r.platform_id=$1 AND r.component=$2 AND r.released_at IS NULL AND p.deleted_at IS NULL`, id, component).Scan(&c.PlatformID, &c.PlatformRevision, &c.Component, &c.Kind, &c.ResourceID, &c.ImmutableGeneration, &c.OwnerOperationID, &c.ReleasedAt)
+	err := s.Pool.QueryRow(ctx, `SELECT r.platform_id,r.platform_revision,r.component,r.resource_kind,r.resource_id,r.immutable_generation,r.owner_operation_id,r.released_at FROM effective_platform_component_resources r JOIN managed_platforms p ON p.id=r.platform_id AND p.revision=r.platform_revision WHERE r.platform_id=$1 AND r.component=$2 AND r.released_at IS NULL AND p.deleted_at IS NULL`, id, component).Scan(&c.PlatformID, &c.PlatformRevision, &c.Component, &c.Kind, &c.ResourceID, &c.ImmutableGeneration, &c.OwnerOperationID, &c.ReleasedAt)
 	return c, err
 }
 
@@ -289,6 +283,9 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 		return op, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044269)"); err != nil {
+		return op, err
+	}
 	if err = lockManagedPlatformMutations(ctx, tx, intent.SourcePlatformID, intent.TargetPlatformID); err != nil {
 		return op, err
 	}
@@ -336,6 +333,12 @@ func (s *Store) AcceptPlatformRecovery(ctx context.Context, p Principal, intent 
 	platformIDs := []string{intent.SourcePlatformID}
 	if intent.TargetPlatformID != "" {
 		platformIDs = append(platformIDs, intent.TargetPlatformID)
+	}
+	if err = rejectPlatformRuntimeOverlapTx(ctx, tx, platformIDs); err != nil {
+		return op, err
+	}
+	if err = rejectUnfinishedPlatformMaintenanceRecoveryTx(ctx, tx, platformIDs); err != nil {
+		return op, err
 	}
 	var overlapping bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE status IN ('queued','running') AND (source_platform_id=ANY($1) OR target_platform_id=ANY($1)))`, platformIDs).Scan(&overlapping); err != nil {
@@ -426,8 +429,14 @@ func (s *Store) ClaimPlatformRecovery(ctx context.Context, lease string) (platfo
 		return platformbackup.Operation{}, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044269)"); err != nil {
+		return platformbackup.Operation{}, err
+	}
 	var id string
-	err = tx.QueryRow(ctx, `SELECT id FROM managed_platform_recovery_operations WHERE (status='queued' AND next_attempt_at<=now()) OR (status='running' AND lease_until<now()) ORDER BY cleanup_required DESC,next_attempt_at,created_at,id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT r.id FROM managed_platform_recovery_operations r WHERE ((r.status='queued' AND r.next_attempt_at<=now()) OR (r.status='running' AND r.lease_until<now()))
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_operations o WHERE (o.platform_id=r.source_platform_id OR o.platform_id=r.target_platform_id) AND o.status IN ('queued','running'))
+		AND NOT EXISTS(SELECT 1 FROM managed_platform_maintenance m WHERE (m.platform_id=r.source_platform_id OR m.platform_id=r.target_platform_id) AND m.status='running' AND m.lease_until>=clock_timestamp())
+		ORDER BY r.cleanup_required DESC,r.next_attempt_at,r.created_at,r.id FOR UPDATE OF r SKIP LOCKED LIMIT 1`).Scan(&id)
 	if err != nil {
 		return platformbackup.Operation{}, err
 	}
@@ -640,24 +649,10 @@ func (s *Store) PreparePlatformRecoveryWorkload(ctx context.Context, op platform
 	return current, prior, tx.Commit(ctx)
 }
 func (s *Store) ReconcilePlatformRecoveryDeployment(ctx context.Context, op platformbackup.Operation, name, uid, token string, generation int64, replicas int32) error {
-	r, err := s.Pool.Exec(ctx, `UPDATE managed_platform_recovery_deployments SET current_generation=$5,updated_at=now() WHERE operation_id=$1 AND deployment_name=$2 AND deployment_uid=$3 AND transition_token=$4 AND target_replicas=$6 AND current_generation+1=$5 AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$7 AND status='running' AND lease_until>=clock_timestamp())`, op.ID, name, uid, token, generation, replicas, op.Lease)
-	if err != nil {
-		return err
-	}
-	if r.RowsAffected() != 1 {
-		return ErrConflict
-	}
-	return nil
+	return s.completePlatformRecoveryWorkloadGeneration(ctx, op, name, uid, generation-1, generation, token, &replicas, nil)
 }
 func (s *Store) CompletePlatformRecoveryDeployment(ctx context.Context, op platformbackup.Operation, name, uid string, oldGeneration, newGeneration int64) error {
-	r, err := s.Pool.Exec(ctx, `UPDATE managed_platform_recovery_deployments SET current_generation=$5,updated_at=now() WHERE operation_id=$1 AND deployment_name=$2 AND deployment_uid=$3 AND current_generation=$4 AND EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE id=$1 AND lease=$6 AND status='running' AND lease_until>=clock_timestamp())`, op.ID, name, uid, oldGeneration, newGeneration, op.Lease)
-	if err != nil {
-		return err
-	}
-	if r.RowsAffected() != 1 {
-		return ErrConflict
-	}
-	return nil
+	return s.completePlatformRecoveryWorkloadGeneration(ctx, op, name, uid, oldGeneration, newGeneration, "", nil, nil)
 }
 func (s *Store) PlatformRecoveryDeploymentGeneration(ctx context.Context, op platformbackup.Operation, name string, baseline int64) (int64, error) {
 	var generation int64
@@ -731,6 +726,20 @@ func (s *Store) FinishPlatformRecovery(ctx context.Context, op platformbackup.Op
 	}
 	if r.RowsAffected() != 1 {
 		return ErrConflict
+	}
+	if op.Kind == "restore" {
+		// Supabase restore leaves the target's clients and gateway stopped.
+		// Only a newly reviewed revision may activate them again.
+		const heldMessage = "Certificate maintenance is paused for this restore target. Review a new platform revision before activating its services."
+		if _, err = tx.Exec(ctx, `UPDATE managed_platform_maintenance m SET phase='restore-isolated',message=$3,updated_at=now()
+			FROM managed_platforms p WHERE p.id=$1 AND p.revision=$2 AND p.kind='supabase' AND p.deleted_at IS NULL
+			AND m.platform_id=p.id AND m.revision=p.revision`, op.TargetPlatformID, op.ExpectedTargetRevision, heldMessage); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `UPDATE managed_platforms SET observation=observation || jsonb_build_object('maintenance',jsonb_build_object('status','pending','phase','restore-isolated','message',$3::text,'checked_at',clock_timestamp())),updated_at=now()
+			WHERE id=$1 AND revision=$2 AND kind='supabase' AND desired_spec->>'tls_mode'='managed' AND deleted_at IS NULL`, op.TargetPlatformID, op.ExpectedTargetRevision, heldMessage); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

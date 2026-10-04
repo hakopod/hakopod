@@ -1,7 +1,9 @@
 package cluster
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -54,6 +56,37 @@ func TestNeonColdStartSeparatesBootstrapAndServingReadiness(t *testing.T) {
 	}
 }
 
+func TestNeonUpdatedComputeCanBootstrapBeforeCurrentRevisionAdvances(t *testing.T) {
+	replicas := int32(1)
+	compute := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "neon-compute-0", Generation: 2},
+		Spec:       appsv1.StatefulSetSpec{Replicas: &replicas},
+		Status:     appsv1.StatefulSetStatus{ObservedGeneration: 2, Replicas: 1, UpdatedReplicas: 1, CurrentRevision: "old", UpdateRevision: "new"},
+	}
+	if !neonStatefulSetObserved(compute, false) || neonStatefulSetObserved(compute, true) {
+		t.Fatal("updated detached compute cannot reach lifecycle configuration before serving")
+	}
+	for _, change := range []func(*appsv1.StatefulSet){
+		func(s *appsv1.StatefulSet) { s.Status.ObservedGeneration = 1 },
+		func(s *appsv1.StatefulSet) { s.Status.UpdatedReplicas = 0 },
+		func(s *appsv1.StatefulSet) { s.Status.Replicas = 2 },
+	} {
+		pending := compute.DeepCopy()
+		change(pending)
+		if neonStatefulSetObserved(pending, false) {
+			t.Fatal("unobserved or incomplete compute replacement passed bootstrap")
+		}
+	}
+	compute.Status.ReadyReplicas = 1
+	if neonStatefulSetObserved(compute, true) {
+		t.Fatal("serving readiness ignored an incomplete revision transition")
+	}
+	compute.Status.CurrentRevision = compute.Status.UpdateRevision
+	if !neonStatefulSetObserved(compute, true) {
+		t.Fatal("completed ready compute rollout was refused")
+	}
+}
+
 func TestNeonAvailabilityZonesComeFromReadyKubernetesNodes(t *testing.T) {
 	node := func(name, zone string) *corev1.Node {
 		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"topology.kubernetes.io/zone": zone}}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}
@@ -82,6 +115,58 @@ func TestNeonDeleteDoesNotDependOnLiveNodeReadiness(t *testing.T) {
 	}
 }
 
+func TestNeonPlacementRequiresDistinctSafekeeperZonesBeforeApply(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		zones []string
+		valid bool
+	}{
+		{name: "one zone", zones: []string{"zone-a", "zone-a", "zone-a"}},
+		{name: "two zones", zones: []string{"zone-a", "zone-b", "zone-a"}},
+		{name: "later pageserver does not supply missing safekeeper zone", zones: []string{"zone-a", "zone-a", "zone-b", "zone-c"}},
+		{name: "three safekeeper zones", zones: []string{"zone-a", "zone-b", "zone-c"}, valid: true},
+		{name: "later pageserver may share a zone", zones: []string{"zone-a", "zone-b", "zone-c", "zone-a"}, valid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			kube := fake.NewSimpleClientset()
+			spec := managedplatform.Spec{Kind: "neon", Neon: &managedplatform.NeonConfig{Pageservers: len(test.zones), Safekeepers: 3}}
+			for i, zone := range test.zones {
+				name := fmt.Sprintf("node-%d", i)
+				spec.Placement.NodeNames = append(spec.Placement.NodeNames, name)
+				node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"topology.kubernetes.io/zone": zone}}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}
+				if err := kube.Tracker().Add(node); err != nil {
+					t.Fatal(err)
+				}
+			}
+			client := &Client{kube: kube}
+			err := client.ValidateNeonPlacement(context.Background(), spec)
+			if test.valid {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "first three placement nodes") {
+				t.Fatalf("invalid safekeeper topology was not refused: %v", err)
+			}
+			for _, kind := range []string{"create", "update"} {
+				op := store.ManagedPlatformOperation{ID: strings.Repeat("a", 32), PlatformID: strings.Repeat("b", 32), Revision: 1, Kind: kind, Lease: "fixture-lease"}
+				request := NeonRuntimeRequest{Operation: op, Render: managedplatform.NeonRenderInput{PlatformID: op.PlatformID, Revision: op.Revision, Spec: spec}}
+				err = client.ReconcileNeonOperation(context.Background(), &store.Store{}, request, nil)
+				var runtimeErr *ManagedPlatformRuntimeError
+				if !errors.As(err, &runtimeErr) || runtimeErr.SafeCategory() != "neon_node_inventory" {
+					t.Fatalf("%s did not stop before runtime changes: %v", kind, err)
+				}
+			}
+			for _, action := range kube.Actions() {
+				if action.GetVerb() != "get" || action.GetResource().Resource != "nodes" {
+					t.Fatalf("invalid topology reached a Kubernetes side effect: %s %s", action.GetVerb(), action.GetResource().Resource)
+				}
+			}
+		})
+	}
+}
+
 func TestPrepareNeonDeleteReconstructsRuntimeWithoutLiveZones(t *testing.T) {
 	platformID := strings.Repeat("4", 32)
 	op := store.ManagedPlatformOperation{ID: strings.Repeat("5", 32), PlatformID: platformID, Revision: 2, Kind: "delete"}
@@ -95,22 +180,46 @@ func TestPrepareNeonDeleteReconstructsRuntimeWithoutLiveZones(t *testing.T) {
 		},
 	}
 	ca := supabaseGatewayCertificateFixture(t, []string{"neon.test"}, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))["ca.crt"]
-	request := NeonRuntimeRequest{
+	baseRequest := NeonRuntimeRequest{
 		Operation: op,
 		Render:    managedplatform.NeonRenderInput{Spec: spec, PlatformID: platformID, Revision: op.Revision},
 		SecretSnapshots: map[string]map[string][]byte{
 			"controller-auth-r1": {"token": []byte("controller-secret-token"), "ca.crt": ca},
-			"compute-auth-r1":    {"token": []byte("compute-secret-token"), "ca.crt": ca, "config.json": []byte(`{"spec":{},"compute_ctl_config":{}}`)},
+			"compute-auth-r1":    {"ca.crt": ca, "config.json": []byte(validNeonComputeTemplate)},
 			"safekeeper-auth-r1": {"token": []byte("safekeeper-secret-token"), "ca.crt": ca},
 		},
 		ProxyEndpoint: managedplatform.NeonProxyBootstrapState{EndpointID: platformID},
 	}
-	lifecycle, lifecycleRequest, route, err := prepareNeonLifecycle(context.Background(), request, neonClaimReadStore{}, nil, nil)
-	if err != nil {
-		t.Fatalf("delete factory rejected the durable provider identity path without live zones: %v", err)
-	}
-	if lifecycle == nil || lifecycleRequest.OperationID != op.ID || route.EndpointID != platformID {
-		t.Fatal("delete factory did not reconstruct the durable Neon lifecycle")
+	for _, test := range []struct {
+		name     string
+		template []byte
+	}{
+		{name: "valid", template: []byte(validNeonComputeTemplate)},
+		{name: "missing"},
+		{name: "malformed", template: []byte(`{"spec":`)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := baseRequest
+			request.SecretSnapshots = make(map[string]map[string][]byte, len(baseRequest.SecretSnapshots))
+			for name, values := range baseRequest.SecretSnapshots {
+				request.SecretSnapshots[name] = make(map[string][]byte, len(values))
+				for key, value := range values {
+					request.SecretSnapshots[name][key] = append([]byte(nil), value...)
+				}
+			}
+			if test.template == nil {
+				delete(request.SecretSnapshots["compute-auth-r1"], "config.json")
+			} else {
+				request.SecretSnapshots["compute-auth-r1"]["config.json"] = test.template
+			}
+			lifecycle, lifecycleRequest, route, err := prepareNeonLifecycle(context.Background(), request, neonClaimReadStore{}, bytes.Repeat([]byte{9}, 32), nil)
+			if err != nil {
+				t.Fatalf("delete factory rejected the durable provider identity path without live zones: %v", err)
+			}
+			if lifecycle == nil || lifecycleRequest.OperationID != op.ID || lifecycleRequest.CreateTenant || len(lifecycleRequest.ComputeConfig) != 0 || route.EndpointID != platformID {
+				t.Fatal("delete factory did not reconstruct the durable Neon lifecycle without provisioning configuration")
+			}
+		})
 	}
 }
 
@@ -168,7 +277,7 @@ func TestManagedPlatformClaimReaderAllowsBoundedNeonRevisionRollover(t *testing.
 func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 	render := func(t *testing.T, pageservers, safekeepers, computes int) managedplatform.NeonManifests {
 		t.Helper()
-		spec := managedplatform.Spec{SchemaVersion: 1, Name: "inventory", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: computes, Pageservers: pageservers, Safekeepers: safekeepers, BranchLimit: 64, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-inventory", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "inventory", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
+		spec := managedplatform.Spec{SchemaVersion: 1, Name: "inventory", Kind: "neon", Version: managedplatform.NeonVersion, Resources: map[string]managedplatform.Resources{}, Storage: map[string]int64{}, Secrets: map[string]managedplatform.SecretReference{}, Neon: &managedplatform.NeonConfig{PostgresVersion: "17", ComputeReplicas: computes, Pageservers: pageservers, Safekeepers: safekeepers, BranchLimit: 1, ObjectStorageURL: "https://objects.example.test", ObjectStorageBucket: "neon-inventory", ObjectStorageRegion: "us-east-1", ObjectStoragePrefix: "inventory", ProxyControlPlanePatchSHA256: managedplatform.NeonProxyControlPlanePatchSHA256}}
 		for i := 0; i < max(3, pageservers); i++ {
 			spec.Placement.NodeNames = append(spec.Placement.NodeNames, fmt.Sprintf("node-%d", i))
 		}
@@ -185,7 +294,8 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 		for _, key := range managedplatform.NeonSecretKeys() {
 			spec.Secrets[key] = managedplatform.SecretReference{Name: "neon-" + key, Revision: 1}
 		}
-		manifests, err := managedplatform.RenderNeon(managedplatform.NeonRenderInput{Spec: spec, PlatformID: strings.Repeat("a", 32), Revision: 1, NamespaceUID: types.UID("namespace-uid"), Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 20000, ProxyControlPlaneOrigin: "https://control.example.test", ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}})
+		ca := supabaseGatewayCertificateFixture(t, []string{"control.example.test"}, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))["ca.crt"]
+		manifests, err := managedplatform.RenderNeon(managedplatform.NeonRenderInput{Spec: spec, PlatformID: strings.Repeat("a", 32), Revision: 1, NamespaceUID: types.UID("namespace-uid"), Images: images, Identities: identities, ApprovedEncryptedStorageClass: "encrypted", SharedStorageGID: 20000, ProxyControlPlaneOrigin: "https://control.example.test", ProxyControlPlaneCAPEM: string(ca), ControlPlaneNamespace: "hakopod-system", ControlPlanePodLabels: map[string]string{"app.kubernetes.io/name": "hakopod-server"}, ApprovedExternalHTTPSCIDRs: []string{"8.8.8.8/32"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,18 +313,19 @@ func TestManagedPlatformNeonRendererInventoryFitsClaimBounds(t *testing.T) {
 			t.Fatal("supported Neon topology exceeds the managed platform claim bound")
 		}
 	}
-	assert(t, 2, 3, 1, 45, 61)
-	assert(t, 8, 3, 6, 94, 121)
+	assert(t, 2, 3, 1, 48, 66)
+	assert(t, 8, 3, 6, 97, 126)
 
 	maximum := render(t, 8, 3, 6)
 	immutableRevisionObjects := 0
 	for _, object := range maximum.Objects {
-		if config, ok := object.(*corev1.ConfigMap); ok && strings.HasSuffix(config.Name, "-r1") {
+		if config, ok := object.(*corev1.ConfigMap); ok && config.Immutable != nil && *config.Immutable && config.Labels["hakopod.io/revision"] == "1" {
 			immutableRevisionObjects++
 		}
 	}
 	kubernetesClaims := len(maximum.Objects) + len(maximum.RequiredSecrets) + 1
-	if immutableRevisionObjects != 14 || kubernetesClaims+immutableRevisionObjects != 116 {
+	// One previous callback secret also remains until the new revision is ready.
+	if immutableRevisionObjects != 16 || kubernetesClaims+immutableRevisionObjects+1 != 124 {
 		t.Fatalf("maximum update rollover inventory changed: Kubernetes=%d old immutable ConfigMaps=%d total=%d", kubernetesClaims, immutableRevisionObjects, kubernetesClaims+immutableRevisionObjects)
 	}
 	if maxSupabaseRuntimeObjects != managedplatform.MaxComponents*5 {

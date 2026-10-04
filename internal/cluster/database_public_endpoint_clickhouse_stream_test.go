@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,6 +123,26 @@ func TestClickHousePublicStreamCancellationAndCloseUnblockBothDirections(t *test
 }
 
 func TestClickHousePublicTCPRelayExitsOnServerEOFWithOpenStdin(t *testing.T) {
+	watch := `while kill -0 "$reader" 2>/dev/null && kill -0 "$writer" 2>/dev/null; do sleep 0.02; done`
+	delayed := strings.Replace(clickhousePublicTCPRelay, watch, "sleep 0.05\n"+watch, 1)
+	if delayed == clickhousePublicTCPRelay {
+		t.Fatal("relay completion watcher changed")
+	}
+	for _, test := range []struct {
+		name  string
+		relay string
+	}{
+		{name: "normal", relay: clickhousePublicTCPRelay},
+		{name: "reader-completed-before-watch", relay: delayed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			testClickHousePublicTCPRelayServerEOF(t, test.relay)
+		})
+	}
+}
+
+func testClickHousePublicTCPRelayServerEOF(t *testing.T, relay string) {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("native ClickHouse relay uses the Linux runtime's Bash")
 	}
@@ -159,7 +180,7 @@ func TestClickHousePublicTCPRelayExitsOnServerEOFWithOpenStdin(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, bash, "-c", clickhousePublicTCPRelay, "synthetic-clickhouse-relay", host, port)
+	command := exec.CommandContext(ctx, bash, "-c", relay, "synthetic-clickhouse-relay", host, port)
 	command.Stdin = stdin
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &stderr
@@ -182,5 +203,61 @@ func TestClickHousePublicTCPRelayExitsOnServerEOFWithOpenStdin(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("server did not finish")
+	}
+}
+
+func TestClickHousePublicTCPRelayExitsWhenStdinClosesFirst(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("native ClickHouse relay uses the Linux runtime's Bash")
+	}
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatal("native relay requires bash", err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+		if err = conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err == nil {
+			_, err = io.ReadAll(conn)
+		}
+		serverDone <- err
+	}()
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, bash, "-c", clickhousePublicTCPRelay, "synthetic-clickhouse-relay", host, port)
+	command.Stdin = bytes.NewReader(nil)
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	command.WaitDelay = 250 * time.Millisecond
+	if err = command.Run(); err != nil {
+		t.Fatalf("relay failed: %v; %s", err, stderr.String())
+	}
+	if ctx.Err() != nil {
+		t.Fatal("relay waited for the server after stdin closed", ctx.Err())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("relay returned unexpected output: %q", stdout.String())
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("relay left the server connection open")
 	}
 }

@@ -60,6 +60,7 @@ type Spec struct {
 	Name          string                     `json:"name" toml:"name"`
 	Kind          string                     `json:"kind" toml:"kind"`
 	Version       string                     `json:"version" toml:"version"`
+	TLSMode       string                     `json:"tls_mode,omitempty" toml:"tls_mode"`
 	Resources     map[string]Resources       `json:"resources" toml:"resources"`
 	Storage       map[string]int64           `json:"storage" toml:"storage"`
 	Secrets       map[string]SecretReference `json:"secrets" toml:"secrets"`
@@ -69,6 +70,9 @@ type Spec struct {
 }
 
 func (s Spec) Validate() error {
+	if s.TLSMode != "" && s.TLSMode != "operator" && s.TLSMode != "managed" {
+		return fmt.Errorf("tls_mode must be managed or operator")
+	}
 	if s.SchemaVersion != 1 || len(s.Name) > 40 || len(validation.IsDNS1123Label(s.Name)) != 0 {
 		return fmt.Errorf("managed platforms require schema_version 1 and a valid name of at most 40 characters")
 	}
@@ -136,10 +140,16 @@ func (s Spec) ValidateStorage(required []string) error {
 }
 
 func (s Spec) ValidateSecrets(required []string) error {
+	if s.TLSMode == "managed" {
+		required = s.UserSecretKeys(required)
+	}
 	if err := exactKeys(s.Secrets, required, "secrets"); err != nil {
 		return err
 	}
 	for _, key := range required {
+		if s.TLSMode == "managed" && strings.HasPrefix(s.Secrets[key].Name, "platform-tls-") {
+			return fmt.Errorf("secrets.%s uses a controller-reserved name", key)
+		}
 		if err := s.Secrets[key].Validate(); err != nil {
 			return fmt.Errorf("secrets.%s: %w", key, err)
 		}
@@ -200,9 +210,11 @@ type Component struct {
 }
 
 type Plan struct {
-	Namespace     string      `json:"namespace"`
-	Components    []Component `json:"components"`
-	PublicService string      `json:"public_service"`
-	StorageClass  string      `json:"storage_class"`
-	Capability    Capability  `json:"capability"`
+	Namespace              string      `json:"namespace"`
+	Components             []Component `json:"components"`
+	PublicService          string      `json:"public_service"`
+	StorageClass           string      `json:"storage_class"`
+	SchedulingPool         string      `json:"scheduling_pool,omitempty"`
+	SchedulingRuntimeClass string      `json:"scheduling_runtime_class,omitempty"`
+	Capability             Capability  `json:"capability"`
 }

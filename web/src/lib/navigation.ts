@@ -70,11 +70,30 @@ export function parentNavigation(
       : {}
     if (parts[1] === 'external')
       return parts[3] && parts[2] !== 'new'
-        ? { to: `/databases/external/${parts[2]}`, label: 'Back to connection', search: databaseScope }
+        ? {
+            to: `/databases/external/${parts[2]}`,
+            label: 'Back to connection',
+            search: databaseScope,
+          }
         : { to: '/databases', label: 'Back to databases', search: databaseScope }
     return parts[2]
       ? { to: `/databases/${parts[1]}`, label: 'Back to database', search: databaseScope }
       : { to: '/databases', label: 'Back to databases', search: databaseScope }
+  }
+  if (parts[0] === 'platforms' && parts[1]) {
+    const platformScope: Record<string, string> = scope?.project
+      ? { project: scope.project, environment: scope.environment }
+      : {}
+    return parts[1] !== 'new' && parts[2]
+      ? {
+          to: `/platforms/${parts[1]}`,
+          label: 'Back to platform',
+          search: {
+            ...platformScope,
+            tab: ['backup', 'restore'].includes(parts[2]) ? 'recovery' : 'configuration',
+          },
+        }
+      : { to: '/platforms', label: 'Back to platforms', search: platformScope }
   }
   if (parts[0] === 'backups' && parts[1]) {
     const tab = ['destinations', 'schedules', 'artifacts'].includes(parts[1]) ? parts[1] : 'jobs'

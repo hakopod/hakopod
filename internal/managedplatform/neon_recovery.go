@@ -33,11 +33,19 @@ func (r *DurableNeonRuntime) CheckpointOwnedRecovery(ctx context.Context, tenant
 	if !ok {
 		return NeonRecoveryFence{}, fmt.Errorf("Neon recovery tenant ownership claim is unavailable")
 	}
-	identity, token, err := parseNeonOwnedResourceID(claim.ResourceID)
+	identity, tenantToken, err := parseNeonOwnedResourceID(claim.ResourceID)
 	if err != nil || !strings.HasPrefix(identity, tenantID+"@") {
 		return NeonRecoveryFence{}, fmt.Errorf("Neon recovery tenant ownership claim does not match")
 	}
-	return r.CheckpointRecovery(ctx, tenantID, timelineID, token)
+	timeline, ok := claims["timeline"]
+	if !ok {
+		return NeonRecoveryFence{}, fmt.Errorf("Neon recovery timeline ownership claim is unavailable")
+	}
+	_, timelineToken, err := parseNeonOwnedResourceID(timeline.ResourceID)
+	if err != nil {
+		return NeonRecoveryFence{}, fmt.Errorf("Neon recovery timeline ownership claim is invalid")
+	}
+	return r.CheckpointRecovery(ctx, tenantID, timelineID, tenantToken, timelineToken)
 }
 
 func NeonRecoveryExternalKey(component, resourceID, tenantID, timelineID string) (string, error) {
@@ -56,34 +64,51 @@ func NeonRecoveryExternalKey(component, resourceID, tenantID, timelineID string)
 }
 
 // CheckpointRecovery flushes every owned safekeeper control file, requires one
-// identical committed LSN across the three-member set, and then forces every
-// registered pageserver to upload through that LSN. It refuses a partial or
-// divergent observation instead of selecting a possibly stale member.
-func (r *DurableNeonRuntime) CheckpointRecovery(ctx context.Context, tenantID, timelineID, ownershipToken string) (NeonRecoveryFence, error) {
+// identical committed LSN across the three-member set, then forces the
+// controller-selected pageserver to upload through that LSN. Secondary
+// pageservers share remote storage but do not serve this unsharded tenant.
+func (r *DurableNeonRuntime) CheckpointRecovery(ctx context.Context, tenantID, timelineID, tenantOwnershipToken, timelineOwnershipToken string) (NeonRecoveryFence, error) {
 	var fence NeonRecoveryFence
-	if r == nil || r.control == nil || !neonID.MatchString(tenantID) || !neonID.MatchString(timelineID) || !validNeonComputeOwnershipToken(ownershipToken) {
+	if r == nil || r.control == nil || !neonID.MatchString(tenantID) || !neonID.MatchString(timelineID) || !validNeonComputeOwnershipToken(tenantOwnershipToken) || !validNeonComputeOwnershipToken(timelineOwnershipToken) || r.control.config.PageserverToken == "" {
 		return fence, fmt.Errorf("invalid Neon recovery checkpoint request")
 	}
 	if len(r.control.config.Safekeepers) != 3 || len(r.control.config.Pageservers) < 2 || len(r.control.config.Pageservers) > 8 {
 		return fence, fmt.Errorf("Neon recovery requires exactly three safekeepers and two to eight pageservers")
 	}
-	tenantExists, _, tenantGeneration, tenantToken, _, _, tenantErr := r.inspectTenant(ctx, tenantID)
-	if tenantErr != nil || !tenantExists || tenantToken != ownershipToken {
+	tenantExists, attachment, tenantGeneration, tenantToken, tenantState, _, tenantErr := r.inspectTenant(ctx, tenantID)
+	if tenantErr != nil || !tenantExists || tenantToken != tenantOwnershipToken || tenantState != "completed" {
 		return fence, fmt.Errorf("Neon recovery tenant is not owned by the accepted operation: %w", tenantErr)
 	}
 	exists, _, generation, _, observedToken, err := r.inspectSafekeeperTimeline(ctx, tenantID, timelineID)
-	if err != nil || !exists || observedToken != ownershipToken {
+	if err != nil || !exists || observedToken != timelineOwnershipToken {
 		return fence, fmt.Errorf("Neon recovery timeline is not owned by the accepted operation: %w", err)
 	}
 	guard := func() error {
 		if err := r.lifecycle.Heartbeat(ctx); err != nil {
 			return err
 		}
+		present, currentAttachment, currentTenantGeneration, currentTenantToken, currentTenantState, _, inspectErr := r.inspectTenant(ctx, tenantID)
+		if inspectErr != nil || !present || currentAttachment != attachment || currentTenantGeneration != tenantGeneration || currentTenantToken != tenantOwnershipToken || currentTenantState != "completed" {
+			return fmt.Errorf("Neon recovery tenant placement, generation or ownership changed")
+		}
 		stillExists, _, currentGeneration, _, currentToken, inspectErr := r.inspectSafekeeperTimeline(ctx, tenantID, timelineID)
-		if inspectErr != nil || !stillExists || currentGeneration != generation || currentToken != ownershipToken {
+		if inspectErr != nil || !stillExists || currentGeneration != generation || currentToken != timelineOwnershipToken {
 			return fmt.Errorf("Neon recovery ownership or generation changed: %w", inspectErr)
 		}
 		return nil
+	}
+	var attached *NeonPageserverRegistration
+	for i := range r.control.config.Pageservers {
+		node := &r.control.config.Pageservers[i]
+		if attachment == tenantID+"@"+strconv.FormatInt(node.NodeID, 10) {
+			if attached != nil {
+				return fence, fmt.Errorf("Neon recovery pageserver registration is duplicated")
+			}
+			attached = node
+		}
+	}
+	if attached == nil {
+		return fence, fmt.Errorf("Neon recovery tenant is attached to an unowned pageserver")
 	}
 	path := "/v1/tenant/" + tenantID + "/timeline/" + timelineID
 	commit := uint64(0)
@@ -114,11 +139,11 @@ func (r *DurableNeonRuntime) CheckpointRecovery(ctx context.Context, tenantID, t
 		commit = candidate
 	}
 	fence = NeonRecoveryFence{TenantID: tenantID, TimelineID: timelineID, TenantGeneration: tenantGeneration, TimelineGeneration: generation, CommitLSN: formatNeonLSN(commit), Pageservers: map[string]string{}}
-	for _, node := range r.control.config.Pageservers {
+	for _, node := range []NeonPageserverRegistration{*attached} {
 		if err = guard(); err != nil {
 			return NeonRecoveryFence{}, err
 		}
-		target := NeonControlTarget{Name: "pageserver-" + node.Name, Origin: "https://" + net.JoinHostPort(node.Host, "9898"), Token: r.control.config.StorageController.Token}
+		target := NeonControlTarget{Name: "pageserver-" + node.Name, Origin: "https://" + net.JoinHostPort(node.Host, "9898"), Token: r.control.config.PageserverToken}
 		wait := map[string]any{"timelines": map[string]string{timelineID: fence.CommitLSN}, "timeout": r.control.config.RequestTimeout.String()}
 		if _, e := r.control.doJSON(ctx, target, http.MethodPost, "/v1/tenant/"+tenantID+"/wait_lsn", wait, http.StatusOK); e != nil {
 			return NeonRecoveryFence{}, fmt.Errorf("wait for Neon pageserver %s recovery LSN: %w", node.Name, e)
@@ -145,6 +170,9 @@ func (r *DurableNeonRuntime) CheckpointRecovery(ctx context.Context, tenantID, t
 			return NeonRecoveryFence{}, fmt.Errorf("Neon pageserver %s did not upload through the recovery LSN", node.Name)
 		}
 		fence.Pageservers[node.Name] = formatNeonLSN(visible)
+	}
+	if err = guard(); err != nil {
+		return NeonRecoveryFence{}, err
 	}
 	return fence, nil
 }

@@ -10188,6 +10188,44 @@
         }
       }
     },
+    "/managed-platforms/{id}/trust": {
+      "get": {
+        "operationId": "getManagedPlatformPublicTrust",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePublicTrust"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Read the current public certificate authority for an accessible managed platform. Returns no private keys or credentials. Missing or changed runtime ownership keeps trust unavailable."
+      }
+    },
     "/managed-platforms/{id}/operations": {
       "get": {
         "operationId": "listManagedPlatformOperations",
@@ -10360,6 +10398,226 @@
           }
         },
         "description": "Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource."
+      }
+    },
+    "/managed-platforms/{id}/recovery-operations": {
+      "get": {
+        "operationId": "listManagedPlatformRecoveryOperations",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ManagedPlatformRecoveryOperation"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platform-recovery-operations/{id}": {
+      "get": {
+        "operationId": "getManagedPlatformRecoveryOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatformRecoveryOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platform-recovery/reviews": {
+      "post": {
+        "operationId": "reviewManagedPlatformRecovery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatformRecoveryReview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedPlatformRecoveryRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platform-recovery/operations": {
+      "post": {
+        "operationId": "acceptManagedPlatformRecovery",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedPlatformRecoveryOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedPlatformRecoveryAcceptRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/managed-platform-recovery-operations/{id}/cancel": {
+      "post": {
+        "operationId": "cancelManagedPlatformRecoveryOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cancel_requested": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "cancel_requested"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/applications/{id}/provenance": {
@@ -24301,7 +24559,8 @@
             "uniqueItems": true
           },
           "database_name": {
-            "type": "string"
+            "type": "string",
+            "const": "postgres"
           },
           "jwt_expiry_seconds": {
             "type": "integer"
@@ -24364,8 +24623,7 @@
           },
           "branch_limit": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 64
+            "const": 1
           },
           "object_storage_url": {
             "type": "string",
@@ -24438,6 +24696,14 @@
               "fa504217c61bbcaf5c512d75830564541f917f8f"
             ],
             "const": "0.8.2"
+          },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
           },
           "resources": {
             "type": "object",
@@ -24524,6 +24790,14 @@
               "fa504217c61bbcaf5c512d75830564541f917f8f"
             ],
             "const": "fa504217c61bbcaf5c512d75830564541f917f8f"
+          },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
           },
           "resources": {
             "type": "object",
@@ -24780,6 +25054,14 @@
             ],
             "const": "0.8.2"
           },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
+          },
           "resources": {
             "type": "object",
             "additionalProperties": {
@@ -24862,6 +25144,14 @@
             ],
             "const": "fa504217c61bbcaf5c512d75830564541f917f8f"
           },
+          "tls_mode": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "operator"
+            ],
+            "description": "Managed mode issues and renews resource-specific TLS certificates. Omitted values preserve operator-supplied certificates."
+          },
           "resources": {
             "type": "object",
             "additionalProperties": {
@@ -24925,8 +25215,7 @@
               },
               "branch_limit": {
                 "type": "integer",
-                "minimum": 1,
-                "maximum": 64
+                "const": 1
               },
               "object_storage_url": {
                 "type": "string"
@@ -25086,11 +25375,19 @@
           },
           "uid": {
             "type": "string"
+          },
+          "architecture": {
+            "type": "string"
+          },
+          "operating_system": {
+            "type": "string"
           }
         },
         "required": [
           "name",
-          "uid"
+          "uid",
+          "architecture",
+          "operating_system"
         ]
       },
       "ManagedPlatformCatalogEntry": {
@@ -25224,6 +25521,88 @@
           "blocked_reasons"
         ]
       },
+      "ManagedPlatformTLSCertificate": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "component",
+          "fingerprint",
+          "expires_at",
+          "verified"
+        ]
+      },
+      "ManagedPlatformTLSObservation": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "managed"
+          },
+          "issuer_fingerprint": {
+            "type": "string"
+          },
+          "certificates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedPlatformTLSCertificate"
+            },
+            "maxItems": 32
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "mode",
+          "issuer_fingerprint",
+          "certificates",
+          "verified_at"
+        ]
+      },
+      "ManagedPlatformMaintenanceObservation": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed",
+              "succeeded"
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "phase",
+          "message",
+          "checked_at"
+        ]
+      },
       "ManagedPlatformObservation": {
         "type": "object",
         "properties": {
@@ -25271,6 +25650,12 @@
           },
           "proxy_generation": {
             "type": "integer"
+          },
+          "tls": {
+            "$ref": "#/components/schemas/ManagedPlatformTLSObservation"
+          },
+          "maintenance": {
+            "$ref": "#/components/schemas/ManagedPlatformMaintenanceObservation"
           }
         },
         "required": []
@@ -25523,6 +25908,190 @@
           "plan",
           "review",
           "blocked"
+        ]
+      },
+      "ManagedPlatformRecoveryIntent": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "restore"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "source_platform_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "target_platform_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "artifact_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "destination_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "destination_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_source_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_target_revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "kind",
+          "project",
+          "environment",
+          "source_platform_id",
+          "expected_source_revision"
+        ]
+      },
+      "ManagedPlatformRecoveryReview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "intent": {
+            "$ref": "#/components/schemas/ManagedPlatformRecoveryIntent"
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "authority_fingerprint": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "intent",
+          "request_hash",
+          "authority_fingerprint",
+          "expires_at"
+        ]
+      },
+      "ManagedPlatformRecoveryRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ManagedPlatformRecoveryIntent"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "confirm_target_name": {
+                "type": "string"
+              }
+            },
+            "required": []
+          }
+        ]
+      },
+      "ManagedPlatformRecoveryAcceptRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ManagedPlatformRecoveryRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "review": {
+                "$ref": "#/components/schemas/ManagedPlatformRecoveryReview"
+              }
+            },
+            "required": [
+              "review"
+            ]
+          }
+        ]
+      },
+      "ManagedPlatformRecoveryOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "restore"
+            ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source_platform_id": {
+            "type": "string"
+          },
+          "target_platform_id": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "result_artifact_id": {
+            "type": "string"
+          },
+          "destination_id": {
+            "type": "string"
+          },
+          "destination_revision": {
+            "type": "integer"
+          },
+          "expected_source_revision": {
+            "type": "integer"
+          },
+          "expected_target_revision": {
+            "type": "integer"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "project",
+          "environment",
+          "status",
+          "phase",
+          "message",
+          "source_platform_id",
+          "expected_source_revision",
+          "cancel_requested"
         ]
       },
       "BuildProvenance": {
