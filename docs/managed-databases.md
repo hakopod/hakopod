@@ -4,7 +4,8 @@ Managed databases have their own project and environment, resource allocation, c
 
 PostgreSQL and Redis are included in the self-hosted development release starting
 with `v0.1.0-alpha.37`. MongoDB joins them in `v0.1.0-alpha.47`, and private
-MySQL 8.4 support is included in `v0.1.0-alpha.50`. Use a published release's
+MySQL 8.4 support is included in `v0.1.0-alpha.50`. Private ClickHouse 26.3 joins
+them in `v0.1.0-alpha.52`. Use a published release's
 verified assets; a tag or candidate build alone is not an installation package.
 Provisioning requires the controller installation described below; upgrading
 Hakopod does not install missing controllers. Cloud workspace admission, quotas,
@@ -14,8 +15,8 @@ a separate operator rollout. This OSS release does not enable hosted provisionin
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 [ClickHouse](managed-clickhouse.md) and [Oracle Database](managed-oracle.md)
 implementations have separate guides with their exact development evidence and
-remaining limits. ClickHouse, Oracle Database and Vitess remain held. Neon and
-Supabase are deferred. MySQL and MongoDB public endpoints remain unavailable.
+remaining limits. Oracle Database and Vitess remain held. Neon and Supabase
+are deferred. MySQL, MongoDB and ClickHouse public endpoints remain unavailable.
 See the
 [release acceptance record](managed-database-release-acceptance.md) for tested
 source revisions and immutable runtime references.
@@ -275,12 +276,13 @@ it does not display those members as running before creation. You can return to
 earlier steps without losing entered values. A failed request keeps the reviewed
 configuration and its retry key until you change the configuration.
 
-Alpha.50 supports guided creation for PostgreSQL, Redis, MySQL and MongoDB.
-MySQL creation requires the pinned controller, a healthy controller rollout,
-required permissions, eligible placement and sufficient capacity. ClickHouse,
-Oracle Database and Vitess remain held. Their engine guides describe
-implementation details and incomplete acceptance separately from released
-availability.
+Alpha.50 supports guided creation for PostgreSQL, Redis, MySQL and MongoDB;
+alpha.52 adds ClickHouse. MySQL and ClickHouse creation require
+their pinned controller, a healthy controller rollout, required permissions,
+eligible placement and sufficient capacity. Sandboxed ClickHouse also needs
+the dedicated verified runtime profile. Oracle Database and Vitess remain
+held. Their engine guides describe implementation details and incomplete
+acceptance separately from released availability.
 
 ## Monitoring history
 

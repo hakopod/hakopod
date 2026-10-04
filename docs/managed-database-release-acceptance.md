@@ -1,5 +1,115 @@
 # Managed database release acceptance
 
+## ClickHouse 26.3 — alpha.52
+
+Six native runtime tests and the HTTP API recovery workflow passed on
+2026-10-04 in the named `k3d-hakopod-dev` development cluster. They used a
+dedicated, lease-owned worker with the ClickHouse gVisor profile, separate
+from the preserved development workloads. These results establish the
+development qualification below; package publication and production rollout
+have separate checks.
+
+The immutable runtime references are:
+
+- Server:
+  `docker.io/clickhouse/clickhouse-server:26.3.33.24@sha256:810861a2e2d0188744f5f23b2d3ec9ff95812bcb9ddbb8fed13a377a7f305893`
+- Keeper:
+  `docker.io/clickhouse/clickhouse-keeper:26.3.33.24@sha256:3fd59d9efb8c9e9136c3c924ceaa004f65c0b14699f34e4eae4eb63e2f860803`
+- Operator:
+  `docker.io/altinity/clickhouse-operator:0.27.4@sha256:c60c872fedd85017f843167dfdd2b900bb06b668a3deaf02b21782e59af859e3`
+
+Application binding passed on source
+`eb32a4fc9c58f83670af4b0aea99e06f5d827d5e`. Subsequent native tests use
+`e23dc6fca8b67225fdb4e4449abce5fd41cc49bd`, tree
+`f0aaeb0da579064b19d3335712948da6b35f0daf`. The cluster runtime source is
+identical; only the quorum test changed between those two revisions.
+Durations below are the individual Go test durations, excluding package
+startup and the surrounding evidence collection.
+
+| Native test | Seconds | Test log SHA-256 |
+| --- | ---: | --- |
+| `TestManagedClickHouseBindingLive` | 253.50 | `075db1c0cf1fc233d92f959059a67d73efea7286dabad4bc414c51412a9a976e` |
+| `TestManagedClickHouseKeeperQuorumLive` | 484.94 | `98b0fc0c0bcd317f507264e13a3a506e7bd3bfc4616f55e118268e4aae80a454` |
+| `TestManagedClickHouseLive` | 532.19 | `57e1b4efa3ca31d308a3df56cd3ae646323152655cf53c9f49c6d878f57d8a0e` |
+| `TestManagedClickHouseTLSRenewalLive` | 517.43 | `ee8ae14724afe707cdcc6df217b670404ab3618db76839ee94880bd043fe07af` |
+| `TestManagedClickHouseDistributedQueriesLive` | 794.77 | `4b60dfb8d5fe268d74a6fa654c3be51697cda1c73b336095a036fefe2ba6af0b` |
+| `TestManagedClickHouseRecoveryLive` | 1938.30 | `16fa297e9eeaca6945d256248038877d2e4d4c3f7a409c1186532813bb0949e3` |
+
+The counted quorum test verifies the exact paused member and its UID before
+its assertions. A prior diagnostic pass without that check is excluded:
+automatic watchdog recovery could otherwise be mistaken for survival of a
+still-active fault.
+
+TLS checks rejected the wrong issuer and hostname, then verified renewed
+identities on all data and Keeper members with old-CA overlap. The Distributed
+query test created tables through the application account, routed inserts to
+both shards and read the combined rows from every member while preserving
+the account's privilege boundary.
+
+Recovery passed for standalone, one-shard clustered and two-shard clustered
+databases. It preserved binary values, rejected truncated archives and
+nonempty targets, kept target ingress closed for inspection, and left source
+and target replication independent. The two-shard case also checked restored
+Distributed-table routing. Their individual durations were 231.12, 634.01 and
+1073.17 seconds.
+
+Independent rendered UI review passed all 90 cases, with no failures or
+warnings. It covered the database catalog, detail tabs, capacity page and all
+five creation steps in standalone and cluster modes, including failed-request
+value preservation. Dark and paper themes passed at 1440, 390 and 320 pixels,
+with keyboard and touch interaction. The explicit UI fixture contained two
+shards, six data members, three Keeper members and 15 application bindings;
+it used the dashboard's real logo assets. Screenshots and element bounds were
+reviewed, including the topology's internal scrolling on narrow screens.
+
+The reviewed UI source was `9bd4847c77dbe17cb20e95c1bccd7f62e3dd913b`;
+its `web/src` matches candidate `4e3f9734455d17355ce99c304d4e3b8e68dcea49`.
+The result JSON SHA-256 is
+`e33c7d8b87256508a37d324feeb4099b6bc5fbbd959693d021b39bd429749f36`.
+The review receipt SHA-256 is
+`05dfd131b4a5ec72bebbdcbda98ad2ad9588c8ab8e76321c6542db6561edb953`.
+Typecheck and production dashboard builds passed. All 30 extracted name
+patterns compiled under browser Unicode `v` rules. The database name field
+was exercised in the form; other repaired patterns had static coverage.
+Shared scope-hook probes covered application, platform and build paths,
+including tab/hash preservation, replacement history and unavailable-resource
+handling. Those probes did not visually review the other route bodies.
+
+The full Go suite, dashboard, SDK, certificates and interface checks passed
+on candidate `4e3f973`. Installer packaging, both native architecture smoke
+jobs and all 12 fresh-install/alpha.50/alpha.51 upgrade cases passed in
+[run 37218106479](https://github.com/hakopod/hakopod/actions/runs/37218106479).
+The final tag's release workflow must separately verify the published assets.
+
+`TestLiveManagedClickHouseAPIRecovery` passed in 294.73 seconds on source
+`9d691d25b0391da89f231a18c37f7002b77b028d`. It exercised HTTP creation and
+idempotency, durable workers, authenticated TLS writes with binary values,
+encrypted backup, restore into a separate empty target, a fresh observation
+of the replacement member, data verification, inspection and HTTP deletion.
+Cleanup verified that the test's PostgreSQL and S3 fixture containers,
+database namespaces and persistent volumes were gone; the dedicated worker
+remained ready. The log SHA-256 is
+`5a732968d100e6272e5ca6e6baca7227a92eb086fee9851fb85fc9143ae263c8`.
+The run receipt SHA-256 is
+`64391d434957c94ee983df0869cb3774f1cc92f8b50261a9d43ab2c94024cd92`.
+The parent source archive SHA-256 is
+`1a1d8c942f130c9f7395dd016eb70334fbad48e5789c6a12fcb43358c7dcd2cf`;
+the templates commit is `f9e3992e1b86969c30d88a6964c4dfc0d4b3ef34`.
+
+An earlier API attempt finished backup and restore but tried to query the
+target with its pre-restore pod UID. The membership guard correctly rejected
+that stale identity. The passing test obtains and checks a new API observation
+before querying the restored target; the guard remains unchanged. Earlier
+failed attempts are excluded from the passing evidence.
+
+The rebased candidate `b4a2e33f5ad28731d01c68e8170a5376a99ea751` retains
+the exact cluster runtime from the direct tests and the API recovery test
+from the passing run. Its main-branch update adds Slack integration work;
+the final candidate CI and release workflow check the combined source.
+Public endpoints remain held.
+These development workers share one physical VM, so their results cannot
+establish independent-zone or cross-provider availability.
+
 ## MySQL 8.4
 
 Six native MySQL cases passed on 2026-10-04 against the named
