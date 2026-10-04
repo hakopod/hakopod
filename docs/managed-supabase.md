@@ -106,8 +106,12 @@ Database clients do not share the owner password. Auth, Edge Runtime,
 PostgREST, Realtime, Storage, postgres-meta and Supavisor each receive a
 separately scoped credential snapshot. A trusted bootstrap step must render
 those same distinct role credentials into the `database-role-bootstrap`
-Secret as `99-roles.sql`; the upstream shared-password `roles.sql` remains in
-the audited inventory but is not mounted. Secret bodies never enter the plan,
+Secret. Hakopod mounts it as `init-scripts/99-z-hakopod-role-passwords.sql`.
+An earlier init script creates the empty `_realtime` schema, so the role
+bootstrap can transfer its ownership after creating the Realtime roles. The
+upstream migrations then run, followed by Hakopod's final Realtime ownership
+and parameter grant. The upstream shared-password `roles.sql` remains in the
+audited inventory but is not mounted. Secret bodies never enter the plan,
 ConfigMaps or renderer output other than Secret references.
 
 The renderer requires an image-qualified non-root UID and GID for every pinned

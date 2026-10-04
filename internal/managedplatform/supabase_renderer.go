@@ -23,6 +23,7 @@ import (
 
 const SupabaseUpstreamCommit = "d6c81b66c9999cb121dd8876f541313d484f157f"
 const supabasePostgresHBA = "local all all trust\nhostnossl all all 0.0.0.0/0 reject\nhostnossl all all ::/0 reject\nhostssl all all 0.0.0.0/0 scram-sha-256\nhostssl all all ::/0 scram-sha-256\n"
+const supabaseRealtimeSchemaSQL = "CREATE SCHEMA IF NOT EXISTS _realtime;\n"
 const supabaseRealtimeOwnerSQL = "ALTER SCHEMA _realtime OWNER TO supabase_realtime_admin;\nGRANT SET ON PARAMETER log_min_messages TO supabase_realtime_admin;\n"
 
 // SupabaseRenderInput contains only public desired state. Secret bodies are
@@ -201,6 +202,7 @@ func RenderSupabase(in SupabaseRenderInput) (SupabaseManifests, error) {
 		}
 		if group.name == "supabase-database-bootstrap" {
 			data["pg_hba.conf"] = supabasePostgresHBA
+			data["99-y-hakopod-realtime-schema.sql"] = supabaseRealtimeSchemaSQL
 			data["99-z-hakopod-realtime-owner.sql"] = supabaseRealtimeOwnerSQL
 		}
 		objects = append(objects, &corev1.ConfigMap{ObjectMeta: meta(configName(group.name)), Immutable: boolPtr(true), Data: data})
@@ -289,9 +291,10 @@ func supabasePod(in SupabaseRenderInput, component Component, labels map[string]
 			container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "bootstrap", MountPath: "/docker-entrypoint-initdb.d/" + asset.Target, SubPath: asset.Target, ReadOnly: true})
 		}
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "bootstrap", MountPath: "/etc/postgresql-custom/hakopod-pg_hba.conf", SubPath: "pg_hba.conf", ReadOnly: true})
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "bootstrap", MountPath: "/docker-entrypoint-initdb.d/init-scripts/99-y-hakopod-realtime-schema.sql", SubPath: "99-y-hakopod-realtime-schema.sql", ReadOnly: true})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "bootstrap", MountPath: "/docker-entrypoint-initdb.d/migrations/99-z-hakopod-realtime-owner.sql", SubPath: "99-z-hakopod-realtime-owner.sql", ReadOnly: true})
 		// The image creates and configures its base roles first. This final
-		// postgres-phase file only applies the separately scoped passwords.
+		// postgres-phase file applies the separately scoped role and credential contract.
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "role-bootstrap", MountPath: "/docker-entrypoint-initdb.d/init-scripts/99-z-hakopod-role-passwords.sql", SubPath: "99-z-hakopod-role-passwords.sql", ReadOnly: true})
 		postgresRunLimit := resource.MustParse("64Mi")
 		volumes = append(volumes, corev1.Volume{Name: "postgres-run", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &postgresRunLimit}}})
@@ -603,11 +606,12 @@ func assetVolume(name, configMap, prefix string, paths []string) corev1.Volume {
 	return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configMap}, Items: items}}}
 }
 func databaseAssetVolume(name, configMap string) corev1.Volume {
-	items := make([]corev1.KeyToPath, 0, len(databaseAssetPaths)+2)
+	items := make([]corev1.KeyToPath, 0, len(databaseAssetPaths)+3)
 	for _, asset := range databaseAssetTargets {
 		items = append(items, corev1.KeyToPath{Key: assetKey(asset.Source), Path: asset.Target})
 	}
 	items = append(items, corev1.KeyToPath{Key: "pg_hba.conf", Path: "pg_hba.conf"})
+	items = append(items, corev1.KeyToPath{Key: "99-y-hakopod-realtime-schema.sql", Path: "99-y-hakopod-realtime-schema.sql"})
 	items = append(items, corev1.KeyToPath{Key: "99-z-hakopod-realtime-owner.sql", Path: "99-z-hakopod-realtime-owner.sql"})
 	return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: configMap}, Items: items}}}
 }
