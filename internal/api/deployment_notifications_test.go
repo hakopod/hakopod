@@ -3,7 +3,9 @@ package api
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -19,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/cluster"
+	"github.com/hakopod/hakopod/internal/license"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -54,6 +58,31 @@ func notificationTestDB(t *testing.T) *store.Store {
 	t.Cleanup(func() { db.Close(); conn.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)"); conn.Close(ctx) })
 	return db
 }
+
+func grantNotificationSlackPro(t *testing.T, db *store.Store) {
+	t.Helper()
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.LicenseVerifier = license.NewVerifier(map[string]ed25519.PublicKey{"notification-fixture": public})
+	status, err := db.LicenseStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Unix()
+	claims := license.Claims{Version: 1, KeyID: "notification-fixture", LicenseID: strings.Repeat("a", 32), InstallationID: status.InstallationID, Customer: "Notification fixture", Plan: "pro", Sequence: status.Sequence + 1, IssuedAt: now - 60, NotBefore: now - 60, ExpiresAt: now + 3600, Features: []string{store.SlackFeature}}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := "hl1." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, append([]byte(license.Domain), payload...)))
+	digest := sha256.Sum256([]byte(token))
+	if _, err = db.Pool.Exec(context.Background(), "UPDATE installation_license SET token=$1,token_digest=$2,highest_sequence=$3,revision=revision+1 WHERE singleton", token, digest[:], claims.Sequence); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNotificationDestinationValidationAndPrivateAddresses(t *testing.T) {
 	for _, address := range []string{"127.0.0.1", "10.0.0.1", "169.254.169.254", "100.64.0.1", "::1", "::ffff:127.0.0.1", "fc00::1", "2001:db8::1", "198.18.1.1", "64:ff9b::a9fe:a9fe", "2002:7f00:1::"} {
 		if notificationPublicIP(netip.MustParseAddr(address)) {
@@ -97,6 +126,7 @@ func TestDeploymentNotificationsQueueDeliveryAndAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	grantNotificationSlackPro(t, db)
 	parsed, err := spec.Parse([]byte("name='notification-app'\n[services.api]\nimage='nginx:alpine'"))
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +139,7 @@ func TestDeploymentNotificationsQueueDeliveryAndAuthorization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Store: db, Auth: AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))), PublicURL: "https://dashboard.example"}}
+	s := &Server{Store: db, Auth: AuthConfig{DeploymentMode: cluster.DeploymentSelfHosted, EncryptionKey: base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))), PublicURL: "https://dashboard.example"}}
 	handler := s.Handler()
 	call := func(method, path, key string, body any, status int) []byte {
 		t.Helper()

@@ -21596,6 +21596,11 @@
           },
           "revision": {
             "type": "integer"
+          },
+          "slack_managed": {
+            "type": "boolean",
+            "readOnly": true,
+            "description": "True when this legacy target resolves to a Slack-hosted destination. No destination URL is returned."
           }
         },
         "required": [
@@ -21605,7 +21610,8 @@
           "kind",
           "enabled",
           "events",
-          "revision"
+          "revision",
+          "slack_managed"
         ]
       },
       "NotificationInput": {
@@ -21797,13 +21803,21 @@
           },
           "encryption_ready": {
             "type": "boolean"
+          },
+          "legacy_slack_available": {
+            "type": "boolean"
+          },
+          "legacy_slack_reason": {
+            "type": "string"
           }
         },
         "required": [
           "items",
           "deliveries",
           "email_available",
-          "encryption_ready"
+          "encryption_ready",
+          "legacy_slack_available",
+          "legacy_slack_reason"
         ]
       },
       "DNSProvider": {

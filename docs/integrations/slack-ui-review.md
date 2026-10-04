@@ -14,6 +14,9 @@ event recovery screens, keyboard-focus repairs and final interaction captures
 are complete. No actionable visual finding remains in this scope. This is UI
 approval only; the runtime and release limits below still apply.
 
+The later application-notification policy increment is recorded separately in
+the legacy destination review below.
+
 Earlier `branded-`, `native-` and `final-`
 dashboard screenshots under `work/slack-ui-review-2026-10-04/` are historical
 evidence: route nesting, edition styling, integration cards and event selection
@@ -252,3 +255,66 @@ channel invitation and delivery-history focus changes, are:
 | `web/src/routes/settings.integrations.tsx` | `c3e9e2e559cb4885858e38033ed7525f8c6f650e1de72d0ac6f5db4359d43eff` |
 | `web/src/routes/settings.tsx` | `2b34cc8573e585ddb0d6641b3a7a76f61112d8ac341bab8295da35a4d4544fb6` |
 | `web/src/styles/console.css` | `b294e288ea9a7f3804f79f02be460d564802644d0f8856431eedc4fabe4fefd0` |
+
+## Legacy application notification destinations — 4 October 2026
+
+The independent review approves the legacy destination policy UI in the
+recorded states. This extends the Settings integration review above to
+`applications.$applicationId.notifications.tsx`; it does not repeat unrelated
+dashboard coverage. The reviewed route has SHA-256
+`b1952eebe7e8c20ae544ffd6be556aac3736da7175cc40d369a2f86dc97a44f8`.
+
+Two independent reviewer passes inspected 47 original legacy screenshots. The
+first reviewer inspected 45 images; a second reviewer inspected only the final
+pause notice and migration review summary. The lead agent operated the VM
+preview browser and supplied the interaction observations and element bounds.
+Neither reviewer built locally or sent a real notification.
+
+| Coverage | Captures | Result |
+| --- | --- | --- |
+| Self-hosted free, Pro and expired entitlement, plus Cloud | 32: Paper and dark, desktop and mobile, top and form views | Policy guidance and destination controls are readable; Slack review is disabled except with self-hosted Pro |
+| Missing policy | 4: Paper desktop and dark mobile, top and form views | Unavailable policy keeps Slack review disabled and leaves the explanation visible |
+| Failed save | 2: dark mobile | The error and retained draft fit the narrow viewport |
+| Pause reset, delete confirmation and completion, generic migration and selector keyboard state | 7: dark mobile | Observed state changes and visible focus remain usable |
+| Final pause success notice and migration review summary | 2: dark mobile | Correct pause wording, complete consequential-action guidance and actions fit without clipping |
+
+The matrix uses `legacy-{selfhost-free,selfhost-pro,selfhost-expired,cloud}-{paper,dark}-{desktop,mobile}-{top,form}.jpg`
+under `work/slack-ui-review-2026-10-04/`. The missing-policy captures use
+`legacy-policy-unavailable-*`, and the two failure captures use
+`legacy-failed-save-*`. The lead's `legacy-geometry.json` records 1280 × 900
+desktop and 320 × 844 mobile CSS viewports, document widths of 1273 and 313
+pixels, bounded controls and decoded Slack images with a natural width of
+1200 pixels. The exact approved Slack JPEG is unchanged. These geometry
+observations support the independent visual review; document width alone was
+not used as visual approval.
+
+The lead exercised pause, deletion and migration in the explicitly artificial
+fixture. Pausing reset the form. Deletion initially focused Cancel, Escape
+returned visible focus to the delete trigger, and confirming deletion removed
+the fake destination. Replacing a generic Slack webhook with a non-Slack URL
+enabled Review. Return, Up Arrow and Return selected Discord and kept focus
+on the centralized selector. Saving the generic migration succeeded in the
+fixture and enabled Send test. The first reviewer inspected all seven resulting
+screenshots: `legacy-pause-success-dark-mobile.jpg`, the three `legacy-delete-*`
+images, `legacy-migrate-review-enabled-dark-mobile.jpg`,
+`legacy-selector-keyboard-dark-mobile.jpg` and
+`legacy-migrate-success-dark-mobile.jpg`.
+
+The pause success text originally implied that future messages would be sent.
+The final `legacy-pause-notice-dark-mobile.jpg` instead shows “Destination
+paused. Notifications will not be sent.” above the destination list. The second
+reviewer confirmed its wrapping and placement. The final
+`legacy-migrate-review-summary-dark-mobile.jpg` shows the replacement host,
+enabled state, chosen event, future-only behavior and the warning that editing
+skips messages queued with previous settings. Save remains fully visible and
+Cancel edit has a clear simple focus outline. No actionable visual finding
+remains in these two final captures.
+
+This focused pass applies the standing checklist to policy guidance, shared
+controls, failed-request preservation, confirmation content, theme contrast,
+narrow wrapping and keyboard focus. The screenshots are development fixture
+evidence with no destination contacted. They do not establish transport,
+entitlement or authorization enforcement, live cluster state, production
+availability or a release. Actual touch gestures, physical devices, assistive
+technology and other browser engines remain unverified. Runtime and test
+claims belong to the separate validation record.

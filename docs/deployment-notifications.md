@@ -22,10 +22,22 @@ Email uses the installation's existing SMTP settings. An administrator must
 enable SMTP delivery first; Cloud users cannot change operator SMTP settings.
 A destination can be saved paused while SMTP is unavailable.
 
-For Slack, create an incoming webhook in your Slack app and paste the
-https://hooks.slack.com/services/ URL. For Discord, use Server Settings →
-Integrations → Webhooks and paste its https://discord.com/api/webhooks/ URL.
-Slack link previews/markup and Discord mentions are disabled in sent messages.
+Slack delivery is a Hakopod Pro capability. In a self-hosted installation, create
+and install a Slack app in your own workspace, then connect it from
+**Settings → Integrations → Slack**. Hakopod Cloud uses the centrally published
+Hakopod Cloud Slack app only; direct Slack incoming-webhook destinations are rejected
+in Cloud and must be migrated to **Settings → Integrations → Slack**.
+
+Existing direct Slack incoming webhook destinations remain readable and can be
+disabled or deleted after Pro expires. To disable an expired destination, preserve
+its name, channel, events and blank credential fields; changing or replacing a
+Slack destination requires an active Pro entitlement. Generic webhooks that resolve
+to a Slack or Slack Gov hostname follow the same rule. Other generic webhook,
+Discord and email destinations remain available under their existing policies.
+
+For Discord, use Server Settings → Integrations → Webhooks and paste its
+https://discord.com/api/webhooks/ URL. Slack link previews/markup and Discord
+mentions are disabled in sent messages.
 
 Destinations and webhook signing secrets are encrypted using the installation's
 authentication encryption key. They are never returned through the settings API.

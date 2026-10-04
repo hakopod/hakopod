@@ -11,6 +11,7 @@ import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
+import { SlackLogo } from '../components/slack-logo'
 import { Empty, ErrorState, Loading, Note, RequestError } from '../components/shared'
 
 type Target = components['schemas']['NotificationTarget']
@@ -31,7 +32,20 @@ const events: [Event, string][] = [
 export const Route = createFileRoute('/applications/$applicationId/notifications')({
   component: Notifications,
 })
-function Notifications() {
+export function isSlackHostedWebhook(destination: string) {
+  try {
+    const host = new URL(destination).hostname.toLowerCase().replace(/\.$/, '')
+    return host === 'slack.com' || host.endsWith('.slack.com') || host === 'slack-gov.com' || host.endsWith('.slack-gov.com')
+  } catch {
+    return false
+  }
+}
+function isSlackManagedTarget(target: Target | null) {
+  const candidate = target as (Target & { slack_managed?: boolean }) | null
+  return candidate?.kind === 'slack' || Boolean(candidate?.slack_managed)
+}
+
+export function Notifications() {
   const { applicationId } = Route.useParams()
   const scope = useScope()
   const cache = useQueryClient()
@@ -71,6 +85,38 @@ function Notifications() {
     return <ErrorState error={app.error || query.error} />
   const data = query.data
   const writable = scope.can('deployments:write')
+  // The notification API derives this state from the active installation or Cloud
+  // policy. Do not infer it from a cached license response: a generic webhook may
+  // have a hidden Slack URL, and Cloud never permits direct legacy Slack delivery.
+  const notificationPolicy = data as typeof data & {
+    legacy_slack_available?: boolean
+    legacy_slack_reason?: string
+  }
+  const legacySlackBlocked = notificationPolicy.legacy_slack_available !== true
+  const legacySlackReason = notificationPolicy.legacy_slack_reason
+  const legacySlackGuidance =
+    legacySlackReason === 'managed_by_cloud'
+      ? 'Direct Slack webhooks are unavailable in Hakopod Cloud. Connect Slack in Settings → Integrations → Slack.'
+      : legacySlackReason === 'license_required'
+        ? 'Slack webhook notifications require Hakopod Pro. Connect Slack in Settings → Integrations → Slack after activating Pro.'
+        : 'Slack webhook notifications are temporarily unavailable. Try again after the installation license can be verified.'
+  const keepsSavedSlackDestination =
+    isSlackManagedTarget(editing) && kind === editing?.kind && destination.trim() === ''
+  const legacySlackDraft = kind === 'slack' || isSlackHostedWebhook(destination) || keepsSavedSlackDestination
+  const pureLegacySlackDisable =
+    isSlackManagedTarget(editing) &&
+    editing?.enabled &&
+    !enabled &&
+    kind === editing.kind &&
+    name === editing.name &&
+    selected.length === editing.events.length &&
+    selected.every((event, index) => event === editing.events[index]) &&
+    destination.trim() === '' &&
+    secret === ''
+  const legacySlackSaveBlocked = legacySlackBlocked && legacySlackDraft && !pureLegacySlackDisable
+  const hasBlockedLegacySlackTarget = data.items.some(
+    (target) => isSlackManagedTarget(target) && legacySlackBlocked,
+  )
   function reset(target: Target | null) {
     setEditing(target)
     setName(target?.name || '')
@@ -89,6 +135,10 @@ function Notifications() {
     await cache.invalidateQueries({ queryKey: ['deployment-notifications', applicationId] })
   }
   async function save() {
+    if (legacySlackSaveBlocked) {
+      setError(legacySlackGuidance)
+      return
+    }
     setBusy(true)
     setError('')
     const body = {
@@ -110,7 +160,11 @@ function Notifications() {
         )
       else await unwrap(client.POST('/applications/{id}/notifications', { params, body }))
       reset(null)
-      setNotice('Destination saved. Future matching deployments will send notifications.')
+      setNotice(
+        enabled
+          ? 'Destination saved. Future matching deployments will send notifications.'
+          : 'Destination paused. Notifications will not be sent.',
+      )
       await refresh()
     } catch (e) {
       setError(message(e))
@@ -198,6 +252,11 @@ function Notifications() {
         title="Destinations"
         description="Up to five destinations per application. Addresses and webhook credentials are encrypted and never returned after saving."
       >
+        {hasBlockedLegacySlackTarget && (
+          <Note>
+            {legacySlackGuidance} You can still edit a saved destination to pause it, delete it, or move it to a non-Slack channel.
+          </Note>
+        )}
         {data.items.length === 0 ? (
           <Empty
             title="No notification destinations"
@@ -212,7 +271,10 @@ function Notifications() {
                 className="flex flex-col items-stretch justify-between gap-3 py-3 sm:flex-row sm:items-center"
               >
                 <div className="min-w-0 flex-1">
-                  <h3 className="break-words">{target.name}</h3>
+                  <h3 className="flex items-center gap-2 break-words">
+                    {isSlackManagedTarget(target) && <SlackLogo className="size-4 shrink-0" />}
+                    {target.name}
+                  </h3>
                   <p className="text-sm text-muted-foreground">
                     {labels[target.kind]} · {target.enabled ? 'Enabled' : 'Paused'} ·{' '}
                     {target.events
@@ -226,7 +288,7 @@ function Notifications() {
                   <div className="flex flex-wrap gap-2 self-start sm:self-auto">
                     <Button
                       variant="outline"
-                      disabled={busy || !target.enabled}
+                      disabled={busy || !target.enabled || (isSlackManagedTarget(target) && legacySlackBlocked)}
                       onClick={() => void test(target)}
                     >
                       Send test
@@ -256,6 +318,7 @@ function Notifications() {
               The installation encryption key must be configured before saving destinations.
             </Note>
           )}
+          {legacySlackDraft && legacySlackBlocked && <Note>{legacySlackGuidance}</Note>}
           <form
             className="flex flex-col gap-4"
             onSubmit={(e) => {
@@ -264,6 +327,10 @@ function Notifications() {
               setNotice('')
               if (!selected.length) {
                 setError('Select at least one deployment event.')
+                return
+              }
+              if (legacySlackSaveBlocked) {
+                setError(legacySlackGuidance)
                 return
               }
               setReview(true)
@@ -294,7 +361,11 @@ function Notifications() {
                   setSecret('')
                   setReview(false)
                 }}
-                options={Object.entries(labels).map(([value, label]) => ({ value, label }))}
+                options={Object.entries(labels).map(([value, label]) => ({
+                  value,
+                  label,
+                  icon: value === 'slack' ? <SlackLogo className="size-4" /> : undefined,
+                }))}
               />
             </label>
             <label className="flex flex-col gap-1" htmlFor="notification-destination">
@@ -396,8 +467,9 @@ function Notifications() {
               >
                 <h3>Review destination</h3>
                 <p className="break-words text-sm">Destination: {destinationSummary}</p>
-                <p>
-                  {name} · {labels[kind]} · {enabled ? 'Enabled' : 'Paused'}
+                <p className="flex items-center gap-2">
+                  {legacySlackDraft && <SlackLogo className="size-4 shrink-0" />}
+                  <span>{name} · {labels[kind]} · {enabled ? 'Enabled' : 'Paused'}</span>
                 </p>
                 <p className="text-sm">
                   {selected.map((e) => events.find(([value]) => e === value)?.[1]).join(', ')}.
@@ -409,7 +481,7 @@ function Notifications() {
                   Existing deployments are not replayed. Editing a destination skips queued messages
                   created with its previous settings.
                 </p>
-                <Button type="button" disabled={busy} onClick={() => void save()}>
+                <Button type="button" disabled={busy || legacySlackSaveBlocked} onClick={() => void save()}>
                   {busy ? 'Saving…' : 'Save destination'}
                 </Button>
               </div>
@@ -426,7 +498,8 @@ function Notifications() {
                   busy ||
                   !data.encryption_ready ||
                   (!editing && data.items.length >= 5) ||
-                  (enabled && kind === 'email' && !data.email_available)
+                  (enabled && kind === 'email' && !data.email_available) ||
+                  legacySlackSaveBlocked
                 }
               >
                 Review destination

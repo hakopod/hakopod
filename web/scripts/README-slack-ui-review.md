@@ -27,6 +27,12 @@ Open `/scripts/slack-ui-review.html` with these query parameters:
 - `scenario=paginated-channels&view=detail` (empty first page, then two manually loaded channel pages)
 - `scenario=channel-page-cap&view=detail` (ten pages and the channel-ID fallback)
 - `scenario=catalog-unavailable&view=detail` (event catalog failure closes the save path)
+- `scenario=legacy-selfhost-free&view=notifications` (Pro save rejection retains the legacy Slack form draft)
+- `scenario=legacy-selfhost-pro&view=notifications` (self-hosted Pro legacy Slack save)
+- `scenario=legacy-selfhost-expired&view=notifications` (expired entitlement guidance)
+- `scenario=legacy-cloud&view=notifications` (Cloud migration guidance to Settings → Integrations → Slack)
+- `scenario=legacy-disable-delete&view=notifications` (expired legacy Slack disable and deletion)
+- `scenario=legacy-policy-unavailable&view=notifications` (missing policy state fails closed with unavailable guidance)
 - `theme=dark` or `theme=paper`
 
 The fixture is visual evidence only. It does not verify API authorization, OAuth, Slack installation, delivery, entitlement enforcement, or production availability.
@@ -43,6 +49,8 @@ The paginated channel fixture starts with no choices and a continuation cursor. 
 remains available while later pages are loaded; the second page adds a private channel.
 
 The page-cap fixture continues past the tenth page so the manual channel-ID fallback can be inspected.
+
+The legacy notification scenarios render the actual application deployment-notifications component. They use only artificial responses: `legacy-selfhost-free`, `legacy-selfhost-expired` and `legacy-save-error` return the Pro error without clearing form fields; `legacy-cloud` returns the Cloud migration message; and `legacy-disable-delete` starts with a saved direct Slack target so disable and delete can be inspected. The banner uses the same supplied Slack brand asset as the product integration screen.
 
 For the Cloud-owner review, use the actual composed Cloud edition hook and its workspace session/membership queries. Create the normal disposable composition from the intended engine checkout, then start this fixture with its generated dashboard path:
 
