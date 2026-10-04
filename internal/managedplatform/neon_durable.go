@@ -132,7 +132,7 @@ func (r *DurableNeonRuntime) claims(ctx context.Context) (map[string]DurableReso
 			return fmt.Errorf("Neon ownership inventory exceeds its bound")
 		}
 		for _, claim := range claims {
-			if claim.PlatformID != op.PlatformID || claim.PlatformRevision != revision || claim.Component == "" || claim.ResourceID == "" || claim.ImmutableGeneration < 1 {
+			if claim.PlatformID != op.PlatformID || claim.PlatformRevision < 1 || claim.PlatformRevision > revision || currentRevision && claim.PlatformRevision != revision || claim.Component == "" || claim.ResourceID == "" || claim.ImmutableGeneration < 1 {
 				return fmt.Errorf("invalid Neon ownership claim")
 			}
 			if currentRevision && claim.OwnerOperationID != op.ID {
@@ -151,6 +151,8 @@ func (r *DurableNeonRuntime) claims(ctx context.Context) (map[string]DurableReso
 		return nil
 	}
 	if op.Revision > 1 {
+		// The store's prior inventory includes still-owned resources from older
+		// failed revisions. Keep their original revision for fenced advancement.
 		if err := load(op.Revision-1, prior, false); err != nil {
 			return nil, nil, err
 		}
@@ -205,40 +207,69 @@ func (r *DurableNeonRuntime) pendingTimelineDeletion(ctx context.Context, reques
 	op := r.lifecycle.Operation()
 	var pending DurableResourceIntent
 	var parent DurableResourceIntent
-	revisions := []int64{op.Revision}
-	if op.Revision > 1 {
-		revisions = append(revisions, op.Revision-1)
-	}
-	for _, revision := range revisions {
-		intents, err := r.lifecycle.Intents(ctx, revision)
+	var items []DurableResourceIntent
+	lookup, scoped := r.lifecycle.(interface {
+		NeonTimelineDeletionIntents(context.Context, string, string, string) ([]DurableResourceIntent, error)
+	})
+	if scoped {
+		var err error
+		items, err = lookup.NeonTimelineDeletionIntents(ctx, request.TenantID, request.TimelineID, parentToken)
 		if err != nil {
 			return pending, false, err
 		}
-		if len(intents) > maxDurableNeonResources {
+		if len(items) > 2 {
 			return pending, false, fmt.Errorf("Neon deletion intent inventory exceeds its bound")
 		}
-		for _, intent := range intents {
-			if intent.PlatformID != op.PlatformID || intent.PlatformRevision != revision || !neonID.MatchString(intent.ID) || !neonID.MatchString(intent.OwnerOperationID) || revision == op.Revision && intent.OwnerOperationID != op.ID {
-				return pending, false, fmt.Errorf("Neon deletion intent belongs to another operation or revision")
+	} else {
+		revisions := []int64{op.Revision}
+		if op.Revision > 1 {
+			revisions = append(revisions, op.Revision-1)
+		}
+		for _, revision := range revisions {
+			intents, err := r.lifecycle.Intents(ctx, revision)
+			if err != nil {
+				return pending, false, err
 			}
-			if intent.Component == "tenant" && revision == op.Revision-1 {
-				if parent.ID != "" {
-					return pending, false, fmt.Errorf("Neon parent deletion intent is ambiguous")
+			if len(intents) > maxDurableNeonResources {
+				return pending, false, fmt.Errorf("Neon deletion intent inventory exceeds its bound")
+			}
+			for _, intent := range intents {
+				if intent.PlatformRevision != revision {
+					return pending, false, fmt.Errorf("Neon deletion intent belongs to another operation or revision")
 				}
-				parent = intent
+				items = append(items, intent)
 			}
-			if intent.Component != "timeline" || intent.Confirmed {
-				continue
-			}
-			if revision != op.Revision-1 || intent.Kind != "neon_timeline" || intent.ExternalKey != request.TenantID+"/"+request.TimelineID || pending.ID != "" {
-				return pending, false, fmt.Errorf("Neon pending timeline deletion authority is ambiguous")
-			}
-			pending = intent
 		}
 	}
+	for _, intent := range items {
+		revision := intent.PlatformRevision
+		if intent.PlatformID != op.PlatformID || revision < 1 || revision > op.Revision || !neonID.MatchString(intent.ID) || !neonID.MatchString(intent.OwnerOperationID) || revision == op.Revision && intent.OwnerOperationID != op.ID || scoped && (revision == op.Revision || intent.OwnerOperationID == op.ID) {
+			return pending, false, fmt.Errorf("Neon deletion intent belongs to another operation or revision")
+		}
+		if intent.Component == "tenant" && revision < op.Revision {
+			if parent.ID != "" {
+				return pending, false, fmt.Errorf("Neon parent deletion intent is ambiguous")
+			}
+			if scoped && (!intent.Confirmed || intent.ID != parentToken || intent.Kind != "neon_tenant" || intent.ExternalKey != request.TenantID) {
+				return pending, false, fmt.Errorf("Neon parent deletion intent differs from its ownership claim")
+			}
+			parent = intent
+			continue
+		}
+		if intent.Component != "timeline" || intent.Confirmed {
+			if scoped {
+				return pending, false, fmt.Errorf("Neon deletion intent inventory contains an unexpected resource")
+			}
+			continue
+		}
+		if revision >= op.Revision || intent.Kind != "neon_timeline" || intent.ExternalKey != request.TenantID+"/"+request.TimelineID || pending.ID != "" {
+			return pending, false, fmt.Errorf("Neon pending timeline deletion authority is ambiguous")
+		}
+		pending = intent
+	}
 	// Advancing a claim transfers it to the delete revision. Its original
-	// confirmed intent preserves creation authority across deletion retries.
-	if pending.ID != "" && (!parent.Confirmed || parent.ID != parentToken || parent.Kind != "neon_tenant" || parent.ExternalKey != request.TenantID || parent.OwnerOperationID != pending.OwnerOperationID) {
+	// confirmed intent preserves creation authority across later delete operations.
+	if pending.ID != "" && (!parent.Confirmed || parent.ID != parentToken || parent.Kind != "neon_tenant" || parent.ExternalKey != request.TenantID || parent.OwnerOperationID != pending.OwnerOperationID || parent.PlatformRevision != pending.PlatformRevision) {
 		return pending, false, fmt.Errorf("Neon pending timeline and parent creation authority differ")
 	}
 	return pending, pending.ID != "", nil

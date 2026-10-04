@@ -14,7 +14,23 @@ import (
 
 type pendingDeleteLifecycle struct {
 	*durableNeonFixture
-	cancelFailures int
+	cancelFailures      int
+	deletionLookupCalls int
+}
+
+func (f *pendingDeleteLifecycle) NeonTimelineDeletionIntents(_ context.Context, tenantID, timelineID, parentToken string) ([]DurableResourceIntent, error) {
+	f.deletionLookupCalls++
+	if tenantID != testTenant || timelineID != testTimeline {
+		return nil, fmt.Errorf("development fixture: deletion identity changed")
+	}
+	// This fixture exposes all candidate intents so runtime validation remains
+	// independently testable. The real store applies the same checks under its
+	// current delete lease and also rejects ambiguous candidates.
+	result := make([]DurableResourceIntent, 0, len(f.intents))
+	for _, intent := range f.intents {
+		result = append(result, intent)
+	}
+	return result, nil
 }
 
 func (f *pendingDeleteLifecycle) Cancel(ctx context.Context, intent DurableResourceIntent) error {
@@ -27,24 +43,28 @@ func (f *pendingDeleteLifecycle) Cancel(ctx context.Context, intent DurableResou
 
 func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 	for _, test := range []struct {
-		name              string
-		mutateIntent      func(*DurableResourceIntent)
-		mutateParent      func(*DurableResourceIntent)
-		noParentIntent    bool
-		noIntent          bool
-		pageStatus        int
-		pageToken         string
-		wrongPageIdentity bool
-		safekeeperMask    int
-		foreignSafekeeper bool
-		attachedCompute   bool
-		preflightFails    bool
-		prepareFails      bool
-		retry             bool
-		retryCancel       bool
-		absentPlacement   bool
-		retryLedger       bool
-		wantError         bool
+		name                string
+		mutateIntent        func(*DurableResourceIntent)
+		mutateParent        func(*DurableResourceIntent)
+		noParentIntent      bool
+		noIntent            bool
+		pageStatus          int
+		pageToken           string
+		wrongPageIdentity   bool
+		safekeeperMask      int
+		foreignSafekeeper   bool
+		attachedCompute     bool
+		preflightFails      bool
+		prepareFails        bool
+		retry               bool
+		retryCancel         bool
+		rereviewAfterCancel bool
+		absentPlacement     bool
+		retryLedger         bool
+		operationRevision   int64
+		providerRevision    int64
+		kubernetesRevision  int64
+		wantError           bool
 	}{
 		{name: "pageserver exists before safekeeper selection"},
 		{name: "one safekeeper exists", safekeeperMask: 2},
@@ -53,10 +73,15 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 		{name: "all provider timelines absent", pageStatus: 404},
 		{name: "retry after parent starts deletion", retry: true},
 		{name: "retry after parent deletion before cancellation", retryCancel: true},
+		{name: "original pending timeline survives failed delete", operationRevision: 3, providerRevision: 2, kubernetesRevision: 1},
+		{name: "original pending timeline survives two failed deletes", operationRevision: 4, providerRevision: 2, kubernetesRevision: 1},
+		{name: "new reviewed delete resumes after cancellation interruption", operationRevision: 3, providerRevision: 2, kubernetesRevision: 1, retryCancel: true, rereviewAfterCancel: true},
 		{name: "resume ownership deletion after placement is absent", absentPlacement: true, pageStatus: 404},
 		{name: "resume interrupted ownership tombstone", absentPlacement: true, pageStatus: 404, retryLedger: true},
 		{name: "resume after timeline claim and intent are released", absentPlacement: true, pageStatus: 404, noIntent: true},
 		{name: "released timeline still requires terminal ownership proof", absentPlacement: true, pageStatus: 404, noIntent: true, retryLedger: true},
+		{name: "mixed older Kubernetes and prior provider claims", absentPlacement: true, pageStatus: 404, noIntent: true, operationRevision: 3, providerRevision: 2, kubernetesRevision: 1},
+		{name: "provider claims survive another failed delete", absentPlacement: true, pageStatus: 404, noIntent: true, operationRevision: 4, providerRevision: 2, kubernetesRevision: 1},
 		{name: "absent placement refuses foreign preflight", absentPlacement: true, pageStatus: 404, preflightFails: true, wantError: true},
 		{name: "absent placement refuses failed preparation", absentPlacement: true, pageStatus: 404, prepareFails: true, wantError: true},
 		{name: "absent placement refuses attached unclaimed compute", absentPlacement: true, pageStatus: 404, attachedCompute: true, wantError: true},
@@ -72,6 +97,8 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 		{name: "unconfirmed parent creation intent", mutateParent: func(i *DurableResourceIntent) { i.Confirmed = false }, wantError: true},
 		{name: "different parent token", mutateParent: func(i *DurableResourceIntent) { i.ID = strings.Repeat("e", 32) }, wantError: true},
 		{name: "different parent identity", mutateParent: func(i *DurableResourceIntent) { i.ExternalKey = strings.Repeat("e", 32) }, wantError: true},
+		{name: "different original parent revision", operationRevision: 4, mutateParent: func(i *DurableResourceIntent) { i.PlatformRevision = 2 }, wantError: true},
+		{name: "delete cannot own original parent", operationRevision: 4, mutateParent: func(i *DurableResourceIntent) { i.OwnerOperationID = testOperation }, wantError: true},
 		{name: "malformed intent owner", mutateIntent: func(i *DurableResourceIntent) { i.OwnerOperationID = "unknown" }, wantError: true},
 		{name: "wrong intent kind", mutateIntent: func(i *DurableResourceIntent) { i.Kind = "neon_tenant" }, wantError: true},
 		{name: "wrong intent external key", mutateIntent: func(i *DurableResourceIntent) { i.ExternalKey += "other" }, wantError: true},
@@ -87,6 +114,13 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			events := []string{}
 			op := DurableOperation{ID: testOperation, PlatformID: strings.Repeat("a", 32), Revision: 2, Kind: "delete"}
+			if test.operationRevision != 0 {
+				op.Revision = test.operationRevision
+			}
+			providerRevision := int64(1)
+			if test.providerRevision != 0 {
+				providerRevision = test.providerRevision
+			}
 			createID := strings.Repeat("b", 32)
 			tenantToken, timelineToken := fixtureIntentID("tenant"), fixtureIntentID("timeline")
 			deleteToken := strings.Repeat("d", 32)
@@ -98,7 +132,10 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			claims := map[string]DurableResourceClaim{"tenant": {PlatformID: op.PlatformID, PlatformRevision: 1, Component: "tenant", Kind: "neon_tenant", ResourceID: tenantClaimID, ImmutableGeneration: 7, OwnerOperationID: createID}}
+			claims := map[string]DurableResourceClaim{"tenant": {PlatformID: op.PlatformID, PlatformRevision: providerRevision, Component: "tenant", Kind: "neon_tenant", ResourceID: tenantClaimID, ImmutableGeneration: 7, OwnerOperationID: createID}}
+			if test.kubernetesRevision != 0 {
+				claims["deployment.neon-storage-controller"] = DurableResourceClaim{PlatformID: op.PlatformID, PlatformRevision: test.kubernetesRevision, Component: "deployment.neon-storage-controller", Kind: "runtime_component", ResourceID: "development-workload-uid", ImmutableGeneration: 1, OwnerOperationID: createID}
+			}
 			safekeepers := make([]NeonSafekeeperRegistration, 3)
 			for i := range safekeepers {
 				n := NeonSafekeeperRegistration{Name: fmt.Sprint(i), NodeID: int64(i + 1), Generation: 1, Host: fmt.Sprintf("sk-%d.test", i), AvailabilityZone: fmt.Sprintf("zone-%d", i)}
@@ -108,7 +145,7 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				claims[component] = DurableResourceClaim{PlatformID: op.PlatformID, PlatformRevision: 1, Component: component, Kind: "runtime_component", ResourceID: id, ImmutableGeneration: 1, OwnerOperationID: createID}
+				claims[component] = DurableResourceClaim{PlatformID: op.PlatformID, PlatformRevision: providerRevision, Component: component, Kind: "runtime_component", ResourceID: id, ImmutableGeneration: 1, OwnerOperationID: createID}
 			}
 			lifecycle := &durableNeonFixture{op: op, claims: claims, intents: map[string]DurableResourceIntent{}, events: &events}
 			parentIntent := DurableResourceIntent{ID: tenantToken, PlatformID: op.PlatformID, PlatformRevision: 1, Component: "tenant", Kind: "neon_tenant", ExternalKey: testTenant, OwnerOperationID: createID, Confirmed: true}
@@ -248,18 +285,25 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 				encoded, _ := json.Marshal(body)
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(string(encoded))), Header: make(http.Header)}, nil
 			})}}}
-			err = runtime.Deprovision(context.Background(), durableNeonDeleteRequest())
+			deleteRequest := durableNeonDeleteRequest()
+			err = runtime.Deprovision(context.Background(), deleteRequest)
 			if test.retry || test.retryLedger {
 				if err == nil || !strings.Contains(err.Error(), "still in progress") {
 					t.Fatalf("expected resumable parent deletion, got %v", err)
 				}
-				err = runtime.Deprovision(context.Background(), durableNeonDeleteRequest())
+				err = runtime.Deprovision(context.Background(), deleteRequest)
 			}
 			if test.retryCancel {
 				if err == nil || !strings.Contains(err.Error(), "before intent cancellation") {
 					t.Fatalf("expected cancellation interruption, got %v", err)
 				}
-				err = runtime.Deprovision(context.Background(), durableNeonDeleteRequest())
+				if test.rereviewAfterCancel {
+					op.ID = strings.Repeat("c", 32)
+					op.Revision++
+					lifecycle.op = op
+					deleteRequest.OperationID = op.ID
+				}
+				err = runtime.Deprovision(context.Background(), deleteRequest)
 			}
 			if test.wantError {
 				if err == nil {
@@ -282,14 +326,20 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 			if _, ok := lifecycle.intents["timeline"]; ok {
 				t.Fatal("pending intent remains after verified parent deletion")
 			}
-			if claim, ok := lifecycle.claims["tenant"]; !ok || claim.ResourceID != tenantClaimID || claim.PlatformRevision != 2 || claim.OwnerOperationID != op.ID {
+			if claim, ok := lifecycle.claims["tenant"]; !ok || claim.ResourceID != tenantClaimID || claim.PlatformRevision != op.Revision || claim.OwnerOperationID != op.ID {
 				t.Fatal("parent tombstone authority was released before namespace absence")
+			}
+			if test.kubernetesRevision != 0 && lifecycle.claims["deployment.neon-storage-controller"].PlatformRevision != test.kubernetesRevision {
+				t.Fatal("provider runtime mutated a Kubernetes object claim")
 			}
 			// A crash after intent cancellation but before namespace deletion
 			// must resume from the retained parent tombstone, not a timeline
 			// endpoint that returns 503 when its parent is absent.
-			if err = runtime.Deprovision(context.Background(), durableNeonDeleteRequest()); err != nil {
+			if err = runtime.Deprovision(context.Background(), deleteRequest); err != nil {
 				t.Fatalf("retry after cancellation lost deletion authority: %v", err)
+			}
+			if adapter.deletionLookupCalls < 2 || lifecycle.intentsCalls != 0 {
+				t.Fatal("deletion bypassed its scoped lookup or broadened ordinary intent reads")
 			}
 			for _, event := range events {
 				if event == "confirm:timeline" {

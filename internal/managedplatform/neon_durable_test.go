@@ -39,7 +39,7 @@ func (f *durableNeonFixture) Claims(_ context.Context, revision int64) ([]Durabl
 	f.claimsCalls++
 	result := []DurableResourceClaim{}
 	for _, claim := range f.claims {
-		if claim.PlatformRevision == revision {
+		if claim.PlatformRevision == revision || revision == f.op.Revision-1 && claim.PlatformRevision < revision {
 			result = append(result, claim)
 		}
 	}
