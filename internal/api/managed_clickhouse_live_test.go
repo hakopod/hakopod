@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -28,14 +29,29 @@ import (
 )
 
 type clickhouseAPIOutput struct {
-	bytes.Buffer
+	buffer bytes.Buffer
 }
 
 func (w *clickhouseAPIOutput) Write(p []byte) (int, error) {
-	if len(p) > (64<<10)-w.Len() {
+	if len(p) > (64<<10)-w.buffer.Len() {
 		return 0, fmt.Errorf("ClickHouse query output exceeded its bound")
 	}
-	return w.Buffer.Write(p)
+	return w.buffer.Write(p)
+}
+
+func (w *clickhouseAPIOutput) String() string {
+	return w.buffer.String()
+}
+
+func TestClickhouseAPIOutputBound(t *testing.T) {
+	var output clickhouseAPIOutput
+	reader := io.LimitReader(strings.NewReader(strings.Repeat("x", (64<<10)+1)), (64<<10)+1)
+	if _, err := io.Copy(&output, reader); err == nil {
+		t.Fatal("oversized ClickHouse output was accepted")
+	}
+	if output.buffer.Len() > 64<<10 {
+		t.Fatal("oversized ClickHouse output was buffered")
+	}
 }
 
 const clickhouseAPIQuery = `set -eu
