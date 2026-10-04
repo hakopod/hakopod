@@ -79,7 +79,10 @@ func TestManagedClickHouseKeeperQuorumLive(t *testing.T) {
 		t.Fatal("Keeper has no observed leader")
 	}
 	resume := clickhouseKeeperFixtureFault(t, ctx, d, []database.Member{leader})
-	step, stop := context.WithTimeout(ctx, 25*time.Second)
+	// Keeper and ClickHouse both use a 30-second session timeout. Allow the
+	// surviving majority to expire the old session, elect and reconnect while
+	// remaining below the independent 90-second rescue watchdog.
+	step, stop := context.WithTimeout(ctx, 75*time.Second)
 	// An election can interrupt an in-flight request. Retry one deduplicated
 	// write within the recovery bound instead of assuming an error rolled back.
 	var err error
