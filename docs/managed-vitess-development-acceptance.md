@@ -1,7 +1,7 @@
 # Testing managed Vitess
 
-The Vitess adapter stays disabled in release source until the same pinned
-runtime and controller images pass native acceptance. Tests run in
+The Vitess candidate is admitted to a release only when the same pinned runtime
+and controller images pass native acceptance and release verification. Tests run in
 `k3d-hakopod-dev` on the dedicated development VM. They do not use customer
 database credentials, storage or Kubernetes contexts.
 

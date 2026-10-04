@@ -13,10 +13,11 @@ trusted placement and approvals require the corresponding Cloud integration and
 a separate operator rollout. This OSS release does not enable hosted provisioning.
 
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
-[ClickHouse](managed-clickhouse.md) and [Oracle Database](managed-oracle.md)
+[ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md) and [Oracle Database](managed-oracle.md)
 implementations have separate guides with their exact development evidence and
-remaining limits. Oracle Database and Vitess remain held. Neon and Supabase
-are deferred. MySQL, MongoDB and ClickHouse public endpoints remain unavailable.
+remaining limits. Vitess is a release candidate and stays unavailable until its
+native qualification evidence passes the release gate. Oracle Database remains
+held. Neon and Supabase are deferred. MySQL, MongoDB, ClickHouse and Vitess public endpoints remain unavailable.
 See the
 [release acceptance record](managed-database-release-acceptance.md) for tested
 source revisions and immutable runtime references.
@@ -277,12 +278,16 @@ earlier steps without losing entered values. A failed request keeps the reviewed
 configuration and its retry key until you change the configuration.
 
 Alpha.50 supports guided creation for PostgreSQL, Redis, MySQL and MongoDB;
-alpha.52 adds ClickHouse. MySQL and ClickHouse creation require
+alpha.52 adds ClickHouse. The next Vitess candidate includes guided standalone
+and sharded creation with a scoped native backup destination and explicit table
+routing. MySQL, ClickHouse and candidate Vitess creation require
 their pinned controller, a healthy controller rollout, required permissions,
 eligible placement and sufficient capacity. Sandboxed ClickHouse also needs
-the dedicated verified runtime profile. Oracle Database and Vitess remain
-held. Their engine guides describe implementation details and incomplete
-acceptance separately from released availability.
+the dedicated verified runtime profile. Vitess also needs an exact operator
+approval for the destination revision, project, environment and database name.
+The release gate keeps Vitess unavailable until native acceptance succeeds.
+Oracle Database remains held. Its engine guide describes implementation details
+separately from released availability.
 
 ## Monitoring history
 

@@ -1,8 +1,9 @@
 # Managed Vitess
 
-Status: source implementation under validation, September 30, 2026. Creation is
-disabled until patched images and native lifecycle, security and recovery checks
-pass. This page describes the implementation contract; it does not announce a
+Status: release candidate under native qualification, October 5, 2026. The
+dashboard, API and runtime source implement creation, routing and recovery, but
+release availability remains gated until the pinned images pass the recorded
+native lifecycle, security and recovery checks. This page does not announce a
 released or production-verified service.
 
 Vitess runs MySQL behind a routing layer. Use it when a database needs explicit
@@ -45,8 +46,8 @@ key, replication credentials or backup storage credentials.
 The source currently selects Vitess 23.0.6, MySQL 8.4.6, Vitess Operator 2.16.0
 and etcd 3.5.17. The patched Vitess and operator images have been built for
 development acceptance; their upstream images alone do not satisfy this
-contract. The candidate images remain unpublished and the runtime stays disabled
-until native acceptance and release verification pass. The pinned runtime
+contract. Candidate publication remains blocked until native acceptance and
+release verification pass. The pinned runtime
 targets amd64. ARM64 has not been qualified.
 
 ## Layout and routing
@@ -101,6 +102,17 @@ sharding_column = "customer_id"
 name = "order_items"
 sharding_column = "customer_id"
 ```
+
+Create the same specification through the shared API with the CLI:
+
+```sh
+hakopod database create --project orders --environment production --file orders-vitess.toml
+```
+
+The dashboard collects the same fields. It lists destinations from the selected
+project and environment and records the selected immutable revision. The server
+still requires an operator approval matching that destination revision, project,
+environment and database name.
 
 This example needs six eligible nodes for its strict member placement. Zone
 placement uses reported Kubernetes zones instead. Separate topology voters and

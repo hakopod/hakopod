@@ -1,6 +1,6 @@
 # How Hakopod manages a database
 
-Status: self-hosted alpha.52 includes PostgreSQL, Redis, MySQL, MongoDB and private ClickHouse. Oracle Database and Vitess remain held; Neon and Supabase are deferred. Sections about unavailable engines explain source implementations. Cloud provisioning requires a separate operator rollout and approved capacity. See the [acceptance record](managed-database-release-acceptance.md) for the exact development tests and their limits.
+Status: self-hosted alpha.52 includes PostgreSQL, Redis, MySQL, MongoDB and private ClickHouse. Vitess is staged as a release candidate and remains unavailable until its native qualification evidence passes the release gate. Oracle Database remains held; Neon and Supabase are deferred. Sections about unavailable engines explain source implementations. Cloud provisioning requires a separate operator rollout and approved capacity. See the [acceptance record](managed-database-release-acceptance.md) for the exact development tests and their limits.
 
 ## Follow one create request
 
@@ -64,7 +64,7 @@ Ownership checks matter during retries and deletion. A matching name is insuffic
 | MongoDB 8.0 | MongoDB Kubernetes Controller, replica-set members and agents | The driver discovers members and selects according to read preference and write concern. |
 | ClickHouse 26.3 | Altinity operator, data members, three Keeper members for clusters | Local tables remain local to a shard. Distributed tables or explicit queries combine shards. |
 | Oracle Database Free 26ai | Hakopod-owned standalone StatefulSet, TCPS listener and volumes | One PDB service. Free does not implement a Data Guard cluster. |
-| Vitess 23, under construction | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native acceptance is pending. |
+| Vitess 23, release candidate | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Release availability still depends on passing native qualification. |
 
 Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Enterprise and Data Guard have a source implementation, but deployment remains disabled pending licensed native acceptance of the hardened controller and customer image.
 
@@ -78,7 +78,7 @@ MySQL Router likewise exposes different routes for primary and replica traffic. 
 
 Redis Cluster advertises one set of member addresses. The public endpoint source preserves private discovery for applications inside the cluster and allocates a separate TLS listener for each member. An outside client must map each advertised private address to that member's public hostname and port, verify its certificate, and refresh the mapping after a member changes. A `rediss://` seed URI alone does not configure this. Public Redis access remains disabled until outside-in client routing, failover, source filtering and session revocation pass native acceptance.
 
-The proposed Vitess contract uses declared integer hash sharding columns and SINGLE transaction mode. It must not promise cross-shard transactions or live resharding. Its controller, internal TLS, replication identity verification and recovery still need native acceptance. See [Vitess configuration](../internal/database/vitess.go) and [runtime source](../internal/cluster/database_vitess.go).
+The Vitess candidate uses declared integer hash sharding columns and SINGLE transaction mode. It does not provide cross-shard transaction guarantees or live resharding. Its controller, internal TLS, replication identity verification and recovery must pass the recorded native qualification gate before release. See [Vitess configuration](../internal/database/vitess.go) and [runtime source](../internal/cluster/database_vitess.go).
 
 Every route needs a retry policy. A broken connection after `COMMIT` does not prove the transaction failed. Reconnect with bounded retries, and use application idempotency for writes whose outcome is unknown.
 
