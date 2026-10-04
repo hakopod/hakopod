@@ -66,7 +66,7 @@ func (s *Store) AcceptPreview(ctx context.Context, p Principal, parent Applicati
 	if err = spec.ValidatePreview(normalized); err != nil {
 		return Deployment{}, err
 	}
-	return s.accept(ctx, p, parent.Project, parent.Environment, normalized, 0, idem, nil, nil, &in)
+	return s.accept(ctx, p, parent.Project, parent.Environment, normalized, 0, idem, nil, nil, &in, false)
 }
 func (s *Store) Preview(ctx context.Context, id string) (Preview, error) {
 	return scanPreview(s.Pool.QueryRow(ctx, "SELECT "+previewCols+" FROM previews WHERE id=$1", id))

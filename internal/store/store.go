@@ -294,14 +294,14 @@ func validKeyFields(name, project, environment, application string, permissions 
 		return errors.New("at least one permission is required")
 	}
 	for _, v := range permissions {
-		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage"}, v) {
+		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "slack:relay"}, v) {
 			return fmt.Errorf("unsupported permission %q", v)
 		}
 	}
 	if !contains(permissions, "admin") && (project == "" || environment == "") {
 		return errors.New("machine keys require explicit project and environment")
 	}
-	if (contains(permissions, "networks:write") || contains(permissions, "git:manage") || contains(permissions, "applications:manage")) && (project == "" || environment == "" || application != "") {
+	if (contains(permissions, "networks:write") || contains(permissions, "git:manage") || contains(permissions, "applications:manage") || contains(permissions, "slack:relay")) && (project == "" || environment == "" || application != "") {
 		return errors.New("scoped management keys require a project and environment without an application restriction")
 	}
 	return nil

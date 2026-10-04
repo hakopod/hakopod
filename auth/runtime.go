@@ -10,6 +10,7 @@ import (
 	"github.com/hakopod/hakopod/internal/managedplatform"
 	"github.com/hakopod/hakopod/internal/management"
 	"github.com/hakopod/hakopod/internal/platformconfig"
+	"github.com/hakopod/hakopod/internal/slackevents"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -86,6 +87,34 @@ func ReadVitessBackupApprovals(path string) ([]VitessBackupApproval, error) {
 type AdmissionPrincipal = store.Principal
 type DeploymentAdmission = store.DeploymentAdmission
 
+// SlackCloudEvent is a committed, source-bound shared-runtime event. Cloud
+// integrations import it from auth; they never import an internal package.
+type SlackEventDefinition = slackevents.SlackEventDefinition
+
+// SlackEventCatalog returns the stable event choices shared by Cloud and self-hosted Slack.
+func SlackEventCatalog() []SlackEventDefinition { return slackevents.Catalog() }
+
+// ValidSlackEventType permits every public catalog event and the internal test event.
+func ValidSlackEventType(event string) bool { return slackevents.Valid(event) }
+
+type SlackCloudEvent = api.SlackCloudEvent
+type SlackCloudEventOutcome = api.SlackCloudEventOutcome
+
+const (
+	SlackCloudAccepted = api.SlackCloudAccepted
+	SlackCloudRetry    = api.SlackCloudRetry
+	SlackCloudSkipped  = api.SlackCloudSkipped
+)
+
+type SlackCloudEventSink interface {
+	Enqueue(context.Context, SlackCloudEvent) (SlackCloudEventOutcome, error)
+}
+type slackCloudEventSink struct{ sink SlackCloudEventSink }
+
+func (s slackCloudEventSink) Enqueue(ctx context.Context, event api.SlackCloudEvent) (api.SlackCloudEventOutcome, error) {
+	return s.sink.Enqueue(ctx, event)
+}
+
 type RuntimeConfig struct {
 	// ManagedPlatformConfigFile is operator input, never a customer setting.
 	ManagedPlatformConfigFile string
@@ -93,7 +122,13 @@ type RuntimeConfig struct {
 	ClickHouseSandbox bool
 	StorageBudgetTx   func(context.Context, pgx.Tx, string, string) (int64, error)
 	// ActionsEntitled is trusted product state, never user TOML or headers.
-	ActionsEntitled               func(context.Context, string, string) (bool, error)
+	ActionsEntitled func(context.Context, string, string) (bool, error)
+	// SlackCloud is trusted Cloud control-plane authority. It is never derived
+	// from a request, node configuration, or customer workload data.
+	SlackCloudEvents SlackCloudEventSink
+	// SlackCloudSourceID identifies this trusted shared engine process to the
+	// Cloud workspace mapper. It must be empty for BYO nodes.
+	SlackCloudSourceID            string
 	AuthorizeRetainedCleanup      func(context.Context, AdmissionPrincipal, string, string) error
 	StorageBudget                 func(context.Context, string, string) (int64, error)
 	AuthorizeBackup               func(context.Context, string, string, string) error
@@ -202,7 +237,19 @@ func (s *Service) StartRuntime(ctx context.Context, config RuntimeConfig) (http.
 	if err = s.CheckDatabaseNodeReservations(ctx, config.DatabaseNodeReservations); err != nil {
 		return nil, nil, err
 	}
+	if config.SlackCloudEvents != nil && config.SlackCloudSourceID == "" {
+		return nil, nil, errors.New("configure a trusted Slack Cloud source ID with the event sink")
+	}
+	if config.SlackCloudEvents == nil && config.SlackCloudSourceID != "" {
+		return nil, nil, errors.New("Slack Cloud source ID requires the event sink")
+	}
+	if err = s.store.ConfigureSlackCloudEvents(ctx, config.SlackCloudSourceID); err != nil {
+		return nil, nil, err
+	}
 	server := &api.Server{Store: s.store, Cluster: kube, Auth: s.config, OperatorRuntime: true, CloudControlPlane: true, DatabasePublicEndpointAuthority: config.DatabasePublicAuthority}
+	if config.SlackCloudEvents != nil {
+		server.SlackCloudEvents = slackCloudEventSink{sink: config.SlackCloudEvents}
+	}
 	if err = platformconfig.Attach(server, config.ManagedPlatformConfigFile, s.config.EncryptionKey, platformconfig.Options{ExternalCapacity: true, CatalogCapacity: s.managedPlatformCatalogCapacity}); err != nil {
 		return nil, nil, err
 	}

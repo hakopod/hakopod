@@ -7,14 +7,17 @@ export function FormPage({
   description,
   children,
   help,
+  brandMark,
   keepFocusedControlsVisible = false,
 }: {
   title: string
-  description: string
+  description?: string
   breadcrumbs: { label: string; to?: string }[]
   children: ReactNode
   help?: ReactNode
+  // Retained for existing callers; FormPage has never rendered this legacy token.
   icon?: string
+  brandMark?: ReactNode
   keepFocusedControlsVisible?: boolean
 }) {
   const page = useRef<HTMLDivElement>(null)
@@ -45,7 +48,7 @@ export function FormPage({
       className="form-page hako-form-page"
       onFocusCapture={keepFocusedControlsVisible ? revealFocus : undefined}
     >
-      <PageHeader title={title} description={description} />
+      <PageHeader title={title} description={description} icon={brandMark} />
       <div className={`form-page-layout ${help ? 'with-help' : ''}`}>
         <div className="form-page-main">{children}</div>
         {help && <aside className="form-page-help">{help}</aside>}
@@ -61,7 +64,11 @@ function revealFormControl(page: HTMLElement, target: HTMLElement) {
     )
   )
     return
-  const rect = target.getBoundingClientRect()
+  const focusBounds =
+    target.matches('input[type="checkbox"], input[type="radio"]')
+      ? target.closest<HTMLElement>('label') || target
+      : target
+  const rect = focusBounds.getBoundingClientRect()
   if (!rect.width || !rect.height) return
   const viewport = window.visualViewport
   let top = viewport?.offsetTop ?? 0
@@ -142,12 +149,27 @@ export function FormHint({ title, children }: { title: string; children: ReactNo
   )
 }
 
-export function FormError({ children, className = 'py-3 text-destructive', focus = true }: {
+export function FormError({
+  children,
+  className = 'py-3 text-destructive',
+  focus = true,
+}: {
   children: ReactNode
   className?: string
   focus?: boolean
 }) {
   const alert = useRef<HTMLParagraphElement>(null)
-  useEffect(() => { if (focus) alert.current?.focus() }, [focus])
-  return <p ref={alert} role="alert" tabIndex={-1} className={`${className} outline-offset-2 focus:outline-2 focus:outline-current`}>{children}</p>
+  useEffect(() => {
+    if (focus) alert.current?.focus()
+  }, [focus])
+  return (
+    <p
+      ref={alert}
+      role="alert"
+      tabIndex={-1}
+      className={`${className} outline-offset-2 focus:outline-2 focus:outline-current`}
+    >
+      {children}
+    </p>
+  )
 }

@@ -63,6 +63,7 @@ var catalog = []Feature{
 	{ID: "oauth_login", Name: "Social login", Plan: "pro", Description: "Sign in through Google, GitHub or GitLab."},
 	{ID: "enterprise_sso", Name: "Enterprise SSO", Plan: "pro", Description: "Sign in through an OpenID Connect identity provider."},
 	{ID: "audit_history", Name: "User audit history and export", Plan: "pro", Description: "Inspect user activity with paginated history and bounded CSV exports."},
+	{ID: "slack_notifications", Name: "Slack alarms and audit events", Plan: "pro", Description: "Deliver Hakopod alarm transitions and audit events to a connected Slack workspace."},
 }
 
 // Preserve the original v1 entitlement names so installed licenses remain valid.
@@ -70,7 +71,7 @@ var catalog = []Feature{
 // imply advanced authority. Unsupported capabilities are not shown in the catalog.
 func knownEntitlement(id string) bool {
 	switch id {
-	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa", "multi_team", "oauth_login", "enterprise_sso", "managed_actions":
+	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa", "multi_team", "oauth_login", "enterprise_sso", "managed_actions", "slack_notifications":
 		return true
 	}
 	return false

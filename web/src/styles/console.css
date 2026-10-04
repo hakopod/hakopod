@@ -2117,6 +2117,15 @@ a.resource-note:focus-visible {
   font-size: 12px;
   margin-top: 8px;
 }
+/* Slack lock cards retain readable titles when the narrow shared card wraps. */
+.slack-feature-lock {
+  @apply items-start;
+}
+@variant max-sm {
+  .feature-lock .slack-feature-lock-action.button {
+    @apply ml-0;
+  }
+}
 .license-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

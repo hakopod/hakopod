@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,14 +20,19 @@ import (
 // Accept uses one transaction for revision allocation, immutable specification,
 // queue entry and audit record. Advisory locking also covers first creation.
 func (s *Store) Accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, seedResolved ...spec.Application) (Deployment, error) {
-	return s.accept(ctx, p, project, env, next, expected, idem, nil, nil, nil, seedResolved...)
+	return s.accept(ctx, p, project, env, next, expected, idem, nil, nil, nil, false, seedResolved...)
 }
 
-func (s *Store) accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, seedResolved ...spec.Application) (Deployment, error) {
-	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, initialSource, initialShowcase, initialPreview, nil, nil, nil, seedResolved...)
+func (s *Store) accept(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, rollback bool, seedResolved ...spec.Application) (Deployment, error) {
+	return s.acceptGuarded(ctx, p, project, env, next, expected, idem, initialSource, initialShowcase, initialPreview, nil, nil, nil, rollback, seedResolved...)
 }
 
-func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, transfer *ServiceTransfer, provenance map[string]SourceBuild, deleteServices []string, seedResolved ...spec.Application) (Deployment, error) {
+// AcceptRollback records rollback intent in the same transaction as the durable deployment.
+func (s *Store) AcceptRollback(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, resolved spec.Application) (Deployment, error) {
+	return s.accept(ctx, p, project, env, next, expected, idem, nil, nil, nil, true, resolved)
+}
+
+func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env string, next spec.Application, expected int64, idem string, initialSource *InitialSource, initialShowcase *Showcase, initialPreview *InitialPreview, transfer *ServiceTransfer, provenance map[string]SourceBuild, deleteServices []string, rollback bool, seedResolved ...spec.Application) (Deployment, error) {
 	if err := ValidateProvenance(next, provenance); err != nil {
 		return Deployment{}, err
 	}
@@ -67,6 +74,7 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		// Omission preserves hashes for ordinary pre-seeding deployment calls;
 		// presence distinguishes rollback intent even when the desired spec is identical.
 		SeedResolved             *spec.Application      `json:",omitempty"`
+		RollbackRequested        bool                   `json:",omitempty"`
 		InitialSource            *InitialSource         `json:",omitempty"`
 		InitialPreview           *InitialPreview        `json:",omitempty"`
 		ShowcaseID               string                 `json:",omitempty"`
@@ -74,7 +82,7 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		Provenance               map[string]SourceBuild `json:",omitempty"`
 		DeleteServiceVolumes     []string               `json:",omitempty"`
 		DatabaseConnectionReview string                 `json:",omitempty"`
-	}{project, env, next, expected, seed, initialSource, initialPreview, showcaseID, transfer, provenance, deleteServices, databaseConnectionReviewID(ctx)}))
+	}{project, env, next, expected, seed, rollback, initialSource, initialPreview, showcaseID, transfer, provenance, deleteServices, databaseConnectionReviewID(ctx)}))
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return Deployment{}, err
@@ -143,6 +151,7 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	if !exists {
 		return Deployment{}, errors.New("project/environment does not exist")
 	}
+	newApplication := false
 	a, err := scanApp(tx.QueryRow(ctx, "SELECT "+appCols+" FROM applications WHERE project=$1 AND environment=$2 AND name=$3 FOR UPDATE", project, env, next.Name))
 	if errors.Is(err, pgx.ErrNoRows) {
 		var retired bool
@@ -182,6 +191,7 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		if expected != 0 {
 			return Deployment{}, fmt.Errorf("%w: application has revision 0", ErrConflict)
 		}
+		newApplication = true
 		a = Application{ID: NewID(), Name: next.Name, Project: project, Environment: env}
 		if _, err = tx.Exec(ctx, "INSERT INTO applications(id,project,environment,name,spec) VALUES($1,$2,$3,$4,$5)", a.ID, project, env, next.Name, JSON(next)); err != nil {
 			return Deployment{}, err
@@ -284,7 +294,7 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		provenance = map[string]SourceBuild{}
 	}
 	revision := a.Revision + 1
-	if _, err = tx.Exec(ctx, "INSERT INTO deployments(id,application_id,identity_id,key_id,idempotency_key,request_hash,revision,spec,resolved_spec,provenance) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", id, a.ID, p.ID, p.KeyID, idem, hash[:], revision, JSON(next), resolvedJSON, JSON(provenance)); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO deployments(id,application_id,identity_id,key_id,idempotency_key,request_hash,revision,spec,resolved_spec,provenance,rollback_requested) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", id, a.ID, p.ID, p.KeyID, idem, hash[:], revision, JSON(next), resolvedJSON, JSON(provenance), rollback); err != nil {
 		return Deployment{}, err
 	}
 	if len(claims) > 0 {
@@ -311,6 +321,11 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO deployment_events(deployment_id,type,message) VALUES($1,'queued','Release accepted into the durable application queue')", id); err != nil {
 		return Deployment{}, err
+	}
+	for _, event := range slackAcceptedEvents(a.Spec, next, newApplication) {
+		if _, err = tx.Exec(ctx, "INSERT INTO deployment_events(deployment_id,type,message,service) VALUES($1,$2,$3,$4)", id, event.Type, event.Message, event.Service); err != nil {
+			return Deployment{}, err
+		}
 	}
 	if initialShowcase != nil {
 		if err = s.recordShowcaseAcceptance(ctx, tx, showcaseID, a.ID, id); err != nil {
@@ -512,4 +527,117 @@ func finishTransaction(ctx context.Context, tx pgx.Tx, d Deployment, status, mes
 		return err
 	}
 	return nil
+}
+
+type slackAcceptedEvent struct {
+	Type, Message, Service string
+}
+
+// slackAcceptedEvents describes only an accepted specification change. Its
+// messages and types deliberately exclude all user configuration values.
+func slackAcceptedEvents(before, after spec.Application, created bool) []slackAcceptedEvent {
+	items := []slackAcceptedEvent{}
+	add := func(typ, message, service string) {
+		for _, item := range items {
+			if item.Type == typ && item.Service == service {
+				return
+			}
+		}
+		items = append(items, slackAcceptedEvent{typ, message, service})
+	}
+	if created {
+		add("application.created", "Application creation accepted", "")
+	} else if !reflect.DeepEqual(before, after) {
+		add("application.configuration.updated", "Application configuration change accepted", "")
+	}
+	if !created && (!reflect.DeepEqual(before.Env, after.Env) || !reflect.DeepEqual(before.Secrets, after.Secrets) || before.InjectEnv != after.InjectEnv) {
+		for _, name := range spec.Names(after) {
+			add("service.variables.updated", "Service variable or secret reference change accepted", name)
+		}
+	}
+	beforeServices := before.Services
+	if created {
+		beforeServices = map[string]spec.Service{}
+	}
+	names := make(map[string]struct{}, len(beforeServices)+len(after.Services))
+	for name := range beforeServices {
+		names[name] = struct{}{}
+	}
+	for name := range after.Services {
+		names[name] = struct{}{}
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Strings(ordered)
+	for _, name := range ordered {
+		old, existed := beforeServices[name]
+		next, remains := after.Services[name]
+		if !existed {
+			add("service.added", "Service addition accepted", name)
+			continue
+		}
+		if !remains {
+			add("service.removed", "Service removal accepted", name)
+			continue
+		}
+		if reflect.DeepEqual(old, next) {
+			continue
+		}
+		add("service.configuration.updated", "Service configuration change accepted", name)
+		if old.Suspended != next.Suspended {
+			if next.Suspended {
+				add("service.suspended", "Service suspension accepted", name)
+			} else {
+				add("service.resumed", "Service resume accepted", name)
+			}
+		}
+		if !reflect.DeepEqual(old.Actions, next.Actions) {
+			add("service.delivery.updated", "Service delivery change accepted", name)
+		}
+		for _, change := range spec.Diff(&spec.Application{Services: map[string]spec.Service{name: old}}, spec.Application{Services: map[string]spec.Service{name: next}}) {
+			if change.Service == "" {
+				continue
+			}
+			typ, message := slackEventForServiceField(change.Field, old, next)
+			if typ != "" {
+				add(typ, message, name)
+			}
+		}
+	}
+	return items
+}
+
+func slackEventForServiceField(field string, before, after spec.Service) (string, string) {
+	switch field {
+	case "image":
+		return "service.image.updated", "Service image change accepted"
+	case "env", "secrets", "bindings":
+		return "service.variables.updated", "Service variable or secret reference change accepted"
+	case "size", "resources", "gpu":
+		return "service.resources.updated", "Service resource change accepted"
+	case "replicas", "autoscaling":
+		return "service.scale.updated", "Service scale change accepted"
+	case "restart_nonce":
+		return "service.restart.requested", "Service restart requested"
+	case "network_access", "networks", "private_egress", "http", "port", "ports", "public_tcp", "public", "tls", "backend_http2":
+		return "service.network.updated", "Service network change accepted"
+	case "volume", "mounts", "temporary_mounts", "certificate_mounts", "files":
+		return "service.storage.updated", "Service storage change accepted"
+	case "healthcheck", "readiness":
+		return "service.healthcheck.updated", "Service health check change accepted"
+	case "architecture", "node_name":
+		return "service.placement.updated", "Service placement change accepted"
+	case "command", "args", "working_dir", "run_as_user", "run_as_group", "fs_group", "read_only_root_filesystem", "termination_grace_seconds":
+		return "service.command.updated", "Service command change accepted"
+	case "job", "serverless", "actions", "update_strategy", "depends_on", "registry_credential", "aws_identity", "container_daemon":
+		return "service.delivery.updated", "Service delivery change accepted"
+	case "suspended":
+		if after.Suspended {
+			return "service.suspended", "Service suspension accepted"
+		}
+		return "service.resumed", "Service resume accepted"
+	}
+	return "", ""
 }

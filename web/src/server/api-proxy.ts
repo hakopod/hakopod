@@ -5,7 +5,15 @@ import { authenticatedResponse, oauth } from './auth.ts'
 import { forwardNamedGitWebhook } from './git-webhook.ts'
 import { forwardGitHubWebhook } from './github-webhook.ts'
 import { forwardGitLabWebhook } from './gitlab-webhook.ts'
-import { apiURL, boundedBody, privateHeaders, requireSameOrigin, sessionToken } from './session.ts'
+import {
+  apiURL,
+  boundedBody,
+  callbackSessionCookie,
+  callbackSessionToken,
+  privateHeaders,
+  requireSameOrigin,
+  sessionToken,
+} from './session.ts'
 
 export const allowed = [
   /^managed-platforms(?:\/(?:catalog|reviews|operations|[a-f0-9]{32}(?:\/(?:operations|recovery-operations|trust))?))?$/,
@@ -82,6 +90,7 @@ export const allowed = [
   /^nodes\/(?:[A-Za-z0-9_.-]+\/(?:cordon|drain)|enrollments(?:\/[A-Za-z0-9_-]+)?)$/,
   /^builds(?:\/[A-Za-z0-9_-]+(?:\/(?:preview|install|run|runs(?:\/[A-Za-z0-9_-]+(?:\/(?:plan|deploy|cancel))?)?))?)?$/,
   /^integrations\/(?:github|gitlab)$/,
+  /^integrations\/slack(?:\/(?:connect|callback|channels|channel|events|deliveries|test))?$/,
   /^applications\/[A-Za-z0-9_-]+\/source(?:\/(?:plan|deploy))?$/,
   /^applications\/[A-Za-z0-9_-]+\/(?:services\/[A-Za-z0-9_-]+\/(?:move-plan|move)|service-moves(?:\/[A-Za-z0-9_-]+\/finish)?)$/,
   /^templates(?:\/[A-Za-z0-9_-]+\/(?:plan|deploy|secrets\/[A-Za-z0-9_-]+))?$/,
@@ -99,6 +108,11 @@ export async function proxy({
   params: { _splat?: string }
 }) {
   try {
+    // OAuth providers may return to the versioned public callback URL. Rewrite
+    // only this GET into the browser-session proxy before `/api/v1/*` is sent
+    // through the machine-token transport below.
+    if (params._splat === 'v1/integrations/slack/callback' && request.method === 'GET')
+      return proxy({ request, params: { _splat: 'integrations/slack/callback' } })
     if (/^v1\/auth\/(?:device\/(start|token)|logout)$/.test(params._splat || ''))
       return forwardAutomationAPI(request)
     if (params._splat === 'v1/mcp') return forwardMCP(request)
@@ -130,7 +144,10 @@ export async function proxy({
         { error: { message: 'Unsupported method for this runner action.' } },
         { status: 405, headers: { ...privateHeaders, Allow: actionsMethod } },
       )
-    const token = sessionToken(request)
+    const slackCallback = path === 'integrations/slack/callback' && request.method === 'GET'
+    const token =
+      sessionToken(request) ||
+      (slackCallback ? callbackSessionToken(request, 'hakopod_slack_callback') : null)
     const publicPath =
       (path === 'auth/status' && request.method === 'GET') ||
       (path === 'auth/invites/inspect' && request.method === 'POST') ||
@@ -200,7 +217,7 @@ export async function proxy({
       headers,
       body,
       ...(archiveUpload ? { duplex: 'half' as const } : {}),
-      redirect: 'error',
+      redirect: slackCallback ? 'manual' : 'error',
       signal: AbortSignal.any([
         request.signal,
         AbortSignal.timeout(
@@ -219,6 +236,37 @@ export async function proxy({
       (path === 'auth/onboarding' && request.method === 'POST')
     )
       return authenticatedResponse(request, response)
+    if (slackCallback) {
+      const location = response.headers.get('Location')
+      if (
+        response.status === 303 &&
+        location &&
+        /^\/settings\/integrations\/slack(?:\?.*)?$/.test(location)
+      ) {
+        const headers = new Headers({ ...privateHeaders, Location: location })
+        headers.append(
+          'Set-Cookie',
+          callbackSessionCookie(request, 'hakopod_slack_callback', '', true),
+        )
+        return new Response(null, { status: 303, headers })
+      }
+      const headers = new Headers({ ...privateHeaders })
+      headers.append(
+        'Set-Cookie',
+        callbackSessionCookie(request, 'hakopod_slack_callback', '', true),
+      )
+      return new Response(response.body, {
+        status: response.status,
+        headers: {
+          ...Object.fromEntries(headers),
+          'Content-Type': response.headers.get('content-type') || 'application/json',
+        },
+      })
+    }
+    const callbackCookie =
+      path === 'integrations/slack/connect' && request.method === 'POST' && response.ok && token
+        ? callbackSessionCookie(request, 'hakopod_slack_callback', token)
+        : undefined
     return new Response(response.body, {
       status: response.status,
       headers: {
@@ -229,6 +277,7 @@ export async function proxy({
         ...(path === 'audit/export' && response.headers.has('X-Hakopod-Next-Cursor')
           ? { 'X-Hakopod-Next-Cursor': response.headers.get('X-Hakopod-Next-Cursor')! }
           : {}),
+        ...(callbackCookie ? { 'Set-Cookie': callbackCookie } : {}),
       },
     })
   } catch {

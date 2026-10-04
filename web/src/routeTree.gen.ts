@@ -82,6 +82,7 @@ import { Route as PlatformsNewStepRouteImport } from './routes/platforms.new.$st
 import { Route as SettingsDnsProvidersNewRouteImport } from './routes/settings.dns-providers.new'
 import { Route as SettingsGitCallbackRouteImport } from './routes/settings.git.callback'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
+import { Route as SettingsIntegrationsSlackRouteImport } from './routes/settings.integrations.slack'
 import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/settings.login-providers.$provider'
 import { Route as SettingsRolesNewRouteImport } from './routes/settings.roles.new'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
@@ -489,6 +490,12 @@ const SettingsIntegrationsProviderRoute =
     path: '/$provider',
     getParentRoute: () => SettingsIntegrationsRoute,
   } as any)
+const SettingsIntegrationsSlackRoute =
+  SettingsIntegrationsSlackRouteImport.update({
+    id: '/slack',
+    path: '/slack',
+    getParentRoute: () => SettingsIntegrationsRoute,
+  } as any)
 const SettingsLoginProvidersProviderRoute =
   SettingsLoginProvidersProviderRouteImport.update({
     id: '/login-providers/$provider',
@@ -676,6 +683,7 @@ export interface FileRoutesByFullPath {
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/integrations/slack': typeof SettingsIntegrationsSlackRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -770,6 +778,7 @@ export interface FileRoutesByTo {
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/integrations/slack': typeof SettingsIntegrationsSlackRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -865,6 +874,7 @@ export interface FileRoutesById {
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
+  '/settings/integrations/slack': typeof SettingsIntegrationsSlackRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -961,6 +971,7 @@ export interface FileRouteTypes {
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
+    | '/settings/integrations/slack'
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
@@ -1055,6 +1066,7 @@ export interface FileRouteTypes {
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
+    | '/settings/integrations/slack'
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
@@ -1149,6 +1161,7 @@ export interface FileRouteTypes {
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
+    | '/settings/integrations/slack'
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
@@ -1711,6 +1724,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIntegrationsProviderRouteImport
       parentRoute: typeof SettingsIntegrationsRoute
     }
+    '/settings/integrations/slack': {
+      id: '/settings/integrations/slack'
+      path: '/slack'
+      fullPath: '/settings/integrations/slack'
+      preLoaderRoute: typeof SettingsIntegrationsSlackRouteImport
+      parentRoute: typeof SettingsIntegrationsRoute
+    }
     '/settings/login-providers/$provider': {
       id: '/settings/login-providers/$provider'
       path: '/login-providers/$provider'
@@ -2085,10 +2105,12 @@ const SettingsDnsProvidersRouteWithChildren =
 
 interface SettingsIntegrationsRouteChildren {
   SettingsIntegrationsProviderRoute: typeof SettingsIntegrationsProviderRoute
+  SettingsIntegrationsSlackRoute: typeof SettingsIntegrationsSlackRoute
 }
 
 const SettingsIntegrationsRouteChildren: SettingsIntegrationsRouteChildren = {
   SettingsIntegrationsProviderRoute: SettingsIntegrationsProviderRoute,
+  SettingsIntegrationsSlackRoute: SettingsIntegrationsSlackRoute,
 }
 
 const SettingsIntegrationsRouteWithChildren =

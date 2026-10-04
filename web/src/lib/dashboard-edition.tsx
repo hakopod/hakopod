@@ -37,6 +37,13 @@ export function useEditionFeatures() {
   }
 }
 
+// Cloud editions replace this module and bind the current immutable workspace
+// from their server-owned session context. The public dashboard has no such
+// workspace, so installation-wide settings retain their existing scope.
+export function useEditionWorkspace() {
+  return { id: undefined as string | undefined, canManageSlack: false }
+}
+
 export function EditionAuthAside(_props: { view: AuthView }) {
   return null
 }
