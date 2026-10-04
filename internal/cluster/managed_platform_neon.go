@@ -439,7 +439,12 @@ func prepareNeonLifecycleWithAdapter(ctx context.Context, request NeonRuntimeReq
 	}
 	config := managedplatform.NeonRuntimeConfig{StorageController: managedplatform.NeonControlTarget{Name: "storage-controller", Origin: "https://neon-storage-controller." + namespace + ".svc:6699", Token: string(controllerToken)}, SafekeeperToken: string(safekeeperToken), PageserverToken: string(pageserverToken), RequestTimeout: 2 * time.Minute, RootCAs: roots, DeprovisionOnly: deprovisionOnly}
 	if reader, ok := bindings.(neonControllerStateReader); ok && !deprovisionOnly {
+		writer, ok := bindings.(neonControllerStateStore)
+		if !ok {
+			return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, fmt.Errorf("Neon initial routing requires durable controller state")
+		}
 		config.ResolveComputeConfig = neonControllerComputeResolver(reader, op.PlatformID, op.Revision, request.Render.Spec.Neon.Pageservers)
+		config.ObserveTimelineRouting = neonControllerTimelineObserver(writer, op)
 	}
 	if !deprovisionOnly && len(zones) < max(3, request.Render.Spec.Neon.Pageservers) {
 		return nil, lifecycleRequest, managedplatform.NeonProxyEndpointState{}, fmt.Errorf("Neon availability-zone inventory is unavailable")

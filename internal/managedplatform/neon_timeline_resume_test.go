@@ -12,8 +12,9 @@ import (
 )
 
 func TestDurableNeonPendingTimelineResumesBeforeCanonicalInspection(t *testing.T) {
-	for _, scenario := range []string{"completed", "missing replay token", "foreign replay token", "provider conflict", "canonical missing", "canonical missing ownership", "foreign controller token", "foreign safekeeper token", "no pending intent", "confirmed claim"} {
+	for _, scenario := range []string{"initial create", "initial foreign token", "initial foreign membership", "completed", "missing replay token", "foreign replay token", "provider conflict", "canonical missing", "canonical missing ownership", "foreign controller token", "foreign safekeeper token", "no pending intent", "confirmed claim"} {
 		t.Run(scenario, func(t *testing.T) {
+			initial := strings.HasPrefix(scenario, "initial")
 			events := []string{}
 			op := DurableOperation{ID: testOperation, PlatformID: strings.Repeat("4", 32), Revision: 1, Kind: "create"}
 			pageservers := []NeonPageserverRegistration{
@@ -54,7 +55,7 @@ func TestDurableNeonPendingTimelineResumesBeforeCanonicalInspection(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if scenario == "no pending intent" {
+			if scenario == "no pending intent" || initial {
 				delete(intents, "timeline")
 			}
 			if scenario == "confirmed claim" {
@@ -109,10 +110,13 @@ func TestDurableNeonPendingTimelineResumesBeforeCanonicalInspection(t *testing.T
 						}
 						events = append(events, "post")
 						token := intentID
-						if scenario == "foreign replay token" {
+						if scenario == "foreign replay token" || scenario == "initial foreign token" {
 							token = strings.Repeat("f", 32)
 						}
-						body = `{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","safekeepers":{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","generation":13,"safekeepers":[{"id":1,"hostname":"sk-0.test"},{"id":2,"hostname":"sk-1.test"},{"id":3,"hostname":"sk-2.test"}]},"ownership_token":"` + token + `"}`
+						body = `{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","safekeepers":{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","generation":13,"safekeepers":[{"id":3,"hostname":"sk-2.test"},{"id":1,"hostname":"sk-0.test"},{"id":2,"hostname":"sk-1.test"}]},"ownership_token":"` + token + `"}`
+						if scenario == "initial foreign membership" {
+							body = strings.ReplaceAll(body, "sk-2.test", "foreign.test")
+						}
 						if scenario == "missing replay token" {
 							body = strings.Replace(body, `,"ownership_token":"`+token+`"`, "", 1)
 						}
@@ -121,6 +125,10 @@ func TestDurableNeonPendingTimelineResumesBeforeCanonicalInspection(t *testing.T
 						}
 					case req.URL.Host == "storage.test" && req.Method == http.MethodGet && req.URL.Path == "/control/v1/tenant/"+testTenant+"/timeline/"+testTimeline:
 						events = append(events, "inspect")
+						if initial && posts == 0 {
+							status = http.StatusNotFound
+							break
+						}
 						if scenario != "no pending intent" && scenario != "confirmed claim" && posts != 1 {
 							t.Fatal("timeline was inspected before its pending create replayed")
 						}
@@ -144,17 +152,34 @@ func TestDurableNeonPendingTimelineResumesBeforeCanonicalInspection(t *testing.T
 						if scenario == "foreign safekeeper token" && strings.HasPrefix(req.URL.Host, "sk-2") {
 							token = strings.Repeat("f", 32)
 						}
-						body = `{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","ownership_token":"` + token + `","mconf":{"generation":13,"members":[{"id":1,"host":"sk-0.test","pg_port":5454},{"id":2,"host":"sk-1.test","pg_port":5454},{"id":3,"host":"sk-2.test","pg_port":5454}],"new_members":null}}`
+						body = `{"tenant_id":"` + testTenant + `","timeline_id":"` + testTimeline + `","ownership_token":"` + token + `","mconf":{"generation":13,"members":[{"id":3,"host":"sk-2.test","pg_port":5454},{"id":1,"host":"sk-0.test","pg_port":5454},{"id":2,"host":"sk-1.test","pg_port":5454}],"new_members":null}}`
 					default:
 						t.Fatalf("unexpected request %s %s", req.Method, req.URL.String())
 					}
 					return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 				})},
 			}}
+			observations := 0
+			runtime.control.config.ObserveTimelineRouting = func(_ context.Context, observation NeonTimelineRoutingObservation) error {
+				observations++
+				if observation.Claim != lifecycle.claims["timeline"] || !lifecycle.intents["timeline"].Confirmed {
+					t.Fatal("initial routing was observed before timeline ownership was confirmed")
+				}
+				if err := observation.Validate(op.PlatformID, op.Revision, testTenant, testTimeline, 2); err != nil {
+					t.Fatal(err)
+				}
+				if observation.Routing.Generation != 13 || len(observation.Routing.Safekeepers) != 3 || observation.Routing.Safekeepers[0].ID != 3 || *observation.Routing.Safekeepers[0].Hostname != "sk-2.test" {
+					t.Fatal("initial routing did not retain the actual provider membership observation")
+				}
+				return nil
+			}
 			_, err = runtime.Provision(context.Background(), request)
-			success := scenario == "completed" || scenario == "confirmed claim"
+			success := scenario == "initial create" || scenario == "completed" || scenario == "confirmed claim"
 			if (err == nil) != success {
 				t.Fatalf("unexpected timeline resume result: err=%v events=%v", err, events)
+			}
+			if success && observations != 1 || !success && observations != 0 {
+				t.Fatalf("routing observation bypassed provider ownership: calls=%d err=%v", observations, err)
 			}
 			claim, confirmed := lifecycle.claims["timeline"]
 			if confirmed != success || success && (claim.ImmutableGeneration != 13 || !strings.HasPrefix(claim.ResourceID, timelineIdentity+":")) {

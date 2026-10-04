@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -26,11 +27,36 @@ func (s *Store) WithNeonControllerState(ctx context.Context, platformID string, 
 	if !managedPlatformID.MatchString(platformID) || revision < 1 || apply == nil {
 		return false, ErrInput
 	}
+	return s.withNeonControllerState(ctx, platformID, revision, nil, apply)
+}
+
+// WithNeonRecoveryControllerState serializes initial routing with the restore
+// fence and the controller state update. A previously accepted target operation
+// cannot retain authority after the restore lease or its reviewed binding has
+// changed.
+func (s *Store) WithNeonRecoveryControllerState(ctx context.Context, recovery platformbackup.Operation, apply func(NeonControllerContext) (managedplatform.NeonControllerState, bool, error)) (bool, error) {
+	if recovery.Kind != "restore" || !managedPlatformID.MatchString(recovery.TargetPlatformID) || recovery.ExpectedTargetRevision < 1 || apply == nil {
+		return false, ErrInput
+	}
+	return s.withNeonControllerState(ctx, recovery.TargetPlatformID, recovery.ExpectedTargetRevision, &recovery, apply)
+}
+
+func (s *Store) withNeonControllerState(ctx context.Context, platformID string, revision int64, recovery *platformbackup.Operation, apply func(NeonControllerContext) (managedplatform.NeonControllerState, bool, error)) (bool, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback(ctx)
+	var recoveryBinding NeonRecoveryBinding
+	if recovery != nil {
+		recoveryBinding, err = s.neonRecoveryFenceTx(ctx, tx, *recovery, false)
+		if err != nil {
+			return false, err
+		}
+		if recoveryBinding.OperationID != recovery.ID || recoveryBinding.TargetPlatformID != platformID || recoveryBinding.TargetRevision != revision || recoveryBinding.ArtifactID != recovery.ArtifactID {
+			return false, ErrConflict
+		}
+	}
 	op, err := scanManagedPlatformOperation(tx.QueryRow(ctx, `SELECT `+managedPlatformOperationQualifiedColumns+` FROM managed_platform_operations o JOIN managed_platforms p ON p.id=o.platform_id AND p.revision=o.revision WHERE o.platform_id=$1 AND o.revision=$2 AND o.kind IN ('create','update') AND o.status IN ('queued','running','succeeded') AND p.deleted_at IS NULL AND p.kind='neon' FOR SHARE OF p`, platformID, revision))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrConflict
@@ -68,6 +94,9 @@ func (s *Store) WithNeonControllerState(ctx context.Context, platformID string, 
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return false, err
 	}
+	if recovery != nil && input.Binding != recoveryBinding {
+		return false, ErrConflict
+	}
 	rows, err := tx.Query(ctx, `SELECT platform_id,platform_revision,component,resource_kind,resource_id,immutable_generation,owner_operation_id FROM effective_platform_component_resources WHERE platform_id=$1 AND platform_revision<=$2 ORDER BY component,resource_kind LIMIT $3`, platformID, revision, MaxManagedPlatformResources+1)
 	if err != nil {
 		return false, err
@@ -87,6 +116,25 @@ func (s *Store) WithNeonControllerState(ctx context.Context, platformID string, 
 	}
 	if len(input.Claims) > MaxManagedPlatformResources {
 		return false, ErrConflict
+	}
+	if recovery != nil {
+		matches := 0
+		for _, claim := range input.Claims {
+			if claim.Component != "timeline" {
+				continue
+			}
+			matches++
+			var exact bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_component_recovery_overrides WHERE recovery_operation_id=$1 AND platform_id=$2 AND platform_revision=$3 AND component='timeline' AND resource_kind=$4 AND phase='confirmed' AND replacement_resource_id=$5 AND replacement_generation=$6 AND replacement_released_at IS NULL AND adopted_at IS NULL)`, recovery.ID, platformID, revision, claim.Kind, claim.ResourceID, claim.ImmutableGeneration).Scan(&exact); err != nil {
+				return false, err
+			}
+			if !exact {
+				return false, ErrConflict
+			}
+		}
+		if matches != 1 {
+			return false, ErrConflict
+		}
 	}
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_resource_intents WHERE platform_id=$1 AND platform_revision=$2 AND component LIKE 'compute-compute-%' AND confirmed_at IS NULL AND released_at IS NULL)`, platformID, revision).Scan(&input.PendingCompute); err != nil {
 		return false, err
