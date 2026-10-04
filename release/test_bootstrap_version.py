@@ -132,8 +132,13 @@ class BootstrapVersionTests(unittest.TestCase):
             root = Path(temporary)
             for folder in ('installer', 'deploy', 'scripts', 'web/dist/server', 'release-input', 'templates', 'release'):
                 (root / folder).mkdir(parents=True, exist_ok=True)
-            for name in ('upgrade-paths.py', 'upgrade-paths.json'):
+            for name in ('upgrade-paths.py', 'upgrade-paths.json', 'managed-runtime-availability.py'):
                 (root / 'release' / name).write_bytes((ROOT / 'release' / name).read_bytes())
+            for name in ('internal/cluster/database_vitess.go', 'internal/managedplatform/neon_qualification.go',
+                         'internal/managedplatform/supabase_qualification.go'):
+                path=root/name
+                path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_bytes((ROOT/name).read_bytes())
             old = bootstrap.render(TEMPLATE, '0.1.0-alpha.2')
             (root / 'scripts/installer.sh').write_text(old)
             (root / 'installer/pins.json').write_bytes((ROOT / 'installer/pins.json').read_bytes())

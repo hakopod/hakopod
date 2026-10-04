@@ -25,7 +25,7 @@ var supabaseReleaseImages = map[string]string{
 
 // SupabaseReleaseQualified is changed only in a release whose exact source,
 // images and native evidence have passed the committed release verifier.
-func SupabaseReleaseQualified() bool { return true }
+func SupabaseReleaseQualified() bool { return false }
 
 func SupabaseReleaseImages() map[string]string {
 	images := make(map[string]string, len(supabaseReleaseImages))

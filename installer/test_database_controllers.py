@@ -1,7 +1,11 @@
 """Controller installer safety fixtures; no Kubernetes or network calls."""
 import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -31,13 +35,75 @@ class ControllerPlanTests(unittest.TestCase):
         (root/(engine+'.json')).write_bytes(data)
         (root/'manifest.json').write_text(json.dumps({'schema_version':1,'files':{engine+'.json':hashlib.sha256(data).hexdigest()}}))
 
+    def release_bundle(self,root,vitess=False,vitess_objects=None):
+        files={}
+        engines=['postgresql','redis','mongodb']+(['vitess'] if vitess else [])
+        for engine in engines:
+            data=json.dumps({'apiVersion':'v1','kind':'List','items':(vitess_objects or []) if engine=='vitess' else []}).encode()
+            (root/(engine+'.json')).write_bytes(data)
+            files[engine+'.json']=hashlib.sha256(data).hexdigest()
+        manifest={'schema_version':2,'source_revision':'a'*40,'managed_runtimes':{'vitess':vitess,'supabase':False,'neon':False},'files':files}
+        (root/'manifest.json').write_text(json.dumps(manifest))
+        return manifest
+
     def test_vitess_cannot_install_a_shared_controller_or_partial_crds(self):
         for objects in ([], [{'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'unexpected-controller'}}]):
             with tempfile.TemporaryDirectory() as tmp:
                 root=Path(tmp)
-                self.bundle(root,objects,'vitess')
+                self.release_bundle(root,True,objects)
                 with self.assertRaisesRegex(ValueError,'eight'):
                     controllers.load_bundle(root,['vitess'])
+
+    def test_legacy_bundles_cannot_enable_vitess(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            self.bundle(root,[],'vitess')
+            with self.assertRaisesRegex(ValueError,'availability record in schema 2'):
+                controllers.load_bundle(root,['vitess'])
+
+    def test_schema2_enforces_boolean_gates_and_exact_controller_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            original=self.release_bundle(root)
+            controllers.load_bundle(root,['postgresql','redis','mongodb'])
+            for changed in ({'managed_runtimes':{}}, {'managed_runtimes':{'vitess':0,'supabase':False,'neon':False}},
+                            {'managed_runtimes':{'vitess':False,'supabase':False,'neon':False,'extra':False}},
+                            {'source_revision':'HEAD'}, {'source_revision':None}):
+                (root/'manifest.json').write_text(json.dumps(dict(original,**changed)))
+                with self.subTest(changed=changed),self.assertRaisesRegex(ValueError,'availability and source revision'):
+                    controllers.load_bundle(root,['postgresql'])
+            (root/'manifest.json').write_text(json.dumps(original))
+            (root/'vitess.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'files differ'):
+                controllers.load_bundle(root,['postgresql'])
+            original['files']['vitess.json']=hashlib.sha256(b'{}').hexdigest()
+            (root/'manifest.json').write_text(json.dumps(original))
+            with self.assertRaisesRegex(ValueError,'files differ'):
+                controllers.load_bundle(root,['vitess'])
+
+    def test_schema2_checks_unselected_files_and_duplicate_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            self.release_bundle(root)
+            manifest=root/'manifest.json'
+            original=manifest.read_text()
+            manifest.write_text(original.replace('"vitess": false','"vitess": false, "vitess": true'))
+            with self.assertRaisesRegex(ValueError,'Duplicate'):
+                controllers.load_bundle(root,['postgresql'])
+            manifest.write_text(original)
+            (root/'mongodb.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'checksum'):
+                controllers.load_bundle(root,['postgresql'])
+
+    def test_installed_helper_validates_schema2_without_release_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            bundle=root/'bundle';bundle.mkdir()
+            self.release_bundle(bundle)
+            shutil.copyfile(Path(controllers.__file__),root/'database_controllers.py')
+            command=[sys.executable,'-B','-c',"from pathlib import Path; import database_controllers; database_controllers.load_bundle(Path('bundle'), ['postgresql', 'redis', 'mongodb'])"]
+            env=dict(os.environ,PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=str(root))
+            subprocess.run(command,cwd=root,env=env,check=True,capture_output=True,timeout=15)
 
     def test_existing_engine_install_does_not_require_vitess_qualification(self):
         with tempfile.TemporaryDirectory() as tmp:

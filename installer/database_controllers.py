@@ -92,11 +92,44 @@ def bundle_file(path,limit):
     return raw
 
 
+def manifest_object(pairs):
+    result={}
+    for name,value in pairs:
+        if name in result:raise ValueError('Duplicate key in controller manifest')
+        result[name]=value
+    return result
+
+
+def validate_release_availability(bundle,manifest):
+    """Validate the packaged record without a source checkout on the target host."""
+    availability=manifest.get('managed_runtimes')
+    if (not isinstance(availability,dict) or set(availability)!={'vitess','supabase','neon'} or
+            any(type(value) is not bool for value in availability.values()) or
+            not isinstance(manifest.get('source_revision'),str) or not re.fullmatch(r'[0-9a-f]{40}',manifest['source_revision'])):
+        raise ValueError('Controller bundle requires exact managed runtime availability and source revision')
+    expected={'postgresql.json','redis.json','mongodb.json'}
+    if availability['vitess']:expected.add('vitess.json')
+    found=set()
+    for path in bundle.iterdir():
+        if path.name not in expected|{'manifest.json'}:
+            raise ValueError('Controller files differ from packaged release availability')
+        found.add(path.name)
+    if set(manifest['files'])!=expected or found!=expected|{'manifest.json'}:
+        raise ValueError('Controller files differ from packaged release availability')
+    for name,expected_digest in manifest['files'].items():
+        if not isinstance(expected_digest,str) or not re.fullmatch(r'[0-9a-f]{64}',expected_digest) or digest(bundle_file(bundle/name,MAX_BYTES))!=expected_digest:
+            raise ValueError('Controller bundle checksum mismatch')
+
+
 def load_bundle(bundle,engines):
     raw=bundle_file(bundle/'manifest.json',256*1024)
-    manifest=json.loads(raw)
-    if not isinstance(manifest,dict) or type(manifest.get('schema_version')) is not int or manifest['schema_version']!=1 or not isinstance(manifest.get('files'),dict):
-        raise ValueError('Controller manifest requires schema 1 and a file checksum inventory')
+    manifest=json.loads(raw,object_pairs_hook=manifest_object)
+    if not isinstance(manifest,dict) or type(manifest.get('schema_version')) is not int or manifest['schema_version'] not in (1,2) or not isinstance(manifest.get('files'),dict):
+        raise ValueError('Controller manifest requires schema 1 or 2 and a file checksum inventory')
+    if manifest['schema_version']==2:
+        validate_release_availability(bundle,manifest)
+    elif 'vitess.json' in manifest['files'] or (bundle/'vitess.json').exists() or (bundle/'vitess.json').is_symlink():
+        raise ValueError('Vitess requires a release availability record in schema 2')
     if not engines or len(set(engines))!=len(engines) or any(e not in ENGINES for e in engines):
         raise ValueError('Select supported, distinct database controllers')
     objects=[]
