@@ -38,6 +38,69 @@ func mysqlControllerFixture() *appsv1.Deployment {
 	}
 }
 
+func clickHouseControllerFixture() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "clickhouse-operator", Namespace: "clickhouse-operator", Generation: 1},
+		Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"hakopod.io/clickhouse-security": "strict-tls-v1"}},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "clickhouse-operator", Image: clickhouseControllerImage,
+				Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("384Mi"),
+				}},
+			}}},
+		}},
+		Status: appsv1.DeploymentStatus{ObservedGeneration: 1, AvailableReplicas: 1, UpdatedReplicas: 1, Replicas: 1},
+	}
+}
+
+func TestDatabaseRequiresSafeCurrentClickHouseController(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		change     func(*appsv1.Deployment)
+		controller bool
+		api        bool
+		valid      bool
+	}{
+		{name: "valid pinned bounded strict TLS controller", controller: true, api: true, valid: true},
+		{name: "missing controller", api: true},
+		{name: "missing controller API", controller: true},
+		{name: "mutable image", controller: true, api: true, change: func(d *appsv1.Deployment) {
+			d.Spec.Template.Spec.Containers[0].Image = "docker.io/altinity/clickhouse-operator:latest"
+		}},
+		{name: "strict TLS annotation missing", controller: true, api: true, change: func(d *appsv1.Deployment) { d.Spec.Template.Annotations = nil }},
+		{name: "unbounded CPU", controller: true, api: true, change: func(d *appsv1.Deployment) {
+			delete(d.Spec.Template.Spec.Containers[0].Resources.Limits, corev1.ResourceCPU)
+		}},
+		{name: "unbounded memory", controller: true, api: true, change: func(d *appsv1.Deployment) {
+			delete(d.Spec.Template.Spec.Containers[0].Resources.Limits, corev1.ResourceMemory)
+		}},
+		{name: "unavailable controller", controller: true, api: true, change: func(d *appsv1.Deployment) { d.Status.UnavailableReplicas = 1 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deployment := clickHouseControllerFixture()
+			if tc.change != nil {
+				tc.change(deployment)
+			}
+			objects := []runtime.Object{}
+			if tc.controller {
+				objects = append(objects, deployment)
+			}
+			c := &Client{kube: fake.NewClientset(objects...)}
+			if tc.api {
+				c.dynamic = dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{clickhouseDatabaseResource: "ClickHouseInstallationList"})
+			}
+			err := c.DatabaseControllerAvailable(context.Background(), database.Spec{Engine: "clickhouse", Mode: "standalone"})
+			if tc.valid && err != nil {
+				t.Fatal("safe current ClickHouse controller was rejected", err)
+			}
+			if !tc.valid && err == nil {
+				t.Fatal("unsafe or incomplete ClickHouse controller accepted")
+			}
+		})
+	}
+}
+
 func TestDatabaseRequiresSafeCurrentMySQLController(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -108,20 +171,16 @@ func TestDatabaseRequiresSafeCurrentRedisController(t *testing.T) {
 	}
 }
 
-func TestUnqualifiedDatabaseEnginesRemainUnavailable(t *testing.T) {
+func TestUnqualifiedOracleRemainsUnavailable(t *testing.T) {
 	c := &Client{kube: fake.NewClientset(), dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())}
-	for _, engine := range []string{"clickhouse", "oracle"} {
-		t.Run(engine, func(t *testing.T) {
-			err := c.DatabaseControllerAvailable(context.Background(), database.Spec{Engine: engine, Mode: "standalone"})
-			if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
-				t.Fatal("unqualified database engine was available", err)
-			}
-			d := database.Resource{ID: strings.Repeat("a", 32), Project: "demo", Environment: "development", Revision: 1, Spec: database.Spec{Engine: engine}}
-			err = c.ApplyDatabase(context.Background(), d, []byte("development-fixture-password-with-32-bytes"), func() error { return nil })
-			if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
-				t.Fatal("unqualified database apply escaped the release gate", err)
-			}
-		})
+	err := c.DatabaseControllerAvailable(context.Background(), database.Spec{Engine: "oracle", Mode: "standalone"})
+	if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
+		t.Fatal("unqualified Oracle database was available", err)
+	}
+	d := database.Resource{ID: strings.Repeat("a", 32), Project: "demo", Environment: "development", Revision: 1, Spec: database.Spec{Engine: "oracle"}}
+	err = c.ApplyDatabase(context.Background(), d, []byte("development-fixture-password-with-32-bytes"), func() error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
+		t.Fatal("unqualified Oracle database apply escaped the release gate", err)
 	}
 	namespaces, err := c.kube.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
 	if err != nil || len(namespaces.Items) != 0 {
