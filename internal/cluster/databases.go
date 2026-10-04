@@ -72,8 +72,6 @@ func databaseLabels(d database.Resource) map[string]string {
 }
 func (c *Client) DatabaseControllerAvailable(ctx context.Context, s database.Spec) error {
 	switch s.Engine {
-	case "mysql":
-		return fmt.Errorf("MySQL is unavailable in this release pending native qualification")
 	case "clickhouse":
 		return fmt.Errorf("ClickHouse is unavailable in this release pending native qualification")
 	case "oracle":
