@@ -2,13 +2,16 @@
 import json
 from pathlib import Path
 import runpy
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-import build_database_controllers as builder
+ROOT = Path(__file__).resolve().parents[1]
+with patch.object(sys, 'path', [str(ROOT / 'installer'), *sys.path]):
+    import build_database_controllers as builder
 
-AVAILABILITY = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'release/managed-runtime-availability.py'))
+AVAILABILITY = runpy.run_path(str(ROOT / 'release/managed-runtime-availability.py'))
 
 
 class BuildDatabaseControllersTest(unittest.TestCase):
