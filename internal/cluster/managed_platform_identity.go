@@ -194,6 +194,15 @@ func platformTLSSecretName(logical string, data map[string][]byte) string {
 	return "platform-tls-" + managedplatform.ManagedTLSName(logical) + "-" + hex.EncodeToString(digest[:8]) + "-r1"
 }
 
+func platformTLSSecretMatchesLogical(name, logical string) bool {
+	prefix := "platform-tls-" + managedplatform.ManagedTLSName(logical) + "-"
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, "-r1") || len(name) != len(prefix)+16+3 {
+		return false
+	}
+	_, err := hex.DecodeString(name[len(prefix) : len(prefix)+16])
+	return err == nil
+}
+
 func validPlatformTLSLeaf(data, credentials map[string][]byte, ca *x509.Certificate, caPEM []byte, names []string, ips []net.IP, now time.Time, proxy bool) bool {
 	return validPlatformTLSLeafUntil(data, credentials, ca, caPEM, names, ips, now, now.Add(platformTLSRenewBefore), proxy)
 }
@@ -311,7 +320,7 @@ func (c *Client) prepareManagedPlatformTLS(ctx context.Context, state ManagedPla
 		var data map[string][]byte
 		for i := range found.Items {
 			candidate := &found.Items[i]
-			if !strings.HasPrefix(candidate.Name, "platform-tls-"+managedplatform.ManagedTLSName(logical)+"-") {
+			if !platformTLSSecretMatchesLogical(candidate.Name, logical) {
 				continue
 			}
 			if err = verifySupabaseOwned(candidate, op.PlatformID, ns.UID); err != nil {
@@ -331,6 +340,11 @@ func (c *Client) prepareManagedPlatformTLS(ctx context.Context, state ManagedPla
 		if data == nil {
 			data, err = issuePlatformTLSLeaf(credentials, ca, signer, root.Data["ca.crt"], names, ips, now, proxy)
 			if err != nil {
+				return err
+			}
+		}
+		if spec.Kind == "neon" && logical == "compute-auth" {
+			if err = normalizeNeonComputeTLSKey(data); err != nil {
 				return err
 			}
 		}
@@ -421,7 +435,7 @@ func (c *Client) readManagedPlatformTLS(ctx context.Context, platformID string, 
 		selected := ""
 		for i := range inventory.Items {
 			candidate := &inventory.Items[i]
-			if !strings.HasPrefix(candidate.Name, "platform-tls-"+managedplatform.ManagedTLSName(logical)+"-") {
+			if !platformTLSSecretMatchesLogical(candidate.Name, logical) {
 				continue
 			}
 			if err = verifySupabaseOwned(candidate, platformID, ns.UID); err != nil {
@@ -429,6 +443,12 @@ func (c *Client) readManagedPlatformTLS(ctx context.Context, platformID string, 
 			}
 			if candidate.Immutable == nil || !*candidate.Immutable || candidate.Name != platformTLSSecretName(logical, candidate.Data) || claims["secret."+candidate.Name].ResourceID != string(candidate.UID) {
 				return fmt.Errorf("managed platform recovery TLS snapshot ownership changed")
+			}
+			if logical == "compute-auth" {
+				normalized := copySecretData(candidate.Data)
+				if normalizeNeonComputeTLSKey(normalized) != nil || !bytes.Equal(normalized["tls.key"], candidate.Data["tls.key"]) {
+					continue
+				}
 			}
 			if !validPlatformTLSLeafUntil(candidate.Data, credentials, ca, root.Data["ca.crt"], names, ips, time.Now(), time.Now(), logical == "proxy-auth") {
 				continue

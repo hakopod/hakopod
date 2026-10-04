@@ -81,6 +81,9 @@ func PrepareNeonAuthenticationSnapshots(request *NeonRuntimeRequest, key []byte,
 		}
 		prepared[name] = data
 	} else {
+		if err = normalizeNeonComputeTLSKey(data); err != nil {
+			return err
+		}
 		data["config.json"], err = managedplatform.BindNeonSQLAuthentication(data["config.json"], request.ProxyEndpoint.Roles)
 		if err != nil {
 			return err

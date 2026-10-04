@@ -1,6 +1,14 @@
 package cluster
 
 import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 	"time"
 
@@ -29,6 +37,9 @@ func TestValidateNeonTLSSecretSnapshotsRequiresOwnedNamesAndSharedBrokerTrust(t 
 		spec.Secrets[logical] = managedplatform.SecretReference{Name: logical, Revision: 1}
 		values[logical+"-r1"] = map[string][]byte{"tls.crt": identity["tls.crt"], "tls.key": identity["tls.key"], "ca.crt": identity["ca.crt"]}
 	}
+	if err := normalizeNeonComputeTLSKey(values["compute-auth-r1"]); err != nil {
+		t.Fatal(err)
+	}
 	if err := validateNeonTLSSecretSnapshots(values, spec, platformID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -48,4 +59,69 @@ func TestValidateNeonTLSSecretSnapshotsRequiresOwnedNamesAndSharedBrokerTrust(t 
 	if err := validateNeonTLSSecretSnapshots(values, spec, platformID, time.Now()); err == nil {
 		t.Fatal("mismatched broker private key was accepted")
 	}
+}
+
+func TestNeonComputeTLSKeyEncodingPreservesIdentityAndRotatesSnapshot(t *testing.T) {
+	data := databaseTLSFixture(t, []string{"neon-compute-0-control"}, false)
+	priorKey := append([]byte(nil), data["tls.key"]...)
+	priorCertificate := append([]byte(nil), data["tls.crt"]...)
+	priorName := platformTLSSecretName("compute-auth", data)
+	priorBlock, _ := pem.Decode(priorKey)
+	parsed, err := x509.ParsePKCS8PrivateKey(priorBlock.Bytes)
+	priorPrivate, ok := parsed.(*ecdsa.PrivateKey)
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if err = normalizeNeonComputeTLSKey(data); err != nil {
+		t.Fatal(err)
+	}
+	block, rest := pem.Decode(data["tls.key"])
+	if block == nil || block.Type != "EC PRIVATE KEY" || len(bytes.TrimSpace(rest)) != 0 {
+		t.Fatal("compute key was not encoded as one SEC1 PEM block")
+	}
+	key, err := x509.ParseECPrivateKey(block.Bytes)
+	if err != nil || !key.PublicKey.Equal(&priorPrivate.PublicKey) {
+		t.Fatal("compute key identity changed during encoding")
+	}
+	if !bytes.Equal(data["tls.crt"], priorCertificate) || platformTLSSecretName("compute-auth", data) == priorName {
+		t.Fatal("compute snapshot conversion changed its certificate or retained its old content identity")
+	}
+	normalized := append([]byte(nil), data["tls.key"]...)
+	if err = normalizeNeonComputeTLSKey(data); err != nil || !bytes.Equal(data["tls.key"], normalized) {
+		t.Fatal("supplied SEC1 compute key was not preserved")
+	}
+	if _, err = tls.X509KeyPair(data["tls.crt"], data["tls.key"]); err != nil {
+		t.Fatal("converted key no longer matches its certificate", err)
+	}
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(rsaKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := map[string][]byte{"tls.key": pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})}
+	if err = normalizeNeonComputeTLSKey(invalid); err == nil {
+		t.Fatal("unsupported RSA compute key was accepted")
+	}
+	for _, rejected := range []map[string][]byte{{"tls.key": []byte("not a PEM key")}, {"tls.key": p384PKCS8(t)}} {
+		before := append([]byte(nil), rejected["tls.key"]...)
+		if err = normalizeNeonComputeTLSKey(rejected); err == nil || !bytes.Equal(rejected["tls.key"], before) {
+			t.Fatal("invalid compute key was accepted or changed")
+		}
+	}
+}
+
+func p384PKCS8(t *testing.T) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
 }

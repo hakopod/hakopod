@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -22,7 +23,8 @@ func TestNeonAuthenticationSnapshotKeepsUserConfigurationAndNoSigner(t *testing.
 	}
 	compute := request.SecretSnapshots["compute-auth-r1"]
 	compute["config.json"] = []byte(`{"spec":{"storage_auth_token":"old","mode":"Replica","format_version":1,"suspend_timeout_seconds":-1,"cluster":{"roles":[{"name":"cloud_admin","options":[]}],"databases":[],"settings":[]}},"compute_ctl_config":{"jwks":{"keys":[]}}}`)
-	compute["tls.crt"], compute["tls.key"], compute["ca.crt"] = []byte("leaf-certificate"), []byte("leaf-key"), []byte("issuer-certificate")
+	identity := databaseTLSFixture(t, []string{"neon-compute-0-control"}, false)
+	compute["tls.crt"], compute["tls.key"], compute["ca.crt"] = identity["tls.crt"], identity["tls.key"], identity["ca.crt"]
 	if err := PrepareNeonAuthenticationSnapshots(&request, bytes.Repeat([]byte{9}, 32), "create"); err != nil {
 		t.Fatal(err)
 	}
@@ -38,10 +40,16 @@ func TestNeonAuthenticationSnapshotKeepsUserConfigurationAndNoSigner(t *testing.
 	if !bytes.Contains(request.SecretSnapshots["compute-auth-r1"]["config.json"], []byte(sqlVerifier)) {
 		t.Fatal("accepted compute snapshot lacks the proxy's SQL verifier")
 	}
-	for _, field := range []string{"tls.crt", "tls.key", "ca.crt"} {
+	for _, field := range []string{"tls.crt", "ca.crt"} {
 		if !bytes.Equal(request.SecretSnapshots["compute-auth-r1"][field], compute[field]) {
 			t.Fatal("compute leaf TLS identity changed during authentication binding")
 		}
+	}
+	if bytes.Equal(request.SecretSnapshots["compute-auth-r1"]["tls.key"], compute["tls.key"]) {
+		t.Fatal("provider-incompatible PKCS8 key was retained in the accepted compute snapshot")
+	}
+	if pair, err := tls.X509KeyPair(request.SecretSnapshots["compute-auth-r1"]["tls.crt"], request.SecretSnapshots["compute-auth-r1"]["tls.key"]); err != nil || pair.PrivateKey == nil {
+		t.Fatal("compute TLS key conversion changed its certificate identity", err)
 	}
 	for _, logical := range []string{"controller-auth", "pageserver-auth", "safekeeper-auth"} {
 		data := request.SecretSnapshots[logical+"-r1"]
