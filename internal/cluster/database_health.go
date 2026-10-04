@@ -135,25 +135,7 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 				}
 			}
 		}
-		minimum := 1
-		if pooled {
-			minimum = d.Spec.Pooling.Instances
-		}
-		if endpoint.Purpose == "read_only" {
-			minimum = d.Spec.Replicas
-		}
-		if endpoint.Purpose == "cluster" {
-			minimum = d.Spec.Shards
-			if d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" {
-				minimum = d.Spec.Members()
-			}
-		}
-		if routed {
-			minimum = d.Spec.RouterInstances()
-			if d.Spec.Engine == "vitess" {
-				minimum = d.Spec.VitessGateways()
-			}
-		}
+		minimum := databaseEndpointMinimum(d, endpoint, pooled, routed)
 		if len(found) != minimum {
 			return fmt.Errorf("database service has not published the expected ready members")
 		}
@@ -187,6 +169,34 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 		}
 	}
 	return nil
+}
+
+func databaseEndpointMinimum(d database.Resource, endpoint database.Endpoint, pooled, routed bool) int {
+	minimum := 1
+	if pooled {
+		minimum = d.Spec.Pooling.Instances
+	}
+	if endpoint.Purpose == "read_only" {
+		minimum = d.Spec.Replicas
+	}
+	if endpoint.Purpose == "cluster" {
+		minimum = d.Spec.Shards
+		if d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" {
+			minimum = d.Spec.Members()
+		}
+	}
+	// ClickHouse exposes cluster, native and HTTPS views through the same
+	// all-ready-member service, so each view must retain the complete topology.
+	if d.Spec.Engine == "clickhouse" && (endpoint.Purpose == "native" || endpoint.Purpose == "https") {
+		minimum = d.Spec.Members()
+	}
+	if routed {
+		minimum = d.Spec.RouterInstances()
+		if d.Spec.Engine == "vitess" {
+			minimum = d.Spec.VitessGateways()
+		}
+	}
+	return minimum
 }
 
 // A healthy pod and a valid certificate do not prove the Service routes to
