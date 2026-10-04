@@ -528,6 +528,17 @@ exec sleep 86400`
 	if status, code := client.request("POST", "/deployments", map[string]any{"project": project, "environment": environment, "spec": application, "expected_revision": 0}, &deployment, "vitess-http-client-create"); status != http.StatusAccepted {
 		t.Fatal("application deployment", status, code)
 	}
+	applicationID := deployment.ApplicationID
+	t.Cleanup(func() {
+		stopDatabaseWorkers()
+		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer stop()
+		// The stateless demo fixture must also be removed when a later check fails.
+		// This path verifies namespace ownership and refuses persistent volumes.
+		if err := runtime.RemoveShowcase(cleanup, applicationID); err != nil {
+			t.Error("cleanup acceptance application", err)
+		}
+	})
 	deployment = waitDeployment(t, ctx, client, deployment)
 	var connectionPlan store.DatabaseConnectionPlan
 	if status, _ := client.request("POST", "/databases/"+source.ID+"/connection-plan", map[string]any{"application_id": deployment.ApplicationID, "service": "web", "variable": "DATABASE_URL", "endpoint": "read_write", "cluster_aware": false}, &connectionPlan, ""); status != http.StatusOK {
