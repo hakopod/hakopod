@@ -42,6 +42,8 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 		prepareFails      bool
 		retry             bool
 		retryCancel       bool
+		absentPlacement   bool
+		retryLedger       bool
 		wantError         bool
 	}{
 		{name: "pageserver exists before safekeeper selection"},
@@ -51,6 +53,14 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 		{name: "all provider timelines absent", pageStatus: 404},
 		{name: "retry after parent starts deletion", retry: true},
 		{name: "retry after parent deletion before cancellation", retryCancel: true},
+		{name: "resume ownership deletion after placement is absent", absentPlacement: true, pageStatus: 404},
+		{name: "resume interrupted ownership tombstone", absentPlacement: true, pageStatus: 404, retryLedger: true},
+		{name: "resume after timeline claim and intent are released", absentPlacement: true, pageStatus: 404, noIntent: true},
+		{name: "released timeline still requires terminal ownership proof", absentPlacement: true, pageStatus: 404, noIntent: true, retryLedger: true},
+		{name: "absent placement refuses foreign preflight", absentPlacement: true, pageStatus: 404, preflightFails: true, wantError: true},
+		{name: "absent placement refuses failed preparation", absentPlacement: true, pageStatus: 404, prepareFails: true, wantError: true},
+		{name: "absent placement refuses attached unclaimed compute", absentPlacement: true, pageStatus: 404, attachedCompute: true, wantError: true},
+		{name: "absent placement refuses remaining safekeeper", absentPlacement: true, pageStatus: 404, safekeeperMask: 1, wantError: true},
 		{name: "missing intent", noIntent: true, wantError: true},
 		{name: "confirmed intent is not pending authority", mutateIntent: func(i *DurableResourceIntent) { i.Confirmed = true }, wantError: true},
 		{name: "foreign intent platform", mutateIntent: func(i *DurableResourceIntent) { i.PlatformID = strings.Repeat("f", 32) }, wantError: true},
@@ -115,7 +125,8 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 			for k, v := range claims {
 				claimsBefore[k] = v
 			}
-			parentPresent, parentState, fence := true, "completed", ""
+			parentPresent, parentState, fence := !test.absentPlacement, "completed", ""
+			parentTombstoned := false
 			pagePresent := test.pageStatus != 404
 			skMask := test.safekeeperMask
 			preflights, preparations, parentDeletes, childDeletes := 0, 0, 0, 0
@@ -196,10 +207,11 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 					}
 					if req.URL.Query().Get("validate_only") == "true" {
 						preflights++
-						if !parentPresent {
-							status = 404
+						if parentTombstoned {
+							body = nil
 							break
 						}
+						body = map[string]any{"schema_version": 1, "digest": strings.Repeat("a", 64)}
 						if test.preflightFails {
 							status = 409
 						}
@@ -220,10 +232,11 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 					}
 					parentDeletes++
 					pagePresent, skMask = false, 0
-					if test.retry && parentDeletes == 1 {
+					if (test.retry || test.retryLedger) && parentDeletes == 1 {
 						status = 202
 					} else {
 						parentPresent = false
+						parentTombstoned = true
 						status = 204
 					}
 				case req.Method == http.MethodDelete || req.Method == http.MethodPost:
@@ -236,7 +249,7 @@ func TestDurableNeonDeletesPendingTimelineThroughOwnedParent(t *testing.T) {
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(string(encoded))), Header: make(http.Header)}, nil
 			})}}}
 			err = runtime.Deprovision(context.Background(), durableNeonDeleteRequest())
-			if test.retry {
+			if test.retry || test.retryLedger {
 				if err == nil || !strings.Contains(err.Error(), "still in progress") {
 					t.Fatalf("expected resumable parent deletion, got %v", err)
 				}

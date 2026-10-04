@@ -948,19 +948,17 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	}
 	var timelineExists bool
 	var observedTimelineToken string
-	parentDeleted := !tenantExists && tenantClaimed && ownershipRequired
-	if parentDeleted {
-		_, owner, parseErr := parseNeonOwnedResourceID(tenantClaim.ResourceID)
-		if parseErr != nil {
-			return parseErr
+	parentAbsent := !tenantExists && tenantClaimed && ownershipRequired
+	parentDeletionPending := false
+	if parentAbsent {
+		// The controller can remove placement before completing its ownership
+		// tombstone. Its canonical timeline endpoint then returns 503. Only an
+		// exact-owner preflight can distinguish a tombstone from work to resume.
+		terminal, verifyErr := r.inspectAbsentTenantDeletion(ctx, request.TenantID, tenantClaim)
+		if verifyErr != nil {
+			return verifyErr
 		}
-		// The provider returns this 404 only for a tombstone carrying the
-		// same tenant token. A missing tenant's canonical timeline endpoint
-		// returns 503, which cannot otherwise establish child absence.
-		_, status, verifyErr := r.control.requestOwned(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+request.TenantID+"?validate_only=true", nil, owner)
-		if verifyErr != nil || status != http.StatusNotFound {
-			return fmt.Errorf("verify deleted Neon tenant ownership returned HTTP %d: %w", status, verifyErr)
-		}
+		parentDeletionPending = !terminal
 	} else if pendingTimelineFound {
 		timelineExists, err = r.inspectPendingTimelineDeletion(ctx, request, pendingTimeline)
 	} else {
@@ -977,8 +975,8 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	if err != nil {
 		return err
 	}
-	if parentDeleted && safekeeperTimelineExists {
-		return fmt.Errorf("Neon deleted tenant still has a safekeeper timeline")
+	if parentAbsent && safekeeperTimelineExists {
+		return fmt.Errorf("Neon absent tenant still has a safekeeper timeline")
 	}
 	preparedDeletion := ownershipRequired && tenantOwnershipState == "deleting" && validNeonComputeOwnershipToken(observedDeletionToken)
 	if pendingTimelineFound && (timelineExists || safekeeperTimelineExists) {
@@ -1091,7 +1089,7 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 		}
 	}
 	tenantDeletionToken := ""
-	if tenantExists && ownershipRequired {
+	if (tenantExists || parentDeletionPending) && ownershipRequired {
 		_, ownershipToken, parseErr := parseNeonOwnedResourceID(claims["tenant"].ResourceID)
 		if parseErr != nil {
 			return parseErr
@@ -1188,7 +1186,7 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 			return err
 		}
 	}
-	if tenantExists {
+	if tenantExists || parentDeletionPending {
 		if err = r.lifecycle.Heartbeat(ctx); err != nil {
 			return err
 		}
@@ -1213,6 +1211,15 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 		if tenantExists {
 			return fmt.Errorf("Neon tenant deletion is still in progress")
 		}
+		if ownershipRequired {
+			terminal, verifyErr := r.inspectAbsentTenantDeletion(ctx, request.TenantID, claims["tenant"])
+			if verifyErr != nil {
+				return verifyErr
+			}
+			if !terminal {
+				return fmt.Errorf("Neon tenant ownership deletion is still in progress")
+			}
+		}
 	}
 	if pendingTimelineFound {
 		if err = r.lifecycle.Cancel(ctx, pendingTimeline); err != nil {
@@ -1223,6 +1230,53 @@ func (r *DurableNeonRuntime) Deprovision(ctx context.Context, request NeonLifecy
 	// owned namespace is gone. The tenant claim retains exact tombstone
 	// authority if a crash occurs before namespace deletion.
 	return nil
+}
+
+func (r *DurableNeonRuntime) inspectAbsentTenantDeletion(ctx context.Context, tenantID string, claim DurableResourceClaim) (bool, error) {
+	_, owner, err := parseNeonOwnedResourceID(claim.ResourceID)
+	if err != nil {
+		return false, err
+	}
+	body, status, err := r.control.requestOwned(ctx, r.control.config.StorageController, http.MethodDelete, "/v1/tenant/"+tenantID+"?validate_only=true", nil, owner)
+	if err != nil {
+		return false, fmt.Errorf("verify absent Neon tenant ownership: %w", err)
+	}
+	if status != http.StatusOK {
+		return false, fmt.Errorf("verify absent Neon tenant ownership returned HTTP %d", status)
+	}
+	// The pinned controller translates its exact-owner tombstone to 200/null.
+	// A digest instead authorizes continuation through the prepared delete;
+	// it never establishes that the owned remote data has been removed.
+	if strings.TrimSpace(string(body)) == "null" {
+		return true, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(body)))
+	opening, err := decoder.Token()
+	if err != nil || opening != json.Delim('{') || !json.Valid(body) {
+		return false, fmt.Errorf("absent Neon tenant deletion preflight is malformed")
+	}
+	preflight := map[string]json.RawMessage{}
+	for decoder.More() {
+		key, keyErr := decoder.Token()
+		name, ok := key.(string)
+		if keyErr != nil || !ok || preflight[name] != nil || len(preflight) >= 2 {
+			return false, fmt.Errorf("absent Neon tenant deletion preflight is malformed")
+		}
+		var value json.RawMessage
+		if err = decoder.Decode(&value); err != nil {
+			return false, fmt.Errorf("absent Neon tenant deletion preflight is malformed")
+		}
+		preflight[name] = value
+	}
+	if len(preflight) != 2 {
+		return false, fmt.Errorf("absent Neon tenant deletion preflight is malformed")
+	}
+	var schema int
+	var digest string
+	if json.Unmarshal(preflight["schema_version"], &schema) != nil || schema != 1 || json.Unmarshal(preflight["digest"], &digest) != nil || !validLowerHex(digest, 64) {
+		return false, fmt.Errorf("absent Neon tenant deletion preflight is malformed")
+	}
+	return false, nil
 }
 
 func validateNeonDeletionIdentity(request NeonLifecycleRequest) error {

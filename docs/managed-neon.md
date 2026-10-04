@@ -94,6 +94,11 @@ ownership token and request contents before resuming. Hakopod then reads the
 current provider state before confirming the resource. A matching name or
 configuration does not establish ownership.
 
+A tenant can disappear from the controller's active state before its deletion
+finishes. Hakopod checks the provider's durable ownership record, resumes any
+pending deletion with its prepared token, and requires confirmation that the
+owned data was deleted before removing the Kubernetes namespace.
+
 The worker holds a 30-second lease that prevents another worker from running
 the same operation. It renews that lease every five seconds while checking the
 operation's authority, so PostgreSQL initialization can continue safely.
