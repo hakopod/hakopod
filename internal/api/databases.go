@@ -417,11 +417,34 @@ func (s *Server) reconcileDatabase(parent context.Context) {
 			}
 		}
 	}
-	if err = s.Cluster.ApplyDatabase(ctx, d, password, before); err != nil {
-		finish("failed", "reconcile", "Database resources could not be reconciled. Verify controller availability, capacity and ownership.", d.Observation)
+	reconcileDatabaseProvisioning(ctx, s.Cluster, d, op.Phase, password, before, finish)
+}
+
+type databaseProvisioningRuntime interface {
+	ApplyDatabase(context.Context, database.Resource, []byte, func() error) error
+	ObserveDatabase(context.Context, database.Resource) (database.Observation, error)
+	ReconcileVitessBackupAuthority(context.Context, database.Resource, func() error) error
+}
+
+func reconcileDatabaseProvisioning(ctx context.Context, runtime databaseProvisioningRuntime, d database.Resource, phase string, password []byte, before func() error, finish func(string, string, string, database.Observation)) {
+	// Vitess reconciliation and native health each need their own bounded step.
+	// Persist the handoff so a process restart cannot spend the observation budget
+	// applying the same resources again. A pending observation returns to apply.
+	if d.Spec.Engine != "vitess" || phase != "observing" {
+		if err := runtime.ApplyDatabase(ctx, d, password, before); err != nil {
+			finish("failed", "reconcile", "Database resources could not be reconciled. Verify controller availability, capacity and ownership.", d.Observation)
+			return
+		}
+		if d.Spec.Engine == "vitess" {
+			finish("queued", "observing", "Waiting for database health checks.", d.Observation)
+			return
+		}
+	} else if err := runtime.ReconcileVitessBackupAuthority(ctx, d, before); err != nil {
+		// A restart may load different storage approvals between the two steps.
+		finish("failed", "reconcile", "Vitess native backup authority could not be verified.", d.Observation)
 		return
 	}
-	observed, err := s.Cluster.ObserveDatabase(ctx, d)
+	observed, err := runtime.ObserveDatabase(ctx, d)
 	if err != nil {
 		observed.Status = "pending"
 		observed.Message = "Waiting for a verified database observation."
