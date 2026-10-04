@@ -33,6 +33,10 @@ func (r *DurableNeonRuntime) SetComputeConfigResolver(resolve func(context.Conte
 	r.control.config.ResolveComputeConfig = resolve
 }
 
+func (r *DurableNeonRuntime) SetTimelineRoutingObserver(observe func(context.Context, NeonTimelineRoutingObservation) error) {
+	r.control.config.ObserveTimelineRouting = observe
+}
+
 func NewDurableNeonRuntime(config NeonRuntimeConfig, lifecycle DurableLifecycle) (*DurableNeonRuntime, error) {
 	if lifecycle == nil {
 		return nil, fmt.Errorf("durable Neon runtime requires PostgreSQL lifecycle state")
@@ -520,6 +524,7 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 	if err != nil {
 		return state, err
 	}
+	var timelinePlacement neonTimelinePlacement
 	claimedTimelineIdentity, timelineOwnershipToken := "", ""
 	if timelineOwned && ownershipRequired {
 		claimedTimelineIdentity, timelineOwnershipToken, err = parseNeonOwnedResourceID(timelineClaim.ResourceID)
@@ -572,10 +577,11 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			var timelineIdentity string
 			var timelineGeneration int64
 			var safekeeperOwnershipToken string
-			observed, timelineIdentity, timelineGeneration, state.SafekeeperHosts, safekeeperOwnershipToken, err = r.inspectSafekeeperTimeline(ctx, request.TenantID, request.TimelineID)
+			timelinePlacement, err = r.inspectSafekeeperTimelinePlacement(ctx, request.TenantID, request.TimelineID, "")
 			if err != nil {
 				return state, err
 			}
+			observed, timelineIdentity, timelineGeneration, state.SafekeeperHosts, safekeeperOwnershipToken = timelinePlacement.Exists, timelinePlacement.Identity, timelinePlacement.Generation, timelinePlacement.Hosts, timelinePlacement.OwnershipToken
 			if ownershipRequired && safekeeperOwnershipToken != intent.ID {
 				return state, fmt.Errorf("Neon safekeeper timeline exists under a different ownership token")
 			}
@@ -607,10 +613,11 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 			var timelineIdentity string
 			var timelineGeneration int64
 			var safekeeperOwnershipToken string
-			observed, timelineIdentity, timelineGeneration, state.SafekeeperHosts, safekeeperOwnershipToken, err = r.inspectSafekeeperTimeline(ctx, request.TenantID, request.TimelineID)
+			timelinePlacement, err = r.inspectSafekeeperTimelinePlacement(ctx, request.TenantID, request.TimelineID, "")
 			if err != nil {
 				return state, err
 			}
+			observed, timelineIdentity, timelineGeneration, state.SafekeeperHosts, safekeeperOwnershipToken = timelinePlacement.Exists, timelinePlacement.Identity, timelinePlacement.Generation, timelinePlacement.Hosts, timelinePlacement.OwnershipToken
 			if !observed || ownershipRequired && (claimedTimelineIdentity != timelineIdentity || timelineOwnershipToken != observedTimelineToken || timelineOwnershipToken != safekeeperOwnershipToken) || !ownershipRequired && timelineClaim.ResourceID != timelineIdentity || timelineClaim.ImmutableGeneration != timelineGeneration {
 				return state, fmt.Errorf("Neon timeline safekeeper identity changed")
 			}
@@ -650,10 +657,11 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 		}
 		var timelineIdentity string
 		var timelineGeneration int64
-		timelineIdentity, timelineGeneration, state.SafekeeperHosts, err = verifiedTimelineCreate(response, request.TenantID, request.TimelineID)
+		timelinePlacement, err = verifiedTimelineCreate(response, request.TenantID, request.TimelineID)
 		if err != nil {
 			return state, err
 		}
+		timelineIdentity, timelineGeneration, state.SafekeeperHosts = timelinePlacement.Identity, timelinePlacement.Generation, timelinePlacement.Hosts
 		state.SafekeeperCount = len(state.SafekeeperHosts)
 		if !r.control.config.allowMissingStorageRegistrationsForTest {
 			var expectedIdentity string
@@ -680,6 +688,18 @@ func (r *DurableNeonRuntime) Provision(ctx context.Context, request NeonLifecycl
 	}
 	state.TimelineRequested = true
 	state.TimelineCreated = true
+	if r.control.config.ObserveTimelineRouting != nil {
+		if !ownershipRequired || r.control.config.allowMissingStorageRegistrationsForTest {
+			return state, fmt.Errorf("Neon timeline routing requires verified provider ownership and membership")
+		}
+		observation, observationErr := timelinePlacement.routingObservation(timelineClaim, request.TenantID, request.TimelineID)
+		if observationErr != nil {
+			return state, observationErr
+		}
+		if err = r.control.config.ObserveTimelineRouting(ctx, observation); err != nil {
+			return state, err
+		}
+	}
 
 	for _, target := range r.control.config.Computes {
 		component := "compute-" + target.Name
@@ -1826,7 +1846,32 @@ func verifiedTenantCreate(body []byte, tenantID string) (string, int64, error) {
 	return tenantID + "@" + node, response.Shards[0].Generation, nil
 }
 
-func verifiedTimelineCreate(body []byte, tenantID, timelineID string) (string, int64, []string, error) {
+type neonTimelinePlacement struct {
+	Exists         bool
+	Identity       string
+	Generation     int64
+	Hosts          []string
+	OwnershipToken string
+	Members        []neonTimelineMember
+}
+
+func (p neonTimelinePlacement) routingObservation(claim DurableResourceClaim, tenantID, timelineID string) (NeonTimelineRoutingObservation, error) {
+	observation := NeonTimelineRoutingObservation{Claim: claim, Routing: NeonSafekeeperNotification{TenantID: tenantID, TimelineID: timelineID, Generation: p.Generation}}
+	if !p.Exists {
+		return observation, fmt.Errorf("Neon timeline routing has not been observed")
+	}
+	for _, member := range p.Members {
+		id, err := strconv.ParseInt(member.ID, 10, 64)
+		if err != nil {
+			return observation, fmt.Errorf("Neon timeline routing contains an invalid member")
+		}
+		host := member.Host
+		observation.Routing.Safekeepers = append(observation.Routing.Safekeepers, NeonSafekeeperMember{ID: id, Hostname: &host})
+	}
+	return observation, nil
+}
+
+func verifiedTimelineCreate(body []byte, tenantID, timelineID string) (neonTimelinePlacement, error) {
 	var response struct {
 		TenantID    string `json:"tenant_id"`
 		TimelineID  string `json:"timeline_id"`
@@ -1841,16 +1886,20 @@ func verifiedTimelineCreate(body []byte, tenantID, timelineID string) (string, i
 		} `json:"safekeepers"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
-		return "", 0, nil, fmt.Errorf("decode Neon timeline create response: %w", err)
+		return neonTimelinePlacement{}, fmt.Errorf("decode Neon timeline create response: %w", err)
 	}
 	if response.TenantID != tenantID || response.TimelineID != timelineID || response.Safekeepers == nil || response.Safekeepers.TenantID != tenantID || response.Safekeepers.TimelineID != timelineID || response.Safekeepers.Generation < 1 {
-		return "", 0, nil, fmt.Errorf("Neon timeline response omitted its exact tenant, timeline, or safekeeper generation")
+		return neonTimelinePlacement{}, fmt.Errorf("Neon timeline response omitted its exact tenant, timeline, or safekeeper generation")
 	}
 	members := make([]neonTimelineMember, 0, len(response.Safekeepers.Members))
 	for _, member := range response.Safekeepers.Members {
 		members = append(members, neonTimelineMember{ID: member.ID.String(), Host: member.Hostname})
 	}
-	return verifiedNeonTimelineIdentity(tenantID, timelineID, response.Safekeepers.Generation, members)
+	identity, generation, hosts, err := verifiedNeonTimelineIdentity(tenantID, timelineID, response.Safekeepers.Generation, members)
+	if err != nil {
+		return neonTimelinePlacement{}, err
+	}
+	return neonTimelinePlacement{Exists: true, Identity: identity, Generation: generation, Hosts: hosts, Members: members}, nil
 }
 
 type neonTimelineMember struct {
@@ -1988,8 +2037,13 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimeline(ctx context.Context, tena
 }
 
 func (r *DurableNeonRuntime) inspectSafekeeperTimelineWithPendingIntent(ctx context.Context, tenantID, timelineID, pendingToken string) (bool, string, int64, []string, string, error) {
+	placement, err := r.inspectSafekeeperTimelinePlacement(ctx, tenantID, timelineID, pendingToken)
+	return placement.Exists, placement.Identity, placement.Generation, placement.Hosts, placement.OwnershipToken, err
+}
+
+func (r *DurableNeonRuntime) inspectSafekeeperTimelinePlacement(ctx context.Context, tenantID, timelineID, pendingToken string) (neonTimelinePlacement, error) {
 	if pendingToken != "" && (!validNeonComputeOwnershipToken(pendingToken) || r.control.config.allowUnqualifiedOwnershipProtocolForTest) {
-		return false, "", 0, nil, "", fmt.Errorf("Neon pending safekeeper inspection requires an exact ownership token")
+		return neonTimelinePlacement{}, fmt.Errorf("Neon pending safekeeper inspection requires an exact ownership token")
 	}
 	path := "/v1/tenant/" + tenantID + "/timeline/" + timelineID
 	expectedMembers := make(map[string]string, len(r.control.config.Safekeepers))
@@ -2000,6 +2054,7 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimelineWithPendingIntent(ctx cont
 	var expectedIdentity string
 	var expectedGeneration int64
 	var expectedHosts []string
+	var expectedTimelineMembers []neonTimelineMember
 	expectedOwnershipToken := pendingToken
 	anyExists := false
 	for _, node := range r.control.config.Safekeepers {
@@ -2010,24 +2065,24 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimelineWithPendingIntent(ctx cont
 		}
 		statusBody, statusCode, err := r.control.request(ctx, target, http.MethodGet, "/v1/status", nil)
 		if err != nil || statusCode != http.StatusOK {
-			return false, "", 0, nil, "", fmt.Errorf("inspect Neon safekeeper %s identity returned HTTP %d: %w", node.Name, statusCode, err)
+			return neonTimelinePlacement{}, fmt.Errorf("inspect Neon safekeeper %s identity returned HTTP %d: %w", node.Name, statusCode, err)
 		}
 		var local struct {
 			ID json.Number `json:"id"`
 		}
 		if err = json.Unmarshal(statusBody, &local); err != nil || local.ID.String() != strconv.FormatInt(node.NodeID, 10) {
-			return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper %s node identity changed", node.Name)
+			return neonTimelinePlacement{}, fmt.Errorf("Neon safekeeper %s node identity changed", node.Name)
 		}
 		body, status, err := r.control.request(ctx, target, http.MethodGet, path, nil)
 		if err != nil {
-			return false, "", 0, nil, "", err
+			return neonTimelinePlacement{}, err
 		}
 		exists := status == http.StatusOK
 		if status != http.StatusOK && status != http.StatusNotFound {
-			return false, "", 0, nil, "", fmt.Errorf("inspect Neon safekeeper %s timeline returned HTTP %d", node.Name, status)
+			return neonTimelinePlacement{}, fmt.Errorf("inspect Neon safekeeper %s timeline returned HTTP %d", node.Name, status)
 		}
 		if expectedExists != nil && *expectedExists != exists && pendingToken == "" {
-			return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper timeline presence is inconsistent")
+			return neonTimelinePlacement{}, fmt.Errorf("Neon safekeeper timeline presence is inconsistent")
 		}
 		if expectedExists == nil {
 			value := exists
@@ -2055,45 +2110,46 @@ func (r *DurableNeonRuntime) inspectSafekeeperTimelineWithPendingIntent(ctx cont
 			} `json:"mconf"`
 		}
 		if err = json.Unmarshal(body, &response); err != nil {
-			return false, "", 0, nil, "", fmt.Errorf("decode Neon safekeeper %s timeline: %w", node.Name, err)
+			return neonTimelinePlacement{}, fmt.Errorf("decode Neon safekeeper %s timeline: %w", node.Name, err)
 		}
 		ownershipToken := ""
 		if !r.control.config.allowUnqualifiedOwnershipProtocolForTest {
 			ownershipToken, err = neonOwnershipToken(body)
 			if err != nil {
-				return false, "", 0, nil, "", fmt.Errorf("inspect Neon safekeeper %s timeline ownership: %w", node.Name, err)
+				return neonTimelinePlacement{}, fmt.Errorf("inspect Neon safekeeper %s timeline ownership: %w", node.Name, err)
 			}
 			if expectedOwnershipToken != "" && ownershipToken != expectedOwnershipToken {
-				return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper timeline ownership is inconsistent")
+				return neonTimelinePlacement{}, fmt.Errorf("Neon safekeeper timeline ownership is inconsistent")
 			}
 			expectedOwnershipToken = ownershipToken
 		}
 		if response.TenantID != tenantID || response.TimelineID != timelineID || response.Membership.NewMembers != nil || len(response.Membership.Members) != len(expectedMembers) {
-			return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper %s returned an unstable timeline membership", node.Name)
+			return neonTimelinePlacement{}, fmt.Errorf("Neon safekeeper %s returned an unstable timeline membership", node.Name)
 		}
 		members := make([]neonTimelineMember, 0, len(response.Membership.Members))
 		for _, member := range response.Membership.Members {
 			memberID := member.ID.String()
 			if expectedMembers[memberID] != member.Host || member.PGPort != 5454 {
-				return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper %s returned an unexpected timeline member", node.Name)
+				return neonTimelinePlacement{}, fmt.Errorf("Neon safekeeper %s returned an unexpected timeline member", node.Name)
 			}
 			members = append(members, neonTimelineMember{ID: memberID, Host: member.Host})
 		}
 		identity, generation, hosts, identityErr := verifiedNeonTimelineIdentity(tenantID, timelineID, response.Membership.Generation, members)
 		if identityErr != nil {
-			return false, "", 0, nil, "", identityErr
+			return neonTimelinePlacement{}, identityErr
 		}
 		if expectedIdentity != "" && (identity != expectedIdentity || generation != expectedGeneration || !equalNeonStrings(hosts, expectedHosts)) {
-			return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper timeline membership is inconsistent")
+			return neonTimelinePlacement{}, fmt.Errorf("Neon safekeeper timeline membership is inconsistent")
 		}
 		expectedIdentity = identity
 		expectedGeneration = generation
 		expectedHosts = hosts
+		expectedTimelineMembers = members
 	}
 	if expectedExists == nil {
-		return false, "", 0, nil, "", fmt.Errorf("Neon safekeeper inventory is empty")
+		return neonTimelinePlacement{}, fmt.Errorf("Neon safekeeper inventory is empty")
 	}
-	return anyExists, expectedIdentity, expectedGeneration, expectedHosts, expectedOwnershipToken, nil
+	return neonTimelinePlacement{Exists: anyExists, Identity: expectedIdentity, Generation: expectedGeneration, Hosts: expectedHosts, OwnershipToken: expectedOwnershipToken, Members: expectedTimelineMembers}, nil
 }
 
 func (r *DurableNeonRuntime) verifyConfiguredSafekeeperHosts(hosts []string) error {

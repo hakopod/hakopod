@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/managedplatform"
+	"github.com/hakopod/hakopod/internal/platformbackup"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -21,6 +22,10 @@ type neonControllerStateReader interface {
 
 type neonControllerStateStore interface {
 	WithNeonControllerState(context.Context, string, int64, func(store.NeonControllerContext) (managedplatform.NeonControllerState, bool, error)) (bool, error)
+}
+
+type neonRecoveryControllerStateStore interface {
+	WithNeonRecoveryControllerState(context.Context, platformbackup.Operation, func(store.NeonControllerContext) (managedplatform.NeonControllerState, bool, error)) (bool, error)
 }
 
 func prepareNeonControllerSecret(request *NeonRuntimeRequest, key []byte) error {
@@ -228,4 +233,85 @@ func neonControllerComputeResolver(reader neonControllerStateReader, platformID 
 		}
 		return managedplatform.BindNeonControllerRouting(raw, platformID, value.Spec.TenantID, value.Spec.TimelineID, pageservers, state)
 	}
+}
+
+func neonControllerTimelineObserver(database neonControllerStateStore, operation store.ManagedPlatformOperation) func(context.Context, managedplatform.NeonTimelineRoutingObservation) error {
+	return func(ctx context.Context, observation managedplatform.NeonTimelineRoutingObservation) error {
+		_, err := database.WithNeonControllerState(ctx, operation.PlatformID, operation.Revision, applyNeonTimelineRoutingObservation(operation, observation))
+		return err
+	}
+}
+
+func neonRecoveryTimelineObserver(database neonRecoveryControllerStateStore, recovery platformbackup.Operation, operation store.ManagedPlatformOperation) func(context.Context, managedplatform.NeonTimelineRoutingObservation) error {
+	return func(ctx context.Context, observation managedplatform.NeonTimelineRoutingObservation) error {
+		_, err := database.WithNeonRecoveryControllerState(ctx, recovery, applyNeonTimelineRoutingObservation(operation, observation))
+		return err
+	}
+}
+
+func applyNeonTimelineRoutingObservation(operation store.ManagedPlatformOperation, observation managedplatform.NeonTimelineRoutingObservation) func(store.NeonControllerContext) (managedplatform.NeonControllerState, bool, error) {
+	return func(input store.NeonControllerContext) (managedplatform.NeonControllerState, bool, error) {
+		if input.Operation.ID != operation.ID || input.Operation.PlatformID != operation.PlatformID || input.Operation.Revision != operation.Revision || input.Operation.Spec.Neon == nil || observation.Claim.OwnerOperationID != operation.ID {
+			return input.State, false, store.ErrConflict
+		}
+		tenantID, timelineID := neonDeterministicID(operation.PlatformID, "tenant"), neonDeterministicID(operation.PlatformID, "timeline")
+		if input.Binding.OperationID != "" {
+			if input.Binding.TargetPlatformID != operation.PlatformID || input.Binding.TargetRevision > operation.Revision {
+				return input.State, false, store.ErrConflict
+			}
+			tenantID, timelineID = input.Binding.TenantID, input.Binding.TimelineID
+		}
+		pageservers := input.Operation.Spec.Neon.Pageservers
+		if observation.Validate(operation.PlatformID, operation.Revision, tenantID, timelineID, pageservers) != nil {
+			return input.State, false, store.ErrConflict
+		}
+		matches := 0
+		for _, claim := range input.Claims {
+			if claim.Component != "timeline" {
+				continue
+			}
+			actual := managedplatform.DurableResourceClaim{PlatformID: claim.PlatformID, PlatformRevision: claim.PlatformRevision, Component: claim.Component, Kind: claim.Kind, ResourceID: claim.ResourceID, ImmutableGeneration: claim.ImmutableGeneration, OwnerOperationID: claim.OwnerOperationID}
+			if actual != observation.Claim {
+				return input.State, false, store.ErrConflict
+			}
+			matches++
+		}
+		if matches != 1 {
+			return input.State, false, store.ErrConflict
+		}
+		next, err := mergeNeonControllerState(input.State, tenantID, timelineID, pageservers, nil, nil)
+		if err != nil {
+			return input.State, false, err
+		}
+		if existing := next.Safekeepers; existing != nil {
+			// Bootstrap never replaces a callback, including one committed
+			// after the provider observation was read.
+			if existing.Generation > observation.Routing.Generation {
+				return next, true, nil
+			}
+			if existing.Generation != observation.Routing.Generation || !sameNeonSafekeeperMembers(existing.Safekeepers, observation.Routing.Safekeepers) {
+				return input.State, false, store.ErrConflict
+			}
+			return next, true, nil
+		}
+		next.Safekeepers = &observation.Routing
+		return next, true, nil
+	}
+}
+
+func sameNeonSafekeeperMembers(left, right []managedplatform.NeonSafekeeperMember) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	byID := make(map[int64]*string, len(left))
+	for _, member := range left {
+		byID[member.ID] = member.Hostname
+	}
+	for _, member := range right {
+		host, ok := byID[member.ID]
+		if !ok || host != nil && member.Hostname != nil && *host != *member.Hostname {
+			return false
+		}
+	}
+	return true
 }

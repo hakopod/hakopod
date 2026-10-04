@@ -49,6 +49,36 @@ type NeonControllerState struct {
 	Safekeepers *NeonSafekeeperNotification `json:"safekeepers,omitempty"`
 }
 
+// NeonTimelineRoutingObservation binds provider-observed initial membership to
+// its confirmed ownership claim. Later membership changes arrive by callback.
+type NeonTimelineRoutingObservation struct {
+	Claim   DurableResourceClaim
+	Routing NeonSafekeeperNotification
+}
+
+func (o NeonTimelineRoutingObservation) Validate(platformID string, revision int64, tenantID, timelineID string, pageservers int) error {
+	claim := o.Claim
+	if claim.PlatformID != platformID || claim.PlatformRevision != revision || claim.Component != "timeline" || claim.Kind != "neon_timeline" || !neonID.MatchString(claim.OwnerOperationID) || claim.ImmutableGeneration != o.Routing.Generation {
+		return fmt.Errorf("Neon timeline routing claim changed")
+	}
+	if (NeonControllerState{Safekeepers: &o.Routing}).Validate(tenantID, timelineID, pageservers) != nil {
+		return fmt.Errorf("Neon timeline routing observation is invalid")
+	}
+	members := make([]neonTimelineMember, 0, len(o.Routing.Safekeepers))
+	for _, member := range o.Routing.Safekeepers {
+		if member.Hostname == nil {
+			return fmt.Errorf("Neon timeline routing observation omitted a member host")
+		}
+		members = append(members, neonTimelineMember{ID: strconv.FormatInt(member.ID, 10), Host: *member.Hostname})
+	}
+	identity, _, _, err := verifiedNeonTimelineIdentity(tenantID, timelineID, o.Routing.Generation, members)
+	claimed, _, claimErr := parseNeonOwnedResourceID(claim.ResourceID)
+	if err != nil || claimErr != nil || claimed != identity {
+		return fmt.Errorf("Neon timeline routing does not match its owned membership")
+	}
+	return nil
+}
+
 func NeonControllerToken(key []byte, platformID string, revision int64) (string, error) {
 	if len(key) != 32 || !neonID.MatchString(platformID) || revision < 1 {
 		return "", fmt.Errorf("invalid Neon controller identity")

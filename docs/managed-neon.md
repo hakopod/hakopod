@@ -70,11 +70,16 @@ states that its configuration tests images and is not a usable deployment. It
 omits the storage controller. The [local control plane](https://github.com/neondatabase/neon/blob/fa504217c61bbcaf5c512d75830564541f917f8f/control_plane/README.md)
 is also a development tool.
 
-Hakopod stores the controller's tenant attachment and safekeeper membership
-notifications in PostgreSQL. It derives compute destinations from owned node
-IDs, applies the configuration and checks the running result before acknowledging
-the update. A retry can observe an update that already finished. A changed
-revision or deletion prevents an old notification from changing compute.
+When a timeline is created, the controller returns its initial safekeeper
+membership. It sends membership notifications for later changes. Hakopod checks
+the initial membership against the owned timeline and records it in PostgreSQL,
+alongside the controller's tenant attachment. A retried create checks the
+existing owned timeline before recording its routing. It cannot replace a newer
+membership update with an older observation.
+
+Hakopod derives compute destinations from owned node IDs, applies the
+configuration and checks the running result before acknowledging an update.
+A changed revision or deletion prevents an old notification from changing compute.
 After a compute restarts, it waits for the reconciler to replay its owned
 configuration. These paths still require native acceptance with the provider.
 

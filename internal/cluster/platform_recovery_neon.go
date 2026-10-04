@@ -255,6 +255,9 @@ func (r *NeonRecoveryRuntime) durable(ctx context.Context, recovery platformback
 	}
 	if !deprovision {
 		durable.SetComputeConfigResolver(neonControllerComputeResolver(r.Store, item.ID, item.Revision, item.Spec.Neon.Pageservers))
+		if recovery.Kind == "restore" {
+			durable.SetTimelineRoutingObserver(neonRecoveryTimelineObserver(r.Store, recovery, accepted))
+		}
 	}
 	if useBinding {
 		var binding store.NeonRecoveryBinding
