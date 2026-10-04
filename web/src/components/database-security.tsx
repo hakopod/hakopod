@@ -155,8 +155,8 @@ export function DatabaseSecurity({ database: d, now }: { database: ManagedDataba
           </div>
           {d.spec.engine === 'vitess' && (
             <p className="mt-3 text-sm text-muted-foreground">
-              vtgate accepts MySQL TLS on port 3306. Use app@primary or app@replica as the database
-              target, with the mounted public CA and verified hostname. Tablets, topology members
+              vtgate accepts MySQL TLS on port 3306. Use app@primary{d.spec.replicas > 0 ? ' or app@replica' : ''} as the database
+              target, with the mounted public CA and verified hostname.{d.spec.replicas > 0 ? ' Replica reads may lag.' : ''} Tablets, topology members
               and control services do not expose application credentials or cluster access.
             </p>
           )}

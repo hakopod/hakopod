@@ -222,7 +222,7 @@ export function DatabaseTopology({
           </span>
         </div>
       )}
-      {vitess && <div className="db-routing-strip"><span>{poolers.length} vtgate gateways observed</span><span>{coordinators.length} / 3 topology members observed</span><span>app@primary routes writes; app@replica routes replica reads.</span></div>}
+      {vitess && <div className="db-routing-strip"><span>{poolers.length} vtgate gateways observed</span><span>{coordinators.length} / 3 topology members observed</span><span>{d.spec.replicas > 0 ? 'app@primary routes writes; app@replica routes replica reads.' : 'app@primary routes reads and writes.'}</span></div>}
       {d.spec.engine === 'clickhouse' && d.spec.mode === 'cluster' && <div className="db-routing-strip">
         <span>{coordinators.length} / 3 Keeper members observed</span>
         <span>{!current ? 'Keeper observation stale' : d.observation.coordination?.ready ? 'Keeper quorum verified' : d.observation.coordination?.message || 'Keeper quorum not verified'}</span>

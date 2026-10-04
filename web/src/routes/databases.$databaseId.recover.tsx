@@ -51,7 +51,11 @@ function Recover({ id }: { id: string }) {
   const eligible = artifacts.data.items.filter(
     (a) =>
       a.source.engine === d.spec.engine &&
-      (d.spec.engine !== 'vitess' || a.source_version === d.spec.version) &&
+      (d.spec.engine !== 'vitess' ||
+        (a.source_version === d.spec.version &&
+          a.format === 'age-v1+vitess-logical-v1' &&
+          Boolean(a.captured_at) &&
+          Boolean(a.verified_at))) &&
       a.source.managed_database_id !== id &&
       !a.deletion_pending,
   )
@@ -117,7 +121,7 @@ function Recover({ id }: { id: string }) {
           {!eligible.length && (
             <Empty
               title="No eligible archives"
-              description={d.spec.engine === 'vitess' ? 'Create a verified Vitess 23 backup from another database. The server also requires the same shard count, table routing schema and approved native backup destination before it creates a recovery plan.' : 'Create a backup from another database with a compatible engine and version before recovering into this target.'}
+              description={d.spec.engine === 'vitess' ? 'Create a verified Vitess 23 logical backup from another database. Restore also requires the same shard count and table-routing schema.' : 'Create a backup from another database with a compatible engine and version before recovering into this target.'}
               action={
                 <Button asChild>
                   <Link to="/backups/new">Run backup</Link>
@@ -140,14 +144,7 @@ function Recover({ id }: { id: string }) {
               }}
               options={[
                 { value: '', label: 'Choose a matching archive' },
-                ...artifacts.data.items
-                  .filter(
-                    (a) =>
-                      a.source.engine === d.spec.engine &&
-                      (d.spec.engine !== 'vitess' || a.source_version === d.spec.version) &&
-                      a.source.managed_database_id !== id &&
-                      !a.deletion_pending,
-                  )
+                ...eligible
                   .map((a) => ({
                     value: a.id,
                     label: `${timestamp(a.captured_at || a.created_at)} · ${a.source.managed_database_id?.slice(0, 8) || a.source.service || a.source.kind} · ${a.verified_at ? 'Verified' : 'Requires verification'}`,
@@ -164,7 +161,7 @@ function Recover({ id }: { id: string }) {
             The archive is authenticated before recovery. {d.spec.engine === 'postgresql' && 'PostgreSQL 17 archives can be staged in a separate PostgreSQL 18 database. '}Changes after the recovery point require a fresh
             capture before final cutover.
           </Note>
-          {d.spec.engine === 'vitess' && <Note>Vitess recovery is admitted only when the archive and target have the same version, shard count and table-routing schema, and the target retains its approved native backup destination. The recovery plan is the authoritative compatibility check.</Note>}
+          {d.spec.engine === 'vitess' && <Note>Vitess restore authenticates the complete archive and validates its version, shard map and table-routing schema before importing data. The target keeps its separately approved native backup destination.</Note>}
         </FormSection>
         {plan && (
           <FormSection title="Review recovery">
