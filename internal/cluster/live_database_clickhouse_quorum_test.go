@@ -10,7 +10,7 @@ import (
 	"github.com/hakopod/hakopod/internal/database"
 )
 
-func clickhouseKeeperFixtureFault(t *testing.T, ctx context.Context, d database.Resource, members []database.Member) func() {
+func clickhouseKeeperFixtureFault(t *testing.T, ctx context.Context, d database.Resource, members []database.Member) (func(), func()) {
 	t.Helper()
 	helper := os.Getenv("HAKOPOD_CLICKHOUSE_FAULT_HELPER")
 	if helper == "" {
@@ -28,13 +28,27 @@ func clickhouseKeeperFixtureFault(t *testing.T, ctx context.Context, d database.
 		stopped = nil
 	}
 	t.Cleanup(resume)
+	verify := func() {
+		t.Helper()
+		if len(stopped) == 0 {
+			t.Fatal("ClickHouse Keeper fixture has no active fault to verify")
+		}
+		step, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		for _, member := range stopped {
+			if exec.CommandContext(step, "python3", helper, "verify-paused", d.ID, member.Name, member.UID).Run() != nil {
+				t.Fatal("ClickHouse Keeper fault ended before its native assertion", member.Name)
+			}
+		}
+	}
 	for _, member := range members {
 		stopped = append(stopped, member)
 		if exec.CommandContext(ctx, "python3", helper, "pause", d.ID, member.Name, member.UID).Run() != nil {
 			t.Fatal("ClickHouse Keeper fixture pause failed")
 		}
 	}
-	return resume
+	verify()
+	return resume, verify
 }
 
 func waitClickHouseObserved(t *testing.T, ctx context.Context, c *Client, d database.Resource) database.Observation {
@@ -78,7 +92,7 @@ func TestManagedClickHouseKeeperQuorumLive(t *testing.T) {
 	if leader.UID == "" {
 		t.Fatal("Keeper has no observed leader")
 	}
-	resume := clickhouseKeeperFixtureFault(t, ctx, d, []database.Member{leader})
+	resume, verifyFault := clickhouseKeeperFixtureFault(t, ctx, d, []database.Member{leader})
 	// Keeper and ClickHouse both use a 30-second session timeout. Allow the
 	// surviving majority to expire the old session, elect and reconnect while
 	// remaining below the independent 90-second rescue watchdog.
@@ -93,13 +107,14 @@ func TestManagedClickHouseKeeperQuorumLive(t *testing.T) {
 		}
 	}
 	stop()
+	verifyFault()
 	resume()
 	if err != nil {
 		t.Fatal("ClickHouse could not write with a remaining Keeper majority", err)
 	}
 	health = waitClickHouseObserved(t, ctx, c, d)
 	waitClickHouseData(t, ctx, c, d, health, "SELECT id FROM app.quorum_fixture ORDER BY id FORMAT TSV", "1\n2")
-	resume = clickhouseKeeperFixtureFault(t, ctx, d, health.Coordination.Members[:2])
+	resume, verifyFault = clickhouseKeeperFixtureFault(t, ctx, d, health.Coordination.Members[:2])
 	if _, err = c.clickhouseQuery(ctx, d, health.Members[0], "app", "SELECT 1"); err != nil {
 		resume()
 		t.Fatal("data member itself became unreachable")
@@ -107,6 +122,7 @@ func TestManagedClickHouseKeeperQuorumLive(t *testing.T) {
 	step, stop = context.WithTimeout(ctx, 12*time.Second)
 	_, err = c.clickhouseQuery(step, d, health.Members[0], "app", "INSERT INTO app.quorum_fixture SETTINGS insert_quorum=2, insert_quorum_timeout=8000 VALUES (99)")
 	stop()
+	verifyFault()
 	resume()
 	if err == nil {
 		t.Fatal("ClickHouse acknowledged a replicated write without Keeper quorum")
