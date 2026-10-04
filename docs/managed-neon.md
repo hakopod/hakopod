@@ -99,6 +99,13 @@ finishes. Hakopod checks the provider's durable ownership record, resumes any
 pending deletion with its prepared token, and requires confirmation that the
 owned data was deleted before removing the Kubernetes namespace.
 
+If a delete reaches its retry limit, review a new delete against the platform's
+current revision. The failed operation remains in its history. The new operation
+can resume resources retained from older revisions, using their original
+ownership records and creation intents. It checks that a pending timeline and
+its parent belong to the same original operation before continuing deletion.
+The current delete lease and permissions still apply to every state change.
+
 The worker holds a 30-second lease that prevents another worker from running
 the same operation. It renews that lease every five seconds while checking the
 operation's authority, so PostgreSQL initialization can continue safely.
