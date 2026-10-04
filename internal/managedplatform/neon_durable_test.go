@@ -552,6 +552,13 @@ func TestDurableNeonDeletionUsesOwnershipHeadersAndRechecksProviderState(t *test
 				status = http.StatusNoContent
 			case request.URL.Host == "storage.test" && request.Method == http.MethodDelete && request.URL.Path == "/v1/tenant/"+testTenant:
 				if request.URL.Query().Get("validate_only") == "true" {
+					if !tenantPresent {
+						if request.Header.Get(neonOwnershipHeader) != tenantToken {
+							t.Fatal("tenant tombstone check omitted its durable ownership token")
+						}
+						body = "null"
+						break
+					}
 					tenantDeletePreflights++
 					if !computeAttached || request.Header.Get(neonOwnershipHeader) != tenantToken {
 						t.Fatal("tenant deletion preflight ran after mutation or omitted its durable ownership token")
