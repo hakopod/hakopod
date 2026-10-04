@@ -1,0 +1,34 @@
+package vitessbackupstorage
+
+import (
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+)
+
+func TestHakopodSubcontrollerRuntimeIsBounded(t *testing.T) {
+	container := &corev1.Container{Env: []corev1.EnvVar{
+		{Name: "GOMAXPROCS", Value: "8"},
+		{Name: "GOMEMLIMIT", Value: "1GiB"},
+		{Name: "WATCH_NAMESPACE", Value: "database"},
+	}}
+	configureSubcontrollerRuntime(container)
+
+	wantCPU := resource.MustParse("100m")
+	wantMemory := resource.MustParse("512Mi")
+	if !container.Resources.Requests.Cpu().Equal(wantCPU) || !container.Resources.Limits.Cpu().Equal(wantCPU) ||
+		!container.Resources.Requests.Memory().Equal(wantMemory) || !container.Resources.Limits.Memory().Equal(wantMemory) {
+		t.Fatal("backup storage subcontroller resources are not bounded", container.Resources)
+	}
+	values := map[string]string{}
+	for _, variable := range container.Env {
+		if _, exists := values[variable.Name]; exists {
+			t.Fatal("backup storage subcontroller has a duplicate environment variable", variable.Name)
+		}
+		values[variable.Name] = variable.Value
+	}
+	if values["GOMAXPROCS"] != "1" || values["GOMEMLIMIT"] != "384MiB" || values["WATCH_NAMESPACE"] != "database" {
+		t.Fatal("backup storage subcontroller Go runtime is not bounded", values)
+	}
+}

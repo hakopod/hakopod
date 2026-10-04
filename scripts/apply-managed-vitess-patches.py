@@ -367,9 +367,35 @@ func FirstLiveBackupPodName(clusterName, keyspaceName string, keyRange planetsca
     changes[path] = text
 
     path = root / "pkg/controller/vitessbackupstorage/reconcile_subcontroller.go"
-    text = replace(path.read_text(),
-                   '\tcontainer.Resources.Limits = corev1.ResourceList{\n',
-                   '\tcontainer.Resources.Limits = corev1.ResourceList{\n\t\tcorev1.ResourceCPU: *resource.NewMilliQuantity(subcontrollerCPUMillis, resource.DecimalSI),\n')
+    text = path.read_text()
+    text = replace(text,
+                   'subcontrollerMemoryBytes = 128 * (1 << 20) // 128 MiB',
+                   'subcontrollerMemoryBytes = 512 * (1 << 20) // 512 MiB')
+    text = replace(text, '''\t// Set resource requests specific to the subcontroller.
+\t// It doesn't need as much as the main operator process.
+\tcontainer.Resources.Requests = corev1.ResourceList{
+\t\tcorev1.ResourceCPU:    *resource.NewMilliQuantity(subcontrollerCPUMillis, resource.DecimalSI),
+\t\tcorev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
+\t}
+\tcontainer.Resources.Limits = corev1.ResourceList{
+\t\tcorev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
+\t}''', '''\tconfigureSubcontrollerRuntime(container)''')
+    text = replace(text, '''func updateSubcontrollerPod(pod *corev1.Pod, spec *corev1.PodSpec) {''', '''func configureSubcontrollerRuntime(container *corev1.Container) {
+\tupdate.Env(&container.Env, []corev1.EnvVar{
+\t\t{Name: "GOMAXPROCS", Value: "1"},
+\t\t{Name: "GOMEMLIMIT", Value: "384MiB"},
+\t})
+\tcontainer.Resources.Requests = corev1.ResourceList{
+\t\tcorev1.ResourceCPU:    *resource.NewMilliQuantity(subcontrollerCPUMillis, resource.DecimalSI),
+\t\tcorev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
+\t}
+\tcontainer.Resources.Limits = corev1.ResourceList{
+\t\tcorev1.ResourceCPU:    *resource.NewMilliQuantity(subcontrollerCPUMillis, resource.DecimalSI),
+\t\tcorev1.ResourceMemory: *resource.NewQuantity(subcontrollerMemoryBytes, resource.BinarySI),
+\t}
+}
+
+func updateSubcontrollerPod(pod *corev1.Pod, spec *corev1.PodSpec) {''')
     changes[path] = text
 
     path = root / "pkg/controller/vitessbackupschedule/vitessbackupschedule_controller.go"
@@ -495,6 +521,7 @@ def main():
         ("vitess-first-live-backup-test.go.txt", operator / "pkg/controller/vitessshard/hakopod_first_live_backup_test.go"),
         ("vitess-tablet-hostname-test.go.txt", operator / "pkg/operator/vttablet/hakopod_hostname_test.go"),
         ("vitess-backup-flags-test.go.txt", operator / "pkg/operator/controllermanager/hakopod_backup_flags_test.go"),
+        ("vitess-backup-subcontroller-test.go.txt", operator / "pkg/controller/vitessbackupstorage/hakopod_runtime_test.go"),
     ):
         if target.exists():
             raise ValueError(f"Refusing existing patch source {target}")
