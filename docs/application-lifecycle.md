@@ -85,12 +85,18 @@ POSTGRES_PASSWORD = { ref = "db-password" }
 
 Both workloads use the same secret. Hakopod builds and URL-escapes the connection
 string at deployment time; the resolved password and URL never enter revisions.
-Supported protocols are `postgres`, `mysql`, `redis`, and credential-free private
+Supported protocols are `postgres`, `mysql`, `redis`, `amqp`, and credential-free private
 `http`. Bindings use the target's primary service port and must obey network
 membership and allowed-peer rules. Add `depends_on` when startup requires readiness.
 This does not automatically create database users or change upstream application
 settings. Templates can generate native credentials through the existing catalog
 credential flow; arbitrary TOML references must already exist.
+
+For a private RabbitMQ binding, set `protocol = "amqp"`, `username` to the
+provisioned broker user and `database` to its nonempty virtual host (for example,
+`outpost`). The scoped password must match that user. This binding uses private
+AMQP on the target service's primary port; external brokers use their own
+credential URL, including `amqps` when TLS is required.
 
 ## Additional HTTP endpoints
 

@@ -373,6 +373,11 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 	}
 	main := app.Services["main"]
 	switch id {
+	case "outpost":
+		if err := configureOutpostTemplate(&app, values); err != nil {
+			return Application{}, err
+		}
+		main = app.Services["main"]
 	case "mathesar", "xem":
 		if values["database-mode"] == "external" {
 			host := values["database-host"]

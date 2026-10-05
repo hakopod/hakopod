@@ -95,7 +95,7 @@ func validateBindings(app Application) error {
 				if b.Password != nil || b.Username != "" || b.Database != "" {
 					return fmt.Errorf("http bindings cannot contain database credentials")
 				}
-			case "postgres", "mysql", "redis":
+			case "postgres", "mysql", "redis", "amqp":
 				if b.Password == nil || !b.Password.Valid() {
 					return fmt.Errorf("services.%s.bindings.%s: a scoped password reference is required", name, key)
 				}
@@ -109,7 +109,7 @@ func validateBindings(app Application) error {
 					}
 				}
 			default:
-				return fmt.Errorf("services.%s.bindings.%s.protocol: choose http, postgres, mysql or redis", name, key)
+				return fmt.Errorf("services.%s.bindings.%s.protocol: choose http, postgres, mysql, redis or amqp", name, key)
 			}
 		}
 	}
