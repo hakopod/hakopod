@@ -48,6 +48,76 @@ Initial runs were not used as final approval: `37256884490` sent keyboard select
 
 This pass covers the self-hosted edition and three representative dependency combinations. It does not newly verify Cloud edition gates, every one of the eight dependency combinations in the browser, expanded canonical TOML interaction, every diff row, successful secret persistence, deployment, server-side authorization, startup, delivery, databases, external providers, backups or recovery. The full canonical drawer stayed closed; Go/runtime validation is separate. Physical devices, assistive technology, other browser engines and a broad animation audit were not covered. Subsequent nonvisual validation changes require their own tests, and any user-visible catalog change needs a content comparison before publication.
 
+## Migration content supplement — 2026-10-05
+
+Independent reviewer: `/root/outpost_content_review`. The changed migration
+configuration is approved for the covered dashboard presentation after source
+comparison, GitHub-hosted capture and inspection of all 32 resulting screenshots.
+This extends the preceding review only to the migration diff and selected
+canonical TOML passages; it does not add runtime acceptance.
+
+The capture source is `6e212b0cdd7e4db5733ec9da047310b219d112c8`, with catalog
+`d6467a12881798a379ba6a71e8951fd88ed38049`. Product source remains equivalent to
+`708e0b1e75b5e69513a856322786519ddc4bc812`; the two later commits only add and
+adjust review tooling. Compared with catalog `5cbe8a0`/`c7c4ef4`, the catalog's
+JSON, logos, form labels and secret descriptions are unchanged. Only Outpost's
+README and native TOML changed. The source comparison covers the bounded
+migration-plan loop, one migration apply, required broker/encryption configuration
+and bundled PostgreSQL's TLS override. The planner removes that override for an
+external database. Private-hostname validation changes have separate tests and
+do not change displayed field copy.
+
+[Capture run 37260525089](https://github.com/hakopod/hakopod/actions/runs/37260525089)
+passed eight cases: Paper and dark themes at 1440 and 320 pixels, each with bundled
+or external PostgreSQL while Redis and RabbitMQ stay bundled. Its 40 observations
+comprise 32 screenshots with measured bounds and eight interaction/content
+records. There were no page errors or assertion failures. All documents match
+their viewport width. The inspected command, argument row and complete 300-pixel
+canonical pane stay within the viewport and above the review footer.
+
+The harness follows the real diff pagination to `migrate.command` and
+`migrate.args`, checking their complete displayed values against the Go plan.
+It opens the native canonical disclosure and verifies its full text equals the
+same plan's TOML. Desktop pagination/disclosure activation uses Enter after
+programmatic initial focus; mobile uses emulated touch. Tab enters the code pane
+from a programmatically focused disclosure. Its visible focus outline measures
+2 pixels. ArrowRight moves the pane horizontally by 33–36 pixels without moving
+the document. Positioning the command and environment passages for screenshots
+is programmatic and is not counted as keyboard or touch traversal.
+
+Every theme/width/dependency case was inspected at screenshot resolution. The
+long migration argument wraps within the diff row, including the retry loop and
+single apply command. Redacted environment/secret summaries remain distinct from
+the visible command and binding references. The canonical pane keeps its native
+bounded scrolling, legible contrast and complete focus outline. The environment
+captures retain 4–7 pixels of horizontal scroll after the key check, so the first
+character can be partly outside the pane; the exact-text assertion and earlier
+zero-offset command captures distinguish scrolling from lost content. These are
+selected passages, not a visual reading of every canonical line. No actionable
+source or visual finding remained within this supplement.
+
+The first supplemental run, `37260259690`, passed its assertions but left the lower
+canonical pane behind the existing sticky footer in some screenshots. It is
+retained as capture-framing evidence, not final visual approval. The final harness
+centers each target, verifies full vertical bounds and waits for substantial
+horizontal key movement. No product component changed for that correction.
+
+Final evidence is artifact `11324685878`, `outpost-ui-review`, 1,223,121 bytes.
+Its archive SHA-256 is
+`f47b1221eb668d8e1670ab9805df1520cc0dc4ed585949418a4763db88e16d08`;
+the results JSON SHA-256 is
+`4555eb3f556a3952d675da5398e2a2b2b11abe86fd015f213f77d8987e81ddae`.
+Both were independently verified. Captures, browser execution and fixture builds
+ran on GitHub-hosted CI. Local work only read source, edited review tooling and
+inspected the downloaded evidence.
+
+This supplement does not re-review the broader forms, Cloud edition gates,
+every provider combination, full keyboard traversal, physical devices, assistive
+technology, other browser engines or no-JavaScript behavior. It does not execute
+migrations or prove deployment, provider TLS, delivery, persistence, backup or
+recovery. Those remain separate checks. The preceding full review remains the
+evidence for unchanged route presentation and interactions.
+
 ## Standing checklist
 
 The copied checklist is the reusable review gate. The coverage above records the result; unrelated dashboard routes and unexecuted states are not represented as newly tested.
@@ -87,4 +157,3 @@ The copied checklist is the reusable review gate. The coverage above records the
 - [ ] Secrets are write-only, roles are enforced by Go, and mutation controls respect access. Review shared-secret impact before replacement.
 - [ ] Polling, streaming, caches and buffers are bounded and inactive work stops. Do not add dependencies or runtime services for cosmetic changes.
 - [ ] Product copy is concise plain English with no emojis. Avoid repeated context and implementation jargon in routine flows.
-

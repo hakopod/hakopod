@@ -4,6 +4,8 @@ The preset runs Outpost v1.6.0 as separate API, delivery and log services. A dep
 
 Each dependency choice changes the rendered services and required secrets. Private AMQP bindings URL-escape the bundled broker credentials at deployment time. External PostgreSQL and RabbitMQ URLs stay in application-scoped secrets; PostgreSQL requires an explicit TLS policy and external Redis verifies TLS by default. Keep the API, JWT and encryption keys stable with coordinated data backups. This is a new-install preset; switching images or reverting a deployment does not reverse upstream data migrations.
 
+All eight dependency combinations passed on native AMD64 and ARM64 in isolated Kubernetes clusters. The checks covered migrations, API and tenant authorization, private webhook delivery, data persistence after service and dependency restarts, and owned-resource cleanup. External dependencies were separately named private fixtures; see the [runtime acceptance record](https://github.com/hakopod/hakopod/blob/main/docs/outpost-template-runtime.md) for the exact scope and evidence.
+
 Shared hosted compute does not provide the job and binding capabilities required by this stack. Use self-hosted Hakopod or connect your own server in Cloud. Public TLS, arbitrary external providers, portal integration, scaling and backup restoration require separate operator validation.
 
 This release retains the database network maintenance and bounded Actions drain fixes from [alpha.53](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.53), and private self-hosted ClickHouse support from [alpha.52](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.52).
