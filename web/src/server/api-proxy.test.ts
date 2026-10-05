@@ -1,10 +1,45 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { proxy } from './api-proxy.ts'
+import { proxy, proxyTimeoutMilliseconds } from './api-proxy.ts'
 import { callbackSessionCookie, sealSession, sessionCookie } from './session.ts'
 
 const origin = 'http://127.0.0.1:4173'
 const token = 'hs_proxy_regression_not_a_real_session_12345'
+
+test('only database restore planning receives the 90-second proxy budget', () => {
+  const database = 'a'.repeat(32)
+  assert.equal(proxyTimeoutMilliseconds(`databases/${database}/restore-plan`, 'POST'), 90000)
+  assert.equal(proxyTimeoutMilliseconds(`databases/${database}/restore-plan`, 'GET'), 30000)
+  assert.equal(proxyTimeoutMilliseconds('databases/not-an-id/restore-plan', 'POST'), 30000)
+  assert.equal(proxyTimeoutMilliseconds(`backup-artifacts/${database}/restore-plan`, 'POST'), 30000)
+  assert.equal(proxyTimeoutMilliseconds(`databases/${database}/connections`, 'GET'), 30000)
+  assert.equal(
+    proxyTimeoutMilliseconds(`backup-imports/${database}/archive`, 'PUT'),
+    15 * 60 * 1000,
+  )
+  assert.equal(
+    proxyTimeoutMilliseconds('applications/app/services/api/terminal/session/output', 'GET'),
+    11 * 60 * 1000,
+  )
+  assert.equal(proxyTimeoutMilliseconds('deployments/deployment-a/events', 'GET'), 11 * 60 * 1000)
+  assert.equal(proxyTimeoutMilliseconds('applications/app/logs', 'GET'), 5 * 60 * 1000)
+})
+
+test('database restore planning preserves browser request cancellation', async (t) => {
+  const path = `databases/${'a'.repeat(32)}/restore-plan`
+  const controller = new AbortController()
+  const input = new Request(request(path, 'POST', { artifact_id: 'archive-fixture' }), {
+    signal: controller.signal,
+  })
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit = {}) => {
+    assert.equal(init.signal?.aborted, false)
+    controller.abort()
+    assert.equal(init.signal?.aborted, true)
+    return Response.json({ id: 'plan-fixture' })
+  })
+  assert.equal((await proxy({ request: input, params: { _splat: path } })).status, 200)
+})
+
 test('managed platform catalog forwards scope through the protected session proxy', async (t) => {
   const mocked = t.mock.method(
     globalThis,

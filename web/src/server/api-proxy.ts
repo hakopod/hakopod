@@ -100,6 +100,19 @@ export const allowed = [
   /^dns-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
 ]
 
+export function proxyTimeoutMilliseconds(path: string, method: string) {
+  if (/^backup-imports\/[a-f0-9]{32}\/archive$/.test(path) && method === 'PUT')
+    return 15 * 60 * 1000
+  if (
+    /\/terminal\/[A-Za-z0-9_-]+\/output$/.test(path) ||
+    /^deployments\/[A-Za-z0-9_-]+\/events$/.test(path)
+  )
+    return 11 * 60 * 1000
+  if (path.endsWith('/logs')) return 5 * 60 * 1000
+  if (/^databases\/[a-f0-9]{32}\/restore-plan$/.test(path) && method === 'POST') return 90000
+  return 30000
+}
+
 export async function proxy({
   request,
   params,
@@ -220,15 +233,7 @@ export async function proxy({
       redirect: slackCallback ? 'manual' : 'error',
       signal: AbortSignal.any([
         request.signal,
-        AbortSignal.timeout(
-          archiveUpload
-            ? 15 * 60 * 1000
-            : terminalStream || deploymentEvents
-              ? 11 * 60 * 1000
-              : streaming
-                ? 5 * 60 * 1000
-                : 30000,
-        ),
+        AbortSignal.timeout(proxyTimeoutMilliseconds(path, request.method)),
       ]),
     })
     if (
