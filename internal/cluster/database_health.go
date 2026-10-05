@@ -54,7 +54,7 @@ func (c *Client) observePostgresDatabase(ctx context.Context, d database.Resourc
 	return group.Wait()
 }
 
-func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource, o database.Observation) error {
+func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource, o database.Observation, inventory *vitessObservationInventory) error {
 	ns := DatabaseNamespace(d.ID)
 	for _, endpoint := range o.Endpoints {
 		members := o.Members
@@ -139,6 +139,9 @@ func (c *Client) databaseEndpointsReady(ctx context.Context, d database.Resource
 		if len(found) != minimum {
 			return fmt.Errorf("database service has not published the expected ready members")
 		}
+	}
+	if d.Spec.Engine == "vitess" {
+		return c.verifyVitessStorage(ctx, d, o.Members, inventory)
 	}
 	for _, member := range o.Members {
 		pod, err := c.kube.CoreV1().Pods(ns).Get(ctx, member.Name, metav1.GetOptions{})

@@ -731,7 +731,7 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 		}
 		return o, err
 	}
-	if err = c.databaseEndpointsReady(ctx, d, o); err != nil {
+	if err = c.databaseEndpointsReady(ctx, d, o, vitessInventory); err != nil {
 		return o, err
 	}
 	if err = c.observeDatabaseTLS(ctx, d, &o, vitessInventory); err != nil {
