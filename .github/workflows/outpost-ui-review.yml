@@ -1,6 +1,12 @@
 name: Outpost UI review evidence
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Capture the full Outpost form review or only changed migration configuration
+        type: choice
+        options: [full, migration]
+        default: full
   pull_request:
     paths:
       - 'templates'
@@ -20,6 +26,7 @@ jobs:
       GOMAXPROCS: '2'
       GOMEMLIMIT: 512MiB
       NODE_OPTIONS: --max-old-space-size=1024
+      OUTPOST_UI_REVIEW_SCOPE: ${{ inputs.scope || 'full' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -54,7 +61,11 @@ jobs:
           done
           git rev-parse HEAD > .local/template-review/evidence/source-commit.txt
           git -C templates rev-parse HEAD > .local/template-review/evidence/catalog-commit.txt
-          node web/review/templates/review.mjs
+          if [ "$OUTPOST_UI_REVIEW_SCOPE" = migration ]; then
+            node web/review/templates/migration-review.mjs
+          else
+            node web/review/templates/review.mjs
+          fi
       - name: Retain screenshots for independent visual review
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
