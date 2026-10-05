@@ -48,9 +48,6 @@ func TestDatabaseMaintenanceFencesLifecycleAndExpiredWorkers(t *testing.T) {
 		t.Fatal("concurrent maintenance accepted", err)
 	}
 	d.Revision = 1
-	if _, err = s.AcceptDatabase(ctx, p, d, 1, "maintenance-delete-fixture", "delete"); !errors.Is(err, ErrConflict) {
-		t.Fatal("delete raced maintenance", err)
-	}
 	if _, err = s.Pool.Exec(ctx, "UPDATE managed_databases SET maintenance_lease_until=now()-interval '1 second' WHERE id=$1", d.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -65,10 +62,101 @@ func TestDatabaseMaintenanceFencesLifecycleAndExpiredWorkers(t *testing.T) {
 	if err = fresh.Check(ctx); err != nil {
 		t.Fatal("old worker released new claim", err)
 	}
+	acceptCtx, cancelAccept := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelAccept()
+	var accepted database.Operation
+	acceptedResult := make(chan error, 1)
+	go func() {
+		var acceptErr error
+		accepted, acceptErr = s.AcceptDatabase(acceptCtx, p, d, 1, "maintenance-delete-fixture", "delete")
+		acceptedResult <- acceptErr
+	}()
+	select {
+	case err = <-acceptedResult:
+		t.Fatal("delete returned while maintenance was active", err)
+	case <-time.After(350 * time.Millisecond):
+	}
+	var acceptedCount int
+	if err = s.Pool.QueryRow(ctx, "SELECT count(*) FROM managed_database_operations WHERE identity_id=$1 AND idempotency_key=$2", p.ID, "maintenance-delete-fixture").Scan(&acceptedCount); err != nil || acceptedCount != 0 {
+		t.Fatal("blocked delete left an operation", acceptedCount, err)
+	}
 	fresh.Release()
-	if _, err = s.AcceptDatabase(ctx, p, d, 1, "maintenance-delete-fixture", "delete"); err != nil {
+	if err = <-acceptedResult; err != nil {
 		t.Fatal("released database remained blocked", err)
 	}
+	if accepted.Kind != "delete" || accepted.Revision != 2 {
+		t.Fatal("released database accepted an unexpected operation", accepted.Kind, accepted.Revision)
+	}
+	if err = s.Pool.QueryRow(ctx, "SELECT count(*) FROM managed_database_operations WHERE identity_id=$1 AND idempotency_key=$2", p.ID, "maintenance-delete-fixture").Scan(&acceptedCount); err != nil || acceptedCount != 1 {
+		t.Fatal("released delete was not accepted exactly once", acceptedCount, err)
+	}
+}
+
+func TestDatabaseLifecycleMaintenanceWaitStopsOnRevisionChangeAndCancellation(t *testing.T) {
+	t.Run("revision change", func(t *testing.T) {
+		s, p, d := databaseFixture(t)
+		ctx := context.Background()
+		if _, err := s.AcceptDatabase(ctx, p, d, 0, "maintenance-revision-create", "create"); err != nil {
+			t.Fatal(err)
+		}
+		op, err := s.ClaimDatabaseOperation(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.RecordDatabaseStep(ctx, op, database.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now()}, "succeeded", "ready", ""); err != nil {
+			t.Fatal(err)
+		}
+		claim, err := s.ClaimDatabaseMaintenance(ctx, d.ID, 1)
+		if err != nil || claim == nil {
+			t.Fatal("maintenance claim failed", err)
+		}
+		defer claim.Release()
+
+		d.Revision = 1
+		done := make(chan error, 1)
+		go func() {
+			_, acceptErr := s.AcceptDatabase(ctx, p, d, 1, "maintenance-revision-delete", "delete")
+			done <- acceptErr
+		}()
+		select {
+		case err = <-done:
+			t.Fatal("delete returned while maintenance was active", err)
+		case <-time.After(350 * time.Millisecond):
+		}
+		if _, err = s.Pool.Exec(ctx, "UPDATE managed_databases SET revision=revision+1 WHERE id=$1", d.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err = <-done; !errors.Is(err, ErrConflict) || errors.Is(err, errDatabaseMaintenanceActive) {
+			t.Fatal("revision change did not stop maintenance retries", err)
+		}
+	})
+
+	t.Run("caller cancellation", func(t *testing.T) {
+		s, p, d := databaseFixture(t)
+		ctx := context.Background()
+		if _, err := s.AcceptDatabase(ctx, p, d, 0, "maintenance-cancel-create", "create"); err != nil {
+			t.Fatal(err)
+		}
+		op, err := s.ClaimDatabaseOperation(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.RecordDatabaseStep(ctx, op, database.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now()}, "succeeded", "ready", ""); err != nil {
+			t.Fatal(err)
+		}
+		claim, err := s.ClaimDatabaseMaintenance(ctx, d.ID, 1)
+		if err != nil || claim == nil {
+			t.Fatal("maintenance claim failed", err)
+		}
+		defer claim.Release()
+
+		d.Revision = 1
+		acceptCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+		defer cancel()
+		if _, err = s.AcceptDatabase(acceptCtx, p, d, 1, "maintenance-cancel-delete", "delete"); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatal("caller deadline was masked", err)
+		}
+	})
 }
 
 func TestVitessNativeRevocationContinuesDuringArchiveAndAfterFailure(t *testing.T) {
