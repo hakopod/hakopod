@@ -252,6 +252,9 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 	if err = lockArchiveDestinationTx(ctx, tx, schedule.DestinationID); err != nil {
 		return schedule, err
 	}
+	if err = validateManagedBackupAdmission(ctx, tx, p, schedule.Source); err != nil {
+		return schedule, err
+	}
 	schedule.Authority = backupAuthority(p)
 	if err = rejectPreviewBackup(ctx, tx, schedule.Source.ApplicationID); err != nil {
 		return schedule, err
@@ -402,6 +405,18 @@ func (s *Store) QueueDueBackups(ctx context.Context) error {
 			}
 			_, err = enqueueBackup(ctx, tx, p, job, "schedule:"+schedule.ID+":"+schedule.NextRunAt.UTC().Format(time.RFC3339Nano))
 			if err != nil {
+				if errors.Is(err, errManagedBackupSourceMissing) {
+					if _, err = tx.Exec(ctx, "UPDATE backup_schedules SET enabled=false,revision=revision+1,updated_at=now() WHERE id=$1", schedule.ID); err != nil {
+						return err
+					}
+					continue
+				}
+				if errors.Is(err, errManagedBackupAdmissionConflict) {
+					if _, err = tx.Exec(ctx, "UPDATE backup_schedules SET next_run_at=now()+interval '1 minute',updated_at=now() WHERE id=$1", schedule.ID); err != nil {
+						return err
+					}
+					continue
+				}
 				return err
 			}
 		}

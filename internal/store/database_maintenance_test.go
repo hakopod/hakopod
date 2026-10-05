@@ -133,3 +133,57 @@ func TestVitessNativeRevocationContinuesDuringArchiveAndAfterFailure(t *testing.
 		t.Fatal("native cleanup crossed an active lifecycle operation", err)
 	}
 }
+
+func TestDueManagedBackupConflictDoesNotBlockOtherSchedules(t *testing.T) {
+	s, p, blocked := databaseFixture(t)
+	ctx := context.Background()
+	readyBefore := blocked
+	readyBefore.ID = NewID()
+	readyBefore.Spec.Name = "ready-before-backup-schedule-fixture"
+	readyAfter := blocked
+	readyAfter.ID = NewID()
+	readyAfter.Spec.Name = "ready-after-backup-schedule-fixture"
+	for index, item := range []database.Resource{blocked, readyBefore, readyAfter} {
+		if _, err := s.AcceptDatabase(ctx, p, item, 0, "scheduled-backup-create-"+item.ID, "create"); err != nil {
+			t.Fatal(err)
+		}
+		op, err := s.ClaimDatabaseOperation(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.RecordDatabaseStep(ctx, op, database.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now()}, "succeeded", "ready", ""); err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			if _, err = s.Pool.Exec(ctx, "UPDATE managed_databases SET maintenance_lease=$2,maintenance_lease_until=now()+interval '10 minutes' WHERE id=$1", item.ID, NewID()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	destinationID := NewID()
+	if _, err := s.Pool.Exec(ctx, "INSERT INTO backup_destinations(id,name,revision,config,credentials) VALUES($1,'scheduler isolation',1,$2,$3)", destinationID, JSON(backup.Destination{ID: destinationID, Name: "scheduler isolation"}), []byte("fixture")); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	scheduleIDs := map[string]string{}
+	for index, item := range []database.Resource{readyBefore, blocked, readyAfter} {
+		scheduleID := NewID()
+		source := backup.Source{Kind: "managed_database", ManagedDatabaseID: item.ID, Engine: item.Spec.Engine}
+		if _, err := s.Pool.Exec(ctx, "INSERT INTO backup_schedules(id,name,destination_id,source,interval_hours,retention_count,enabled,revision,next_run_at,identity_id) VALUES($1,$2,$3,$4,24,2,true,1,$5,$6)", scheduleID, item.Spec.Name, destinationID, JSON(source), now.Add(-time.Duration(3-index)*time.Hour), p.ID); err != nil {
+			t.Fatal(err)
+		}
+		scheduleIDs[item.Spec.Name] = scheduleID
+	}
+	if err := s.QueueDueBackups(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var enabled bool
+	var next time.Time
+	if err := s.Pool.QueryRow(ctx, "SELECT enabled,next_run_at FROM backup_schedules WHERE id=$1", scheduleIDs[blocked.Spec.Name]).Scan(&enabled, &next); err != nil || !enabled || !next.After(now) || next.After(time.Now().Add(2*time.Minute)) {
+		t.Fatal("temporarily blocked schedule was not deferred", enabled, next, err)
+	}
+	var jobs int
+	if err := s.Pool.QueryRow(ctx, "SELECT count(*) FROM backup_jobs WHERE schedule_id IN ($1,$2)", scheduleIDs[readyBefore.Spec.Name], scheduleIDs[readyAfter.Spec.Name]).Scan(&jobs); err != nil || jobs != 2 {
+		t.Fatal("ready schedules around the blocked schedule did not both enqueue", jobs, err)
+	}
+}

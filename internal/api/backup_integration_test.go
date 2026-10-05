@@ -16,6 +16,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/backup"
+	managed "github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -114,6 +115,107 @@ func (transactionBackupRuntime) Dump(context.Context, backup.Target, io.Writer) 
 }
 func (transactionBackupRuntime) Restore(context.Context, backup.Target, io.Reader) error {
 	return errors.New("transaction fixture never executes restores")
+}
+
+type managedAdmissionRuntime struct {
+	resolveCalls int
+}
+
+func (*managedAdmissionRuntime) Targets(context.Context) ([]backup.Target, error) {
+	return nil, nil
+}
+func (r *managedAdmissionRuntime) Resolve(context.Context, backup.Source) (backup.Target, error) {
+	r.resolveCalls++
+	return backup.Target{}, errors.New("managed admission must not resolve live runtime state")
+}
+func (*managedAdmissionRuntime) Dump(context.Context, backup.Target, io.Writer) error {
+	return errors.New("managed admission fixture never executes backups")
+}
+func (*managedAdmissionRuntime) Restore(context.Context, backup.Target, io.Reader) error {
+	return errors.New("managed admission fixture never executes restores")
+}
+
+func TestManagedBackupAdmissionUsesDurableState(t *testing.T) {
+	db, dsn := database(t)
+	ctx := context.Background()
+	raw, err := db.Bootstrap(ctx, "managed-backup-admission")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := db.Authenticate(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE identities SET permissions=ARRAY['deployments:read','deployments:write'] WHERE id=$1", admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO projects(name) VALUES('foreign'); INSERT INTO environments(project,name) VALUES('foreign','production')"); err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := db.CreateKey(ctx, admin, store.KeyInput{Name: "managed-backup-admission", Project: "demo", Environment: "development", Permissions: []string{"deployments:read", "deployments:write"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &managedAdmissionRuntime{}
+	management := &api.Server{Store: db, Auth: api.AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{17}, 32))}}
+	management.ConfigureBackups(api.BackupConfig{DatabaseURL: dsn, StateDir: t.TempDir()})
+	management.Backups.Runtime = runtime
+	server := httptest.NewServer(management.Handler())
+	defer server.Close()
+	client := backupRequestClient{t: t, server: server, token: token}
+	var destination struct {
+		Destination backup.Destination `json:"destination"`
+	}
+	input := backup.DestinationInput{Name: "managed admission", Endpoint: "https://storage.invalid", Region: "us-east-1", Bucket: "managed-admission", PathStyle: true, AccessKeyID: "test-access", SecretAccessKey: "test-secret"}
+	if status := client.request("POST", "/backup-destinations", input, &destination, ""); status != http.StatusCreated {
+		t.Fatal("destination", status)
+	}
+	insertDatabase := func(project, environment, status string) string {
+		t.Helper()
+		id := store.NewID()
+		specification := managed.Spec{SchemaVersion: 1, Name: "db-" + id[:8], Engine: "postgresql", Version: "17", Mode: "standalone", Shards: 1, CPU: "100m", Memory: "256Mi", StorageGiB: 1}
+		if _, insertErr := db.Pool.Exec(ctx, "INSERT INTO managed_databases(id,project,environment,name,revision,spec,status,credentials) VALUES($1,$2,$3,$4,1,$5,$6,$7)", id, project, environment, specification.Name, store.JSON(specification), status, []byte("fixture")); insertErr != nil {
+			t.Fatal(insertErr)
+		}
+		return id
+	}
+	ready := insertDatabase("demo", "development", "ready")
+	notReady := insertDatabase("demo", "development", "pending")
+	foreign := insertDatabase("foreign", "production", "ready")
+	request := func(id, engine, idem string, output any) (int, string) {
+		return client.requestCode("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: id, Engine: engine}}, output, idem)
+	}
+	var accepted, replay backup.Job
+	if status, code := request(ready, "postgresql", "managed-admission-ready", &accepted); status != http.StatusAccepted || code != "" {
+		t.Fatal("ready managed database was not accepted", status, code)
+	}
+	if status, code := request(ready, "postgresql", "managed-admission-ready", &replay); status != http.StatusAccepted || code != "" || replay.ID != accepted.ID {
+		t.Fatal("managed backup idempotency changed", status, code)
+	}
+	if status, _ := request(ready, "mysql", "managed-admission-engine", nil); status != http.StatusConflict {
+		t.Fatal("wrong managed database engine was accepted", status)
+	}
+	if status, _ := request(notReady, "postgresql", "managed-admission-status", nil); status != http.StatusConflict {
+		t.Fatal("non-ready managed database was accepted", status)
+	}
+	if status, _ := request(foreign, "postgresql", "managed-admission-foreign", nil); status != http.StatusNotFound {
+		t.Fatal("foreign managed database was accepted", status)
+	}
+	var schedule backup.Schedule
+	scheduleRequest := map[string]any{"name": "managed admission", "destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: ready, Engine: "postgresql"}, "interval_hours": 24, "retention_count": 2, "enabled": true, "expected_revision": 0}
+	if status := client.request("POST", "/backup-schedules", scheduleRequest, &schedule, ""); status != http.StatusCreated || schedule.ID == "" {
+		t.Fatal("managed backup schedule was not accepted", status)
+	}
+	if runtime.resolveCalls != 0 {
+		t.Fatal("managed backup admission called the live runtime", runtime.resolveCalls)
+	}
+	if err = management.Backups.RunOnce(ctx); err != nil {
+		t.Fatal("backup worker", err)
+	}
+	failed, err := db.BackupJob(ctx, accepted.ID)
+	if err != nil || failed.Status != "failed" || runtime.resolveCalls != 1 {
+		t.Fatal("backup worker did not recheck live runtime state", failed.Status, runtime.resolveCalls, err)
+	}
 }
 
 func TestBackupDurabilityAuthorizationScheduling(t *testing.T) {
