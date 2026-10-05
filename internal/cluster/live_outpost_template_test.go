@@ -541,19 +541,31 @@ func outpostCleanup(t *testing.T, c *Client, ns *corev1.Namespace, target Target
 		return
 	}
 	if t.Failed() {
+		outpostFailureNetworkState(t, ctx, c, target)
 		pods, err := c.kube.CoreV1().Pods(ns.Name).List(ctx, metav1.ListOptions{Limit: 30})
 		if err == nil && pods.Continue == "" {
 			for _, pod := range pods.Items {
-				t.Logf("fixture pod %s phase=%s", pod.Name, pod.Status.Phase)
+				if owned(&pod, target) != nil {
+					continue
+				}
+				t.Logf("fixture pod %s uid=%s service=%s phase=%s ip=%s node=%s created=%s started=%v deleting=%v", pod.Name, pod.UID, pod.Labels[serviceKey], pod.Status.Phase, pod.Status.PodIP, pod.Spec.NodeName, pod.CreationTimestamp, pod.Status.StartTime, pod.DeletionTimestamp)
+				for _, condition := range pod.Status.Conditions {
+					t.Logf("pod condition %s status=%s reason=%s changed=%s", condition.Type, condition.Status, condition.Reason, condition.LastTransitionTime)
+				}
 				for _, status := range pod.Status.ContainerStatuses {
 					reason, exit := "", int32(0)
+					var started, finished metav1.Time
+					if status.State.Running != nil {
+						started = status.State.Running.StartedAt
+					}
 					if status.State.Waiting != nil {
 						reason = status.State.Waiting.Reason
 					}
 					if status.State.Terminated != nil {
 						reason, exit = status.State.Terminated.Reason, status.State.Terminated.ExitCode
+						started, finished = status.State.Terminated.StartedAt, status.State.Terminated.FinishedAt
 					}
-					t.Logf("container %s ready=%t restarts=%d reason=%s exit=%d", status.Name, status.Ready, status.RestartCount, reason, exit)
+					t.Logf("container %s ready=%t restarts=%d reason=%s exit=%d started=%s finished=%s", status.Name, status.Ready, status.RestartCount, reason, exit, started, finished)
 				}
 				outpostFailureLog(t, ctx, c, target, pod, secrets)
 			}
@@ -599,11 +611,69 @@ func outpostCleanup(t *testing.T, c *Client, ns *corev1.Namespace, target Target
 	t.Error("fixture resource cleanup timed out")
 }
 
+// Record the observed routing objects before cleanup, without environment,
+// Secret data or free-form event messages. A later snapshot cannot prove that
+// endpoints or policy rules were ready when the failed process first dialed.
+func outpostFailureNetworkState(t *testing.T, ctx context.Context, c *Client, target Target) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	namespace := Namespace(target.ApplicationID)
+	t.Logf("fixture network failure snapshot at %s", time.Now().UTC().Format(time.RFC3339Nano))
+	logObject := func(kind, name string, value any) {
+		data, err := json.Marshal(value)
+		if err != nil || len(data) > 16<<10 {
+			t.Logf("fixture %s %s diagnostic exceeded bound", kind, name)
+			return
+		}
+		t.Logf("fixture %s %s: %s", kind, name, data)
+	}
+	services, err := c.kube.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{Limit: 16})
+	serviceUIDs := map[string]types.UID{}
+	if err != nil || services.Continue != "" {
+		t.Log("fixture Service diagnostics unavailable or exceeded bound")
+	} else {
+		for _, service := range services.Items {
+			if _, expected := target.Spec.Services[service.Name]; !expected || owned(&service, target) != nil {
+				continue
+			}
+			serviceUIDs[service.Name] = service.UID
+			logObject("Service", service.Name, map[string]any{"uid": service.UID, "clusterIPs": service.Spec.ClusterIPs, "selector": service.Spec.Selector, "ports": service.Spec.Ports, "publishNotReadyAddresses": service.Spec.PublishNotReadyAddresses, "internalTrafficPolicy": service.Spec.InternalTrafficPolicy})
+		}
+	}
+	endpoints, err := c.kube.DiscoveryV1().EndpointSlices(namespace).List(ctx, metav1.ListOptions{Limit: 32})
+	if err != nil || endpoints.Continue != "" {
+		t.Log("fixture EndpointSlice diagnostics unavailable or exceeded bound")
+	} else {
+		for _, endpoint := range endpoints.Items {
+			service := endpoint.Labels["kubernetes.io/service-name"]
+			uid, expected := serviceUIDs[service]
+			ownedByService := false
+			for _, owner := range endpoint.OwnerReferences {
+				ownedByService = ownedByService || expected && owner.Kind == "Service" && owner.Name == service && owner.UID == uid
+			}
+			if ownedByService {
+				logObject("EndpointSlice", endpoint.Name, map[string]any{"uid": endpoint.UID, "service": service, "serviceUID": uid, "addressType": endpoint.AddressType, "ports": endpoint.Ports, "endpoints": endpoint.Endpoints})
+			}
+		}
+	}
+	policies, err := c.kube.NetworkingV1().NetworkPolicies(namespace).List(ctx, metav1.ListOptions{Limit: 16})
+	if err != nil || policies.Continue != "" {
+		t.Log("fixture NetworkPolicy diagnostics unavailable or exceeded bound")
+	} else {
+		for _, policy := range policies.Items {
+			if owned(&policy, target) == nil {
+				logObject("NetworkPolicy", policy.Name, map[string]any{"uid": policy.UID, "spec": policy.Spec})
+			}
+		}
+	}
+}
+
 // Keep useful startup evidence without emitting fixture credentials or
 // unbounded application output into public CI logs.
 func outpostFailureLog(t *testing.T, ctx context.Context, c *Client, target Target, pod corev1.Pod, secrets map[string]string) {
 	t.Helper()
-	if owned(&pod, target) != nil || !slices.Contains([]string{"main", "delivery", "log", "migrate"}, pod.Labels[serviceKey]) {
+	if owned(&pod, target) != nil || !slices.Contains([]string{"main", "delivery", "log", "migrate", "db", "redis", "broker", "fixture-db", "fixture-redis", "fixture-broker"}, pod.Labels[serviceKey]) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

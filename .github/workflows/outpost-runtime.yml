@@ -1,6 +1,12 @@
 name: Outpost runtime acceptance
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Run every dependency combination or a focused bundled startup check
+        type: choice
+        options: [full, bundled]
+        default: full
   pull_request:
     paths:
       - 'templates'
@@ -24,7 +30,7 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
         # Bits select external PostgreSQL, Redis and RabbitMQ respectively.
         # These are real, separately named private development dependencies.
-        modes: ['000', '001', '010', '011', '100', '101', '110', '111']
+        modes: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.scope == 'bundled' && '["000"]' || '["000", "001", "010", "011", "100", "101", "110", "111"]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     env:
@@ -43,6 +49,13 @@ jobs:
       - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
         with:
           version: v3.17.2
+      - name: Verify the pinned image's migration wait command
+        if: github.event_name == 'workflow_dispatch' && inputs.scope == 'bundled'
+        run: |
+          docker run --rm --network none --read-only --memory=64m --cpus=0.25 --pids-limit=32 \
+            --entrypoint=/bin/sh \
+            hookdeck/outpost:v1.6.0@sha256:36ed337bb1edf52b6b0130f87e9eef0b9c03187bfb85d946b4eeab5b7b602a28 \
+            -ec '(exec -a busybox /bin/sh sleep 0)'
       - name: Start disposable named development cluster
         run: |
           scripts/local-up.sh
