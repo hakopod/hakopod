@@ -6,7 +6,64 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 )
+
+func TestClientTimeoutsAndCallerCancellation(t *testing.T) {
+	arrived := make(chan struct{})
+	serverCanceled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(arrived)
+		<-r.Context().Done()
+		close(serverCanceled)
+	}))
+	defer server.Close()
+	defer server.CloseClientConnections()
+
+	c, err := newClient(config{URL: server.URL, Key: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := c.http.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type is %T", c.http.Transport)
+	}
+	if transport.ResponseHeaderTimeout <= 50*time.Second {
+		t.Fatalf("response header timeout %s must exceed the 50s managed-operation budget", transport.ResponseHeaderTimeout)
+	}
+	if c.http.Timeout <= transport.ResponseHeaderTimeout {
+		t.Fatalf("response header timeout %s must leave margin within request timeout %s", transport.ResponseHeaderTimeout, c.http.Timeout)
+	}
+	if c.http.Timeout > 90*time.Second {
+		t.Fatalf("request timeout %s exceeds the 90s bounded-policy ceiling", c.http.Timeout)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.request(ctx, http.MethodGet, "/me", nil, "", nil)
+	}()
+	select {
+	case <-arrived:
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("request did not reach the server")
+	}
+	cancel()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("request succeeded after caller cancellation")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("request did not finish after caller cancellation")
+	}
+	select {
+	case <-serverCanceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not observe caller cancellation")
+	}
+}
 
 func TestWorkspaceHeaderDoesNotReplaceCredential(t *testing.T) {
 	workspace := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

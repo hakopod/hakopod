@@ -52,6 +52,8 @@ func (s *Server) managedDatabaseRestorePlan(w http.ResponseWriter, r *http.Reque
 		problem(w, 409, "conflict", err.Error())
 		return
 	}
+	// Native checks and the store maintenance wait have separate bounds.
+	cancel()
 	target := backup.Target{Source: backup.Source{Kind: "managed_database", ManagedDatabaseID: d.ID, Engine: d.Spec.Engine}, ManagedDatabaseName: d.Spec.Name, Revision: d.Revision, Available: true, RuntimeFingerprint: observed.TopologyFingerprint}
 	plan := backup.RestorePlan{ID: store.NewID(), ArtifactID: a.ID, Target: target, Confirmation: d.Spec.Name, Scope: a.Scope, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: []string{"Only this separate database will receive the archive. Source data and application connections remain available.", "The archive is downloaded and fully authenticated before recovery. A failed recovery may leave this new database partial; use another fresh target for a retry.", "Inspect the recovered data before explicitly replacing the application's saved connection and redeploying.", "Writes after the captured recovery point require another capture before final cutover."}}
 	if d.Spec.Engine == "redis" {
@@ -60,7 +62,7 @@ func (s *Server) managedDatabaseRestorePlan(w http.ResponseWriter, r *http.Reque
 	if d.Spec.Engine == "vitess" {
 		plan.Warnings = append(plan.Warnings, "Vitess captures each shard under its own read lock. Cross-shard transactions do not share one recovery point. The target must have the same shard map and table routing schema.")
 	}
-	if err = s.Store.SaveBackupRestorePlan(ctx, who(r), plan); err != nil {
+	if err = s.Store.SaveBackupRestorePlan(r.Context(), who(r), plan); err != nil {
 		backupFailure(w, err)
 		return
 	}
