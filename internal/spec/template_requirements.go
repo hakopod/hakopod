@@ -10,9 +10,11 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -103,6 +105,10 @@ func ValidateTemplateSecret(id, name, value string) error {
 		} else if u.Scheme != "redis" || u.Host != "redis:6379" || (u.Path != "" && u.Path != "/0") || (u.User.Username() != "" && u.User.Username() != "default") || u.RawQuery != "" {
 			return fmt.Errorf("redis-url must target redis:6379 database 0 with password authentication")
 		}
+	case "postgres-connection-url", "amqp-url":
+		if err := validateTemplateConnectionURL(field.Format, value); err != nil {
+			return fmt.Errorf("%s: %s", name, err)
+		}
 	case "certificate":
 		block, rest := pem.Decode([]byte(value))
 		if block == nil || block.Type != "CERTIFICATE" || strings.TrimSpace(string(rest)) != "" {
@@ -130,6 +136,44 @@ func ValidateTemplateSecret(id, name, value string) error {
 		if err != nil {
 			return fmt.Errorf("%s must contain a supported unencrypted PEM private key", name)
 		}
+	}
+	return nil
+}
+
+func validateTemplateConnectionURL(format, value string) error {
+	u, err := url.Parse(value)
+	if err != nil || u.User == nil || u.User.Username() == "" || u.Opaque != "" || u.Fragment != "" ||
+		strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n") || len(value) > 4096 {
+		return fmt.Errorf("use a connection URL with a username and password, without a fragment")
+	}
+	password, present := u.User.Password()
+	if !present || password == "" || strings.ContainsAny(u.User.Username()+password, "\x00\r\n") {
+		return fmt.Errorf("the connection URL must contain its provider credentials")
+	}
+	if host := u.Hostname(); !ValidHostname(host) && net.ParseIP(host) == nil {
+		return fmt.Errorf("the connection URL must use a hostname or IP address")
+	}
+	if port := u.Port(); port != "" || strings.HasSuffix(u.Host, ":") {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("the connection port must be between 1 and 65535")
+		}
+	}
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return fmt.Errorf("the connection URL has invalid options")
+	}
+	if format == "amqp-url" {
+		if u.Scheme != "amqp" && u.Scheme != "amqps" {
+			return fmt.Errorf("use amqps for TLS or amqp for an explicitly trusted private connection")
+		}
+		return nil
+	}
+	if (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Path == "" || u.Path == "/" {
+		return fmt.Errorf("use a PostgreSQL URL containing the database name")
+	}
+	if len(query["sslmode"]) != 1 || !slices.Contains([]string{"verify-full", "verify-ca", "require", "disable"}, query.Get("sslmode")) {
+		return fmt.Errorf("set sslmode explicitly; prefer verify-full, or select verify-ca, require or disable for the intended connection")
 	}
 	return nil
 }

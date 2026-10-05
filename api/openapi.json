@@ -22953,6 +22953,7 @@
               "postgres",
               "mysql",
               "redis",
+              "amqp",
               "mongodb",
               "clickhouse",
               "oracle"

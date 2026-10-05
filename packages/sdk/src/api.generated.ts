@@ -5854,7 +5854,7 @@ export interface components {
         ServiceBinding: {
             service?: string;
             /** @enum {string} */
-            protocol: "http" | "postgres" | "mysql" | "redis" | "mongodb" | "clickhouse" | "oracle";
+            protocol: "http" | "postgres" | "mysql" | "redis" | "amqp" | "mongodb" | "clickhouse" | "oracle";
             database?: string;
             username?: string;
             password?: components["schemas"]["SecretRef"];
