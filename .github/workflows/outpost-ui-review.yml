@@ -1,0 +1,67 @@
+name: Outpost UI review evidence
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'templates'
+      - 'scripts/template-review-fixture/**'
+      - 'web/review/templates/**'
+      - '.github/workflows/outpost-ui-review.yml'
+permissions:
+  contents: read
+concurrency:
+  group: outpost-ui-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      NODE_OPTIONS: --max-old-space-size=1024
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Prepare source and isolated review dependencies
+        run: |
+          git submodule update --init templates
+          python3 scripts/ui-source.py restore
+          pnpm --dir web install --frozen-lockfile
+          npm install --prefix .local/template-review --no-audit --no-fund playwright@1.56.1
+          .local/template-review/node_modules/.bin/playwright install --with-deps chromium
+          node templates/scripts/sync-assets.mjs web/public/template-assets
+          go run ./scripts/template-review-fixture > web/review/templates/catalog-fixture.json
+      - name: Capture loaded routes and interactions using development fixtures
+        run: |
+          mkdir -p .local/template-review/evidence
+          node web/review/templates/server.mjs > .local/template-review/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4194/ > /dev/null; then break; fi
+            sleep 1
+          done
+          git rev-parse HEAD > .local/template-review/evidence/source-commit.txt
+          git -C templates rev-parse HEAD > .local/template-review/evidence/catalog-commit.txt
+          node web/review/templates/review.mjs
+      - name: Retain screenshots for independent visual review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: outpost-ui-review
+          path: |
+            .local/template-review/evidence
+            .local/template-review/server.log
+          retention-days: 1
+          if-no-files-found: error
