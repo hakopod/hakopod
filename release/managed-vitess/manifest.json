@@ -153,6 +153,7 @@
     "internal/api/database_oracle_switchover_test.go": "27909065f60ae45531ffeb9cdf503d55fddc85f8586e3c7e6cac3538bb12689d",
     "internal/api/database_placement.go": "7ece02b0a2a900f411af9cd3539f3c7d92128441418f3bdf01631b03be37b23b",
     "internal/api/database_placement_test.go": "f9f9beae96e61322d0ac819bc2396af17826f15468c9371155b347840cdc7af7",
+    "internal/api/database_provisioning_test.go": "773a802b87452648defdaf89d16cb9c8e35266ee4f15de0cbd256e625ef608c8",
     "internal/api/database_public_endpoint_clickhouse_test.go": "e4856c798e894827c888abf8caba44f57da59c9646999c76b9d6fbeb79d9ec6a",
     "internal/api/database_public_endpoint_identity_test.go": "8df84e658138a70a335bde8f83d2f461d378da8666e003b95108ddf0fcd16e89",
     "internal/api/database_public_endpoint_mysql_test.go": "5d67a1ca428ee09451cf779c3418cb04d504dffbbf165372d9ad782b246452c8",
@@ -165,7 +166,7 @@
     "internal/api/database_resize_retry_test.go": "a070a6180726e782050d88baf9d94ecaebcabc0baba5b44cc850010b4ab53252",
     "internal/api/database_tls_test.go": "0102013b1a521c18f8631f1dad479eb647161ab0bcdeab54912c2c730953a13b",
     "internal/api/database_vitess_backup.go": "7db55519e134adcd48fd804db0d1780f64afbc634cb212764433331a6377e697",
-    "internal/api/databases.go": "ae27e81b7b8b34939e0348ecce0d8c8bd4afb15648a54f67975dcc71791fd259",
+    "internal/api/databases.go": "8e2ee21a73cdae314bb5e0b419a53b56bbb9d30d5df7b00ef3afe45784b1bef3",
     "internal/api/decode_test.go": "6e58d1d3117619ecc11b18ea25dd676ff825f171ffd88b493e86c2a6d58a1bfc",
     "internal/api/deletion.go": "2a08e7820ea59023a1c255e600079815d2e18b784398ef14e9d2a4d7e3871534",
     "internal/api/deletion_test.go": "2c5e03587f39a7b18e73fa1317e2ecae2a985b9b44d69e3be54664e15e12ee35",
@@ -1677,6 +1678,6 @@
     "runtime-upstream.patch": "867388b04c088802ebcb6c7cbf7fb164f25aa748e6a7ed9f477d5d3823b2703d",
     "operator-upstream.patch": "bf2fa3c416de9334d21db7d8297c7458213688b9bc69ca3bd2a7878112f7bad5",
     "binary-sha256.txt": "1f9f72a99c552e161eec6951ee83f11f64bd76d07bc1da3d93a07421e2fc0a85",
-    "native-acceptance.json": "3cb14a6f7dcf407a35b2025e779f9a665d7124d8388f11c17261c25379306faa"
+    "native-acceptance.json": "74c3e8f400b19e1f976661e3b423745b41b0b905162c865f044aa2124c16d24c"
   }
 }
