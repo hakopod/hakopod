@@ -61,21 +61,21 @@ func TestOutpostIndependentDependencies(t *testing.T) {
 						if redis == "external" && (service.Env["REDIS_HOST"] != "redis.example.test" || service.Env["REDIS_TLS_ENABLED"] != "true") {
 							t.Fatal("external Redis must use the selected host and TLS by default", name)
 						}
-						if name == "migrate" {
-							if service.Job == nil || !slices.Equal(service.Args, []string{"migrate", "apply", "--yes"}) || slices.Contains(service.DependsOn, "broker") || service.Secrets["API_KEY"].Ref != "" {
-								t.Fatal("migration must complete using only PostgreSQL and Redis")
-							}
-							continue
-						}
-						if !slices.Contains(service.DependsOn, "migrate") || service.Healthcheck != "/healthz" || slices.Contains(service.DependsOn, "broker") != (broker == "bundled") {
-							t.Fatal("server must await migration and selected broker before readiness", name)
-						}
 						if broker == "external" {
 							if _, exists := service.Bindings["RABBITMQ_SERVER_URL"]; exists || service.Secrets["RABBITMQ_SERVER_URL"].Ref != "broker-url" {
 								t.Fatal("external broker must use its scoped URL", name)
 							}
 						} else if binding := service.Bindings["RABBITMQ_SERVER_URL"]; binding.Protocol != "amqp" || binding.Service != "broker" || binding.Database != "outpost" || binding.Password.Ref != "broker-password" {
 							t.Fatal("bundled broker binding changed", name)
+						}
+						if name == "migrate" {
+							if service.Job == nil || !slices.Equal(service.Args, []string{"migrate", "apply", "--yes"}) || slices.Contains(service.DependsOn, "broker") != (broker == "bundled") || service.Secrets["AES_ENCRYPTION_SECRET"].Ref != "encryption-secret" || service.Secrets["API_KEY"].Ref != "" || service.Secrets["API_JWT_SECRET"].Ref != "" {
+								t.Fatal("migration must validate dependency and encryption configuration without API keys")
+							}
+							continue
+						}
+						if !slices.Contains(service.DependsOn, "migrate") || service.Healthcheck != "/healthz" || slices.Contains(service.DependsOn, "broker") != (broker == "bundled") {
+							t.Fatal("server must await migration and selected broker before readiness", name)
 						}
 						for key, ref := range map[string]string{"API_KEY": "api-key", "API_JWT_SECRET": "jwt-secret", "AES_ENCRYPTION_SECRET": "encryption-secret"} {
 							if service.Secrets[key].Ref != ref {
