@@ -27,6 +27,11 @@ import (
 // Release builds inject the tag version with -X main.version.
 var version = "0.1.0-dev"
 
+const (
+	defaultResponseHeaderTimeout = 55 * time.Second
+	defaultRequestTimeout        = 60 * time.Second
+)
+
 type config struct {
 	Workspace   string `json:"workspace,omitempty"`
 	URL         string `json:"url"`
@@ -574,8 +579,8 @@ func anonymousClient(cfg config) (*client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 4
 	transport.MaxIdleConnsPerHost = 2
-	transport.ResponseHeaderTimeout = 20 * time.Second
-	return &client{url: strings.TrimRight(cfg.URL, "/"), key: cfg.Key, workspace: cfg.Workspace, http: &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("API redirects are not allowed") }}}, nil
+	transport.ResponseHeaderTimeout = defaultResponseHeaderTimeout
+	return &client{url: strings.TrimRight(cfg.URL, "/"), key: cfg.Key, workspace: cfg.Workspace, http: &http.Client{Timeout: defaultRequestTimeout, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("API redirects are not allowed") }}}, nil
 }
 func (c *client) request(ctx context.Context, method, path string, in any, idem string, out any) error {
 	var body io.Reader

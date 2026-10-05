@@ -75,6 +75,8 @@ func safeProblemCategory(message string) string {
 		return "health-unavailable"
 	case restoreVitessEmptyDetail:
 		return "vitess-target-not-empty"
+	case "platform state is temporarily unavailable; retry with backoff":
+		return "platform-unavailable"
 	case context.DeadlineExceeded.Error():
 		return "context-deadline"
 	case context.Canceled.Error():
@@ -646,12 +648,13 @@ func TestProblemDiagnosticsWithholdUnrecognizedDetails(t *testing.T) {
 		"password=synthetic-secret",
 		"Create a separate, unused database for recovery. token=synthetic-secret",
 		"context deadline exceeded: synthetic-private-endpoint",
+		"platform state is temporarily unavailable; retry with backoff token=synthetic-secret",
 	} {
 		if category := safeProblemCategory(message); category != "detail-withheld" {
 			t.Fatal("unrecognized response detail reached the diagnostic output")
 		}
 	}
-	if safeProblemCategory(restoreHealthDetail) != "health-unavailable" || safeProblemCategory(context.DeadlineExceeded.Error()) != "context-deadline" {
+	if safeProblemCategory(restoreHealthDetail) != "health-unavailable" || safeProblemCategory(context.DeadlineExceeded.Error()) != "context-deadline" || safeProblemCategory("platform state is temporarily unavailable; retry with backoff") != "platform-unavailable" {
 		t.Fatal("known recovery failures lost their safe diagnostic category")
 	}
 }
