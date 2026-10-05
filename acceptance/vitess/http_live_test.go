@@ -75,6 +75,20 @@ func safeProblemCategory(message string) string {
 		return "health-unavailable"
 	case restoreVitessEmptyDetail:
 		return "vitess-target-not-empty"
+	case "database command did not complete successfully":
+		return "native-command-failed"
+	case "database observation interrupted: context deadline exceeded":
+		return "native-observation-deadline"
+	case "database observation interrupted: context canceled":
+		return "native-observation-cancelled"
+	case "database execution transport is unavailable", "Vitess execution transport is unavailable":
+		return "native-transport-unavailable"
+	case "Vitess execution target changed", "Vitess observation target changed", "Vitess inventory changed during health checks":
+		return "native-target-changed"
+	case "Vitess namespace ownership changed", "Vitess controller ownership changed", "Vitess identity namespace ownership changed":
+		return "native-ownership-changed"
+	case "Vitess requires a complete current topology", "Vitess shard layout is invalid", "Vitess tablet identity, role or readiness is invalid", "Vitess shard has multiple primaries", "Vitess shard has no verified primary or complete replica set":
+		return "native-topology-invalid"
 	case "platform state is temporarily unavailable; retry with backoff":
 		return "platform-unavailable"
 	case context.DeadlineExceeded.Error():
@@ -369,7 +383,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	}
 	server.ConfigureDatabaseBindings()
 	httpServer := httptest.NewServer(server.Handler())
-	httpServer.Client().Timeout = 30 * time.Second
+	httpServer.Client().Timeout = 90 * time.Second
 	defer httpServer.Close()
 	_, scopedToken, err := database.CreateKey(ctx, owner, store.KeyInput{Name: "vitess-http", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write", "logs:read"}, ExpiresAt: time.Now().Add(time.Hour)})
 	if err != nil {
@@ -503,6 +517,30 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if planDiagnostic.Status != http.StatusOK {
 		t.Logf("phase=restore-plan state=failed status=%d code=%s category=%s request_elapsed=%s",
 			planDiagnostic.Status, planDiagnostic.Code, planDiagnostic.Category, planDiagnostic.Elapsed.Round(time.Millisecond))
+		// Keep the failed HTTP response as the result. Separate read-only probes
+		// identify which native stage exhausted its lifetime without exposing errors.
+		observedAt := time.Now()
+		observeCtx, stopObserve := context.WithTimeout(ctx, 25*time.Second)
+		observed, observeErr := runtime.ObserveDatabase(observeCtx, target)
+		stopObserve()
+		observeCategory := "none"
+		if observeErr != nil {
+			observeCategory = safeProblemCategory(observeErr.Error())
+		}
+		t.Logf("phase=restore-observation-diagnostic ready=%t category=%s request_elapsed=%s",
+			observed.Status == "ready", observeCategory, time.Since(observedAt).Round(time.Millisecond))
+		if observeErr == nil && observed.Status == "ready" {
+			emptyAt := time.Now()
+			emptyCtx, stopEmpty := context.WithTimeout(ctx, 25*time.Second)
+			emptyErr := runtime.DatabaseEmpty(emptyCtx, target, observed)
+			stopEmpty()
+			emptyCategory := "none"
+			if emptyErr != nil {
+				emptyCategory = safeProblemCategory(emptyErr.Error())
+			}
+			t.Logf("phase=restore-empty-diagnostic passed=%t category=%s request_elapsed=%s",
+				emptyErr == nil, emptyCategory, time.Since(emptyAt).Round(time.Millisecond))
+		}
 		t.Fatal("restore plan", planDiagnostic.Status, planDiagnostic.Code)
 	}
 	var recovery backup.Job
@@ -648,6 +686,10 @@ func TestProblemDiagnosticsWithholdUnrecognizedDetails(t *testing.T) {
 	for _, message := range []string{
 		"",
 		"password=synthetic-secret",
+		"database command did not complete successfully: password=synthetic-secret",
+		"database observation interrupted: context deadline exceeded: synthetic-private-endpoint",
+		"database observation interrupted: context canceled: synthetic-private-endpoint",
+		"Vitess execution target changed: synthetic-private-endpoint",
 		"Create a separate, unused database for recovery. token=synthetic-secret",
 		"context deadline exceeded: synthetic-private-endpoint",
 		"platform state is temporarily unavailable; retry with backoff token=synthetic-secret",
@@ -656,7 +698,19 @@ func TestProblemDiagnosticsWithholdUnrecognizedDetails(t *testing.T) {
 			t.Fatal("unrecognized response detail reached the diagnostic output")
 		}
 	}
-	if safeProblemCategory(restoreHealthDetail) != "health-unavailable" || safeProblemCategory(context.DeadlineExceeded.Error()) != "context-deadline" || safeProblemCategory("platform state is temporarily unavailable; retry with backoff") != "platform-unavailable" {
-		t.Fatal("known recovery failures lost their safe diagnostic category")
+	for message, category := range map[string]string{
+		restoreHealthDetail:              "health-unavailable",
+		context.DeadlineExceeded.Error(): "context-deadline",
+		"platform state is temporarily unavailable; retry with backoff": "platform-unavailable",
+		"database command did not complete successfully":                "native-command-failed",
+		"database observation interrupted: context deadline exceeded":   "native-observation-deadline",
+		"database observation interrupted: context canceled":            "native-observation-cancelled",
+		"Vitess execution target changed":                               "native-target-changed",
+		"Vitess namespace ownership changed":                            "native-ownership-changed",
+		"Vitess requires a complete current topology":                   "native-topology-invalid",
+	} {
+		if safeProblemCategory(message) != category {
+			t.Fatal("known recovery failures lost their safe diagnostic category")
+		}
 	}
 }

@@ -41,19 +41,22 @@ func (s *Server) managedDatabaseRestorePlan(w http.ResponseWriter, r *http.Reque
 		backupFailure(w, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
-	defer cancel()
-	observed, err := s.Cluster.ObserveDatabase(ctx, d)
+	// Observation, native emptiness verification and durable admission are
+	// separate finite stages; each remains bounded by the caller's lifetime.
+	observeCtx, cancelObserve := context.WithTimeout(r.Context(), 25*time.Second)
+	observed, err := s.Cluster.ObserveDatabase(observeCtx, d)
+	cancelObserve()
 	if err != nil || observed.Status != "ready" {
 		problem(w, 409, "unavailable", "Database health could not be verified.")
 		return
 	}
-	if err = s.Cluster.DatabaseEmpty(ctx, d, observed); err != nil {
+	emptyCtx, cancelEmpty := context.WithTimeout(r.Context(), 25*time.Second)
+	err = s.Cluster.DatabaseEmpty(emptyCtx, d, observed)
+	cancelEmpty()
+	if err != nil {
 		problem(w, 409, "conflict", err.Error())
 		return
 	}
-	// Native checks and the store maintenance wait have separate bounds.
-	cancel()
 	target := backup.Target{Source: backup.Source{Kind: "managed_database", ManagedDatabaseID: d.ID, Engine: d.Spec.Engine}, ManagedDatabaseName: d.Spec.Name, Revision: d.Revision, Available: true, RuntimeFingerprint: observed.TopologyFingerprint}
 	plan := backup.RestorePlan{ID: store.NewID(), ArtifactID: a.ID, Target: target, Confirmation: d.Spec.Name, Scope: a.Scope, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: []string{"Only this separate database will receive the archive. Source data and application connections remain available.", "The archive is downloaded and fully authenticated before recovery. A failed recovery may leave this new database partial; use another fresh target for a retry.", "Inspect the recovered data before explicitly replacing the application's saved connection and redeploying.", "Writes after the captured recovery point require another capture before final cutover."}}
 	if d.Spec.Engine == "redis" {

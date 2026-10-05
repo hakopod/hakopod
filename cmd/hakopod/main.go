@@ -28,8 +28,8 @@ import (
 var version = "0.1.0-dev"
 
 const (
-	defaultResponseHeaderTimeout = 55 * time.Second
-	defaultRequestTimeout        = 60 * time.Second
+	defaultResponseHeaderTimeout = 80 * time.Second
+	defaultRequestTimeout        = 90 * time.Second
 )
 
 type config struct {
