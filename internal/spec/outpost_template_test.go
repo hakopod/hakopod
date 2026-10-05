@@ -141,7 +141,7 @@ func TestOutpostProviderCredentialURLs(t *testing.T) {
 	}
 	for name, values := range map[string][]string{
 		"database-url": {"postgres://user:secret@db/outpost", "postgres://user:secret@db/outpost?sslmode=prefer", "postgres://user:secret@db/outpost?sslmode=require&sslmode=disable", "postgres://user:secret@db/?sslmode=require", "postgres://user:secret@db:0/outpost?sslmode=require", "postgres://user:secret@db:/outpost?sslmode=require", "postgres://user@db/outpost?sslmode=require", "postgres://user:secret@db/outpost?sslmode=require#fragment", "http://user:secret@db/outpost?sslmode=require"},
-		"broker-url":   {"http://user:secret@broker/outpost", "amqp://user@broker/outpost", "amqps://user:secret@broker:65536/outpost", "amqp://user:secret@/outpost", "amqp://user:secret@broker:/outpost", "amqp://user:secret@broker/outpost#fragment"},
+		"broker-url":   {"http://user:secret@broker/outpost", "amqp://user@broker/outpost", "amqps://user:secret@broker:65536/outpost", "amqp://user:secret@/outpost", "amqp://user:secret@broker:/outpost", "amqp://user:secret@broker/outpost#fragment", "amqp://user:secret@broker/a/b", "amqp://user:secret@broker/%00"},
 	} {
 		for _, value := range values {
 			if err := ValidateTemplateSecret("outpost", name, value); err == nil || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), value) {

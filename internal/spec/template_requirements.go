@@ -143,7 +143,7 @@ func ValidateTemplateSecret(id, name, value string) error {
 func validateTemplateConnectionURL(format, value string) error {
 	u, err := url.Parse(value)
 	if err != nil || u.User == nil || u.User.Username() == "" || u.Opaque != "" || u.Fragment != "" ||
-		strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n") || len(value) > 4096 {
+		strings.TrimSpace(value) != value || strings.ContainsAny(value, "\r\n") || strings.ContainsAny(u.Path, "\x00\r\n") || len(value) > 4096 {
 		return fmt.Errorf("use a connection URL with a username and password, without a fragment")
 	}
 	password, present := u.User.Password()
@@ -166,6 +166,9 @@ func validateTemplateConnectionURL(format, value string) error {
 	if format == "amqp-url" {
 		if u.Scheme != "amqp" && u.Scheme != "amqps" {
 			return fmt.Errorf("use amqps for TLS or amqp for an explicitly trusted private connection")
+		}
+		if strings.Contains(strings.TrimPrefix(u.EscapedPath(), "/"), "/") {
+			return fmt.Errorf("percent-encode any slash inside the broker virtual host")
 		}
 		return nil
 	}
