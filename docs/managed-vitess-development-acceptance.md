@@ -9,6 +9,34 @@ This page describes the test setup and what each check proves. Passing it on
 one VM does not establish availability across physical hosts, zones or cloud
 providers.
 
+## Recorded native run
+
+All five native cases passed on October 5, 2026, using source
+`06a7b47baea53dcf920c7500c2f3c21eed4ae597` and the pinned runtime and operator
+images in [the qualification manifest](../release/managed-vitess/manifest.json).
+The [native acceptance record](../release/managed-vitess/native-acceptance.json)
+binds the test events, source files and runtime environment.
+
+| Case | Runner elapsed |
+| --- | ---: |
+| Standalone and cluster lifecycle | 999.946 seconds |
+| Maximum topology | 899.659 seconds |
+| Isolated recovery | 615.209 seconds |
+| Replica reseeding | 399.062 seconds |
+| Backup approval revocation | 288.702 seconds |
+
+The maximum topology contained eight primaries, 40 replicas, two gateways and
+three topology voters. Its three measured health observations took 14.967,
+15.321 and 15.798 seconds. Each used 140 core, 123 grouped and 157 exec API
+requests, within the unchanged limits of 176 core requests, 150 grouped requests
+and 25 seconds. Every case preserved the 2,819-file source snapshot, restored
+the worker configuration and reclaimed its database namespaces and volumes.
+
+The three development workers each had 16 CPUs and 48 GiB memory and shared
+one physical VM. These results do not establish independent host or zone
+availability. Shared HTTP acceptance and package publication are separate
+release gates.
+
 ## Isolated native backup storage
 
 Run `scripts/setup-development-vitess-storage.py --provision-only` on the development VM. Set
@@ -78,6 +106,9 @@ The native fixture config contains these separate entries:
 | `reseed` | One shard with two replicas for native member recovery |
 | `revocation` | Storage approval removal, restoration and deletion |
 
+The scale case uses the `cluster` entry with an eight-shard test specification
+and five replicas per shard.
+
 Set `HAKOPOD_VITESS_NATIVE_FIXTURE_CONFIG` to the protected file path. Do not
 put its contents in a command, issue, log or repository. Each test run selects a
 fresh prefix inside its assigned bucket, so retained native backups cannot
@@ -145,6 +176,16 @@ tablets may retain native recovery credentials. The revocation test verifies the
 documented platform boundary and does not claim that all copies of a key have
 been destroyed.
 
+`TestManagedVitessScaleLive` creates the maximum admitted fixed topology: eight
+shards with five replicas per shard. It requires 48 tablets in total, comprising
+eight primaries and 40 replicas, behind two ready gateways and three ready
+topology voters. It verifies shard routing and data through the primary and
+replica target on both gateways. Three consecutive observations must preserve
+the topology fingerprint and every member UID, complete within 25 seconds, keep
+TLS verified with plaintext rejected, and remain within the test's bounded core
+and grouped Kubernetes API list requests. The recorded native run above passed
+this case and the other four cases against the same source and pinned images.
+
 ## Evidence and cleanup
 
 Run these tests against an isolated candidate source snapshot with the candidate
@@ -157,8 +198,8 @@ Skipped tests and package compilation do not count as native acceptance.
 the `vitess-source-check` directory under the supplied scratch root. Pass the
 qualified runtime and operator image references, including their SHA-256
 digests, with `--engine-image` and `--operator-image`. Choose `lifecycle`,
-`recovery`, `reseed` or `revocation` with `--case`. Use a new `--attempt` number
-for each run; the helper refuses to overwrite earlier evidence. Run it inside
+`recovery`, `reseed`, `revocation` or `scale` with `--case`. Use a new
+`--attempt` number for each run; the helper refuses to overwrite earlier evidence. Run it inside
 the development VM's bounded systemd unit after coordinating the test lane.
 Pass the protected development cluster receipt and its exact checksum with
 `--cluster-receipt` and `--cluster-receipt-sha256`. Before starting Go, the
@@ -196,6 +237,8 @@ by each test topology: 8,850m for lifecycle, 17,700m for simultaneous recovery
 source and target clusters, 6,550m for reseed and 5,100m for revocation. These
 figures include replacement and native backup surge from the production
 database capacity contract. The preflight records and rejects any shortfall.
+The scale case reserves 45,450m CPU and 97,050 MiB memory and requires its fixed
+67 GiB fixture disk budget before it can start.
 
 It records the source inventory before and after the run, the image references,
 the log checksum and the actual Go test events. Raw output stays in a protected
@@ -225,8 +268,8 @@ between qualification rounds.
 
 After recording results and deleting all owned database fixtures, stop the
 recorded transport processes and remove their disposable identity. Then remove the
-`hakopod-vitess-s3-acceptance` namespace and the two protected fixture config/state
-files. Verify that the namespace and its volume have been reclaimed. Do not
+recorded fixture namespace and its protected configuration and state files.
+Verify that the namespace and its owned volumes have been reclaimed. Do not
 delete a similarly named namespace without matching its recorded UID and
 `hakopod.io/development-fixture` label.
 

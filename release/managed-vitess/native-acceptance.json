@@ -117,13 +117,13 @@
     "internal/api/backend_certificates_integration_test.go": "8a0bb7233372af17d70f336805990f7fd9ba4c23795755fb05769985899c12c3",
     "internal/api/backend_certificates_test.go": "15220b5832139c627b2c72acf58c453db9c94320dfaf04e6041bc0c468dd3742",
     "internal/api/backup_clickhouse_test.go": "085c51565d79e13aedf7362d06957a4be8aa89ac24a0a64e0b66316bb54643a7",
-    "internal/api/backup_integration_test.go": "bcc485ea0db6696d84b3f422ad1f0fddc063dc60709144cf6926772722586a3f",
+    "internal/api/backup_integration_test.go": "3a122771728b8971f7b62583caed43611960131df62eb3d2bbff74cf9beb4ca4",
     "internal/api/backup_live_test.go": "3a6737533ff8fb8adf4e3f83fac88627637a7027137bb96134746c4d8f7a6436",
     "internal/api/backup_runtime.go": "5c08e898f995c0969866dbb451728bd0343888aa9762691f96a5eb563a5e805e",
     "internal/api/backup_runtime_test.go": "24e41b01800e6bf5c0e16398b502b32ca6b0fafd4f2b2de8a27e3f4ef1b9c6bd",
     "internal/api/backup_scope_integration_test.go": "e8e0a9c39930aeb9bd9a4ac77b7a0b6b87d520fa3f6079b473025701c808eaa0",
     "internal/api/backup_warnings_test.go": "d727766a2f75b04a49f77eb23844e753f75025caf4538b1334dca5920b02642b",
-    "internal/api/backups.go": "85ec5c4ff69522239a05f0d765e0d08189887846bfdc47acfecc53cae2a80a0b",
+    "internal/api/backups.go": "11fc681e1fb6f91a9de876a9ce06f419c03a020120af8821a7e730c33545d032",
     "internal/api/build_arguments.go": "2e4c43d606ad382bf8093ec87bf1c863fbbd75bb788f74d3c45b43d17b8a3420",
     "internal/api/build_arguments_test.go": "6410ed41776e906d37d0a666958bae950432ff0224dc122ea4b31a77995b8cbc",
     "internal/api/build_automatic.go": "2c9cb635e93ecfa1fc537ffa7a00011e7ae527056b0457fd339f79f0b2785df2",
@@ -172,7 +172,7 @@
     "internal/api/database_resize_retry_test.go": "a070a6180726e782050d88baf9d94ecaebcabc0baba5b44cc850010b4ab53252",
     "internal/api/database_tls_test.go": "0102013b1a521c18f8631f1dad479eb647161ab0bcdeab54912c2c730953a13b",
     "internal/api/database_vitess_backup.go": "7db55519e134adcd48fd804db0d1780f64afbc634cb212764433331a6377e697",
-    "internal/api/databases.go": "8e2ee21a73cdae314bb5e0b419a53b56bbb9d30d5df7b00ef3afe45784b1bef3",
+    "internal/api/databases.go": "ac4c95c5e7ece622275852704e6de01e1da6249f38f33634f8b29867d16d23d1",
     "internal/api/decode_test.go": "6e58d1d3117619ecc11b18ea25dd676ff825f171ffd88b493e86c2a6d58a1bfc",
     "internal/api/deletion.go": "2a08e7820ea59023a1c255e600079815d2e18b784398ef14e9d2a4d7e3871534",
     "internal/api/deletion_test.go": "2c5e03587f39a7b18e73fa1317e2ecae2a985b9b44d69e3be54664e15e12ee35",
@@ -430,7 +430,7 @@
     "internal/cluster/database_endpoint_ports_test.go": "f68de5934c34ff3416808674034815858ec4963683316c6a7539cf4a022a6271",
     "internal/cluster/database_engine_metrics.go": "129a1a4c8887c460ff7c7c91d7f793413422f8ba98f8495347d348d700219f7a",
     "internal/cluster/database_engine_metrics_test.go": "9b7c77b14417c3c1e47bff81937cfe1dbf1489c3d5142bd17fd7ca64071973e3",
-    "internal/cluster/database_health.go": "ce9a7c76cc7c136be102e89ae5ec3d22dbbb05809aa264febfc9582e6be084bf",
+    "internal/cluster/database_health.go": "e0dc31445f812145a73e633e9d2e10425f030b57b90c849f08ea6a3452dc4fcf",
     "internal/cluster/database_identity.go": "989707fd858f5c823435d090c0fa2f9e54d612d3361ebcfbcb922652fa34c13e",
     "internal/cluster/database_identity_test.go": "32549f030ebaf08a0712134796e07a5715695b71ae24bb3ffa27c01b5d1d86e1",
     "internal/cluster/database_metrics.go": "600e3e4807bcd0854df25cddd1b4599e4662939bf32537cb90cf1d9e24f93b51",
@@ -451,7 +451,7 @@
     "internal/cluster/database_oracle.go": "fc6b46ee083dd26d57f10aba795530bb91e72debbac0de9d554f8127719c593c",
     "internal/cluster/database_oracle_enterprise.go": "33848bdcd46c921f7bc3b4b2dce70e4c0e41a426e7df2db03008e6592f5af310",
     "internal/cluster/database_oracle_enterprise_bootstrap.go": "4218071696968eaedab0e12a7f3bb3f0073c2f8880c29034e0003b969deaa766",
-    "internal/cluster/database_oracle_enterprise_health.go": "def3a27de1ead411227ff6ee3cff34770975df5036085d3af33138f2fe26d54f",
+    "internal/cluster/database_oracle_enterprise_health.go": "a7b27af19abf00c77e24a55df485f2cbb4c0351e41af2d6d2323f3f21ebc221d",
     "internal/cluster/database_oracle_enterprise_registry.go": "ffe0661a2c4b6c9d76dae17df89c67047f81063751f4dedbc0e0f0128f0b515f",
     "internal/cluster/database_oracle_enterprise_runtime.go": "031b94f359047bd3092cf0d9856c8aa4c6de9e21e70eec2f0df1fbace5d9ecff",
     "internal/cluster/database_oracle_enterprise_switchover.go": "2fa52883972755fe04e976ad380edb5dc9da0963c69efeb8de3312c5cc142d40",
@@ -467,7 +467,7 @@
     "internal/cluster/database_oracle_wallet.py": "4dd1619f6716301354f25e6990bf83b0da2073f7160ea6c7103a27c48011fd17",
     "internal/cluster/database_placement.go": "fafce17eb39b496f0b86cba70f81825fe6e4628446d8567248241c85060d7e6e",
     "internal/cluster/database_placement_test.go": "49ca3a362833af1ec128cdf5aaa95b712f4ce425236499f5e4a1b4284ddd145d",
-    "internal/cluster/database_policy.go": "7c233dc54242a5dc4db8659a91ee21aa9c817b21c30c4c9bcb973ac4486e3334",
+    "internal/cluster/database_policy.go": "cb8423602aeea81be8f42b80fbc78d6a4d68bb09c1c3b4a8c486e6c1f1db6531",
     "internal/cluster/database_policy_test.go": "4eee5eeabecbea6d33cf86a931de45ea89a4446ac49be06dde9c21144488d309",
     "internal/cluster/database_pooling.go": "d17c95157ce880d52598dde5961f7244563dacabe90041f186938d3a2001d233",
     "internal/cluster/database_pooling_test.go": "7f8dc7b086cc99cc9cbe6e56d1d3bee08d0a57729a8ab79c743d4060c0d09b74",
@@ -496,7 +496,7 @@
     "internal/cluster/database_redis_recovery.go": "8fea3683b1b9dac80c81f404005b4be59295dbdd028ecfbb1eb0a71512968196",
     "internal/cluster/database_redis_tls.go": "5efd00d2325a6960ece5d3f40cb4affc5bb1bfb058f2fb74a4707433d558e420",
     "internal/cluster/database_runtime.go": "aa13180739489de35942ad78058e0c3c21176abba5474b727ee389dd85db8808",
-    "internal/cluster/database_tls.go": "c338c4b2a9ec391e288850a9476aeb34bd5b16c36e0c86bd407af7ae1e65713e",
+    "internal/cluster/database_tls.go": "52df6612321b73368d7f04d635d5fd60ceca218a150fccc70d235ff2a80da45c",
     "internal/cluster/database_trust.go": "d8055f57f3b63c071dc1ae8606d6b8cae728b3046db7440f03b27858b89d506e",
     "internal/cluster/database_trust_test.go": "6d75dbc8d2a2fb7d44c3d2c9ac29f8184a8e04f147565473b9d418360d32cd1a",
     "internal/cluster/database_vitess.go": "045b1687fb1d16700853590e05bc67cb488b1ed7d0c92dc0eda523f1f26555b7",
@@ -508,12 +508,15 @@
     "internal/cluster/database_vitess_backup_storage.go": "28ae9dbae8b61945df78ee081c4b113942ef093de45b96e19fd28f99f6f81b46",
     "internal/cluster/database_vitess_credentials.go": "80cb4a5e6abf89150a513070c220dbcfaa5883e00baedd7349f4bc073ac8273d",
     "internal/cluster/database_vitess_credentials_test.go": "d3bcf07d3028ec93cd72109222f74c72eb0dc3b3424dfbdf5aa3239b4df6d2b2",
-    "internal/cluster/database_vitess_gateway_health.go": "cbf6f3659df9b7790390df5eb2e21c4696dda4461830a077ac251281c98c24d5",
+    "internal/cluster/database_vitess_gateway_health.go": "7638748a5ed2c0da5abf57af53680b4a09f54b45e529659dc655b96d00a4b28e",
     "internal/cluster/database_vitess_gateway_health_test.go": "057099c56aabb4fa713dcb2ac70a229a6c08a33a99fa837169712c16bdfac11a",
-    "internal/cluster/database_vitess_health.go": "93b9922fd74e24727b4b59f3180ee863c249f79dc9eacd3db7afcea89822be91",
+    "internal/cluster/database_vitess_health.go": "622f5c5121cf7463caa1876e1440f21616b093472a7d833f671816e9aab13dc1",
     "internal/cluster/database_vitess_health_test.go": "44e949cfed52351f631622cf64ebbe0126ab6d5ae7ec03a3cc7e516dd6fa34f9",
-    "internal/cluster/database_vitess_identity_gate_test.go": "63542651743d8b18a8a22994f7fa08edf8450fc8e6a3763174bc304d02f4431c",
+    "internal/cluster/database_vitess_identity_gate_test.go": "347c75d5a67395d4a81a3de1d02443bc700f647f17cee1c34949496e6be9b2e7",
     "internal/cluster/database_vitess_infrastructure.go": "d78baa1f1f50bbfed6cc75260ab6c0a1e10a254cd08134fc55d9adc2d4ceadf6",
+    "internal/cluster/database_vitess_inventory.go": "baf3cf724648adf6ff61e8b341ddff042fb083f2b5020665d190595e5e2af54c",
+    "internal/cluster/database_vitess_inventory_snapshot_test.go": "3278e894fa42aa15b42ac9da31bfe0d053b105aed39a720a3295cb5872b17301",
+    "internal/cluster/database_vitess_inventory_test.go": "0e2e7e9063ff3885f07392940f9ac7e7ffdfe83cd88f42fea0bdaf867dc87caa",
     "internal/cluster/database_vitess_network.go": "1c54394340064872729b82a8677b163217055d786800c5038866f9555710e0d0",
     "internal/cluster/database_vitess_public_network_test.go": "3a6bfacdf7e284dcf4d2b822fba896416e3d2ab0022c9ca5eaeaffd00bbaa2ea",
     "internal/cluster/database_vitess_recovery.go": "f48f2df7a119fb038eb5cc825d298d089a18fc42dc3db930a21eddfc27521df1",
@@ -521,18 +524,20 @@
     "internal/cluster/database_vitess_revocation.go": "3c55fe92a174cd17a23aaba22fca818a7c525382180ced0e7898212773519a9d",
     "internal/cluster/database_vitess_revocation_test.go": "dff32968d323767c1e96f6dfc20b78d197a9c50b326cc39450eb2941b3fe4cba",
     "internal/cluster/database_vitess_routing.go": "618b9b88ac80a7e01b24da70f8001575d316600f3f82766072333fe9b238b1c9",
-    "internal/cluster/database_vitess_runtime.go": "c631c2b25c80e8173ed8b737ead8d105be9995d44cbeef8a2aec4bf90250149e",
+    "internal/cluster/database_vitess_runtime.go": "d70cbe20d311fed4eb9e2148b0ed59a957762e0d32b4a1d5c990aad900b5af29",
     "internal/cluster/database_vitess_schema_test.go": "16420d4fe78f7777b4e8a7a405067fd6e1dbec29961ed5ac4a19a248497ababf",
     "internal/cluster/database_vitess_security.go": "7bf0a22d7914aa3b7c2e9f613c6370bcf76f463c18e9fe736b494ae144bbd019",
     "internal/cluster/database_vitess_services.go": "574b2daae57e9e923830a98611659212f9ad42c5a77552acf0acdafe5fb7f01b",
-    "internal/cluster/database_vitess_socket.go": "2de1280919e8228f7050e502be64a756bb3401a7b60f7f8006c77b6456b79da2",
+    "internal/cluster/database_vitess_socket.go": "ed0e69f32518c807dafea87ab69295a0cae1d1989db4a46c654cf49a288d615e",
     "internal/cluster/database_vitess_socket_policy.go": "9b727d48d94517330a282afc736a2d58af1901751c756c3f47bad3d95340f8d9",
     "internal/cluster/database_vitess_socket_policy_test.go": "5fb106f615d1bddee64448af564500717b1bf1e8a8c2c537c469f70079adf8f0",
     "internal/cluster/database_vitess_socket_test.go": "6f288e633869618b70a1e3dd129273345ba92c3f1356b19920fc3bc22cf2156d",
+    "internal/cluster/database_vitess_storage.go": "1ead361e2bb04e4a6e043cfc07c308e82f6943af116e08bf6044786646a656df",
+    "internal/cluster/database_vitess_storage_test.go": "ad4c7a0bae9dddc22593386cf5b533e9f9cc839eb55b6c9089aa777bc35c2010",
     "internal/cluster/database_vitess_test.go": "dda933c81f7f4d05b5e5c92c3f50af900fd0a3989a5196741473f378071796ba",
-    "internal/cluster/database_vitess_transport.go": "df2964ab7c6d4d303cbb1888a50b1e79bb3a5877a1632274774708a5a62fb9e3",
+    "internal/cluster/database_vitess_transport.go": "e1d30146d7e0ae5a6f9755848dc1932ea9f8dd7b9673cc60e036e8b8bb6fc7fc",
     "internal/cluster/database_vitess_transport_test.go": "9dc2536909d2035dfaf0bac5041c267bddfa184e7b493b477411d8f76d170f38",
-    "internal/cluster/databases.go": "24d5e9e55b9e8b5dabcc6e291df4cb8f3243f2055e43fea784878197de288af3",
+    "internal/cluster/databases.go": "599c15a17786ee6d5ea9a5a68a741a29d5b9db8fcec28b046d9ea71882889c06",
     "internal/cluster/databases_test.go": "38de0c55299fa712bafc0502bb879fb4733a815de001d1847c1a19fdeef3f8b2",
     "internal/cluster/delivery.go": "df97844121221ba9d301a8d7ede3a3d402b6adebc03874af41ec7035bf6a5cd0",
     "internal/cluster/delivery_health.go": "3a0c0b9a330b80e5d296ed269b306799c740b151df6918c6d89ea563188c0b87",
@@ -605,8 +610,9 @@
     "internal/cluster/live_database_vitess_recovery_test.go": "0e39a9a26c534b5f7db77b5ca5d8f95fe54331ff964c6b89ef07bfa9b021b0b9",
     "internal/cluster/live_database_vitess_reseed_test.go": "0566353a0e8cdc1cefe5eff319838ad8120886ee9922295362e5069367496382",
     "internal/cluster/live_database_vitess_revocation_test.go": "1c490830848c871b9a167c904c6ddf18daceffcecc90d1f8de64c2bdddfc1959",
+    "internal/cluster/live_database_vitess_scale_test.go": "6898d8d2a91ecc0f4a9f01af1a773e4ca9bf97e45d75f8fc3488b979d6efdb08",
     "internal/cluster/live_database_vitess_security_test.go": "de9218efc5d17c9c4649c2683ba8a7ca31a0dd5805509637937fa27217300f9a",
-    "internal/cluster/live_database_vitess_test.go": "66ce1846b67f6029320fa2c4ffc7f3e3e0a7a48dc6396f7d47dfb4d690d82b46",
+    "internal/cluster/live_database_vitess_test.go": "31fe9dbacdabcf8907188dc430027de5dab3ec74db2714a4274992969de464f6",
     "internal/cluster/live_databases_test.go": "728b4aa491e4105a2f50cd4d1b931db41a7091bcbb2c15b76a6edbd39026dd0b",
     "internal/cluster/live_deletion_test.go": "8d19374f1d70a3a8ed1e65708e4b2ca3366869c10ea5c54d1ff187b060dab44c",
     "internal/cluster/live_domains_test.go": "b4bb4cf4689a8e17d2b5bf4262c18a07398ba6a42212b12541c54bba56673dba",
@@ -1151,8 +1157,8 @@
     "internal/store/backup_imports.go": "89f825906a1e0837268e839f6b3021dbb69458f41026ba7dc5ddfd42c2079a1b",
     "internal/store/backup_imports_test.go": "e05cc5b3b53ffb316772ab3894644a74c665d2adb266175ae1b58fbc3a0cfeb5",
     "internal/store/backup_scope.go": "93ecb86c92a31c475ce4f2559943270d16264e175deb4921115f60f05945337c",
-    "internal/store/backup_worker.go": "021a28cd83f092281b048640d9cf39dfba5174bd5850776af86d0df9ee1ec516",
-    "internal/store/backups.go": "4fdd7dae5f29bcf0a1efb852bc076174b21b99d9f998d397daf030182adf33a5",
+    "internal/store/backup_worker.go": "5bf19b7c9032645d4579d6ab4920cb55086fa62df530cab7215f26e5cfc74312",
+    "internal/store/backups.go": "64a1b2eed5c3c0b362c94dec2acf7216d675c914cb0794c0eee15315dda0bea8",
     "internal/store/custom_roles.go": "0ccd10fa31ac2a14858d21a06b86e0edb7ad599918ad48aa0938bf41463625b9",
     "internal/store/database_allocations.go": "82c0834f4e36b1d0b8be46401fdbb6401fef23de35ff6065ba40d9ec0f5b74c4",
     "internal/store/database_allocations_test.go": "2cfcf15b6476861c0a8037ec3489832d8dd07a7432bd333d451a4bfd9fd31f03",
@@ -1164,7 +1170,7 @@
     "internal/store/database_consumers.go": "1b7317cb951f5ab623f6d23ab938aa349a0f4421eba76de6eff6e4ac8ca7f436",
     "internal/store/database_consumers_test.go": "318c026d32c151530c1aeb8b45313939bf33559382fc6fb6b0dff56aa7016e73",
     "internal/store/database_maintenance.go": "5dc66cce925df00b989bf02f9041ea5bbffad89ed3ece1d0afc32701d03b55a1",
-    "internal/store/database_maintenance_test.go": "d39bb5c37aec0d1face66c721578782deb64f83bb61f95b27c9b6383daebd983",
+    "internal/store/database_maintenance_test.go": "a42059152b597382e0dcac3e69ca7463691bf6b2a03f0ab1d2a78a2162f6edca",
     "internal/store/database_mongodb_test.go": "ad5d1908a6aaebecb3b1618470d9bc1f7da98e9a443c98c0c6126cf1bc8b250c",
     "internal/store/database_monitoring.go": "7ab5a8d533396df78faf1a150d11e027393cf4a249265e258e10d0ad937fdbd6",
     "internal/store/database_monitoring_test.go": "174c074f181786aba7fc3f63dbed20cae6a9bfd64b0c4fa1b4418891794b302e",
@@ -1183,7 +1189,7 @@
     "internal/store/database_resize_retry_test.go": "e723ef7ba2d888c3c64b43e7baa76373ade1b89c5fddf4b2f8623d248dabdc64",
     "internal/store/database_restore_test.go": "1d2d9a8971c9775d2b7c8f57d9a0d93547ebda0b98c3eb982cbbbbdda5e75a1c",
     "internal/store/database_vitess_backup.go": "1ce6bb7ae29935cd5155576a29666e0019c3d4b1dc185034cba1f935d925bb03",
-    "internal/store/database_vitess_backup_test.go": "b2bfdab3c0343def97898538b8571183ff1558b4b022db0c98029e6cae1ee4e8",
+    "internal/store/database_vitess_backup_test.go": "b540f11ba6d2511dd88f0be857a0af3eb6c150966e0ef8648f8c24f226d4f549",
     "internal/store/deletion.go": "8e9258e961728196996ba584b83c76f831362dee126bcd8b6824ce03b25ce3f1",
     "internal/store/deletion_actions_history_test.go": "a24fbfe82c9e9268c5073f981aa5252a436d40ef0277de306c955bad845f5ab0",
     "internal/store/deletion_test.go": "0fa83babd8ccf3e970fec712bdce74835c86cf5dcf8dd05ce03803d53b30be3c",
@@ -1332,11 +1338,11 @@
     "patches/vitess-semisync-account-test.go.txt": "a58369591632c32c374b62180adc4d4190b5c362a8e99769670b4adeb0525c87",
     "patches/vitess-shared-socket-test.go.txt": "5e4a1db71b11e404fa320f599c5e94f88177b2c1bf17d882351b5df2222cb5ca",
     "patches/vitess-tablet-hostname-test.go.txt": "04b388ffbc8ab19d5452e32f38031cc9e79b89c573c199fac226516a99037b5b",
-    "release/record-vitess-qualification.py": "1e9910e3f98f905f100d63b5a0af14c2172357d448a14866e03f2d061c56c329",
-    "release/verify-vitess-runtime.py": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
+    "release/record-vitess-qualification.py": "b499291f2b16d43925bdd680568caabc449ae6efc760fe54d868d6bc20dcfef4",
+    "release/verify-vitess-runtime.py": "7af01369c885bd50d039799f858125296ac7daf18be18bb978e22bac9e35e4dc",
     "scripts/apply-managed-vitess-patches.py": "62bb3fa0101b1725c522b1a62baddde0c787734db258456d79572c15229b2f87",
     "scripts/build-managed-vitess.sh": "e0d9a58b5a6d64bd1eb7dce46b68f3bfcfb097e39fb8e2c042ccd1e4c5cafeca",
-    "scripts/run-development-vitess-acceptance.py": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
+    "scripts/run-development-vitess-acceptance.py": "4e2abf106177bfa113b70f8f75d088f6115cb6912807cf74cea6dc20d8f3f578",
     "templates/.github/workflows/catalog-images.yml": "df2033f3a310a8ab6f47356ca8a42ebe4467c186e081d487ebdff6596222facf",
     "templates/.github/workflows/validate.yml": "3ca27f00897e88043425e97f4ba7a8c88b171c86daba5fb98fc58faed3440270",
     "templates/.gitignore": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
@@ -1656,7 +1662,8 @@
     "TestManagedVitessLive/cluster",
     "TestManagedVitessLive/standalone",
     "TestManagedVitessNativeReseedLive",
-    "TestManagedVitessRecoveryLive"
+    "TestManagedVitessRecoveryLive",
+    "TestManagedVitessScaleLive"
   ],
   "test_events": [
     {
@@ -1718,24 +1725,36 @@
       "Action": "pass",
       "Package": "github.com/hakopod/hakopod/internal/cluster",
       "Test": "TestManagedVitessBackupRevocationLive"
+    },
+    {
+      "Action": "run",
+      "Package": "github.com/hakopod/hakopod/internal/cluster",
+      "Test": "TestManagedVitessScaleLive"
+    },
+    {
+      "Action": "pass",
+      "Package": "github.com/hakopod/hakopod/internal/cluster",
+      "Test": "TestManagedVitessScaleLive"
     }
   ],
   "attempts": [
     {
       "case": "lifecycle",
-      "log_sha256": "f0cde6ba227f5acb57f49898ab2087370e48fa0707e51028244bc0105ec9a87c",
-      "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
-      "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 965.834,
+      "log_sha256": "03fe5b8993d908736256e764e45032b13883e2edb55c67d3f196f7ea2c0385a4",
+      "runner_sha256": "4e2abf106177bfa113b70f8f75d088f6115cb6912807cf74cea6dc20d8f3f578",
+      "verifier_sha256": "7af01369c885bd50d039799f858125296ac7daf18be18bb978e22bac9e35e4dc",
+      "elapsed_seconds": 999.946,
       "environment": {
         "schema_version": 1,
         "case": "lifecycle",
         "minimum_free_bytes": 12884901888,
         "fixture_budget_bytes": 12884901888,
         "required_cpu_milli": 8850,
+        "required_memory_bytes": 0,
+        "host_cpu_milli": 64000,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 346742562816
+          "available_bytes": 329118474240
         },
         "nodes": [
           {
@@ -1753,11 +1772,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 346743336960
+                "available_bytes": 329118621696
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38980009984
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329118621696
               }
             },
             "cached_images": [
@@ -1765,9 +1784,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-1",
@@ -1784,11 +1808,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 346743152640
+                "available_bytes": 329118564352
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38979985408
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329118564352
               }
             },
             "cached_images": [
@@ -1796,9 +1820,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-2",
@@ -1815,11 +1844,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 346742947840
+                "available_bytes": 329118494720
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38979973120
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329118494720
               }
             },
             "cached_images": [
@@ -1827,12 +1856,18 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           }
         ],
         "cpu_shortfall_milli": 0,
+        "memory_shortfall_bytes": 0,
         "cluster": {
           "uid": "f63996ad-2bc2-4e6f-9051-26e03a28cf96",
           "node_uids": {
@@ -1850,25 +1885,27 @@
             "vitesskeyspaces.planetscale.com",
             "vitessshards.planetscale.com"
           ],
-          "receipt_sha256": "4d4861b73b0ea917c4688cf66eb74a36fc679971a22ece2f9c7fca129efac420"
+          "receipt_sha256": "ee51ff1c7464f54c553646bff4ccba10519edecfecdad8d7f2861aee726d1f1d"
         }
       }
     },
     {
       "case": "recovery",
-      "log_sha256": "da9bfd3c082e385b3534d2d80699f32d7211ea0a51d8bad2f15218bba52f8175",
-      "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
-      "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 684.359,
+      "log_sha256": "6b2fb674c44ce55a338b328a535648787c00db644ccfceaa924892959e50f436",
+      "runner_sha256": "4e2abf106177bfa113b70f8f75d088f6115cb6912807cf74cea6dc20d8f3f578",
+      "verifier_sha256": "7af01369c885bd50d039799f858125296ac7daf18be18bb978e22bac9e35e4dc",
+      "elapsed_seconds": 615.209,
       "environment": {
         "schema_version": 1,
         "case": "recovery",
         "minimum_free_bytes": 12884901888,
         "fixture_budget_bytes": 12884901888,
         "required_cpu_milli": 17700,
+        "required_memory_bytes": 0,
+        "host_cpu_milli": 64000,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 346616463360
+          "available_bytes": 328988794880
         },
         "nodes": [
           {
@@ -1886,11 +1923,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 346619047936
+                "available_bytes": 328988946432
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38981255168
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328988946432
               }
             },
             "cached_images": [
@@ -1898,9 +1935,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-1",
@@ -1917,11 +1959,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 346618212352
+                "available_bytes": 328988868608
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38981230592
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328988868608
               }
             },
             "cached_images": [
@@ -1929,9 +1971,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-2",
@@ -1948,11 +1995,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 346616500224
+                "available_bytes": 328988815360
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38981214208
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328988815360
               }
             },
             "cached_images": [
@@ -1960,12 +2007,18 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           }
         ],
         "cpu_shortfall_milli": 0,
+        "memory_shortfall_bytes": 0,
         "cluster": {
           "uid": "f63996ad-2bc2-4e6f-9051-26e03a28cf96",
           "node_uids": {
@@ -1983,25 +2036,27 @@
             "vitesskeyspaces.planetscale.com",
             "vitessshards.planetscale.com"
           ],
-          "receipt_sha256": "4d4861b73b0ea917c4688cf66eb74a36fc679971a22ece2f9c7fca129efac420"
+          "receipt_sha256": "ee51ff1c7464f54c553646bff4ccba10519edecfecdad8d7f2861aee726d1f1d"
         }
       }
     },
     {
       "case": "reseed",
-      "log_sha256": "c040f97e82ec339193c036dec902906cb36a0ef5210afd6a9e90efb056b745d6",
-      "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
-      "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 461.858,
+      "log_sha256": "4e104120e19cd16b0380ddfddc5f19968179d78ecddc45886b205dac4e484585",
+      "runner_sha256": "4e2abf106177bfa113b70f8f75d088f6115cb6912807cf74cea6dc20d8f3f578",
+      "verifier_sha256": "7af01369c885bd50d039799f858125296ac7daf18be18bb978e22bac9e35e4dc",
+      "elapsed_seconds": 399.062,
       "environment": {
         "schema_version": 1,
         "case": "reseed",
         "minimum_free_bytes": 12884901888,
         "fixture_budget_bytes": 12884901888,
         "required_cpu_milli": 6550,
+        "required_memory_bytes": 0,
+        "host_cpu_milli": 64000,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 345257639936
+          "available_bytes": 328972550144
         },
         "nodes": [
           {
@@ -2019,11 +2074,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 345257750528
+                "available_bytes": 328972693504
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38978367488
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328972693504
               }
             },
             "cached_images": [
@@ -2031,9 +2086,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-1",
@@ -2050,11 +2110,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 345257697280
+                "available_bytes": 328972632064
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38978338816
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328972632064
               }
             },
             "cached_images": [
@@ -2062,9 +2122,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-2",
@@ -2081,11 +2146,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 345257656320
+                "available_bytes": 328972574720
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38978322432
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328972574720
               }
             },
             "cached_images": [
@@ -2093,12 +2158,18 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           }
         ],
         "cpu_shortfall_milli": 0,
+        "memory_shortfall_bytes": 0,
         "cluster": {
           "uid": "f63996ad-2bc2-4e6f-9051-26e03a28cf96",
           "node_uids": {
@@ -2116,25 +2187,27 @@
             "vitesskeyspaces.planetscale.com",
             "vitessshards.planetscale.com"
           ],
-          "receipt_sha256": "4d4861b73b0ea917c4688cf66eb74a36fc679971a22ece2f9c7fca129efac420"
+          "receipt_sha256": "ee51ff1c7464f54c553646bff4ccba10519edecfecdad8d7f2861aee726d1f1d"
         }
       }
     },
     {
       "case": "revocation",
-      "log_sha256": "b58704f3c97a1b974e7b2c87e923cd7fa45310a1dcb1fd8aa68da76b52a627e0",
-      "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
-      "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 275.176,
+      "log_sha256": "6868e32314ad238e4a7749e8409b01c40369b827473c7d0d6ed8ae3575ef32c5",
+      "runner_sha256": "4e2abf106177bfa113b70f8f75d088f6115cb6912807cf74cea6dc20d8f3f578",
+      "verifier_sha256": "7af01369c885bd50d039799f858125296ac7daf18be18bb978e22bac9e35e4dc",
+      "elapsed_seconds": 288.702,
       "environment": {
         "schema_version": 1,
         "case": "revocation",
         "minimum_free_bytes": 12884901888,
         "fixture_budget_bytes": 12884901888,
         "required_cpu_milli": 5100,
+        "required_memory_bytes": 0,
+        "host_cpu_milli": 64000,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 345246961664
+          "available_bytes": 328962035712
         },
         "nodes": [
           {
@@ -2152,11 +2225,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 345247064064
+                "available_bytes": 328962183168
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38975016960
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328962183168
               }
             },
             "cached_images": [
@@ -2164,9 +2237,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-1",
@@ -2183,11 +2261,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 345247031296
+                "available_bytes": 328962109440
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38974988288
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328962109440
               }
             },
             "cached_images": [
@@ -2195,9 +2273,14 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           },
           {
             "name": "k3d-hakopod-vitess-worker-2",
@@ -2214,11 +2297,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 345246978048
+                "available_bytes": 328962052096
               },
               "imagefs": {
-                "capacity_bytes": 132011507712,
-                "available_bytes": 38974971904
+                "capacity_bytes": 539978293248,
+                "available_bytes": 328962052096
               }
             },
             "cached_images": [
@@ -2226,12 +2309,18 @@
               "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
               "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
             ],
-            "allocatable_cpu_milli": 8000,
+            "allocatable_cpu_milli": 16000,
             "requested_cpu_milli": 0,
-            "available_cpu_milli": 8000
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
           }
         ],
         "cpu_shortfall_milli": 0,
+        "memory_shortfall_bytes": 0,
         "cluster": {
           "uid": "f63996ad-2bc2-4e6f-9051-26e03a28cf96",
           "node_uids": {
@@ -2249,7 +2338,158 @@
             "vitesskeyspaces.planetscale.com",
             "vitessshards.planetscale.com"
           ],
-          "receipt_sha256": "4d4861b73b0ea917c4688cf66eb74a36fc679971a22ece2f9c7fca129efac420"
+          "receipt_sha256": "ee51ff1c7464f54c553646bff4ccba10519edecfecdad8d7f2861aee726d1f1d"
+        }
+      }
+    },
+    {
+      "case": "scale",
+      "log_sha256": "c21e3bf91a71408a645e28647a4c19ac87f32c8c3070ce7c5bf539937d84317d",
+      "runner_sha256": "4e2abf106177bfa113b70f8f75d088f6115cb6912807cf74cea6dc20d8f3f578",
+      "verifier_sha256": "7af01369c885bd50d039799f858125296ac7daf18be18bb978e22bac9e35e4dc",
+      "elapsed_seconds": 899.659,
+      "environment": {
+        "schema_version": 1,
+        "case": "scale",
+        "minimum_free_bytes": 12884901888,
+        "fixture_budget_bytes": 71940702208,
+        "required_cpu_milli": 45450,
+        "required_memory_bytes": 101764300800,
+        "host_cpu_milli": 64000,
+        "host_filesystem": {
+          "capacity_bytes": 539978293248,
+          "available_bytes": 329026072576
+        },
+        "nodes": [
+          {
+            "name": "k3d-hakopod-vitess-worker-0",
+            "architecture": "amd64",
+            "operating_system": "linux",
+            "schedulable": true,
+            "conditions": {
+              "MemoryPressure": "False",
+              "DiskPressure": "False",
+              "PIDPressure": "False",
+              "Ready": "True"
+            },
+            "image_gc_high_threshold_percent": 85,
+            "filesystems": {
+              "nodefs": {
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329026199552
+              },
+              "imagefs": {
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329026199552
+              }
+            },
+            "cached_images": [
+              "ghcr.io/hakopod/managed-vitess-operator@sha256:275c3ce3794dc5be502450cef38b7ac632a81a4b2f2834f7889b83e28a3cae9b",
+              "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
+              "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
+            ],
+            "allocatable_cpu_milli": 16000,
+            "requested_cpu_milli": 0,
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
+          },
+          {
+            "name": "k3d-hakopod-vitess-worker-1",
+            "architecture": "amd64",
+            "operating_system": "linux",
+            "schedulable": true,
+            "conditions": {
+              "MemoryPressure": "False",
+              "DiskPressure": "False",
+              "PIDPressure": "False",
+              "Ready": "True"
+            },
+            "image_gc_high_threshold_percent": 85,
+            "filesystems": {
+              "nodefs": {
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329026146304
+              },
+              "imagefs": {
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329026146304
+              }
+            },
+            "cached_images": [
+              "ghcr.io/hakopod/managed-vitess-operator@sha256:275c3ce3794dc5be502450cef38b7ac632a81a4b2f2834f7889b83e28a3cae9b",
+              "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
+              "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
+            ],
+            "allocatable_cpu_milli": 16000,
+            "requested_cpu_milli": 0,
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
+          },
+          {
+            "name": "k3d-hakopod-vitess-worker-2",
+            "architecture": "amd64",
+            "operating_system": "linux",
+            "schedulable": true,
+            "conditions": {
+              "MemoryPressure": "False",
+              "DiskPressure": "False",
+              "PIDPressure": "False",
+              "Ready": "True"
+            },
+            "image_gc_high_threshold_percent": 85,
+            "filesystems": {
+              "nodefs": {
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329026084864
+              },
+              "imagefs": {
+                "capacity_bytes": 539978293248,
+                "available_bytes": 329026084864
+              }
+            },
+            "cached_images": [
+              "ghcr.io/hakopod/managed-vitess-operator@sha256:275c3ce3794dc5be502450cef38b7ac632a81a4b2f2834f7889b83e28a3cae9b",
+              "ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a",
+              "quay.io/coreos/etcd@sha256:a055da833a7c013b836ed0822e8ec1f99b059658be255ad8d0fcd31b635ae3d6"
+            ],
+            "allocatable_cpu_milli": 16000,
+            "requested_cpu_milli": 0,
+            "available_cpu_milli": 16000,
+            "worker_cpu_limit_milli": 16000,
+            "worker_memory_limit_bytes": 51539607552,
+            "allocatable_memory_bytes": 51539607552,
+            "requested_memory_bytes": 0,
+            "available_memory_bytes": 51539607552
+          }
+        ],
+        "cpu_shortfall_milli": 0,
+        "memory_shortfall_bytes": 0,
+        "cluster": {
+          "uid": "f63996ad-2bc2-4e6f-9051-26e03a28cf96",
+          "node_uids": {
+            "k3d-hakopod-vitess-worker-0": "9f4336e6-0bf0-4ca4-adfd-909f94b0b000",
+            "k3d-hakopod-vitess-worker-1": "7c2c854f-4114-427f-8343-7983fa857580",
+            "k3d-hakopod-vitess-worker-2": "39d723e7-f7aa-4069-9afa-840bb52a7d95"
+          },
+          "vitess_crds": [
+            "etcdlockservers.planetscale.com",
+            "vitessbackups.planetscale.com",
+            "vitessbackupschedules.planetscale.com",
+            "vitessbackupstorages.planetscale.com",
+            "vitesscells.planetscale.com",
+            "vitessclusters.planetscale.com",
+            "vitesskeyspaces.planetscale.com",
+            "vitessshards.planetscale.com"
+          ],
+          "receipt_sha256": "ee51ff1c7464f54c553646bff4ccba10519edecfecdad8d7f2861aee726d1f1d"
         }
       }
     }
