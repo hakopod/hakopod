@@ -90,6 +90,16 @@ func vitessPodReady(pod corev1.Pod) bool {
 	return false
 }
 
+// A replacement voter exists before the scheduler assigns its node. Permit
+// that bounded wait only while it is unready and still carries the required
+// placement and runtime policy. Scheduled voters use the complete policy gate.
+func vitessTopologyPodPolicyMatchesForWait(pod corev1.Pod, policy *DatabasePolicy) bool {
+	if policy == nil || pod.Spec.NodeName != "" {
+		return databasePodPolicyMatches(pod, policy)
+	}
+	return !vitessPodReady(pod) && databasePodPlacementMatches(pod, policy) && databasePodRuntimeMatches(pod, policy)
+}
+
 // vitessTopologyRolloutTarget returns one stale voter only after every voter is
 // ready. Sorting makes retries choose the same voter until its replacement has
 // the current identity.
@@ -265,7 +275,7 @@ func (c *Client) rollVitessTopologyIdentityWithHealth(ctx context.Context, d dat
 				}
 				valid := true
 				for _, pod := range pods.Items {
-					if !c.vitessPodOwned(wait, pod, object.GetUID()) || pod.Labels[databaseOwner] != d.ID || pod.Labels[vitessComponentLabel] != "topology" || !vitessPodMatches(pod, d) || !databasePodPolicyMatches(pod, policy) {
+					if !c.vitessPodOwned(wait, pod, object.GetUID()) || pod.Labels[databaseOwner] != d.ID || pod.Labels[vitessComponentLabel] != "topology" || !vitessPodMatches(pod, d) || !vitessTopologyPodPolicyMatchesForWait(pod, policy) {
 						return fmt.Errorf("Vitess topology rollout ownership or runtime changed")
 					}
 					valid = valid && vitessPodReady(pod)
