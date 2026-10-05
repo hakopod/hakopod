@@ -130,6 +130,7 @@ func (s *Store) backupWorkerPrincipal(ctx context.Context, id, key string, a *ba
 		return Principal{}, ErrForbidden
 	}
 	p := Principal{ID: id, Project: a.Project, Environment: a.Environment, Permissions: []string{"deployments:write"}}
+	keepScopedAdmin := false
 	if key != "" {
 		fresh, err := s.KeyPrincipal(ctx, key)
 		if err != nil {
@@ -138,6 +139,8 @@ func (s *Store) backupWorkerPrincipal(ctx context.Context, id, key string, a *ba
 		if fresh.ID != id || !fresh.Allows("deployments:write", a.Project, a.Environment, "") {
 			return p, ErrForbidden
 		}
+		keepScopedAdmin = fresh.Admin && fresh.CredentialType == "machine" && fresh.Project == a.Project &&
+			fresh.Environment == a.Environment && fresh.Application == ""
 		p = fresh
 		p.Project = a.Project
 		p.Environment = a.Environment
@@ -146,8 +149,12 @@ func (s *Store) backupWorkerPrincipal(ctx context.Context, id, key string, a *ba
 			return p, err
 		}
 	}
-	// Installation operators must retain explicit membership in this project.
-	p.Admin = false
+	// A live scoped key keeps an administrator identity only inside the key's
+	// exact durable authority. Keyless schedules cannot inherit global admin and
+	// installation operators must retain explicit membership in this project.
+	if !keepScopedAdmin {
+		p.Admin = false
+	}
 	p.Owner = false
 	roles, err := s.projectRoles(ctx, id)
 	if err != nil {
