@@ -269,25 +269,44 @@ func backupRequestHash(j backup.Job) string {
 	}{j.Kind, j.DestinationID, j.ArtifactID, j.Source, j.Target}))
 	return hex.EncodeToString(sum[:])
 }
+
+var errManagedBackupAdmissionConflict = fmt.Errorf("%w: managed database is temporarily unavailable for backup", backup.ErrConflict)
+var errManagedBackupSourceMissing = fmt.Errorf("%w: managed database is unavailable", backup.ErrNotFound)
+
+func validateManagedBackupAdmission(ctx context.Context, tx pgx.Tx, p Principal, source backup.Source) error {
+	if source.Kind != "managed_database" {
+		return nil
+	}
+	var revision int64
+	var status, engine string
+	if err := tx.QueryRow(ctx, "SELECT revision,status,spec->>'engine' FROM managed_databases WHERE id=$1 AND deleted_at IS NULL AND ($2 OR (project=$3 AND environment=$4)) FOR UPDATE", source.ManagedDatabaseID, p.IsAdmin(), p.Project, p.Environment).Scan(&revision, &status, &engine); errors.Is(err, pgx.ErrNoRows) {
+		return errManagedBackupSourceMissing
+	} else if err != nil {
+		return backupError(err)
+	}
+	if revision < 1 || status != "ready" || engine != source.Engine {
+		return errManagedBackupAdmissionConflict
+	}
+	if idle, err := databaseMaintenanceIdle(ctx, tx, source.ManagedDatabaseID); err != nil {
+		return err
+	} else if !idle {
+		return errManagedBackupAdmissionConflict
+	}
+	return nil
+}
 func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, idem string) (backup.Job, error) {
 	if err := lockArchiveDestinationTx(ctx, tx, j.DestinationID); err != nil {
 		return j, err
 	}
 	if err := authorizeBackupJob(ctx, tx, p, j); err != nil {
+		if j.Kind == "backup" && j.Source.Kind == "managed_database" && errors.Is(err, backup.ErrNotFound) {
+			return j, errManagedBackupSourceMissing
+		}
 		return j, err
 	}
-	if j.Kind == "backup" && j.Source.Kind == "managed_database" {
-		var status string
-		if err := tx.QueryRow(ctx, "SELECT status FROM managed_databases WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", j.Source.ManagedDatabaseID).Scan(&status); err != nil {
-			return j, backupError(err)
-		}
-		if status != "ready" {
-			return j, backup.ErrConflict
-		}
-		if idle, err := databaseMaintenanceIdle(ctx, tx, j.Source.ManagedDatabaseID); err != nil {
+	if j.Kind == "backup" {
+		if err := validateManagedBackupAdmission(ctx, tx, p, j.Source); err != nil {
 			return j, err
-		} else if !idle {
-			return j, backup.ErrConflict
 		}
 	}
 	j.Authority = backupAuthority(p)

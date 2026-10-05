@@ -252,9 +252,11 @@ func (s *Server) createBackup(w http.ResponseWriter, r *http.Request) {
 		backupFailure(w, err)
 		return
 	}
-	if _, err := s.Backups.Runtime.Resolve(r.Context(), in.Source); err != nil {
-		problem(w, 409, "backup_target_unavailable", err.Error())
-		return
+	if in.Source.Kind != "managed_database" {
+		if _, err := s.Backups.Runtime.Resolve(r.Context(), in.Source); err != nil {
+			problem(w, 409, "backup_target_unavailable", err.Error())
+			return
+		}
 	}
 	job, err := s.Store.EnqueueBackup(r.Context(), who(r), backup.Job{Kind: "backup", DestinationID: in.DestinationID, Source: in.Source}, idem)
 	if err != nil {
@@ -462,9 +464,11 @@ func (s *Server) putBackupSchedule(w http.ResponseWriter, r *http.Request) {
 		backupFailure(w, err)
 		return
 	}
-	if _, err := s.Backups.Runtime.Resolve(r.Context(), in.Source); err != nil {
-		problem(w, 409, "backup_target_unavailable", err.Error())
-		return
+	if in.Source.Kind != "managed_database" {
+		if _, err := s.Backups.Runtime.Resolve(r.Context(), in.Source); err != nil {
+			problem(w, 409, "backup_target_unavailable", err.Error())
+			return
+		}
 	}
 	schedule, err := s.Store.PutBackupSchedule(r.Context(), who(r), schedule, in.ExpectedRevision)
 	if err != nil {
