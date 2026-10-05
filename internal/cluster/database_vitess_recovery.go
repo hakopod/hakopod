@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
+	"golang.org/x/sync/errgroup"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -160,21 +161,34 @@ func (c *Client) dumpVitessDatabase(ctx context.Context, d database.Resource, o 
 }
 
 func (c *Client) vitessDatabaseEmpty(ctx context.Context, d database.Resource, o database.Observation) error {
-	members, err := vitessObservedPrimaries(d, o)
+	inventory, members, err := c.vitessRecoveryInventory(ctx, d, o)
 	if err != nil {
 		return err
 	}
+	group, step := errgroup.WithContext(ctx)
+	group.SetLimit(3)
 	for _, m := range members {
-		out := &databaseBoundedWriter{limit: 64}
-		query := "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app')+(SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema='app')+(SELECT COUNT(*) FROM information_schema.events WHERE event_schema='app')"
-		if err = c.DatabaseExec(ctx, d, m, vitessLocalCommand("vt_dba", query), nil, out); err != nil {
-			return err
-		}
-		if strings.TrimSpace(out.String()) != "0" {
-			return fmt.Errorf("Vitess recovery requires a separate empty database")
-		}
+		m := m
+		group.Go(func() error {
+			pod, container, err := c.tabletForExec(step, m, inventory)
+			if err != nil {
+				return err
+			}
+			out := &databaseBoundedWriter{limit: 64}
+			query := "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app')+(SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema='app')+(SELECT COUNT(*) FROM information_schema.events WHERE event_schema='app')"
+			if err = c.databaseExecVerifiedPod(step, pod, container, vitessLocalCommand("vt_dba", query), nil, out); err != nil {
+				return err
+			}
+			if strings.TrimSpace(out.String()) != "0" {
+				return fmt.Errorf("Vitess recovery requires a separate empty database")
+			}
+			return nil
+		})
 	}
-	return nil
+	if err = group.Wait(); err != nil {
+		return err
+	}
+	return c.verifyVitessObservationInventory(ctx, inventory)
 }
 
 func (c *Client) cleanupVitessRecovery(d database.Resource, members []database.Member, name string) error {

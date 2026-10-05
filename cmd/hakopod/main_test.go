@@ -28,8 +28,8 @@ func TestClientTimeoutsAndCallerCancellation(t *testing.T) {
 	if !ok {
 		t.Fatalf("transport type is %T", c.http.Transport)
 	}
-	if transport.ResponseHeaderTimeout <= 50*time.Second {
-		t.Fatalf("response header timeout %s must exceed the 50s managed-operation budget", transport.ResponseHeaderTimeout)
+	if transport.ResponseHeaderTimeout <= 75*time.Second {
+		t.Fatalf("response header timeout %s must exceed the 75s managed-operation budget", transport.ResponseHeaderTimeout)
 	}
 	if c.http.Timeout <= transport.ResponseHeaderTimeout {
 		t.Fatalf("response header timeout %s must leave margin within request timeout %s", transport.ResponseHeaderTimeout, c.http.Timeout)

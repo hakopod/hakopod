@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"testing"
@@ -209,6 +210,76 @@ func TestVitessTabletForExecRejectsLiveChanges(t *testing.T) {
 			client := &Client{kube: kubefake.NewSimpleClientset(live)}
 			if _, _, err := client.tabletForExec(context.Background(), member, inventory); err == nil {
 				t.Fatal("changed live Pod remained executable")
+			}
+		})
+	}
+}
+
+func TestVitessRecoveryInventoryBindsObservationAndAuthorityOnce(t *testing.T) {
+	d := vitessTestDatabase()
+	ns, root := vitessInventoryRoot(t, d)
+	certificate := []byte("recovery-inventory-certificate")
+	identity := fmt.Sprintf("%x", sha256.Sum256(certificate))
+	secret := &corev1.Secret{ObjectMeta: databaseIdentityMeta(d, ns.UID, "database-tls"), Data: map[string][]byte{"tls.crt": certificate}}
+	owner := metav1.OwnerReference{APIVersion: "planetscale.com/v2", Kind: "VitessCluster", Name: "database", UID: root.GetUID()}
+	pod := vitessInventoryTablet(d, "tablet", identity, owner)
+	pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+	observation := database.Observation{Status: "ready", Revision: d.Revision, Members: []database.Member{{Name: pod.Name, UID: string(pod.UID), Shard: "-", Role: "primary", Ready: true}}}
+
+	newClient := func(n *corev1.Namespace, r *unstructured.Unstructured, p *corev1.Pod, s *corev1.Secret) (*Client, *kubefake.Clientset, *dynamicfake.FakeDynamicClient) {
+		kube := kubefake.NewSimpleClientset(n, p, s)
+		dynamic := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), r)
+		return &Client{kube: kube, dynamic: dynamic}, kube, dynamic
+	}
+	client, kube, dynamic := newClient(ns.DeepCopy(), root.DeepCopy(), pod.DeepCopy(), secret.DeepCopy())
+	inventory, primaries, err := client.vitessRecoveryInventory(context.Background(), d, observation)
+	if err != nil || inventory == nil || len(primaries) != 1 || primaries[0].UID != string(pod.UID) {
+		t.Fatal("current recovery inventory was rejected", err)
+	}
+	var namespaceGets, secretGets, podLists, controllerGets int
+	for _, action := range kube.Actions() {
+		switch action.GetVerb() + "/" + action.GetResource().Resource {
+		case "get/namespaces":
+			namespaceGets++
+		case "get/secrets":
+			secretGets++
+		case "list/pods":
+			podLists++
+		}
+	}
+	for _, action := range dynamic.Actions() {
+		if action.GetVerb() == "get" && action.GetResource() == vitessDatabaseResource {
+			controllerGets++
+		}
+	}
+	if namespaceGets != 2 || secretGets != 1 || podLists != 1 || controllerGets != 1 {
+		t.Fatalf("recovery inventory repeated common reads: namespace=%d secret=%d pods=%d controller=%d", namespaceGets, secretGets, podLists, controllerGets)
+	}
+
+	for name, mutate := range map[string]func(*database.Observation, *unstructured.Unstructured, *corev1.Pod){
+		"revision": func(_ *database.Observation, r *unstructured.Unstructured, _ *corev1.Pod) {
+			r.SetAnnotations(map[string]string{"hakopod.io/database-revision": "2"})
+		},
+		"replaced-uid": func(_ *database.Observation, _ *unstructured.Unstructured, p *corev1.Pod) {
+			p.UID = "replaced-uid"
+		},
+		"owner": func(_ *database.Observation, _ *unstructured.Unstructured, p *corev1.Pod) {
+			p.OwnerReferences[0].UID = "other-owner"
+		},
+		"image": func(_ *database.Observation, _ *unstructured.Unstructured, p *corev1.Pod) {
+			p.Spec.Containers[0].Image = "unapproved"
+		},
+		"identity": func(_ *database.Observation, _ *unstructured.Unstructured, p *corev1.Pod) {
+			p.Annotations[vitessIdentityAnnotation] = strings.Repeat("b", 64)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			o, r, p := observation, root.DeepCopy(), pod.DeepCopy()
+			o.Members = append([]database.Member(nil), observation.Members...)
+			mutate(&o, r, p)
+			client, _, _ := newClient(ns.DeepCopy(), r, p, secret.DeepCopy())
+			if _, _, err := client.vitessRecoveryInventory(context.Background(), d, o); err == nil {
+				t.Fatal("changed recovery authority reached execution")
 			}
 		})
 	}

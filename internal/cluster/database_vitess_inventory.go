@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/hakopod/hakopod/internal/database"
 	corev1 "k8s.io/api/core/v1"
@@ -13,7 +14,43 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// vitessObservationInventory is valid only for one ObserveDatabase call. It
+// vitessRecoveryInventory resolves one current, bounded tablet inventory for a
+// recovery check. The observation selects exact Pod UIDs; the inventory proves
+// their current controller chain, runtime configuration and certificate identity.
+func (c *Client) vitessRecoveryInventory(ctx context.Context, d database.Resource, observation database.Observation) (*vitessObservationInventory, []database.Member, error) {
+	primaries, err := vitessObservedPrimaries(d, observation)
+	if err != nil {
+		return nil, nil, err
+	}
+	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("Vitess recovery namespace is unavailable")
+	}
+	object, err := c.dynamic.Resource(vitessDatabaseResource).Namespace(ns.Name).Get(ctx, "database", metav1.GetOptions{})
+	if err != nil || object.GetAnnotations()["hakopod.io/database-revision"] != strconv.FormatInt(d.Revision, 10) {
+		return nil, nil, fmt.Errorf("Vitess recovery controller revision changed")
+	}
+	identity, err := c.vitessIdentityFingerprint(ctx, d)
+	if err != nil {
+		return nil, nil, err
+	}
+	pods, err := c.kube.CoreV1().Pods(ns.Name).List(ctx, metav1.ListOptions{Limit: database.MaxMembers + 1, LabelSelector: vitessComponentLabel + "=tablet", FieldSelector: activeDatabasePodFields})
+	if err != nil || pods.Continue != "" || len(pods.Items) != len(observation.Members) || len(pods.Items) > database.MaxMembers {
+		return nil, nil, fmt.Errorf("Vitess recovery tablet inventory changed")
+	}
+	inventory, err := c.newVitessObservationInventory(ctx, d, ns, object, identity, pods.Items)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, member := range observation.Members {
+		if _, _, err = inventory.tablet(member); err != nil {
+			return nil, nil, fmt.Errorf("Vitess recovery tablet inventory changed")
+		}
+	}
+	return inventory, primaries, nil
+}
+
+// vitessObservationInventory is valid only for one observation or recovery check. It
 // freezes the already-listed tablet Pods after their namespace, controller,
 // identity, configuration and owner chains have been verified.
 type vitessObservationInventory struct {
