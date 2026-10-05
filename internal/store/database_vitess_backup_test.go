@@ -114,3 +114,16 @@ func TestVitessAllocationAndBindingTargets(t *testing.T) {
 		t.Fatal("uninspected recovery connected")
 	}
 }
+
+func TestVitessMaximumTopologyAllocation(t *testing.T) {
+	s := database.Spec{SchemaVersion: 1, Name: "maximum-topology", Engine: "vitess", Version: "23", Mode: "cluster", Shards: 8, Replicas: 5, CPU: "500m", Memory: "1Gi", StorageGiB: 1, TLS: &database.TLSConfig{Mode: "required"}, Vitess: &database.VitessConfig{Tables: []database.VitessTable{{Name: "records", ShardingColumn: "id"}}, BackupDestinationID: strings.Repeat("a", 32), BackupDestinationRevision: 1}}
+	if got, err := s.CPUReservationMilli(); err != nil || got != 45450 {
+		t.Fatalf("maximum Vitess CPU reservation = %d, %v; want 45450", got, err)
+	}
+	if got := DatabaseMemoryReservation(s); got != 97050<<20 {
+		t.Fatalf("maximum Vitess memory reservation = %d MiB; want 97050", got>>20)
+	}
+	if got := DatabaseStorageReservation(s); got != 67 {
+		t.Fatalf("maximum Vitess storage reservation = %d GiB; want 67", got)
+	}
+}

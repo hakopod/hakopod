@@ -17,19 +17,25 @@ ETCD_IMAGE = 'quay.io/coreos/etcd:v3.5.17@sha256:' + '9' * 64
 
 
 def environment_fixture(case, images):
-    filesystem = {'capacity_bytes': 78 * 1024 ** 3, 'available_bytes': 20 * 1024 ** 3}
+    filesystem = {'capacity_bytes': (128 if case == 'scale' else 78) * 1024 ** 3,
+                  'available_bytes': (100 if case == 'scale' else 20) * 1024 ** 3}
     canonical = [reference.split('@')[0].rsplit(':', 1)[0] + '@' + reference.split('@')[1]
                  for reference in [*images.values(), ETCD_IMAGE]]
     return {'schema_version': 1, 'case': case, 'minimum_free_bytes': 12 * 1024 ** 3,
-            'fixture_budget_bytes': 4 * 1024 ** 3,
-            'required_cpu_milli': {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100}[case],
-            'cpu_shortfall_milli': 0, 'host_filesystem': copy.deepcopy(filesystem),
+            'fixture_budget_bytes': (67 if case == 'scale' else 4) * 1024 ** 3,
+            'required_cpu_milli': {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100, 'scale': 45450}[case],
+            'required_memory_bytes': (97050 if case == 'scale' else 0) * 1024 ** 2,
+            'host_cpu_milli': 48000, 'cpu_shortfall_milli': 0, 'memory_shortfall_bytes': 0,
+            'host_filesystem': copy.deepcopy(filesystem),
             'nodes': [{'name': name, 'architecture': 'amd64', 'operating_system': 'linux',
                        'schedulable': True, 'image_gc_high_threshold_percent': 85,
                        'conditions': {'Ready': 'True', 'DiskPressure': 'False', 'MemoryPressure': 'False', 'PIDPressure': 'False'},
                        'filesystems': {'nodefs': copy.deepcopy(filesystem), 'imagefs': copy.deepcopy(filesystem)},
-                       'cached_images': sorted(canonical), 'allocatable_cpu_milli': 10000,
-                       'requested_cpu_milli': 100, 'available_cpu_milli': 9900}
+                       'cached_images': sorted(canonical), 'allocatable_cpu_milli': 24000,
+                       'requested_cpu_milli': 100, 'available_cpu_milli': 23900,
+                       'worker_cpu_limit_milli': 24000, 'worker_memory_limit_bytes': 64 * 1024 ** 3,
+                       'allocatable_memory_bytes': 64 * 1024 ** 3, 'requested_memory_bytes': 1024 ** 3,
+                       'available_memory_bytes': 63 * 1024 ** 3}
                       for name in ('k3d-hakopod-dev-server-0', 'k3d-hakopod-database-worker-0')],
             'cluster': {'uid': 'cluster-a', 'node_uids': {'k3d-hakopod-dev-server-0': 'uid-0',
                 'k3d-hakopod-database-worker-0': 'uid-1', 'k3d-hakopod-database-worker-1': 'uid-2'},
@@ -90,14 +96,25 @@ class VitessReleaseVerificationTest(unittest.TestCase):
                            'images': {kind: item['reference'] for kind, item in self.manifest['images'].items()},
                            'source_files': self.manifest['source_files']}
         self.acceptance['attempts'] = [{'case': case, 'environment': environment_fixture(case, self.acceptance['images'])}
-                                       for case in ('lifecycle', 'recovery', 'reseed', 'revocation')]
+                                       for case in ('lifecycle', 'recovery', 'reseed', 'revocation', 'scale')]
         self.acceptance['test_events'] = [
             {'Action': action, 'Package': 'github.com/hakopod/hakopod/internal/cluster', 'Test': name}
             for name in sorted(vitess.REQUIRED_TESTS) for action in ('run', 'pass')]
+        self.assertIn('TestManagedVitessScaleLive', vitess.REQUIRED_TESTS)
         (self.directory / 'runtime-upstream.patch').write_text('test fixture runtime patch\n')
         (self.directory / 'operator-upstream.patch').write_text('test fixture operator patch\n')
         (self.directory / 'binary-sha256.txt').write_text('\n'.join(checksums) + '\n')
         self.save()
+
+    def test_scale_environment_rejects_host_cpu_and_aggregate_memory_shortfalls(self):
+        for mutate in (
+                lambda environment: environment.update(host_cpu_milli=45000),
+                lambda environment: [node.update(requested_memory_bytes=node['allocatable_memory_bytes'] - 1,
+                                                  available_memory_bytes=1) for node in environment['nodes']]):
+            environment = environment_fixture('scale', self.acceptance['images'])
+            mutate(environment)
+            with self.assertRaises(ValueError):
+                vitess.validate_native_environment(environment, 'scale', [*self.acceptance['images'].values(), ETCD_IMAGE])
 
     def save(self):
         (self.directory / 'native-acceptance.json').write_text(json.dumps(self.acceptance))

@@ -24,6 +24,7 @@ CASES = {
     'recovery': 'TestManagedVitessRecoveryLive',
     'reseed': 'TestManagedVitessNativeReseedLive',
     'revocation': 'TestManagedVitessBackupRevocationLive',
+    'scale': 'TestManagedVitessScaleLive',
 }
 
 
@@ -38,6 +39,7 @@ DEDICATED_NODES = ('k3d-hakopod-vitess-worker-0', 'k3d-hakopod-vitess-worker-1',
                    'k3d-hakopod-vitess-worker-2')
 APPROVED_NODE_SETS = (ALLOWED_NODES, DEDICATED_NODES)
 GIB = 1024 ** 3
+MIB = 1024 ** 2
 CASE_CPU_MILLI = {
     # These are the exact CPUReservationMilli envelopes for the fixed native
     # fixtures. Recovery keeps two two-shard clusters alive concurrently.
@@ -45,7 +47,9 @@ CASE_CPU_MILLI = {
     'recovery': 17700,
     'reseed': 6550,
     'revocation': 5100,
+    'scale': 45450,
 }
+CASE_MEMORY_BYTES = {'scale': 97050 * MIB}
 VITESS_CRDS = {
     'etcdlockservers.planetscale.com',
     'vitessbackups.planetscale.com',
@@ -103,6 +107,40 @@ def pod_cpu_milli(pod):
     init = max([request(container) for container in pod.get('spec', {}).get('initContainers', [])] or [0])
     overhead = cpu_milli(pod.get('spec', {}).get('overhead', {}).get('cpu', '0'))
     return max(regular, init) + overhead
+
+
+def memory_bytes(value):
+    match = re.fullmatch(r'(\d+)(Ki|Mi|Gi)?', value or '')
+    if not match:
+        raise RuntimeError('Kubernetes memory quantity is invalid')
+    amount, suffix = int(match.group(1)), match.group(2)
+    return amount * {None: 1, 'Ki': 1024, 'Mi': MIB, 'Gi': GIB}[suffix]
+
+
+def pod_memory_bytes(pod):
+    def request(container):
+        return memory_bytes(container.get('resources', {}).get('requests', {}).get('memory', '0'))
+    regular = sum(request(container) for container in pod.get('spec', {}).get('containers', []))
+    init = max([request(container) for container in pod.get('spec', {}).get('initContainers', [])] or [0])
+    overhead = memory_bytes(pod.get('spec', {}).get('overhead', {}).get('memory', '0'))
+    return max(regular, init) + overhead
+
+
+def worker_limits(host_config):
+    if not isinstance(host_config, dict):
+        raise RuntimeError('development worker cgroup limits are unavailable')
+    nano = host_config.get('NanoCpus')
+    quota, period = host_config.get('CpuQuota'), host_config.get('CpuPeriod')
+    memory = host_config.get('Memory')
+    if type(nano) is int and nano > 0:
+        cpu = (nano + 999999) // 1000000
+    elif type(quota) is int and quota > 0 and type(period) is int and period > 0:
+        cpu = (quota * 1000 + period - 1) // period
+    else:
+        raise RuntimeError('development worker CPU cgroup limit is unavailable')
+    if type(memory) is not int or memory <= 0:
+        raise RuntimeError('development worker memory cgroup limit is unavailable')
+    return cpu, memory
 
 
 def native_go_environment(root, kubeconfig, fixtures, nodes=NODES, go_root=Path('/opt/hakopod-build-go'), cache_root=Path('/srv/hakopod-backup-scratch/managed-databases-20260927')):
@@ -202,12 +240,16 @@ def native_environment(root, kube, inventory, images, case, fixture_budget_gib, 
     if tuple(nodes) != fixture_nodes(','.join(nodes)) or len(inventory) != len(nodes) or {node['metadata']['name'] for node in inventory} != set(nodes):
         raise RuntimeError('native acceptance requires the exact named development nodes')
     disk = shutil.disk_usage(root)
+    host_cpu_milli = (os.cpu_count() or 0) * 1000
     report = {'schema_version': 1, 'case': case, 'minimum_free_bytes': 12 * GIB,
               'fixture_budget_bytes': fixture_budget_gib * GIB,
               'required_cpu_milli': CASE_CPU_MILLI[case],
+              'required_memory_bytes': CASE_MEMORY_BYTES.get(case, 0),
+              'host_cpu_milli': host_cpu_milli,
               'host_filesystem': {'capacity_bytes': disk.total, 'available_bytes': disk.free},
               'nodes': []}
     available_cpu = 0
+    available_memory = 0
     for node in sorted(inventory, key=lambda item: item['metadata']['name']):
         name = node['metadata']['name']
         summary = command_json(kube + ['get', '--raw', '/api/v1/nodes/' + name + '/proxy/stats/summary'])['node']
@@ -229,9 +271,18 @@ def native_environment(root, kube, inventory, images, case, fixture_budget_gib, 
             raise RuntimeError('development pod inventory is missing or exceeded its bound')
         requested_cpu = sum(pod_cpu_milli(pod) for pod in pods
                             if pod.get('status', {}).get('phase') not in ('Succeeded', 'Failed'))
+        requested_memory = sum(pod_memory_bytes(pod) for pod in pods
+                               if pod.get('status', {}).get('phase') not in ('Succeeded', 'Failed'))
         allocatable_cpu = cpu_milli(node['status'].get('allocatable', {}).get('cpu', ''))
+        allocatable_memory = memory_bytes(node['status'].get('allocatable', {}).get('memory', ''))
+        host_config = command_json(['docker', 'inspect', name, '--format', '{{json .HostConfig}}'])
+        worker_cpu, worker_memory = worker_limits(host_config)
+        if allocatable_cpu > worker_cpu or allocatable_memory > worker_memory:
+            raise RuntimeError('development node allocatable exceeds its worker cgroup limit')
         free_cpu = allocatable_cpu - requested_cpu
+        free_memory = allocatable_memory - requested_memory
         available_cpu += free_cpu
+        available_memory += free_memory
         report['nodes'].append({'name': name, 'architecture': info.get('architecture'),
             'operating_system': info.get('operatingSystem'),
             'schedulable': not node.get('spec', {}).get('unschedulable', False),
@@ -242,11 +293,14 @@ def native_environment(root, kube, inventory, images, case, fixture_budget_gib, 
                                    'available_bytes': item.get('availableBytes')}
                             for kind, item in filesystems.items()},
             'cached_images': sorted(cached), 'allocatable_cpu_milli': allocatable_cpu,
-            'requested_cpu_milli': requested_cpu, 'available_cpu_milli': free_cpu})
-    if available_cpu < report['required_cpu_milli']:
-        report['cpu_shortfall_milli'] = report['required_cpu_milli'] - available_cpu
-    else:
-        report['cpu_shortfall_milli'] = 0
+            'requested_cpu_milli': requested_cpu, 'available_cpu_milli': free_cpu,
+            'worker_cpu_limit_milli': worker_cpu, 'worker_memory_limit_bytes': worker_memory,
+            'allocatable_memory_bytes': allocatable_memory, 'requested_memory_bytes': requested_memory,
+            'available_memory_bytes': free_memory})
+    host_cpu_shortfall = report['required_cpu_milli'] - host_cpu_milli if case == 'scale' else 0
+    report['cpu_shortfall_milli'] = max(0, host_cpu_shortfall,
+                                        report['required_cpu_milli'] - available_cpu)
+    report['memory_shortfall_bytes'] = max(0, report['required_memory_bytes'] - available_memory)
     return report
 
 
@@ -366,8 +420,10 @@ def main():
     root=args.root.resolve();source=(args.source or root/'vitess-source-check').resolve()
     if args.attempt<1 or args.attempt>100:
         raise RuntimeError('native attempt number must be between 1 and 100')
-    if args.fixture_budget_gib < 1 or args.fixture_budget_gib > 64:
-        raise RuntimeError('native fixture disk budget must be between 1 and 64 GiB')
+    if args.fixture_budget_gib < 1 or args.fixture_budget_gib > 67:
+        raise RuntimeError('native fixture disk budget must be between 1 and 67 GiB')
+    if args.case == 'scale' and args.fixture_budget_gib != 67:
+        raise RuntimeError('native scale acceptance requires its fixed 67 GiB fixture disk budget')
     image=re.compile(r'^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$')
     if not image.fullmatch(args.engine_image) or not image.fullmatch(args.operator_image):
         raise RuntimeError('candidate images must have immutable registry digest references')

@@ -338,18 +338,12 @@ func checkVitessShardRouting(t *testing.T, ctx context.Context, c *Client, d dat
 		t.Fatal(err)
 	}
 	want := map[string][]string{}
+	shards := d.Spec.VitessShardNames()
 	for i := uint64(1); i <= 32; i++ {
 		var input, output [8]byte
 		binary.BigEndian.PutUint64(input[:], i)
 		hash.Encrypt(output[:], input[:])
-		shard := "-"
-		if d.Spec.Shards == 2 {
-			if output[0] < 128 {
-				shard = "-80"
-			} else {
-				shard = "80-"
-			}
-		}
+		shard := shards[int(output[0])*len(shards)/256]
 		want[shard] = append(want[shard], strconv.FormatUint(i, 10))
 	}
 	for _, member := range primaries {

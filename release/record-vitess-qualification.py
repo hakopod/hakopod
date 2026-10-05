@@ -16,7 +16,8 @@ VERIFIER = runpy.run_path(str(Path(__file__).with_name('verify-vitess-runtime.py
 CASES = {'lifecycle': 'TestManagedVitessLive',
          'recovery': 'TestManagedVitessRecoveryLive',
          'reseed': 'TestManagedVitessNativeReseedLive',
-         'revocation': 'TestManagedVitessBackupRevocationLive'}
+         'revocation': 'TestManagedVitessBackupRevocationLive',
+         'scale': 'TestManagedVitessScaleLive'}
 
 
 def collect_reports(reports, sources, images, verifier_hash, runner_hash, etcd_image):
