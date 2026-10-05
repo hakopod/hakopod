@@ -21,6 +21,7 @@ type PreflightCheck struct {
 }
 
 type PreflightReport struct {
+	sharedVolumeNodes  map[string][]string
 	Checks             []PreflightCheck `json:"checks"`
 	CPURequestMillis   int64            `json:"cpu_request_millis"`
 	MemoryRequestBytes int64            `json:"memory_request_bytes"`
@@ -218,6 +219,47 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		free := nodeFree[node]
 		if requested[0] > free[0] || requested[1] > free[1] {
 			add("node_capacity", "blocked", node+": "+capacityShortage(requested[0], requested[1], free[0], free[1]))
+		}
+	}
+	for _, group := range spec.SharedReadWriteOnceGroups(t.Spec) {
+		available, err := c.sharedVolumeNodes(ctx, t, group, nodes.Items, pods.Items, policy)
+		if err != nil {
+			return r, err
+		}
+		var cpu, memory int64
+		groupPinned := map[string][2]int64{}
+		for _, name := range group {
+			svc := t.Spec.Services[name]
+			serviceCPU, serviceMemory := pinnedRequests(svc, policy)
+			cpu += serviceCPU
+			memory += serviceMemory
+			if svc.NodeName != "" {
+				v := groupPinned[svc.NodeName]
+				v[0] += serviceCPU
+				v[1] += serviceMemory
+				groupPinned[svc.NodeName] = v
+			}
+		}
+		fits := []string{}
+		for _, node := range available {
+			// Reserve other services explicitly pinned here without counting the
+			// group's own desired resources twice. This is still not bin packing.
+			free := nodeFree[node]
+			other := pinned[node]
+			own := groupPinned[node]
+			if cpu <= free[0]-other[0]+own[0] && memory <= free[1]-other[1]+own[1] {
+				fits = append(fits, node)
+			}
+		}
+		if len(fits) == 0 {
+			add("shared_volume_capacity", "blocked", fmt.Sprintf("Services %s sharing ReadWriteOnce storage must fit together on one available storage node. Reduce their resource requests, free capacity on that node or migrate their retained data.", strings.Join(group, ", ")))
+		} else {
+			if r.sharedVolumeNodes == nil {
+				r.sharedVolumeNodes = map[string][]string{}
+			}
+			for _, name := range group {
+				r.sharedVolumeNodes[name] = fits
+			}
 		}
 	}
 	if cpuFree < r.CPURequestMillis || memoryFree < r.MemoryRequestBytes {

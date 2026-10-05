@@ -163,6 +163,9 @@ func volumeFitsNode(pv *corev1.PersistentVolume, node *corev1.Node) bool {
 }
 
 func (c *Client) validatePlacement(ctx context.Context, t Target) error {
+	if err := c.validateSharedReadWriteOncePlacement(ctx, t); err != nil {
+		return err
+	}
 	shared := map[string]string{}
 	for name, svc := range t.Spec.Services {
 		if svc.NodeName == "" {

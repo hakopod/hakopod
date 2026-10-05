@@ -5,8 +5,11 @@ on:
     paths:
       - 'templates'
       - 'internal/spec/templates.go'
+      - 'internal/spec/mounts.go'
+      - 'internal/spec/shared_volumes*.go'
       - 'internal/spec/mathesar_template_test.go'
-      - 'internal/cluster/live_mathesar_test.go'
+      - 'internal/cluster/**'
+      - 'web/review/mathesar/**'
       - '.github/workflows/mathesar-runtime.yml'
 permissions:
   contents: read
@@ -26,13 +29,23 @@ jobs:
       GOMEMLIMIT: 512MiB
       HAKOPOD_TEST_KUBECONFIG: ${{ github.workspace }}/.local/kubeconfig
       HAKOPOD_MATHESAR_TEST: '1'
-      HAKOPOD_MATHESAR_SINGLE_NODE_FIXTURE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: git submodule update --init templates
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
+      - name: Export normalized Mathesar plans for UI review
+        run: |
+          mkdir -p .local/mathesar-ui-review
+          go run web/review/mathesar/export-fixture.go > .local/mathesar-ui-review/catalog-fixture.json
+      - name: Upload development UI fixture
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mathesar-ui-fixture-${{ matrix.runner }}
+          path: .local/mathesar-ui-review/catalog-fixture.json
+          if-no-files-found: error
+          retention-days: 3
       - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
         with:
           version: v3.17.2
@@ -42,6 +55,6 @@ jobs:
           kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev apply -f deploy/storage/local-path.yaml
           kubectl --kubeconfig "$HAKOPOD_TEST_KUBECONFIG" --context k3d-hakopod-dev -n hakopod-storage rollout status deployment/local-path-provisioner --timeout=120s
       - name: Verify Mathesar runtime and durable data
-        # This explicit single-node shared-filesystem fixture exercises real
-        # volume sharing; it is not a production RWX storage qualification.
+        # The unchanged default plan provisions a real local-path RWO claim.
+        # Backend and proxy use the scheduler's required same-node placement.
         run: go test ./internal/cluster -run '^TestLiveMathesarTemplate$' -count=1 -timeout=22m -v

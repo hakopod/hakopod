@@ -211,8 +211,8 @@ func TestTemplateComputeRequirementsDescribeWorkloads(t *testing.T) {
 	if !found {
 		t.Fatal("PostgreSQL must disclose its persistent storage requirement before configuration")
 	}
-	if !slices.Contains(byID["mathesar"].WorkloadRequirements, "shared_storage") {
-		t.Fatal("Mathesar must disclose ReadWriteMany storage before hosted users configure it")
+	if slices.Contains(byID["mathesar"].WorkloadRequirements, "shared_storage") {
+		t.Fatal("Mathesar automatic local storage must not require an external shared filesystem")
 	}
 	for _, id := range []string{"postgresql", "xem"} {
 		if slices.Contains(byID[id].WorkloadRequirements, "shared_storage") {

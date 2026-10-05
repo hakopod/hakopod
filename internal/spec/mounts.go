@@ -122,7 +122,6 @@ func validateNamedStorage(app Application) error {
 		claims["hakopod-volume-"+name] = true
 		totalSize += v.SizeGiB
 	}
-	users := map[string]map[string]bool{}
 	groups := map[string]int64{}
 	for _, name := range Names(app) {
 		s := app.Services[name]
@@ -144,16 +143,9 @@ func validateNamedStorage(app Application) error {
 			group = s.FSGroup
 		}
 		for _, mount := range s.Mounts {
-			v, ok := app.Volumes[mount.Volume]
+			_, ok := app.Volumes[mount.Volume]
 			if !ok {
 				return fmt.Errorf("services.%s.mounts: unknown volume %s", name, mount.Volume)
-			}
-			if users[mount.Volume] == nil {
-				users[mount.Volume] = map[string]bool{}
-			}
-			users[mount.Volume][name] = true
-			if len(users[mount.Volume]) > 1 && v.AccessMode != "ReadWriteMany" {
-				return fmt.Errorf("volumes.%s: mounts across services require ReadWriteMany storage", mount.Volume)
 			}
 			if old, set := groups[mount.Volume]; set && old != group {
 				return fmt.Errorf("volumes.%s: services sharing a volume must use the same fs_group", mount.Volume)
@@ -164,5 +156,5 @@ func validateNamedStorage(app Application) error {
 	if totalCount > 20 || totalSize > 200 {
 		return fmt.Errorf("volumes: application storage is limited to 20 volumes and 200 GiB in total")
 	}
-	return nil
+	return normalizeSharedReadWriteOnce(app)
 }

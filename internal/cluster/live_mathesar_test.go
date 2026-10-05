@@ -12,20 +12,20 @@ import (
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubelabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 const mathesarFixtureLabel = "hakopod.io/mathesar-acceptance"
-const mathesarFixtureImage = "docker.io/library/busybox:1.37.0@sha256:9db7b59979c38555a39def84a31fb98b5296952f9e3afd4f6f11f05b07adfab0"
 
-// This uses the catalog plan unchanged except for explicit development node
-// placement. The optional hostPath fixture verifies actual sharing and durable
-// bytes on ONE node. It is not a production RWX storage implementation.
+// The default catalog plan uses the real local-path provisioner. Backend and
+// proxy placement stays with the scheduler so acceptance verifies shared RWO
+// storage without injecting a volume, hostPath or node assignment. An explicit
+// development RWX class can still exercise the existing shared-filesystem path.
 func TestLiveMathesarTemplate(t *testing.T) {
 	if os.Getenv("HAKOPOD_MATHESAR_TEST") != "1" {
 		t.Skip("set HAKOPOD_MATHESAR_TEST=1 for Mathesar runtime acceptance")
@@ -48,20 +48,25 @@ func TestLiveMathesarTemplate(t *testing.T) {
 	}
 	runID := fmt.Sprintf("msar-%d", time.Now().UnixNano())
 	class := os.Getenv("HAKOPOD_MATHESAR_MEDIA_STORAGE_CLASS")
-	localFixture := class == ""
-	if localFixture {
-		if os.Getenv("HAKOPOD_MATHESAR_SINGLE_NODE_FIXTURE") != "1" {
-			t.Fatal("set a real HAKOPOD_MATHESAR_MEDIA_STORAGE_CLASS or explicitly enable HAKOPOD_MATHESAR_SINGLE_NODE_FIXTURE=1")
-		}
-		class = runID
+	options := spec.TemplateOptions{Name: runID, StorageGiB: 1, SiteURL: "https://mathesar.example.test", Values: map[string]string{}}
+	if class != "" {
+		options.Values["media-storage-class"] = class
 	}
-	options := spec.TemplateOptions{Name: runID, StorageGiB: 1, SiteURL: "https://mathesar.example.test", Values: map[string]string{"media-storage-class": class}}
 	app, err := spec.PlanTemplate("mathesar", options)
 	if err != nil {
 		t.Fatal(err)
 	}
+	media := app.Volumes["media"]
+	if class == "" && (media.AccessMode != "ReadWriteOnce" || media.StorageClass != "") {
+		t.Fatal("default Mathesar plan must use automatic shared ReadWriteOnce storage")
+	}
+	if class != "" && (media.AccessMode != "ReadWriteMany" || media.StorageClass != class) {
+		t.Fatal("explicit Mathesar media class must retain ReadWriteMany storage")
+	}
 	for name, service := range app.Services {
-		service.NodeName = nodeName
+		if name == "db" {
+			service.NodeName = nodeName
+		}
 		service.Architecture = node.Status.NodeInfo.Architecture
 		app.Services[name] = service
 	}
@@ -73,9 +78,6 @@ func TestLiveMathesarTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fixtureNS *corev1.Namespace
-	var fixturePV *corev1.PersistentVolume
-	var fixtureClass *storagev1.StorageClass
 	defer func() {
 		clean, done := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer done()
@@ -89,14 +91,14 @@ func TestLiveMathesarTemplate(t *testing.T) {
 				t.Error(e)
 			}
 		}
-		claims, e := c.kube.CoreV1().PersistentVolumeClaims(ns.Name).List(clean, metav1.ListOptions{})
-		if e != nil {
-			t.Error(e)
+		claims, e := c.kube.CoreV1().PersistentVolumeClaims(ns.Name).List(clean, metav1.ListOptions{Limit: 32})
+		if e != nil || claims.Continue != "" {
+			t.Error("cannot bound owned claim cleanup", e)
 			return
 		}
 		dynamic := []string{}
 		for _, claim := range claims.Items {
-			if claim.Spec.VolumeName != "" && (fixturePV == nil || claim.Spec.VolumeName != fixturePV.Name) {
+			if claim.Spec.VolumeName != "" {
 				dynamic = append(dynamic, claim.Spec.VolumeName)
 			}
 		}
@@ -112,53 +114,8 @@ func TestLiveMathesarTemplate(t *testing.T) {
 			time.Sleep(500 * time.Millisecond)
 		}
 		if clean.Err() != nil {
-			t.Error("application namespace did not finish cleanup; retaining fixture files")
+			t.Error("application namespace did not finish cleanup; retaining remaining volumes")
 			return
-		}
-		if fixturePV != nil {
-			p, e := c.kube.CoreV1().PersistentVolumes().Get(clean, fixturePV.Name, metav1.GetOptions{})
-			if e != nil || p.UID != fixturePV.UID || p.Labels[mathesarFixtureLabel] != runID {
-				t.Error("fixture PV ownership changed")
-				return
-			}
-			if e = c.kube.CoreV1().PersistentVolumes().Delete(clean, p.Name, deleteOptions(p)); e != nil {
-				t.Error(e)
-			}
-		}
-		if fixtureNS != nil {
-			n, e := c.kube.CoreV1().Namespaces().Get(clean, fixtureNS.Name, metav1.GetOptions{})
-			if e != nil || n.UID != fixtureNS.UID || n.Labels[mathesarFixtureLabel] != runID {
-				t.Error("filesystem helper namespace ownership changed")
-				return
-			}
-			if e = mathesarFilesystemPod(clean, c, fixtureNS.Name, nodeName, runID, true); e != nil {
-				t.Error("fixture file cleanup", e)
-				return
-			}
-			if e = c.kube.CoreV1().Namespaces().Delete(clean, n.Name, deleteOptions(n)); e != nil {
-				t.Error(e)
-			}
-			for clean.Err() == nil {
-				_, e = c.kube.CoreV1().Namespaces().Get(clean, n.Name, metav1.GetOptions{})
-				if apierrors.IsNotFound(e) {
-					break
-				}
-				time.Sleep(500 * time.Millisecond)
-			}
-			if clean.Err() != nil {
-				t.Error("filesystem helper namespace cleanup timed out")
-				return
-			}
-		}
-		if fixtureClass != nil {
-			sc, e := c.kube.StorageV1().StorageClasses().Get(clean, fixtureClass.Name, metav1.GetOptions{})
-			if e != nil || sc.UID != fixtureClass.UID || sc.Labels[mathesarFixtureLabel] != runID {
-				t.Error("fixture class ownership changed")
-				return
-			}
-			if e = c.kube.StorageV1().StorageClasses().Delete(clean, sc.Name, deleteOptions(sc)); e != nil {
-				t.Error(e)
-			}
 		}
 		for _, name := range dynamic {
 			for clean.Err() == nil {
@@ -170,45 +127,28 @@ func TestLiveMathesarTemplate(t *testing.T) {
 			}
 		}
 		if clean.Err() != nil {
-			t.Error("dynamic database PV cleanup timed out")
+			t.Error("dynamic database or media PV cleanup timed out")
 		} else {
-			t.Log("owned application namespace, media files, PVCs, PVs and fixture storage class cleaned up")
+			t.Log("owned application namespace and dynamically provisioned media/database PVCs and PVs cleaned up")
 		}
 	}()
-	if localFixture {
-		fixtureNS, err = c.kube.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: runID, Labels: map[string]string{mathesarFixtureLabel: runID, "pod-security.kubernetes.io/enforce": "privileged"}}}, metav1.CreateOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err = mathesarFilesystemPod(ctx, c, fixtureNS.Name, nodeName, runID, false); err != nil {
-			t.Fatal(err)
-		}
-		fixtureClass, err = c.kube.StorageV1().StorageClasses().Create(ctx, &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: class, Labels: map[string]string{mathesarFixtureLabel: runID}}, Provisioner: "kubernetes.io/no-provisioner", VolumeBindingMode: ptr(storagev1.VolumeBindingImmediate)}, metav1.CreateOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		media := app.Volumes["media"]
-		size := resource.MustParse(fmt.Sprintf("%dGi", media.SizeGiB))
-		fixturePV, err = c.kube.CoreV1().PersistentVolumes().Create(ctx, &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: runID, Labels: map[string]string{mathesarFixtureLabel: runID}}, Spec: corev1.PersistentVolumeSpec{Capacity: corev1.ResourceList{corev1.ResourceStorage: size}, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain, StorageClassName: class, ClaimRef: &corev1.ObjectReference{Namespace: ns.Name, Name: "hakopod-volume-media"}, PersistentVolumeSource: corev1.PersistentVolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/tmp/hakopod-mathesar-fixtures/" + runID + "/media", Type: ptr(corev1.HostPathDirectory)}}, NodeAffinity: &corev1.VolumeNodeAffinity{Required: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{{MatchFields: []corev1.NodeSelectorRequirement{{Key: "metadata.name", Operator: corev1.NodeSelectorOpIn, Values: []string{nodeName}}}}}}}}}, metav1.CreateOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = c.kube.CoreV1().PersistentVolumeClaims(ns.Name).Create(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "hakopod-volume-media", Namespace: ns.Name, Labels: labelsFor(target, "")}, Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &class, VolumeName: fixturePV.Name, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: size}}}}, metav1.CreateOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Log("explicit single-node hostPath media fixture; all application containers remain non-root; production requires an actual RWX storage class")
-	}
 	for _, secret := range spec.TemplateSecretNames(app) {
 		if err = c.CreateWorkloadSecret(ctx, target.Project, target.Environment, app.Name, secret, strings.Repeat("DevelopmentFixture7-", 4)); err != nil {
 			t.Fatal(err)
 		}
 	}
+	var storage mathesarMediaSnapshot
+	var currentPods map[string]types.UID
 	deploy := func() {
 		t.Helper()
 		if _, e := c.Deploy(ctx, target, func(e Event) { t.Log(e.Type, e.Message) }); e != nil {
 			t.Fatal("Mathesar deployment", e)
 		}
+		observed, pods := mathesarMediaPlacement(t, ctx, c, target, class)
+		if storage.ClaimUID != "" && observed != storage {
+			t.Fatal("Mathesar deployment replaced the media claim, volume or storage policy")
+		}
+		storage, currentPods = observed, pods
 	}
 	deploy()
 	run := func(script string, input any) string {
@@ -245,20 +185,71 @@ func TestLiveMathesarTemplate(t *testing.T) {
 		claimUIDs[claim.Name] = claim.UID
 	}
 	for _, name := range []string{"db", "backend", "main"} {
+		previousPod := currentPods[name]
 		service := target.Spec.Services[name]
 		service.RestartNonce = "persistence-" + name
 		target.Spec.Services[name] = service
 		target.Revision++
 		target.OperationID = "restart-" + name
 		deploy()
+		if previousPod == "" || currentPods[name] == previousPod {
+			t.Fatal("restart did not replace the selected service pod", name)
+		}
+		t.Log(run(mathesarHTTPProbe, credential))
 	}
-	t.Log(run(mathesarHTTPProbe, credential))
 	for name, uid := range claimUIDs {
 		claim, e := c.kube.CoreV1().PersistentVolumeClaims(ns.Name).Get(ctx, name, metav1.GetOptions{})
 		if e != nil || claim.UID != uid {
 			t.Fatal("restart replaced persistent claim", name, e)
 		}
 	}
+	// Remove both media consumers together. The bound volume must retain its
+	// data and placement even when no old pod remains to guide pod affinity.
+	previousBackend, previousProxy := currentPods["backend"], currentPods["main"]
+	for _, name := range []string{"backend", "main"} {
+		deployment, err := c.kube.AppsV1().Deployments(ns.Name).Get(ctx, name, metav1.GetOptions{})
+		if err != nil || owned(deployment, target) != nil {
+			t.Fatal("cannot safely stop owned Mathesar media consumers", name, err)
+		}
+		deployment.Spec.Replicas = ptr(int32(0))
+		if _, err = c.kube.AppsV1().Deployments(ns.Name).Update(ctx, deployment, metav1.UpdateOptions{}); err != nil {
+			t.Fatal("stop owned Mathesar media consumer", name, err)
+		}
+	}
+	stopped, stop := context.WithTimeout(ctx, 90*time.Second)
+	for {
+		pods, err := c.kube.CoreV1().Pods(ns.Name).List(stopped, metav1.ListOptions{LabelSelector: kubelabels.Set(labelsFor(target, "")).String(), Limit: 16})
+		if err != nil || pods.Continue != "" {
+			stop()
+			t.Fatal("cannot verify Mathesar media consumers stopped", err)
+		}
+		remaining := false
+		for _, pod := range pods.Items {
+			remaining = remaining || pod.Labels[serviceKey] == "backend" || pod.Labels[serviceKey] == "main"
+		}
+		if !remaining {
+			break
+		}
+		select {
+		case <-stopped.Done():
+			stop()
+			t.Fatal("Mathesar media consumers did not stop before restart")
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	stop()
+	for _, name := range []string{"backend", "main"} {
+		service := target.Spec.Services[name]
+		service.RestartNonce = "all-media-consumers-replaced"
+		target.Spec.Services[name] = service
+	}
+	target.Revision++
+	target.OperationID = "restart-all-media-consumers"
+	deploy()
+	if currentPods["backend"] == previousBackend || currentPods["main"] == previousProxy {
+		t.Fatal("all-consumer restart reused a previous media consumer")
+	}
+	t.Log(run(mathesarHTTPProbe, credential))
 	// Exercise the external planner against the real, already initialized fixture
 	// database. Only the backend is redeployed; the bundled DB remains an owned
 	// fixture so external mode can be tested without a second database workload.
@@ -276,7 +267,6 @@ func TestLiveMathesarTemplate(t *testing.T) {
 		t.Fatal("external plan unexpectedly provisions database")
 	}
 	backend := external.Services["backend"]
-	backend.NodeName = nodeName
 	backend.Architecture = node.Status.NodeInfo.Architecture
 	backend.RestartNonce = "external-reattach"
 	target.Spec.Services["backend"] = backend
@@ -313,6 +303,125 @@ func TestLiveMathesarTemplate(t *testing.T) {
 	t.Log("actual Mathesar setup, static assets, login, CSV upload/download, all-service restart persistence and external database reattachment passed")
 }
 
+type mathesarMediaSnapshot struct {
+	ClaimUID     types.UID
+	VolumeUID    types.UID
+	AccessMode   corev1.PersistentVolumeAccessMode
+	StorageClass string
+}
+
+func mathesarMediaPlacement(t *testing.T, ctx context.Context, c *Client, target Target, explicitClass string) (mathesarMediaSnapshot, map[string]types.UID) {
+	t.Helper()
+	namespace := Namespace(target.ApplicationID)
+	claim, err := c.kube.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, "hakopod-volume-media", metav1.GetOptions{})
+	if err != nil || claim.Status.Phase != corev1.ClaimBound || claim.Spec.VolumeName == "" || claim.Spec.StorageClassName == nil || owned(claim, target) != nil {
+		t.Fatal("Mathesar media claim must be owned and dynamically bound", err)
+	}
+	wantedMode := corev1.ReadWriteOnce
+	if explicitClass != "" {
+		wantedMode = corev1.ReadWriteMany
+	}
+	if len(claim.Spec.AccessModes) != 1 || claim.Spec.AccessModes[0] != wantedMode {
+		t.Fatal("Mathesar media claim has the wrong access mode", claim.Spec.AccessModes)
+	}
+	storageClass, err := c.kube.StorageV1().StorageClasses().Get(ctx, *claim.Spec.StorageClassName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal("Mathesar media storage class is unavailable", err)
+	}
+	if explicitClass == "" && storageClass.Provisioner != "rancher.io/local-path" {
+		t.Fatal("automatic Mathesar acceptance requires the real local-path provisioner", storageClass.Provisioner)
+	}
+	if explicitClass != "" && storageClass.Name != explicitClass {
+		t.Fatal("Mathesar did not use the explicit shared storage class")
+	}
+	volume, err := c.kube.CoreV1().PersistentVolumes().Get(ctx, claim.Spec.VolumeName, metav1.GetOptions{})
+	if err != nil || volume.Spec.ClaimRef == nil || volume.Spec.ClaimRef.UID != claim.UID || volume.Spec.ClaimRef.Namespace != namespace || volume.Spec.ClaimRef.Name != claim.Name {
+		t.Fatal("Mathesar media volume does not belong to its claim", err)
+	}
+	if volume.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimDelete {
+		t.Fatal("Mathesar acceptance requires dynamically reclaimable development storage")
+	}
+	pods, err := c.kube.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: kubelabels.Set(labelsFor(target, "")).String(), Limit: 16})
+	if err != nil || pods.Continue != "" {
+		t.Fatal("cannot bound Mathesar pod placement inspection", err)
+	}
+	byService := map[string]corev1.Pod{}
+	identities := map[string]types.UID{}
+	for _, pod := range pods.Items {
+		if pod.DeletionTimestamp != nil || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		service := pod.Labels[serviceKey]
+		if _, expected := target.Spec.Services[service]; !expected {
+			continue
+		}
+		if identities[service] != "" {
+			t.Fatal("multiple active Mathesar pods for a single-replica service", service)
+		}
+		ready := false
+		for _, condition := range pod.Status.Conditions {
+			ready = ready || condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue
+		}
+		if !ready || pod.Spec.NodeName == "" {
+			t.Fatal("Mathesar service is not ready on a real node", service)
+		}
+		byService[service], identities[service] = pod, pod.UID
+	}
+	for _, service := range []string{"backend", "main"} {
+		pod, ok := byService[service]
+		if !ok {
+			t.Fatal("Mathesar media consumer is missing", service)
+		}
+		deployment, err := c.kube.AppsV1().Deployments(namespace).Get(ctx, service, metav1.GetOptions{})
+		if err != nil || deployment.Spec.Template.Spec.NodeName != "" {
+			t.Fatal("Mathesar media consumer must use scheduler placement", service, err)
+		}
+		mountName := ""
+		for _, mounted := range pod.Spec.Volumes {
+			if mounted.PersistentVolumeClaim != nil && mounted.PersistentVolumeClaim.ClaimName == claim.Name {
+				mountName = mounted.Name
+			}
+		}
+		mounted := false
+		for _, container := range pod.Spec.Containers {
+			for _, mount := range container.VolumeMounts {
+				if mount.Name == mountName && mountName != "" {
+					if mount.ReadOnly != (service == "main") {
+						t.Fatal("Mathesar proxy must mount media read-only and backend must be writable", service)
+					}
+					mounted = true
+				}
+			}
+		}
+		if !mounted {
+			t.Fatal("Mathesar service does not mount the shared media claim", service)
+		}
+		if explicitClass == "" {
+			peer := "backend"
+			if service == peer {
+				peer = "main"
+			}
+			if pod.Spec.NodeName != byService[peer].Spec.NodeName {
+				t.Fatal("shared ReadWriteOnce media consumers were scheduled on different nodes")
+			}
+			required := false
+			if pod.Spec.Affinity != nil && pod.Spec.Affinity.PodAffinity != nil {
+				for _, term := range pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
+					selector, err := metav1.LabelSelectorAsSelector(term.LabelSelector)
+					if err == nil && term.TopologyKey == corev1.LabelHostname && selector.Matches(kubelabels.Set(pod.Labels)) && selector.Matches(kubelabels.Set(byService[peer].Labels)) {
+						required = true
+					}
+				}
+			}
+			if !required {
+				t.Fatal("shared ReadWriteOnce media lacks required same-node scheduling", service)
+			}
+		}
+	}
+	t.Logf("Mathesar media class=%s mode=%s claim=%s volume=%s backend node=%s proxy node=%s", storageClass.Name, wantedMode, claim.UID, volume.UID, byService["backend"].Spec.NodeName, byService["main"].Spec.NodeName)
+	return mathesarMediaSnapshot{ClaimUID: claim.UID, VolumeUID: volume.UID, AccessMode: wantedMode, StorageClass: storageClass.Name}, identities
+}
+
 func mathesarCapacity(t *testing.T, ctx context.Context, c *Client, node *corev1.Node, app spec.Application) {
 	t.Helper()
 	pods, err := c.kube.CoreV1().Pods("").List(ctx, metav1.ListOptions{FieldSelector: "spec.nodeName=" + node.Name, Limit: 1000})
@@ -345,41 +454,6 @@ func mathesarCapacity(t *testing.T, ctx context.Context, c *Client, node *corev1
 	if node.Spec.Unschedulable || free < needed+(64<<20) {
 		t.Fatalf("insufficient safe development capacity: need template requests plus 64Mi headroom; available %dMi, template %dMi", free>>20, needed>>20)
 	}
-}
-
-func mathesarFilesystemPod(ctx context.Context, c *Client, namespace, nodeName, runID string, remove bool) error {
-	action := "prepare"
-	capabilities := &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}
-	script := `set -eu; mkdir /fixtures/"$1"; printf '%s' "$1" > /fixtures/"$1"/.owner; mkdir /fixtures/"$1"/media; chmod 0777 /fixtures/"$1"/media`
-	if remove {
-		action = "cleanup"
-		// Uploaded directories belong to application UID 1000. This narrowly
-		// scoped development helper needs DAC override to remove their bytes.
-		capabilities.Add = []corev1.Capability{"DAC_OVERRIDE"}
-		script = `set -eu; test "$(cat /fixtures/"$1"/.owner)" = "$1"; rm -rf -- /fixtures/"$1"/media; rm -- /fixtures/"$1"/.owner; rmdir -- /fixtures/"$1"`
-	}
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: action, Namespace: namespace, Labels: map[string]string{mathesarFixtureLabel: runID}}, Spec: corev1.PodSpec{NodeName: nodeName, RestartPolicy: corev1.RestartPolicyNever, AutomountServiceAccountToken: ptr(false), ActiveDeadlineSeconds: ptr(int64(60)), Containers: []corev1.Container{{Name: "filesystem", Image: mathesarFixtureImage, Command: []string{"sh", "-ec", script, "fixture", runID}, SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr(false), Capabilities: capabilities}, Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("5m"), corev1.ResourceMemory: resource.MustParse("8Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("32Mi")}}, VolumeMounts: []corev1.VolumeMount{{Name: "fixture", MountPath: "/fixtures"}}}}, Volumes: []corev1.Volume{{Name: "fixture", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/tmp/hakopod-mathesar-fixtures", Type: ptr(corev1.HostPathDirectoryOrCreate)}}}}}}
-	created, err := c.kube.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
-	for ctx.Err() == nil {
-		current, e := c.kube.CoreV1().Pods(namespace).Get(ctx, created.Name, metav1.GetOptions{})
-		if e != nil {
-			return e
-		}
-		if current.UID != created.UID {
-			return fmt.Errorf("filesystem helper identity changed")
-		}
-		if current.Status.Phase == corev1.PodSucceeded {
-			return nil
-		}
-		if current.Status.Phase == corev1.PodFailed {
-			return fmt.Errorf("filesystem helper %s failed", action)
-		}
-		time.Sleep(time.Second)
-	}
-	return ctx.Err()
 }
 
 const mathesarSettingsProbe = `import os,pathlib,django

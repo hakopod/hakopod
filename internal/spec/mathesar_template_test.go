@@ -57,7 +57,7 @@ func TestMathesarTemplateStorageCredentialsAndProxy(t *testing.T) {
 }
 
 func TestMathesarTemplateRejectsMissingOrInvalidPrerequisites(t *testing.T) {
-	options := TemplateOptions{Name: "tables", SiteURL: "https://tables.example.test", Values: map[string]string{"media-storage-class": "shared-media"}}
+	options := TemplateOptions{Name: "tables", SiteURL: "https://tables.example.test", Values: map[string]string{"media-storage-mode": "shared", "media-storage-class": "shared-media"}}
 	for _, class := range []string{"", " ", "Uppercase", "with/slash", "two words", "class\n[services.injected]", "{{config.injected}}"} {
 		options.Values["media-storage-class"] = class
 		if _, err := PlanTemplate("mathesar", options); err == nil {
@@ -74,6 +74,38 @@ func TestMathesarTemplateRejectsMissingOrInvalidPrerequisites(t *testing.T) {
 	}
 	if err := ValidateTemplateSecret("mathesar", "secret-key", strings.Repeat("a", 64)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMathesarAutomaticLocalMedia(t *testing.T) {
+	for _, values := range []map[string]string{
+		nil,
+		{"media-storage-class": ""},
+		{"media-storage-mode": "local", "media-storage-class": "unfinished shared draft"},
+	} {
+		app, err := PlanTemplate("mathesar", TemplateOptions{Name: "tables", SiteURL: "https://tables.example.test", StorageGiB: 7, Values: values})
+		if err != nil {
+			t.Fatal(err)
+		}
+		media := app.Volumes["media"]
+		if media.AccessMode != "ReadWriteOnce" || media.StorageClass != "" || media.SizeGiB != 7 {
+			t.Fatal("automatic media must use a retained claim from the installation default class", media)
+		}
+		if !reflect.DeepEqual(SharedReadWriteOnceGroups(app), [][]string{{"backend", "main"}}) {
+			t.Fatal("automatic media consumers must be scheduled together")
+		}
+		data, err := toml.Marshal(app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Parse(data); err != nil {
+			t.Fatal("reviewed automatic plan did not round trip", err)
+		}
+	}
+	for _, mode := range []string{"", "nfs", "auto"} {
+		if _, err := PlanTemplate("mathesar", TemplateOptions{Name: "tables", SiteURL: "https://tables.example.test", Values: map[string]string{"media-storage-mode": mode}}); err == nil {
+			t.Fatalf("invalid media mode accepted: %q", mode)
+		}
 	}
 }
 

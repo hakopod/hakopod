@@ -62,9 +62,11 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.reconcileCertificateIngresses(ctx, target); err != nil {
 		return Observation{}, err
 	}
-	if err := c.ValidateDelivery(ctx, target); err != nil {
+	preflight, err := c.ValidateDeliveryWithReport(ctx, target)
+	if err != nil {
 		return Observation{}, err
 	}
+	target.sharedVolumeNodes = preflight.sharedVolumeNodes
 	if err := c.validateWorkloadKinds(ctx, target); err != nil {
 		return Observation{}, err
 	}
@@ -400,6 +402,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 		result.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
 	}
 	configureWorkload(result, svc)
+	configureSharedReadWriteOnce(t, name, &result.Spec.Template.Spec)
 	configureFiles(t, name, svc, &result.Spec.Template.Spec)
 	applyBackendCertificateMounts(svc, &result.Spec.Template.Spec)
 	applyDatabaseTrustMount(t, name, &result.Spec.Template.Spec)
