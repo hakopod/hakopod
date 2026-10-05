@@ -191,12 +191,16 @@ func databasePodPolicyMatches(pod corev1.Pod, p *DatabasePolicy) bool {
 	if p == nil {
 		return true
 	}
+	return slices.Contains(p.nodes(), pod.Spec.NodeName) && databasePodPlacementMatches(pod, p) && databasePodRuntimeMatches(pod, p)
+}
+
+func databasePodRuntimeMatches(pod corev1.Pod, p *DatabasePolicy) bool {
 	// A runtime selected explicitly must agree with the sandboxed default.
 	runtimeMatches := pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName == p.RuntimeClass
 	if p.podRuntimeClass != "" {
 		runtimeMatches = pod.Spec.RuntimeClassName != nil && *pod.Spec.RuntimeClassName == p.podRuntimeClass
 	}
-	return slices.Contains(p.nodes(), pod.Spec.NodeName) && databasePodPlacementMatches(pod, p) && runtimeMatches
+	return runtimeMatches
 }
 
 func databasePodPlacementMatches(pod corev1.Pod, p *DatabasePolicy) bool {

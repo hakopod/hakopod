@@ -12,6 +12,8 @@ import (
 
 	"github.com/hakopod/hakopod/internal/database"
 	corev1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -252,6 +254,80 @@ func vitessTopologyRolloutFixture(t *testing.T, identities ...string) (*Client, 
 	return &Client{kube: kube, dynamic: dynamic}, d, root, kube
 }
 
+func vitessTopologyRolloutPolicyFixture(t *testing.T, c *Client, kube *kubefake.Clientset) *DatabasePolicy {
+	t.Helper()
+	policy := &DatabasePolicy{NodeNames: []string{"worker-1", "worker-2", "worker-3"}, Pool: "vitess-acceptance", RuntimeClass: "runsc", StorageClass: "block"}
+	requirement := func(key, value string) corev1.NodeSelectorRequirement {
+		return corev1.NodeSelectorRequirement{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}
+	}
+	terms := make([]corev1.NodeSelectorTerm, len(policy.NodeNames))
+	for i, name := range policy.NodeNames {
+		terms[i] = corev1.NodeSelectorTerm{
+			MatchExpressions: []corev1.NodeSelectorRequirement{
+				requirement("hakopod.com/pool", policy.Pool),
+				requirement(DatabaseDefaultRuntimeLabel, policy.RuntimeClass),
+				requirement(corev1.LabelArchStable, "amd64"),
+			},
+			MatchFields: []corev1.NodeSelectorRequirement{requirement("metadata.name", name)},
+		}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"hakopod.com/pool": policy.Pool, DatabaseDefaultRuntimeLabel: policy.RuntimeClass}}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}
+		if _, err := kube.CoreV1().Nodes().Create(context.Background(), node, metav1.CreateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := kube.NodeV1().RuntimeClasses().Create(context.Background(), &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: policy.RuntimeClass}, Handler: policy.RuntimeClass}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kube.StorageV1().StorageClasses().Create(context.Background(), &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: policy.StorageClass}}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	pods, err := kube.CoreV1().Pods(DatabaseNamespace(vitessTestDatabase().ID)).List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range pods.Items {
+		pod := pods.Items[i].DeepCopy()
+		pod.Spec.NodeName = policy.NodeNames[i%len(policy.NodeNames)]
+		pod.Spec.Affinity = &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: terms}}}
+		if _, err = kube.CoreV1().Pods(pod.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.options.DatabasePolicy = func(context.Context, string, string, database.Spec) (DatabasePolicy, error) { return *policy, nil }
+	return policy
+}
+
+func TestVitessTopologyRolloutPendingPolicyGate(t *testing.T) {
+	c, d, _, kube := vitessTopologyRolloutFixture(t, strings.Repeat("a", 64), strings.Repeat("a", 64), strings.Repeat("a", 64))
+	policy := vitessTopologyRolloutPolicyFixture(t, c, kube)
+	pod, err := kube.CoreV1().Pods(DatabaseNamespace(d.ID)).Get(context.Background(), "topology-a", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod.Spec.NodeName = ""
+	pod.Status.Conditions = nil
+	pod.Status.Phase = corev1.PodPending
+	if !vitessTopologyPodPolicyMatchesForWait(*pod, policy) {
+		t.Fatal("valid unscheduled replacement was rejected")
+	}
+	for _, mutate := range []func(*corev1.Pod){
+		func(p *corev1.Pod) { p.Spec.RuntimeClassName = ptr("runc") },
+		func(p *corev1.Pod) {
+			p.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[0].MatchExpressions[0].Values[0] = "other"
+		},
+		func(p *corev1.Pod) { p.Spec.NodeName = "worker-4" },
+		func(p *corev1.Pod) {
+			p.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+		},
+	} {
+		changed := pod.DeepCopy()
+		mutate(changed)
+		if vitessTopologyPodPolicyMatchesForWait(*changed, policy) {
+			t.Fatal("invalid pending or scheduled topology policy was accepted")
+		}
+	}
+}
+
 func TestVitessTopologyRolloutHealthFailurePreventsDeletion(t *testing.T) {
 	old, current := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	c, d, root, kube := vitessTopologyRolloutFixture(t, old, old, old)
@@ -263,7 +339,7 @@ func TestVitessTopologyRolloutHealthFailurePreventsDeletion(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	err := c.rollVitessTopologyIdentityWithHealth(ctx, d, root, current, func() error { return nil }, func(context.Context, database.Resource, *unstructured.Unstructured, *DatabasePolicy, corev1.Pod) error {
+	err := c.rollVitessTopologyIdentityWithHealth(ctx, d, root, current, func() error { return nil }, func(_ context.Context, _ database.Resource, _ *unstructured.Unstructured, _ *DatabasePolicy, pod corev1.Pod) error {
 		return blocked
 	})
 	if !errors.Is(err, blocked) || deletes != 0 {
@@ -395,9 +471,43 @@ func TestVitessTopologyRolloutRechecksRootSpecAfterLease(t *testing.T) {
 func TestVitessTopologyRolloutResumesAndReplacesOneAtATime(t *testing.T) {
 	old, current := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	c, d, root, kube := vitessTopologyRolloutFixture(t, current, old, old)
+	vitessTopologyRolloutPolicyFixture(t, c, kube)
 	deleted := []string{}
+	pending := 0
+	pendingNodes := map[string]string{}
+	observedPending := false
 	podsGVR := schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+	kube.Fake.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		listAction := action.(k8stesting.ListAction)
+		listed, err := kube.Tracker().List(podsGVR, schema.GroupVersionKind{Version: "v1", Kind: "Pod"}, listAction.GetNamespace())
+		if err != nil {
+			return true, nil, err
+		}
+		result := listed.(*corev1.PodList).DeepCopy()
+		observedPending = false
+		for i := range result.Items {
+			pod := &result.Items[i]
+			node, found := pendingNodes[pod.Name]
+			if !found || pod.Spec.NodeName != "" || vitessPodReady(*pod) {
+				continue
+			}
+			pending++
+			observedPending = true
+			delete(pendingNodes, pod.Name)
+			scheduled := pod.DeepCopy()
+			scheduled.Spec.NodeName = node
+			scheduled.Status.Phase = corev1.PodRunning
+			scheduled.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+			if err = kube.Tracker().Update(podsGVR, scheduled, scheduled.Namespace); err != nil {
+				return true, nil, err
+			}
+		}
+		return true, result, nil
+	})
 	kube.Fake.PrependReactor("delete", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if observedPending {
+			return true, nil, errors.New("deleted another voter while its replacement was pending")
+		}
 		deleteAction := action.(k8stesting.DeleteAction)
 		pod, err := kube.Tracker().Get(podsGVR, DatabaseNamespace(d.ID), deleteAction.GetName())
 		if err != nil {
@@ -410,16 +520,27 @@ func TestVitessTopologyRolloutResumesAndReplacesOneAtATime(t *testing.T) {
 		deleted = append(deleted, replacement.Name)
 		replacement.UID = types.UID(replacement.Name + "-replacement")
 		replacement.Annotations[vitessIdentityAnnotation] = current
-		return true, nil, kube.Tracker().Update(podsGVR, replacement, replacement.Namespace)
+		node := replacement.Spec.NodeName
+		replacement.Spec.NodeName = ""
+		replacement.Status.Phase = corev1.PodPending
+		replacement.Status.Conditions = nil
+		if err = kube.Tracker().Update(podsGVR, replacement, replacement.Namespace); err != nil {
+			return true, nil, err
+		}
+		pendingNodes[replacement.Name] = node
+		return true, nil, nil
 	})
 	healthChecks := 0
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	err := c.rollVitessTopologyIdentityWithHealth(ctx, d, root, current, func() error { return nil }, func(context.Context, database.Resource, *unstructured.Unstructured, *DatabasePolicy, corev1.Pod) error {
+	err := c.rollVitessTopologyIdentityWithHealth(ctx, d, root, current, func() error { return nil }, func(_ context.Context, _ database.Resource, _ *unstructured.Unstructured, _ *DatabasePolicy, pod corev1.Pod) error {
+		if observedPending || pod.Spec.NodeName == "" || !vitessPodReady(pod) {
+			return errors.New("checked quorum while a replacement was pending")
+		}
 		healthChecks++
 		return nil
 	})
-	if err != nil || !slices.Equal(deleted, []string{"topology-b", "topology-c"}) || healthChecks < 6 {
-		t.Fatal("interrupted topology rollout did not resume serially", deleted, healthChecks, err)
+	if err != nil || !slices.Equal(deleted, []string{"topology-b", "topology-c"}) || pending != 2 || healthChecks < 6 {
+		t.Fatal("interrupted topology rollout did not wait for serially scheduled replacements", deleted, pending, healthChecks, err)
 	}
 }
