@@ -14,7 +14,7 @@ func configureOutpostTemplate(app *Application, values map[string]string) error 
 	redisHost := values["redis-host"]
 	redisPort, redisDatabase := 0, 0
 	if values["redis-mode"] == "external" {
-		if !ValidHostname(redisHost) && net.ParseIP(redisHost) == nil {
+		if !validTemplateConnectionHost(redisHost) {
 			return fmt.Errorf("redis-host: use a hostname or IP address without a scheme, port or credentials")
 		}
 		// Outpost v1.6.0 concatenates the host and port in its Redis client.
@@ -37,6 +37,7 @@ func configureOutpostTemplate(app *Application, values map[string]string) error 
 	for _, name := range []string{"main", "delivery", "log", "migrate"} {
 		service := app.Services[name]
 		if values["database-mode"] == "external" {
+			delete(service.Env, "PGSSLMODE")
 			delete(service.Bindings, "POSTGRES_URL")
 			service.Secrets["POSTGRES_URL"] = SecretRef{Ref: "database-url"}
 			service.DependsOn = slices.DeleteFunc(service.DependsOn, func(dep string) bool { return dep == "db" })

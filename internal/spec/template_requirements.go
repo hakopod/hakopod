@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type TemplateSecretField struct {
@@ -140,6 +142,22 @@ func ValidateTemplateSecret(id, name, value string) error {
 	return nil
 }
 
+// Private provider endpoints may use a single DNS label, unlike public domains.
+func validTemplateConnectionHost(host string) bool {
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	if len(validation.IsDNS1123Subdomain(host)) != 0 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) > 63 {
+			return false
+		}
+	}
+	return true
+}
+
 func validateTemplateConnectionURL(format, value string) error {
 	u, err := url.Parse(value)
 	if err != nil || u.User == nil || u.User.Username() == "" || u.Opaque != "" || u.Fragment != "" ||
@@ -150,7 +168,7 @@ func validateTemplateConnectionURL(format, value string) error {
 	if !present || password == "" || strings.ContainsAny(u.User.Username()+password, "\x00\r\n") {
 		return fmt.Errorf("the connection URL must contain its provider credentials")
 	}
-	if host := u.Hostname(); !ValidHostname(host) && net.ParseIP(host) == nil {
+	if !validTemplateConnectionHost(u.Hostname()) {
 		return fmt.Errorf("the connection URL must use a hostname or IP address")
 	}
 	if port := u.Port(); port != "" || strings.HasSuffix(u.Host, ":") {

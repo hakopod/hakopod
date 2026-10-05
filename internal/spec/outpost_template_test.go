@@ -49,10 +49,10 @@ func TestOutpostIndependentDependencies(t *testing.T) {
 							t.Fatal("server or migration dependency differs from the selected provider", name)
 						}
 						if database == "external" {
-							if _, exists := service.Bindings["POSTGRES_URL"]; exists || service.Secrets["POSTGRES_URL"].Ref != "database-url" {
+							if _, exists := service.Bindings["POSTGRES_URL"]; exists || service.Secrets["POSTGRES_URL"].Ref != "database-url" || service.Env["PGSSLMODE"] != "" {
 								t.Fatal("external database must use one scoped provider URL", name)
 							}
-						} else if binding := service.Bindings["POSTGRES_URL"]; binding.Service != "db" || binding.Database != "outpost" || binding.Password.Ref != "database-password" {
+						} else if binding := service.Bindings["POSTGRES_URL"]; binding.Service != "db" || binding.Database != "outpost" || binding.Password.Ref != "database-password" || service.Env["PGSSLMODE"] != "disable" {
 							t.Fatal("bundled database binding changed", name)
 						}
 						if service.Secrets["REDIS_PASSWORD"].Ref != "redis-password" || service.Env["REDIS_TLS_VERIFY"] != "true" {
@@ -69,7 +69,7 @@ func TestOutpostIndependentDependencies(t *testing.T) {
 							t.Fatal("bundled broker binding changed", name)
 						}
 						if name == "migrate" {
-							if service.Job == nil || !slices.Equal(service.Args, []string{"migrate", "apply", "--yes"}) || slices.Contains(service.DependsOn, "broker") != (broker == "bundled") || service.Secrets["AES_ENCRYPTION_SECRET"].Ref != "encryption-secret" || service.Secrets["API_KEY"].Ref != "" || service.Secrets["API_JWT_SECRET"].Ref != "" {
+							if service.Job == nil || service.Job.Retries != 0 || len(service.Args) != 1 || !strings.HasSuffix(strings.TrimSpace(service.Args[0]), "exec /usr/local/bin/outpost migrate apply --yes") || slices.Contains(service.DependsOn, "broker") != (broker == "bundled") || service.Secrets["AES_ENCRYPTION_SECRET"].Ref != "encryption-secret" || service.Secrets["API_KEY"].Ref != "" || service.Secrets["API_JWT_SECRET"].Ref != "" {
 								t.Fatal("migration must validate dependency and encryption configuration without API keys")
 							}
 							continue
@@ -147,6 +147,24 @@ func TestOutpostProviderCredentialURLs(t *testing.T) {
 			if err := ValidateTemplateSecret("outpost", name, value); err == nil || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), value) {
 				t.Fatal("invalid URL accepted or credential echoed", name)
 			}
+		}
+	}
+}
+
+func TestOutpostPrivateRedisHostnames(t *testing.T) {
+	for _, host := range []string{"redis", "fixture-redis", "redis.internal", "192.0.2.1"} {
+		app, err := PlanTemplate("outpost", TemplateOptions{Name: "events", Values: map[string]string{
+			"redis-mode": "external", "redis-host": host,
+		}})
+		if err != nil || app.Services["main"].Env["REDIS_HOST"] != host {
+			t.Fatal("private Redis hostname rejected", host, err)
+		}
+	}
+	for _, host := range []string{"redis:6379", "user@redis", "redis/path", "_redis", "redis.", strings.Repeat("a", 64) + ".test"} {
+		if _, err := PlanTemplate("outpost", TemplateOptions{Name: "events", Values: map[string]string{
+			"redis-mode": "external", "redis-host": host,
+		}}); err == nil {
+			t.Fatal("malformed Redis hostname accepted", host)
 		}
 	}
 }
