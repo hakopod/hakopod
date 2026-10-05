@@ -1,25 +1,27 @@
-Hakopod 0.1.0-alpha.53 repairs database network maintenance and Managed Actions stop deadlines after host maintenance.
+Hakopod 0.1.0-alpha.54 adds the Outpost webhook delivery template with independently bundled or existing PostgreSQL, Redis and RabbitMQ.
 
-Database health observation now refreshes the owned network policy for every lifecycle-ready database, including ordinary PostgreSQL databases without recovery metadata. When a Kubernetes API endpoint changes after a host restart, the next observation replaces its stale exact address before probing database health. Maintenance validates namespace and policy ownership, holds the existing revision lease, and preserves the isolation of restored databases awaiting inspection. Unavailable endpoint discovery leaves the previous policy unchanged and records a retry status.
+The preset runs Outpost v1.6.0 as separate API, delivery and log services. A deployment job applies upstream PostgreSQL and Redis migrations before the server roles start. Only the API can receive public HTTP ingress; bundled databases and the broker keep private listeners and separate persistent volumes. All images are digest-pinned, and Outpost runs without root or cluster credentials.
 
-A deployment that only suspends GitHub or GitLab Actions services can wait for their bounded runner lifetimes, including retained runners from an older configuration. The ordinary deployment deadline previously cut that wait short. Other deployment and recovery deadlines, cancellation checks and busy-runner protections remain unchanged. An operator's backup drain timeout is a separate maximum wait; this change does not guarantee that every long-running job fits the backup window.
+Each dependency choice changes the rendered services and required secrets. Private AMQP bindings URL-escape the bundled broker credentials at deployment time. External PostgreSQL and RabbitMQ URLs stay in application-scoped secrets; PostgreSQL requires an explicit TLS policy and external Redis verifies TLS by default. Keep the API, JWT and encryption keys stable with coordinated data backups. This is a new-install preset; switching images or reverting a deployment does not reverse upstream data migrations.
 
-This release retains the private self-hosted ClickHouse support added in [alpha.52](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.52). Its controller, storage, runtime and connectivity requirements continue to apply.
+Shared hosted compute does not provide the job and binding capabilities required by this stack. Use self-hosted Hakopod or connect your own server in Cloud. Public TLS, arbitrary external providers, portal integration, scaling and backup restoration require separate operator validation.
 
-Install alpha.53 with the published installer:
+This release retains the database network maintenance and bounded Actions drain fixes from [alpha.53](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.53), and private self-hosted ClickHouse support from [alpha.52](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.52).
+
+Install alpha.54 with the published installer:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.53/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.53
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.54/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.54
 ```
 
 Upgrade an existing installation with:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.53/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.53
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.54/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.54
 ```
 
-Direct upgrades are supported from alpha.51 and alpha.52. Older installations need a supported intermediate release. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
+Direct upgrades are supported from alpha.52 and alpha.53. Older installations need a supported intermediate release. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
