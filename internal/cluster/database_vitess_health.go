@@ -75,17 +75,21 @@ func verifyVitessNativeViews(d database.Resource, members []database.Member, vie
 	return result, nil
 }
 
-func (c *Client) observeVitessDatabase(ctx context.Context, d database.Resource, object *unstructured.Unstructured, o *database.Observation, expectedIdentity string) error {
+func (c *Client) observeVitessDatabase(ctx context.Context, d database.Resource, object *unstructured.Unstructured, o *database.Observation, expectedIdentity string, inventory *vitessObservationInventory) error {
 	views := make([]vitessNativeView, len(o.Members))
 	group, step := errgroup.WithContext(ctx)
 	group.SetLimit(3)
 	for i, member := range o.Members {
 		group.Go(func() error {
-			if err := c.verifyVitessTabletSockets(step, d, member); err != nil {
+			if err := c.verifyVitessTabletSockets(step, inventory, member); err != nil {
 				return err
 			}
 			out := &databaseBoundedWriter{limit: 16 << 10}
-			if err := c.DatabaseExec(step, d, member, vitessLocalCommand("vt_dba", vitessNativeViewQuery), nil, out); err != nil {
+			pod, container, err := inventory.tablet(member)
+			if err != nil || container != "vttablet" {
+				return fmt.Errorf("Vitess tablet observation target changed")
+			}
+			if err := c.databaseExecVerifiedPod(step, pod, container, vitessLocalCommand("vt_dba", vitessNativeViewQuery), nil, out); err != nil {
 				return err
 			}
 			if json.Unmarshal(out.Bytes(), &views[i]) != nil {

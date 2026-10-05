@@ -21,8 +21,8 @@ func verifyVitessSocketVisibility(exec func(string, []string, io.Writer) error) 
 	return nil
 }
 
-func (c *Client) verifyVitessTabletSockets(ctx context.Context, d database.Resource, member database.Member) error {
-	pod, container, err := c.vitessExecTarget(ctx, d, member)
+func (c *Client) verifyVitessTabletSockets(ctx context.Context, inventory *vitessObservationInventory, member database.Member) error {
+	pod, container, err := c.tabletForExec(ctx, member, inventory)
 	if err != nil || container != "vttablet" {
 		return fmt.Errorf("Vitess tablet socket target changed")
 	}

@@ -257,7 +257,7 @@ func (c *Client) observeOracleEnterpriseDatabase(ctx context.Context, d database
 	if err = c.databaseEndpointsReady(ctx, d, o); err != nil {
 		return o, err
 	}
-	if err = c.observeDatabaseTLS(ctx, d, &o); err != nil {
+	if err = c.observeDatabaseTLS(ctx, d, &o, nil); err != nil {
 		return o, err
 	}
 	o.Status = "ready"

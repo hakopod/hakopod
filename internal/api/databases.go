@@ -601,29 +601,36 @@ func (s *Server) resizeDatabase(w http.ResponseWriter, r *http.Request) {
 	write(w, 202, op)
 }
 func (s *Server) refreshDatabaseObservation(parent context.Context) {
-	ctx, cancel := context.WithTimeout(parent, 50*time.Second)
+	// Finish inside the 60-second observation lease. Scope lookup gets five
+	// seconds; both maintenance passes share twenty. This leaves the full
+	// 25-second health budget plus time to release maintenance and save results.
+	ctx, cancel := context.WithTimeout(parent, 58*time.Second)
 	defer cancel()
-	d, lease, err := s.Store.ClaimDatabaseObservation(ctx)
+	lookup, stopLookup := context.WithTimeout(ctx, 5*time.Second)
+	defer stopLookup()
+	d, lease, err := s.Store.ClaimDatabaseObservation(lookup)
 	if err != nil {
 		return
 	}
 	defer s.Store.ReleaseDatabaseObservation(d.ID, lease)
-	names, err := s.Store.DatabasePublicEndpointNames(ctx, d.ID, "")
+	names, err := s.Store.DatabasePublicEndpointNames(lookup, d.ID, "")
 	if err != nil {
 		return
 	}
 	d.PublicEndpointNames = names
-	d.PublicEndpointMembers, err = s.Store.DatabasePublicEndpointMembers(ctx, d.ID, "")
+	d.PublicEndpointMembers, err = s.Store.DatabasePublicEndpointMembers(lookup, d.ID, "")
 	if err != nil {
 		return
 	}
-	d.PublicEndpointAccess, err = s.Store.DatabasePublicEndpointAccessRequired(ctx, d.ID)
+	d.PublicEndpointAccess, err = s.Store.DatabasePublicEndpointAccessRequired(lookup, d.ID)
 	if err != nil {
 		return
 	}
+	stopLookup()
+	maintenance, stopMaintenance := context.WithTimeout(ctx, 20*time.Second)
+	defer stopMaintenance()
 	var identityErr, networkPolicyErr, nativeStorageErr error
 	if d.Spec.Engine == "vitess" {
-		maintenance, stop := context.WithTimeout(ctx, 20*time.Second)
 		claim, e := s.Store.ClaimDatabaseNativeStorageMaintenance(maintenance, d.ID, d.Revision)
 		if e != nil {
 			nativeStorageErr = e
@@ -633,14 +640,12 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 			nativeStorageErr = s.Cluster.ReconcileVitessBackupAuthority(maintenance, d, func() error { return claim.Check(maintenance) })
 			claim.Release()
 		}
-		stop()
 	}
 	renewIdentity := d.Status == "ready" && nativeStorageErr == nil && (d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess") && d.Spec.TLSRequired()
 	// Lifecycle readiness, not observed health, permits maintenance: stale API
 	// endpoints can prevent an otherwise ready database from becoming healthy.
 	reconcileNetworkPolicy := d.Status == "ready"
 	if renewIdentity || reconcileNetworkPolicy {
-		maintenance, stop := context.WithTimeout(ctx, 20*time.Second)
 		claim, e := s.Store.ClaimDatabaseMaintenance(maintenance, d.ID, d.Revision)
 		if e != nil {
 			networkPolicyErr = e
@@ -653,8 +658,8 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 			}
 			claim.Release()
 		}
-		stop()
 	}
+	stopMaintenance()
 	observe, stop := context.WithTimeout(ctx, 25*time.Second)
 	defer stop()
 	o, err := s.Cluster.ObserveDatabase(observe, d)
