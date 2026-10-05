@@ -273,6 +273,14 @@ func backupRequestHash(j backup.Job) string {
 var errManagedBackupAdmissionConflict = fmt.Errorf("%w: managed database is temporarily unavailable for backup", backup.ErrConflict)
 var errManagedBackupSourceMissing = fmt.Errorf("%w: managed database is unavailable", backup.ErrNotFound)
 
+func managedBackupMaintenanceConflict() error {
+	return fmt.Errorf("%w: %w", errManagedBackupAdmissionConflict, errDatabaseMaintenanceActive)
+}
+
+func managedRestoreMaintenanceConflict() error {
+	return fmt.Errorf("%w: %w", backup.ErrConflict, errDatabaseMaintenanceActive)
+}
+
 func validateManagedBackupAdmission(ctx context.Context, tx pgx.Tx, p Principal, source backup.Source) error {
 	if source.Kind != "managed_database" {
 		return nil
@@ -290,7 +298,7 @@ func validateManagedBackupAdmission(ctx context.Context, tx pgx.Tx, p Principal,
 	if idle, err := databaseMaintenanceIdle(ctx, tx, source.ManagedDatabaseID); err != nil {
 		return err
 	} else if !idle {
-		return errManagedBackupAdmissionConflict
+		return managedBackupMaintenanceConflict()
 	}
 	return nil
 }
@@ -303,11 +311,6 @@ func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, id
 			return j, errManagedBackupSourceMissing
 		}
 		return j, err
-	}
-	if j.Kind == "backup" {
-		if err := validateManagedBackupAdmission(ctx, tx, p, j.Source); err != nil {
-			return j, err
-		}
 	}
 	j.Authority = backupAuthority(p)
 	if err := rejectPreviewBackup(ctx, tx, j.Source.ApplicationID); err != nil {
@@ -354,6 +357,13 @@ func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, id
 	if !exists {
 		return j, backup.ErrNotFound
 	}
+	// A committed request keeps its receipt during later maintenance. New jobs
+	// still validate the current database under its row lock before insertion.
+	if j.Kind == "backup" {
+		if err := validateManagedBackupAdmission(ctx, tx, p, j.Source); err != nil {
+			return j, err
+		}
+	}
 	if j.ID == "" {
 		j.ID = NewID()
 	}
@@ -368,6 +378,11 @@ func enqueueBackup(ctx context.Context, tx pgx.Tx, p Principal, j backup.Job, id
 	return result, backupAudit(ctx, tx, p, "backup."+j.Kind+".queued", j.ID)
 }
 func (s *Store) EnqueueBackup(ctx context.Context, p Principal, j backup.Job, idem string) (backup.Job, error) {
+	return waitForDatabaseMaintenance(ctx, func(attempt context.Context) (backup.Job, error) {
+		return s.enqueueBackupOnce(attempt, p, j, idem)
+	})
+}
+func (s *Store) enqueueBackupOnce(ctx context.Context, p Principal, j backup.Job, idem string) (backup.Job, error) {
 	if err := backupAdmin(p); err != nil {
 		return j, err
 	}
@@ -463,6 +478,12 @@ func (s *Store) BackupArtifacts(ctx context.Context, cursor, destination string)
 const pruneUnusedBackupRestorePlans = "DELETE FROM backup_restore_plans WHERE id IN (SELECT id FROM backup_restore_plans WHERE used_at IS NULL AND expires_at<now() ORDER BY expires_at LIMIT 100)"
 
 func (s *Store) SaveBackupRestorePlan(ctx context.Context, p Principal, plan backup.RestorePlan) error {
+	_, err := waitForDatabaseMaintenance(ctx, func(attempt context.Context) (struct{}, error) {
+		return struct{}{}, s.saveBackupRestorePlanOnce(attempt, p, plan)
+	})
+	return err
+}
+func (s *Store) saveBackupRestorePlanOnce(ctx context.Context, p Principal, plan backup.RestorePlan) error {
 	if _, err := s.BackupArtifact(WithBackupPrincipal(ctx, p), plan.ArtifactID); err != nil {
 		return err
 	}
@@ -513,6 +534,11 @@ func (s *Store) SaveBackupRestorePlan(ctx context.Context, p Principal, plan bac
 	return tx.Commit(ctx)
 }
 func (s *Store) AcceptBackupRestore(ctx context.Context, p Principal, artifactID, planID, confirmation, idem string) (backup.Job, error) {
+	return waitForDatabaseMaintenance(ctx, func(attempt context.Context) (backup.Job, error) {
+		return s.acceptBackupRestoreOnce(attempt, p, artifactID, planID, confirmation, idem)
+	})
+}
+func (s *Store) acceptBackupRestoreOnce(ctx context.Context, p Principal, artifactID, planID, confirmation, idem string) (backup.Job, error) {
 	var j backup.Job
 	if err := backupAdmin(p); err != nil {
 		return j, err
@@ -613,11 +639,6 @@ func validateManagedRestoreTarget(ctx context.Context, tx pgx.Tx, a backup.Artif
 	if err != nil {
 		return err
 	}
-	if idle, err := databaseMaintenanceIdle(ctx, tx, d.ID); err != nil {
-		return err
-	} else if !idle {
-		return backup.ErrConflict
-	}
 	if err = backup.ValidateManagedRecovery(a, d.Spec.Engine, d.Spec.Version); err != nil {
 		return err
 	}
@@ -636,6 +657,11 @@ func validateManagedRestoreTarget(ctx context.Context, tx pgx.Tx, a backup.Artif
 	}
 	if busy {
 		return backup.ErrConflict
+	}
+	if idle, err := databaseMaintenanceIdle(ctx, tx, d.ID); err != nil {
+		return err
+	} else if !idle {
+		return managedRestoreMaintenanceConflict()
 	}
 	return nil
 }

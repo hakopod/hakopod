@@ -121,6 +121,12 @@ func (s *Store) AcceptDatabaseResize(ctx context.Context, p Principal, d databas
 	return s.acceptDatabase(ctx, p, d, expected, idem, "resize", reviewID)
 }
 func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Resource, expected int64, idem, kind, reviewID string) (database.Operation, error) {
+	return waitForDatabaseMaintenance(ctx, func(attempt context.Context) (database.Operation, error) {
+		return s.acceptDatabaseOnce(attempt, p, d, expected, idem, kind, reviewID)
+	})
+}
+
+func (s *Store) acceptDatabaseOnce(ctx context.Context, p Principal, d database.Resource, expected int64, idem, kind, reviewID string) (database.Operation, error) {
 	if expected == 0 && kind == "create" {
 		d.Spec = d.Spec.WithSecureDefaults()
 	}
@@ -180,13 +186,10 @@ func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Reso
 	if current.Revision != expected || current.DeletedAt != nil {
 		return database.Operation{}, ErrConflict
 	}
+	var maintaining bool
 	if current.ID != "" {
-		var maintaining bool
 		if err = tx.QueryRow(ctx, "SELECT COALESCE(maintenance_lease_until>now(),false) FROM managed_databases WHERE id=$1", current.ID).Scan(&maintaining); err != nil {
 			return database.Operation{}, err
-		}
-		if maintaining {
-			return database.Operation{}, fmt.Errorf("%w: database certificate maintenance is in progress; retry the reviewed operation", ErrConflict)
 		}
 		var publicEndpointBusy bool
 		if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM managed_database_public_endpoint_operations WHERE database_id=$1 AND status IN ('queued','running'))", current.ID).Scan(&publicEndpointBusy); err != nil {
@@ -208,9 +211,6 @@ func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Reso
 		}
 		if !plan.Current.Equal(current.Spec) || !plan.Proposed.Equal(d.Spec) || plan.ExpectedRevision != expected || len(plan.BlockedReasons) > 0 || !plan.ExpiresAt.After(time.Now()) {
 			return database.Operation{}, ErrConflict
-		}
-		if _, err = tx.Exec(ctx, "UPDATE managed_database_reviews SET consumed_at=now() WHERE id=$1", reviewID); err != nil {
-			return database.Operation{}, err
 		}
 		review = &plan
 	}
@@ -263,6 +263,14 @@ func (s *Store) acceptDatabase(ctx context.Context, p Principal, d database.Reso
 				return database.Operation{}, err
 			}
 			status = "deleting"
+		}
+		if maintaining {
+			return database.Operation{}, fmt.Errorf("%w: %w", ErrConflict, errDatabaseMaintenanceActive)
+		}
+		if review != nil {
+			if _, err = tx.Exec(ctx, "UPDATE managed_database_reviews SET consumed_at=now() WHERE id=$1", reviewID); err != nil {
+				return database.Operation{}, err
+			}
 		}
 		_, err = tx.Exec(ctx, "UPDATE managed_databases SET revision=revision+1,spec=$2,status=$3,updated_at=now() WHERE id=$1", d.ID, JSON(d.Spec), status)
 	}
