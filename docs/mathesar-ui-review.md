@@ -2,6 +2,11 @@
 
 Reviewed on 4 October 2026 against [the Hatch dashboard checklist](ui-ux-checklist.md).
 
+This is the historical review of the required shared-storage field. The
+[automatic local storage review](mathesar-local-storage-ui-review.md) records the
+new default and replaces that requirement and the shared-storage capability gate
+described below.
+
 This pass covers the catalog list, Mathesar inspector, configuration page, bundled and existing PostgreSQL choices, deployment review, secret editing, and their failure and permission states. The actual dashboard route modules, shared shell, form, selectors and styles were rendered. Catalog metadata came from `spec.Templates()` and review specifications from `spec.PlanTemplate()` in this checkout.
 
 Identity, project, saved-secret metadata and failure responses were explicitly labeled development fixtures. No live account, application, cluster, secret or deployment was changed. This is UI evidence; it does not establish runtime readiness, connectivity, migrations or successful deployment.
