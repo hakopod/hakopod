@@ -1,0 +1,69 @@
+name: Mathesar UI review evidence
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'templates'
+      - 'internal/spec/templates.go'
+      - 'internal/spec/mounts.go'
+      - 'internal/spec/shared_volumes*.go'
+      - 'web/review/mathesar/**'
+      - '.github/workflows/mathesar-ui-review.yml'
+permissions:
+  contents: read
+concurrency:
+  group: mathesar-ui-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      NODE_OPTIONS: --max-old-space-size=1024
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Prepare source and isolated review dependencies
+        run: |
+          git submodule update --init templates
+          python3 scripts/ui-source.py restore
+          pnpm --dir web install --frozen-lockfile
+          npm install --prefix .local/template-review --no-audit --no-fund playwright@1.56.1
+          .local/template-review/node_modules/.bin/playwright install --with-deps chromium
+          mkdir -p web/public/template-assets/mathesar .local/mathesar-ui-review/evidence
+          cp templates/blueprints/mathesar/logo.svg web/public/template-assets/mathesar/logo.svg
+          go run web/review/mathesar/export-fixture.go > .local/mathesar-ui-review/catalog-fixture.json
+      - name: Capture loaded routes and interactions using development fixtures
+        run: |
+          node web/review/mathesar/server.mjs > .local/mathesar-ui-review/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4195/ > /dev/null; then break; fi
+            sleep 1
+          done
+          git rev-parse HEAD > .local/mathesar-ui-review/evidence/source-commit.txt
+          git -C templates rev-parse HEAD > .local/mathesar-ui-review/evidence/catalog-commit.txt
+          node web/review/mathesar/review.mjs
+      - name: Retain screenshots for independent visual review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mathesar-ui-review
+          path: |
+            .local/mathesar-ui-review/evidence
+            .local/mathesar-ui-review/server.log
+          retention-days: 3
+          if-no-files-found: error

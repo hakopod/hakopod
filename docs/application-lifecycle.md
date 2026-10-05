@@ -39,9 +39,10 @@ repeat external side effects: migrations must be idempotent. This is not an
 exactly-once transaction, and rollback never reverses database migrations.
 
 Changing an existing service into a job (or the reverse) requires a separate
-removal deployment first. Persistent volumes are retained. Shared mounts still
-require an appropriate ReadWriteMany storage class when multiple workloads use
-them; dependency order alone does not make a volume safely shareable.
+removal deployment first. Persistent volumes are retained. Jobs sharing mounts
+with other workloads require an appropriate ReadWriteMany storage class. Regular
+services can share ReadWriteOnce storage through required same-node placement;
+dependency order alone does not make a volume safely shareable.
 
 ## Configuration and secret files
 
@@ -141,7 +142,10 @@ additional headroom; concurrent changes and placement constraints can still fail
 Storage classes are checked before deployment. Known local-path and EBS classes
 are rejected for ReadWriteMany volumes. Kubernetes does not advertise every CSI
 driver's supported access modes: administrators must validate other shared storage
-classes. Object-storage adapters remain application-specific.
+classes. ReadWriteOnce consumers are scheduled together on a node that fits the
+whole group and all retained volume constraints. Local disk is not replicated;
+node or disk loss requires restoring data. Object-storage adapters remain
+application-specific.
 
 ## Public build-time configuration
 

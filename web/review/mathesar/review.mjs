@@ -66,6 +66,7 @@ async function capture(state, options = {}) {
   const filename = `${label}-${state}.png`
   await page.screenshot({ path: `${evidence}${filename}`, fullPage: true })
   results.push({ label, state, geometry, screenshot: filename })
+  console.log(`Captured ${label} ${state}`)
 }
 
 async function select(name, choice, touch = false) {
@@ -132,7 +133,7 @@ try {
     await page.getByRole('heading', { name: 'Configure Mathesar', exact: true }).waitFor()
     const name = page.getByRole('textbox', { name: 'Application name', exact: true })
     await name.fill('fixture-mathesar')
-    await page.getByRole('textbox', { name: 'Canonical site URL', exact: true }).fill('https://mathesar.example.invalid')
+    await page.locator('input[type=url]').fill('https://mathesar.example.invalid')
     await select('Target architecture', 'Linux ARM64')
     const storageMode = page.getByRole('combobox', { name: 'Media storage', exact: true })
     assert.match(await storageMode.textContent(), /Automatic local storage/)
