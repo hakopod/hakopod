@@ -51,6 +51,39 @@ type httpClient struct {
 	token  string
 }
 
+type requestDiagnostic struct {
+	Status   int
+	Code     string
+	Category string
+	Elapsed  time.Duration
+}
+
+const (
+	restoreTargetUnusedDetail = "Create a separate, unused database for recovery."
+	restoreArtifactDetail     = "Choose a matching archive from a different database."
+	restoreHealthDetail       = "Database health could not be verified."
+	restoreVitessEmptyDetail  = "Vitess recovery requires a separate empty database"
+)
+
+func safeProblemCategory(message string) string {
+	switch message {
+	case restoreTargetUnusedDetail:
+		return "target-unused"
+	case restoreArtifactDetail:
+		return "artifact-mismatch"
+	case restoreHealthDetail:
+		return "health-unavailable"
+	case restoreVitessEmptyDetail:
+		return "vitess-target-not-empty"
+	case context.DeadlineExceeded.Error():
+		return "context-deadline"
+	case context.Canceled.Error():
+		return "context-cancelled"
+	default:
+		return "detail-withheld"
+	}
+}
+
 type boundedBuffer struct {
 	bytes.Buffer
 	limit int
@@ -65,6 +98,13 @@ func (b *boundedBuffer) Write(value []byte) (int, error) {
 
 func (c httpClient) request(method, path string, input, output any, idempotency string) (int, string) {
 	c.t.Helper()
+	diagnostic := c.requestDiagnostic(method, path, input, output, idempotency)
+	return diagnostic.Status, diagnostic.Code
+}
+
+func (c httpClient) requestDiagnostic(method, path string, input, output any, idempotency string) requestDiagnostic {
+	c.t.Helper()
+	started := time.Now()
 	var body io.Reader
 	if input != nil {
 		body = bytes.NewReader(store.JSON(input))
@@ -89,17 +129,19 @@ func (c httpClient) request(method, path string, input, output any, idempotency 
 				c.t.Fatal("decode API response", err)
 			}
 		}
-		return response.StatusCode, ""
+		return requestDiagnostic{Status: response.StatusCode, Elapsed: time.Since(started)}
 	}
 	var problem struct {
 		Error struct {
-			Code string `json:"code"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&problem) != nil || !regexp.MustCompile(`^[a-z_]{1,64}$`).MatchString(problem.Error.Code) {
-		return response.StatusCode, "unavailable"
+		return requestDiagnostic{Status: response.StatusCode, Code: "unavailable", Category: "detail-withheld", Elapsed: time.Since(started)}
 	}
-	return response.StatusCode, problem.Error.Code
+	return requestDiagnostic{Status: response.StatusCode, Code: problem.Error.Code,
+		Category: safeProblemCategory(problem.Error.Message), Elapsed: time.Since(started)}
 }
 
 func disposableStore(t *testing.T, ctx context.Context) (*store.Store, string) {
@@ -432,6 +474,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		t.Fatal("Vitess source data differs before backup")
 	}
 
+	t.Log("phase=backup state=started")
 	var job backup.Job
 	if status, code := client.request("POST", "/backups", map[string]any{"destination_id": fixtures["standalone"].Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "vitess"}}, &job, "vitess-http-backup"); status != http.StatusAccepted {
 		t.Fatal("backup acceptance", status, code)
@@ -450,10 +493,15 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if err != nil || artifact.VerifiedAt == nil || artifact.Format != "age-v1+vitess-logical-v1" {
 		t.Fatal("verified Vitess artifact was not recorded")
 	}
+	t.Log("phase=backup state=completed")
 	vitessQuery(t, ctx, runtime, source, credentials["password"], trust.CertificatePEM, "INSERT INTO records(id,payload,label) VALUES (99,0xCAFE,'after-backup')")
+	t.Log("phase=restore state=started")
 	var plan backup.RestorePlan
-	if status, _ := client.request("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, ""); status != http.StatusOK {
-		t.Fatal("restore plan", status)
+	planDiagnostic := client.requestDiagnostic("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, "")
+	if planDiagnostic.Status != http.StatusOK {
+		t.Logf("phase=restore-plan state=failed status=%d code=%s category=%s request_elapsed=%s",
+			planDiagnostic.Status, planDiagnostic.Code, planDiagnostic.Category, planDiagnostic.Elapsed.Round(time.Millisecond))
+		t.Fatal("restore plan", planDiagnostic.Status, planDiagnostic.Code)
 	}
 	var recovery backup.Job
 	if status, code := client.request("POST", "/backup-artifacts/"+artifact.ID+"/restore", map[string]string{"plan_id": plan.ID, "confirmation": target.Spec.Name}, &recovery, "vitess-http-restore"); status != http.StatusAccepted {
@@ -499,7 +547,9 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if status, _ := client.request("POST", "/databases/"+target.ID+"/inspect", map[string]any{"job_id": recovery.ID, "expected_revision": target.Revision, "confirm_name": target.Spec.Name, "inspected": true}, &inspected, ""); status != http.StatusOK || inspected.Recovery == nil || inspected.Recovery.InspectedAt == nil {
 		t.Fatal("inspection acknowledgement", status)
 	}
+	t.Log("phase=restore state=completed")
 
+	t.Log("phase=application state=started")
 	applicationImage := os.Getenv("HAKOPOD_VITESS_ACCEPTANCE_APPLICATION_IMAGE")
 	if !regexp.MustCompile(`^[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}$`).MatchString(applicationImage) {
 		t.Fatal("immutable Vitess acceptance application image is required")
@@ -567,6 +617,7 @@ exec sleep 86400`
 	if status, code := client.request("DELETE", "/applications/"+redeploy.ApplicationID, map[string]any{"expected_revision": emptyDeployment.Revision, "confirm_name": application.Name, "delete_data": true}, nil, ""); status != http.StatusOK {
 		t.Fatal("application deletion", status, code)
 	}
+	t.Log("phase=application state=completed")
 
 	deleteDatabase := func(item managed.Resource) {
 		t.Helper()
@@ -586,5 +637,21 @@ func TestFixtureNamesRemainBounded(t *testing.T) {
 		if len(value) > 63 || !regexp.MustCompile(`^[a-z][a-z0-9-]*$`).MatchString(value) || strings.Contains(value, "--") {
 			t.Fatal(fmt.Sprintf("invalid fixture name %q", value))
 		}
+	}
+}
+
+func TestProblemDiagnosticsWithholdUnrecognizedDetails(t *testing.T) {
+	for _, message := range []string{
+		"",
+		"password=synthetic-secret",
+		"Create a separate, unused database for recovery. token=synthetic-secret",
+		"context deadline exceeded: synthetic-private-endpoint",
+	} {
+		if category := safeProblemCategory(message); category != "detail-withheld" {
+			t.Fatal("unrecognized response detail reached the diagnostic output")
+		}
+	}
+	if safeProblemCategory(restoreHealthDetail) != "health-unavailable" || safeProblemCategory(context.DeadlineExceeded.Error()) != "context-deadline" {
+		t.Fatal("known recovery failures lost their safe diagnostic category")
 	}
 }
