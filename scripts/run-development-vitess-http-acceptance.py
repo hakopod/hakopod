@@ -187,6 +187,7 @@ def run_bounded(command, source, env, log):
                             error = "log_limit"
                             break
                         output.write(block)
+                        output.flush()
                     if error:
                         break
         finally:
@@ -200,6 +201,7 @@ def run_bounded(command, source, env, log):
             tail = process.stdout.read()
             if size + len(tail) <= MAX_LOG_BYTES:
                 output.write(tail)
+                output.flush()
             elif not error:
                 error = "log_limit"
             process.stdout.close()
