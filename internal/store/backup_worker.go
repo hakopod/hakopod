@@ -238,6 +238,15 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 	if err := schedule.Validate(); err != nil {
 		return schedule, err
 	}
+	authority := backupAuthority(p)
+	// Scheduled jobs do not retain the creating key. Prove at admission that the
+	// identity can be reauthorized from durable project authority alone, rather
+	// than accepting a schedule that its first worker tick must disable.
+	if authority != nil {
+		if _, err := s.backupWorkerPrincipal(ctx, p.ID, "", authority); err != nil {
+			return schedule, err
+		}
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return schedule, err
@@ -255,7 +264,7 @@ func (s *Store) PutBackupSchedule(ctx context.Context, p Principal, schedule bac
 	if err = validateManagedBackupAdmission(ctx, tx, p, schedule.Source); err != nil {
 		return schedule, err
 	}
-	schedule.Authority = backupAuthority(p)
+	schedule.Authority = authority
 	if err = rejectPreviewBackup(ctx, tx, schedule.Source.ApplicationID); err != nil {
 		return schedule, err
 	}

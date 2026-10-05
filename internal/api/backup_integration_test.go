@@ -146,9 +146,6 @@ func TestManagedBackupAdmissionUsesDurableState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.Pool.Exec(ctx, "UPDATE identities SET permissions=ARRAY['deployments:read','deployments:write'] WHERE id=$1", admin.ID); err != nil {
-		t.Fatal(err)
-	}
 	if _, err = db.Pool.Exec(ctx, "INSERT INTO projects(name) VALUES('foreign'); INSERT INTO environments(project,name) VALUES('foreign','production')"); err != nil {
 		t.Fatal(err)
 	}
@@ -201,11 +198,6 @@ func TestManagedBackupAdmissionUsesDurableState(t *testing.T) {
 	if status, _ := request(foreign, "postgresql", "managed-admission-foreign", nil); status != http.StatusNotFound {
 		t.Fatal("foreign managed database was accepted", status)
 	}
-	var schedule backup.Schedule
-	scheduleRequest := map[string]any{"name": "managed admission", "destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: ready, Engine: "postgresql"}, "interval_hours": 24, "retention_count": 2, "enabled": true, "expected_revision": 0}
-	if status := client.request("POST", "/backup-schedules", scheduleRequest, &schedule, ""); status != http.StatusCreated || schedule.ID == "" {
-		t.Fatal("managed backup schedule was not accepted", status)
-	}
 	if runtime.resolveCalls != 0 {
 		t.Fatal("managed backup admission called the live runtime", runtime.resolveCalls)
 	}
@@ -215,6 +207,32 @@ func TestManagedBackupAdmissionUsesDurableState(t *testing.T) {
 	failed, err := db.BackupJob(ctx, accepted.ID)
 	if err != nil || failed.Status != "failed" || runtime.resolveCalls != 1 {
 		t.Fatal("backup worker did not recheck live runtime state", failed.Status, runtime.resolveCalls, err)
+	}
+	var schedule backup.Schedule
+	scheduleRequest := map[string]any{"name": "managed admission", "destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: ready, Engine: "postgresql"}, "interval_hours": 24, "retention_count": 2, "enabled": true, "expected_revision": 0}
+	if status := client.request("POST", "/backup-schedules", scheduleRequest, nil, ""); status != http.StatusForbidden {
+		t.Fatal("schedule without durable identity authority was accepted", status)
+	}
+	var scheduleCount int
+	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM backup_schedules").Scan(&scheduleCount); err != nil || scheduleCount != 0 {
+		t.Fatal("rejected schedule changed durable state", scheduleCount, err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE identities SET permissions=ARRAY['deployments:read','deployments:write'] WHERE id=$1", admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	if status := client.request("POST", "/backup-schedules", scheduleRequest, &schedule, ""); status != http.StatusCreated || schedule.ID == "" {
+		t.Fatal("managed backup schedule was not accepted", status)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE backup_schedules SET next_run_at=now()-interval '1 second' WHERE id=$1", schedule.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueueDueBackups(ctx); err != nil {
+		t.Fatal("member-backed schedule did not survive keyless worker reauthorization", err)
+	}
+	var enabled bool
+	var scheduledJobs int
+	if err = db.Pool.QueryRow(ctx, "SELECT enabled,(SELECT count(*) FROM backup_jobs WHERE schedule_id=$1) FROM backup_schedules WHERE id=$1", schedule.ID).Scan(&enabled, &scheduledJobs); err != nil || !enabled || scheduledJobs != 1 {
+		t.Fatal("member-backed schedule was disabled or did not enqueue", enabled, scheduledJobs, err)
 	}
 }
 
