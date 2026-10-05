@@ -95,6 +95,27 @@ class PublicationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     publisher.inspect_archive(archive, image, root / "layout")
 
+    def test_oracle_free_publication_is_limited_to_the_operator(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, image = self.fixture(root)
+            image["repository"] = "ghcr.io/hakopod/managed-oracle-free-operator"
+            path = root / "plan.json"
+            path.write_text(json.dumps({"schema_version": 1, "images": [image]}))
+            self.assertEqual(publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest()), [image])
+            for repository in (
+                "ghcr.io/other/managed-oracle-free-operator",
+                "ghcr.io/hakopod/managed-oracle-free",
+                "ghcr.io/hakopod/managed-oracle-enterprise-operator",
+                "ghcr.io/hakopod/managed-oracle-free-operator/extra",
+                "ghcr.io/hakopod/managed-oracle-free-operator:latest",
+            ):
+                with self.subTest(repository=repository):
+                    image["repository"] = repository
+                    path.write_text(json.dumps({"schema_version": 1, "images": [image]}))
+                    with self.assertRaises(ValueError):
+                        publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest())
+
     def test_refuses_unsafe_or_incomplete_archives(self):
         mutations = [
             lambda e: e.append(("../escape", b"bad")),
