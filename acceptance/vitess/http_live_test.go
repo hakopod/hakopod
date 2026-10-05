@@ -564,18 +564,20 @@ test "$DATABASE_URL" = "mysql://app:${MYSQL_PWD}@$1:3306/app@primary"
 export MYSQL_PWD
 result=$(mysql --no-defaults --protocol=TCP --host="$1" --port=3306 --user=app --database=app --connect-timeout=5 --ssl-mode=VERIFY_IDENTITY --ssl-ca="$2" --batch --raw --skip-column-names --execute='SELECT label FROM records WHERE id=1')
 test "$result" = 'नमस्ते / 東京'
-printf 'VITESS_BOUND_TLS_QUERY_OK\n'
+later=$(mysql --no-defaults --protocol=TCP --host="$1" --port=3306 --user=app --database=app --connect-timeout=5 --ssl-mode=VERIFY_IDENTITY --ssl-ca="$2" --batch --raw --skip-column-names --execute='SELECT COUNT(*) FROM records WHERE id=99')
+test "$later" = '0'
+printf 'VITESS_RECOVERED_BOUND_TLS_QUERY_OK\n'
 exec sleep 86400`
-	sourceHost := ""
-	for _, endpoint := range source.Observation.Endpoints {
+	targetHost := ""
+	for _, endpoint := range target.Observation.Endpoints {
 		if endpoint.Purpose == "read_write" && endpoint.Port == 3306 {
-			sourceHost = endpoint.Host
+			targetHost = endpoint.Host
 		}
 	}
-	if sourceHost == "" {
+	if targetHost == "" {
 		t.Fatal("Vitess application endpoint is unavailable")
 	}
-	application := spec.Application{SchemaVersion: 1, Name: "vitess-http-client", Services: map[string]spec.Service{"web": {Image: applicationImage, Command: []string{"sh", "-c"}, Args: []string{appScript, "vitess-http-client", sourceHost, cluster.DatabaseTrustPath(source.ID)}}}}
+	application := spec.Application{SchemaVersion: 1, Name: "vitess-http-client", Services: map[string]spec.Service{"web": {Image: applicationImage, Command: []string{"sh", "-c"}, Args: []string{appScript, "vitess-http-client", targetHost, cluster.DatabaseTrustPath(target.ID)}}}}
 	var deployment store.Deployment
 	if status, code := client.request("POST", "/deployments", map[string]any{"project": project, "environment": environment, "spec": application, "expected_revision": 0}, &deployment, "vitess-http-client-create"); status != http.StatusAccepted {
 		t.Fatal("application deployment", status, code)
@@ -593,11 +595,11 @@ exec sleep 86400`
 	})
 	deployment = waitDeployment(t, ctx, client, deployment)
 	var connectionPlan store.DatabaseConnectionPlan
-	if status, _ := client.request("POST", "/databases/"+source.ID+"/connection-plan", map[string]any{"application_id": deployment.ApplicationID, "service": "web", "variable": "DATABASE_URL", "endpoint": "read_write", "cluster_aware": false}, &connectionPlan, ""); status != http.StatusOK {
+	if status, _ := client.request("POST", "/databases/"+target.ID+"/connection-plan", map[string]any{"application_id": deployment.ApplicationID, "service": "web", "variable": "DATABASE_URL", "endpoint": "read_write", "cluster_aware": false}, &connectionPlan, ""); status != http.StatusOK {
 		t.Fatal("connection plan", status)
 	}
 	var redeploy store.Deployment
-	if status, _ := client.request("POST", "/databases/"+source.ID+"/connect", map[string]string{"review_id": connectionPlan.ID, "confirm_application": application.Name}, &redeploy, "vitess-http-connect"); status != http.StatusAccepted || redeploy.ApplicationID != deployment.ApplicationID || redeploy.Revision <= deployment.Revision {
+	if status, _ := client.request("POST", "/databases/"+target.ID+"/connect", map[string]string{"review_id": connectionPlan.ID, "confirm_application": application.Name}, &redeploy, "vitess-http-connect"); status != http.StatusAccepted || redeploy.ApplicationID != deployment.ApplicationID || redeploy.Revision <= deployment.Revision {
 		t.Fatal("connection deployment", status)
 	}
 	redeploy = waitDeployment(t, ctx, client, redeploy)
@@ -607,7 +609,7 @@ exec sleep 86400`
 	}
 	logData, readErr := io.ReadAll(io.LimitReader(logStream, (64<<10)+1))
 	logStream.Close()
-	if readErr != nil || len(logData) > 64<<10 || !bytes.Contains(logData, []byte("VITESS_BOUND_TLS_QUERY_OK")) {
+	if readErr != nil || len(logData) > 64<<10 || !bytes.Contains(logData, []byte("VITESS_RECOVERED_BOUND_TLS_QUERY_OK")) {
 		t.Fatal("bound application did not prove its TLS query")
 	}
 	empty := spec.Application{SchemaVersion: 1, Name: application.Name, Services: map[string]spec.Service{}}
