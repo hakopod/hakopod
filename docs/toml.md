@@ -317,12 +317,18 @@ relative directory inside that volume. Mount paths cannot overlap or replace
 protected system directories. Read-only mounts prevent writes through that
 path; another writable mount of the same data can still change it.
 
-A named volume defaults to `access_mode = "ReadWriteOnce"`. To share it between
-services, set `access_mode = "ReadWriteMany"` and select an explicit storage_class
-whose provisioner supports that mode. Services sharing the volume must use the
-same fs_group. Hakopod does not install a storage driver automatically. The local
-development provisioner supports ReadWriteOnce; shared multi-node storage needs
-its own capable CSI provisioner.
+A named volume defaults to `access_mode = "ReadWriteOnce"`. When services share
+it, Hakopod keeps those services on one node using required placement rules.
+Preflight checks that their combined requests and retained volumes fit that node.
+Connected groups remain together even when they share several different volumes.
+Explicit node and architecture choices must agree; jobs and Managed Actions cannot
+join these groups. Local disk remains tied to its node and needs backups.
+
+To share storage across nodes, set `access_mode = "ReadWriteMany"` and select an
+explicit storage_class whose provisioner supports that mode. Services sharing a
+volume must use the same fs_group in either mode. Hakopod creates the claims but
+does not install a storage driver automatically. The installation's default
+ReadWriteOnce class is sufficient for same-node sharing.
 
 Each application can declare 16 named volumes, with 20 total persistent claims
 and 200 GiB across named and legacy volumes. Each service can declare 16 named
