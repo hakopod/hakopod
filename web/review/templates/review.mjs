@@ -103,7 +103,29 @@ try {
 
     await page.goto(`http://127.0.0.1:4194/templates/outpost?theme=${theme}`)
     await page.getByRole('heading', { name: 'Configure Outpost', exact: true }).waitFor()
-    await page.getByRole('textbox', { name: 'Application name', exact: true }).fill('fixture-outpost')
+    const applicationName = page.getByRole('textbox', { name: 'Application name', exact: true })
+    await applicationName.fill('fixture-outpost')
+    const help = page.getByRole('button', { name: 'About Application configuration', exact: true })
+    // Exercise normal keyboard traversal and touch at the loaded form, without
+    // programmatic help focus or repositioning under the sticky header.
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await help.evaluate(element => element === document.activeElement), true)
+    results.push({ label, interactionStage: 'help keyboard Shift+Tab' })
+    await page.getByRole('tooltip').waitFor()
+    if (width !== 320) await capture('help-keyboard')
+    await page.keyboard.press('Escape')
+    await page.getByRole('tooltip').waitFor({ state: 'hidden' })
+    if (width < 640) {
+      await applicationName.tap()
+      results.push({ label, interactionStage: 'help direct touch activation' })
+      await help.tap()
+      await page.getByRole('tooltip').waitFor()
+      const tooltip = await page.getByRole('tooltip').boundingBox()
+      assert.ok(tooltip.x >= 0 && tooltip.x + tooltip.width <= width)
+      if (width === 390) await capture('help-touch')
+      await help.tap()
+      await page.getByRole('tooltip').waitFor({ state: 'hidden' })
+    }
     await select('Target architecture', 'Linux ARM64')
     assert.equal(await page.getByRole('textbox', { name: 'Redis host', exact: true }).count(), 0)
     await capture('bundled')
@@ -145,20 +167,6 @@ try {
     const bounds = await page.getByRole('listbox').boundingBox()
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width)
     await page.keyboard.press('Escape')
-    const help = page.getByRole('button', { name: 'About Application configuration', exact: true })
-    await help.scrollIntoViewIfNeeded()
-    await help.focus()
-    await page.getByRole('tooltip').waitFor()
-    await page.keyboard.press('Escape')
-    await page.getByRole('tooltip').waitFor({ state: 'hidden' })
-    if (width < 640) {
-      await help.tap()
-      await page.getByRole('tooltip').waitFor()
-      const tooltip = await page.getByRole('tooltip').boundingBox()
-      assert.ok(tooltip.x >= 0 && tooltip.x + tooltip.width <= width)
-      await help.tap()
-      await page.getByRole('tooltip').waitFor({ state: 'hidden' })
-    }
     await page.evaluate(() => window.__fixture.planMode = 'error')
     await page.getByRole('button', { name: 'Review template', exact: true }).click()
     await page.getByText('Development fixture: review request failed. Your entries are preserved.', { exact: true }).first().waitFor()
@@ -204,7 +212,7 @@ try {
     await context.close()
   }
 } catch (error) {
-  errors.push({ label, message: error.message })
+  errors.push({ label, message: error.message, stack: error.stack })
   await page?.screenshot({ path: `${evidence}${label}-failure.png`, fullPage: true }).catch(() => {})
 } finally {
   await browser.close()
