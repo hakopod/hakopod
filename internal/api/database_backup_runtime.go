@@ -6,6 +6,7 @@ import (
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/database"
 	"io"
+	"time"
 )
 
 func (r *backupRuntime) resolveManagedDatabase(ctx context.Context, source backup.Source) (backup.Target, error) {
@@ -73,26 +74,40 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 	if err != nil || observed.Status != "ready" {
 		return fmt.Errorf("managed recovery target is not healthy")
 	}
-	if d.Spec.Engine == "postgresql" {
-		return r.server.Cluster.RestorePostgresDatabase(ctx, d, observed, input)
-	}
-	if d.Spec.Engine == "mysql" {
-		return r.server.Cluster.RestoreMySQLDatabase(ctx, d, observed, input)
-	}
-	if d.Spec.Engine == "mongodb" {
-		return r.server.Cluster.RestoreMongoDBDatabase(ctx, d, observed, input)
-	}
-	if d.Spec.Engine == "clickhouse" {
-		return r.server.Cluster.RestoreClickHouseDatabase(ctx, d, observed, input)
-	}
-	if d.Spec.Engine == "oracle" {
-		return r.server.Cluster.RestoreOracleDatabase(ctx, d, observed, input)
-	}
-	if d.Spec.Engine == "vitess" {
-		return r.server.Cluster.RestoreVitessDatabase(ctx, d, observed, input)
-	}
-	if d.Spec.Engine != "redis" {
+	var restoreErr error
+	switch d.Spec.Engine {
+	case "postgresql":
+		restoreErr = r.server.Cluster.RestorePostgresDatabase(ctx, d, observed, input)
+	case "mysql":
+		restoreErr = r.server.Cluster.RestoreMySQLDatabase(ctx, d, observed, input)
+	case "mongodb":
+		restoreErr = r.server.Cluster.RestoreMongoDBDatabase(ctx, d, observed, input)
+	case "clickhouse":
+		restoreErr = r.server.Cluster.RestoreClickHouseDatabase(ctx, d, observed, input)
+	case "oracle":
+		restoreErr = r.server.Cluster.RestoreOracleDatabase(ctx, d, observed, input)
+	case "vitess":
+		restoreErr = r.server.Cluster.RestoreVitessDatabase(ctx, d, observed, input)
+	case "redis":
+		restoreErr = r.server.Cluster.RestoreRedisDatabase(ctx, d, observed, input)
+	default:
 		return fmt.Errorf("unsupported managed database recovery engine")
 	}
-	return r.server.Cluster.RestoreRedisDatabase(ctx, d, observed, input)
+	if restoreErr != nil {
+		return restoreErr
+	}
+	// Recovery may replace pods to revoke existing sessions. Record those new
+	// identities while the job still owns the target and before it can succeed.
+	observeCtx, cancelObserve := context.WithTimeout(ctx, 25*time.Second)
+	observed, err = r.server.Cluster.ObserveDatabase(observeCtx, d)
+	cancelObserve()
+	if err != nil || observed.Status != "ready" || observed.Revision != d.Revision {
+		return fmt.Errorf("managed recovery result could not be verified")
+	}
+	recordCtx, cancelRecord := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelRecord()
+	if err = r.server.Store.ObserveRecoveringDatabase(recordCtx, d.ID, d.Revision, job.ID, observed); err != nil {
+		return fmt.Errorf("managed recovery result could not be recorded: %w", err)
+	}
+	return nil
 }

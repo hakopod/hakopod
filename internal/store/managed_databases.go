@@ -390,6 +390,38 @@ func (s *Store) RecordDatabaseStep(ctx context.Context, o database.Operation, ob
 func (s *Store) ObserveDatabase(ctx context.Context, id string, revision int64, o database.Observation) error {
 	return s.observeDatabase(ctx, id, revision, "", o)
 }
+
+// ObserveRecoveringDatabase records the ready topology produced by the active
+// restore worker before that worker can mark its backup job successful.
+func (s *Store) ObserveRecoveringDatabase(ctx context.Context, id string, revision int64, jobID string, o database.Observation) error {
+	if jobID == "" || o.Status != "ready" || !o.Fresh(time.Now(), revision) {
+		return ErrInput
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE managed_databases d SET observation=$4,updated_at=now()
+		FROM backup_jobs j WHERE d.id=$1 AND d.revision=$2 AND d.deleted_at IS NULL
+		AND d.status='restoring' AND d.recovery->>'job_id'=$3
+		AND j.id=$3 AND j.kind='restore' AND j.status='running' AND NOT j.cancel_requested
+		AND j.lease<>'' AND j.lease_until>clock_timestamp()
+		AND j.target->>'managed_database_id'=$1 AND (j.target->>'revision')::bigint=$2
+		AND j.target->>'engine'=d.spec->>'engine'
+		AND COALESCE((d.observation->>'observed_at')::timestamptz,'epoch')<=$5`, id, revision, jobID, JSON(o), o.ObservedAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrConflict
+	}
+	if err = recordDatabaseMetricPoint(ctx, tx, id, revision, o); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) observeDatabase(ctx context.Context, id string, revision int64, lease string, o database.Observation) error {
 	if o.Revision != revision || o.ObservedAt.IsZero() {
 		return ErrInput

@@ -512,6 +512,12 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	t.Log("phase=backup state=completed")
 	vitessQuery(t, ctx, runtime, source, credentials["password"], trust.CertificatePEM, "INSERT INTO records(id,payload,label) VALUES (99,0xCAFE,'after-backup')")
 	t.Log("phase=restore state=started")
+	targetID, targetRevision := target.ID, target.Revision
+	targetProject, targetEnvironment := target.Project, target.Environment
+	priorGateways := make(map[string]bool, len(target.Observation.Routing.Members))
+	for _, gateway := range target.Observation.Routing.Members {
+		priorGateways[gateway.UID] = true
+	}
 	var plan backup.RestorePlan
 	planDiagnostic := client.requestDiagnostic("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, "")
 	if planDiagnostic.Status != http.StatusOK {
@@ -560,15 +566,39 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if err = database.RefreshDatabaseRecoveries(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for ctx.Err() == nil {
-		if status, _ := client.request("GET", "/databases/"+target.ID, nil, &target, ""); status != http.StatusOK {
+	readyCtx, stopReady := context.WithTimeout(ctx, 90*time.Second)
+	defer stopReady()
+	readyClient := client
+	readyClient.ctx = readyCtx
+	recoveredReady := false
+	for readyCtx.Err() == nil {
+		if status, _ := readyClient.request("GET", "/databases/"+targetID, nil, &target, ""); status != http.StatusOK {
 			t.Fatal("restored target lookup", status)
 		}
-		if target.Recovery != nil && target.Recovery.RestoredAt != nil && target.Status == "ready" {
-			break
+		if target.ID != targetID || target.Revision != targetRevision || target.Project != targetProject || target.Environment != targetEnvironment {
+			t.Fatal("restored target identity or revision changed")
+		}
+		observed := target.Observation
+		if target.Recovery != nil && target.Recovery.JobID == recovery.ID && target.Recovery.RestoredAt != nil && target.Status == "ready" && observed.Status == "ready" && observed.Fresh(time.Now(), target.Revision) && observed.TLS != nil && observed.TLS.Verified && observed.Routing != nil && observed.Routing.Kind == "vtgate" && observed.Routing.Ready && len(observed.Routing.Members) == target.Spec.VitessGateways() {
+			recoveredReady = true
+			seen := make(map[string]bool, len(observed.Routing.Members))
+			for _, gateway := range observed.Routing.Members {
+				if gateway.UID == "" || !gateway.Ready || priorGateways[gateway.UID] || seen[gateway.UID] {
+					recoveredReady = false
+				}
+				seen[gateway.UID] = true
+			}
+			if recoveredReady {
+				break
+			}
 		}
 		time.Sleep(time.Second)
 	}
+	stopReady()
+	if !recoveredReady {
+		t.Fatal("restored target did not publish its verified replacement gateways")
+	}
+	t.Log("phase=restore-topology state=verified")
 	var targetCredentials map[string]string
 	if status, _ := client.request("POST", "/databases/"+target.ID+"/credentials", map[string]any{}, &targetCredentials, ""); status != http.StatusOK || targetCredentials["password"] == "" {
 		t.Fatal("target credentials were not returned", status)
