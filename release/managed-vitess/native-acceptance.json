@@ -159,6 +159,7 @@
     "internal/api/database_oracle_switchover_test.go": "27909065f60ae45531ffeb9cdf503d55fddc85f8586e3c7e6cac3538bb12689d",
     "internal/api/database_placement.go": "7ece02b0a2a900f411af9cd3539f3c7d92128441418f3bdf01631b03be37b23b",
     "internal/api/database_placement_test.go": "f9f9beae96e61322d0ac819bc2396af17826f15468c9371155b347840cdc7af7",
+    "internal/api/database_provisioning_test.go": "773a802b87452648defdaf89d16cb9c8e35266ee4f15de0cbd256e625ef608c8",
     "internal/api/database_public_endpoint_clickhouse_test.go": "e4856c798e894827c888abf8caba44f57da59c9646999c76b9d6fbeb79d9ec6a",
     "internal/api/database_public_endpoint_identity_test.go": "8df84e658138a70a335bde8f83d2f461d378da8666e003b95108ddf0fcd16e89",
     "internal/api/database_public_endpoint_mysql_test.go": "5d67a1ca428ee09451cf779c3418cb04d504dffbbf165372d9ad782b246452c8",
@@ -171,7 +172,7 @@
     "internal/api/database_resize_retry_test.go": "a070a6180726e782050d88baf9d94ecaebcabc0baba5b44cc850010b4ab53252",
     "internal/api/database_tls_test.go": "0102013b1a521c18f8631f1dad479eb647161ab0bcdeab54912c2c730953a13b",
     "internal/api/database_vitess_backup.go": "7db55519e134adcd48fd804db0d1780f64afbc634cb212764433331a6377e697",
-    "internal/api/databases.go": "ae27e81b7b8b34939e0348ecce0d8c8bd4afb15648a54f67975dcc71791fd259",
+    "internal/api/databases.go": "8e2ee21a73cdae314bb5e0b419a53b56bbb9d30d5df7b00ef3afe45784b1bef3",
     "internal/api/decode_test.go": "6e58d1d3117619ecc11b18ea25dd676ff825f171ffd88b493e86c2a6d58a1bfc",
     "internal/api/deletion.go": "2a08e7820ea59023a1c255e600079815d2e18b784398ef14e9d2a4d7e3871534",
     "internal/api/deletion_test.go": "2c5e03587f39a7b18e73fa1317e2ecae2a985b9b44d69e3be54664e15e12ee35",
@@ -1722,10 +1723,10 @@
   "attempts": [
     {
       "case": "lifecycle",
-      "log_sha256": "434bd93b0bb15649b18715a00f937b19599a7995b1c3ce6c2b494e0358f143b2",
+      "log_sha256": "f0cde6ba227f5acb57f49898ab2087370e48fa0707e51028244bc0105ec9a87c",
       "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
       "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 935.069,
+      "elapsed_seconds": 965.834,
       "environment": {
         "schema_version": 1,
         "case": "lifecycle",
@@ -1734,7 +1735,7 @@
         "required_cpu_milli": 8850,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 347755016192
+          "available_bytes": 346742562816
         },
         "nodes": [
           {
@@ -1752,11 +1753,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347755163648
+                "available_bytes": 346743336960
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39501185024
+                "available_bytes": 38980009984
               }
             },
             "cached_images": [
@@ -1783,11 +1784,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347755122688
+                "available_bytes": 346743152640
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39501193216
+                "available_bytes": 38979985408
               }
             },
             "cached_images": [
@@ -1814,11 +1815,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347755069440
+                "available_bytes": 346742947840
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39501180928
+                "available_bytes": 38979973120
               }
             },
             "cached_images": [
@@ -1855,10 +1856,10 @@
     },
     {
       "case": "recovery",
-      "log_sha256": "bed787e0a61dd1901112cc9d2b1d6f07ad13daf87188d8273289465c305a879e",
+      "log_sha256": "da9bfd3c082e385b3534d2d80699f32d7211ea0a51d8bad2f15218bba52f8175",
       "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
       "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 732.437,
+      "elapsed_seconds": 684.359,
       "environment": {
         "schema_version": 1,
         "case": "recovery",
@@ -1867,7 +1868,7 @@
         "required_cpu_milli": 17700,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 347852947456
+          "available_bytes": 346616463360
         },
         "nodes": [
           {
@@ -1885,11 +1886,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347853103104
+                "available_bytes": 346619047936
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39510372352
+                "available_bytes": 38981255168
               }
             },
             "cached_images": [
@@ -1916,11 +1917,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347853049856
+                "available_bytes": 346618212352
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39510347776
+                "available_bytes": 38981230592
               }
             },
             "cached_images": [
@@ -1947,11 +1948,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347853000704
+                "available_bytes": 346616500224
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39510327296
+                "available_bytes": 38981214208
               }
             },
             "cached_images": [
@@ -1988,10 +1989,10 @@
     },
     {
       "case": "reseed",
-      "log_sha256": "ee18be2469b9a731155b21a6b60cce8b8893a9c568fef2ac47aa7dbafb41e6bb",
+      "log_sha256": "c040f97e82ec339193c036dec902906cb36a0ef5210afd6a9e90efb056b745d6",
       "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
       "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 442.42,
+      "elapsed_seconds": 461.858,
       "environment": {
         "schema_version": 1,
         "case": "reseed",
@@ -2000,7 +2001,7 @@
         "required_cpu_milli": 6550,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 347741564928
+          "available_bytes": 345257639936
         },
         "nodes": [
           {
@@ -2018,11 +2019,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347741712384
+                "available_bytes": 345257750528
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39498317824
+                "available_bytes": 38978367488
               }
             },
             "cached_images": [
@@ -2049,11 +2050,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347741663232
+                "available_bytes": 345257697280
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39498317824
+                "available_bytes": 38978338816
               }
             },
             "cached_images": [
@@ -2080,11 +2081,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347741626368
+                "available_bytes": 345257656320
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39498305536
+                "available_bytes": 38978322432
               }
             },
             "cached_images": [
@@ -2121,10 +2122,10 @@
     },
     {
       "case": "revocation",
-      "log_sha256": "84e94bfa55efd7298a8288de45b66b20bbe2199d4d0aed598d9c9ae7eeb22a1e",
+      "log_sha256": "b58704f3c97a1b974e7b2c87e923cd7fa45310a1dcb1fd8aa68da76b52a627e0",
       "runner_sha256": "8598205375ebdb286e68006042b2e0cbe6a2e4513fb5ac14ff0c0636bc272f1d",
       "verifier_sha256": "9a6a1ac84bb84eab4c14ad9a68a95418853de9d3f22fa42d804f44a774ee5f68",
-      "elapsed_seconds": 230.774,
+      "elapsed_seconds": 275.176,
       "environment": {
         "schema_version": 1,
         "case": "revocation",
@@ -2133,7 +2134,7 @@
         "required_cpu_milli": 5100,
         "host_filesystem": {
           "capacity_bytes": 539978293248,
-          "available_bytes": 347732393984
+          "available_bytes": 345246961664
         },
         "nodes": [
           {
@@ -2151,11 +2152,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347732537344
+                "available_bytes": 345247064064
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39497953280
+                "available_bytes": 38975016960
               }
             },
             "cached_images": [
@@ -2182,11 +2183,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347732488192
+                "available_bytes": 345247031296
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39497928704
+                "available_bytes": 38974988288
               }
             },
             "cached_images": [
@@ -2213,11 +2214,11 @@
             "filesystems": {
               "nodefs": {
                 "capacity_bytes": 539978293248,
-                "available_bytes": 347732439040
+                "available_bytes": 345246978048
               },
               "imagefs": {
                 "capacity_bytes": 132011507712,
-                "available_bytes": 39497912320
+                "available_bytes": 38974971904
               }
             },
             "cached_images": [
