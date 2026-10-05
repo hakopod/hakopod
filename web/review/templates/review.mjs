@@ -99,6 +99,7 @@ try {
     if (width !== 390) await capture('inspector')
     await page.keyboard.press('Escape')
     await page.getByRole('dialog').waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.matches('.catalog-card'), undefined, { timeout: 5000 })
     assert.equal(await card.evaluate(e => e === document.activeElement), true)
 
     await page.goto(`http://127.0.0.1:4194/templates/outpost?theme=${theme}`)
