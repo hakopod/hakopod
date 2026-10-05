@@ -24,13 +24,15 @@ class NativePreflightTests(unittest.TestCase):
                        'operator': 'ghcr.io/hakopod/operator:2@sha256:' + '2' * 64,
                        'etcd': 'quay.io/coreos/etcd:3@sha256:' + '3' * 64}
         self.inventory = [{'metadata': {'name': name}, 'status': {
-            'allocatable': {'cpu': '5'},
+            'allocatable': {'cpu': '5', 'memory': '8Gi'},
             'nodeInfo': {'architecture': 'amd64', 'operatingSystem': 'linux'},
             'conditions': [{'type': kind, 'status': status} for kind, status in (
                 ('Ready', 'True'), ('DiskPressure', 'False'), ('MemoryPressure', 'False'), ('PIDPressure', 'False'))]}}
             for name in runner.NODES]
 
     def metadata(self, command):
+        if command[:2] == ['docker', 'inspect']:
+            return {'NanoCpus': 5_000_000_000, 'CpuQuota': 0, 'CpuPeriod': 0, 'Memory': 8 * runner.GIB}
         if command[-1].endswith('/stats/summary'):
             filesystem = {'capacityBytes': 78 * runner.GIB, 'availableBytes': 20 * runner.GIB}
             return {'node': {'fs': filesystem, 'runtime': {'imageFs': filesystem}}}
@@ -43,6 +45,7 @@ class NativePreflightTests(unittest.TestCase):
     def collect(self, metadata=None, inventory=None):
         disk = SimpleNamespace(total=78 * runner.GIB, free=20 * runner.GIB)
         with patch.object(runner.shutil, 'disk_usage', return_value=disk), \
+                patch.object(runner.os, 'cpu_count', return_value=16), \
                 patch.object(runner, 'command_json', side_effect=metadata or self.metadata) as commands:
             report = runner.native_environment(Path('/fixture'), ['kubectl'],
                 self.inventory if inventory is None else inventory, self.images, 'lifecycle', 4)
@@ -65,13 +68,15 @@ class NativePreflightTests(unittest.TestCase):
             self.assertEqual(node['image_gc_high_threshold_percent'], 85)
             self.assertEqual(node['cached_images'], sorted(runner.canonical_image(image) for image in self.images.values()))
             self.assertEqual(node['available_cpu_milli'], 5000)
-        inspections = [item.args[0] for item in commands.call_args_list if item.args[0][0] == 'docker']
+            self.assertEqual(node['available_memory_bytes'], 8 * runner.GIB)
+            self.assertEqual(node['worker_cpu_limit_milli'], 5000)
+        inspections = [item.args[0] for item in commands.call_args_list if item.args[0][:2] == ['docker', 'exec']]
         self.assertEqual(len(inspections), 2)
         self.assertTrue(all(command[2] in runner.NODES and command[3:] == ['crictl', 'images', '-o', 'json'] for command in inspections))
 
     def test_missing_or_different_digest_is_recorded_as_absent(self):
         def missing(command):
-            if command[0] == 'docker':
+            if command[:2] == ['docker', 'exec']:
                 return {'images': [{'repoDigests': [runner.canonical_image(self.images['etcd'])]},
                                    {'repoDigests': ['ghcr.io/hakopod/other@sha256:' + '4' * 64]}]}
             return self.metadata(command)
@@ -80,7 +85,7 @@ class NativePreflightTests(unittest.TestCase):
 
     def test_cri_command_failure_is_not_reported_as_an_empty_cache(self):
         def unavailable(command):
-            if command[0] == 'docker':
+            if command[:2] == ['docker', 'exec']:
                 raise subprocess.CalledProcessError(1, command)
             return self.metadata(command)
         with self.assertRaises(subprocess.CalledProcessError):
@@ -89,7 +94,7 @@ class NativePreflightTests(unittest.TestCase):
     def test_invalid_or_unbounded_cri_inventory_is_rejected(self):
         for inventory in (None, {}, [None], [{}], [{'repoDigests': None}], [{'repoDigests': [None]}], [{}] * 1025):
             def invalid(command):
-                return {'images': inventory} if command[0] == 'docker' else self.metadata(command)
+                return {'images': inventory} if command[:2] == ['docker', 'exec'] else self.metadata(command)
             with self.subTest(inventory=inventory), self.assertRaises(RuntimeError):
                 self.collect(invalid)
 
@@ -171,6 +176,28 @@ class NativePreflightTests(unittest.TestCase):
         self.qualified_environment(report)
         with self.assertRaises(ValueError):
             verifier['validate_native_environment'](report, 'lifecycle', list(self.images.values()))
+
+    def test_scale_case_is_a_separate_fixed_native_gate(self):
+        self.assertEqual(runner.CASES['scale'], 'TestManagedVitessScaleLive')
+        self.assertEqual(runner.CASE_CPU_MILLI['scale'], 45450)
+        self.assertEqual(runner.CASE_MEMORY_BYTES['scale'], 97050 * runner.MIB)
+
+    def test_scale_rejects_insufficient_host_cpu_and_aggregate_memory(self):
+        disk = SimpleNamespace(total=160 * runner.GIB, free=100 * runner.GIB)
+        inventory = copy.deepcopy(self.inventory)
+        for node in inventory:
+            node['status']['allocatable'] = {'cpu': '24', 'memory': '32Gi'}
+        def limits(command):
+            if command[:2] == ['docker', 'inspect']:
+                return {'NanoCpus': 24_000_000_000, 'CpuQuota': 0, 'CpuPeriod': 0, 'Memory': 32 * runner.GIB}
+            return self.metadata(command)
+        with patch.object(runner.shutil, 'disk_usage', return_value=disk), patch.object(runner.os, 'cpu_count', return_value=32), patch.object(runner, 'command_json', side_effect=limits):
+            report = runner.native_environment(Path('/fixture'), ['kubectl'], inventory, self.images, 'scale', 67)
+        self.assertGreater(report['cpu_shortfall_milli'], 0)
+        self.assertGreater(report['memory_shortfall_bytes'], 0)
+        self.qualified_environment(report)
+        with self.assertRaises(ValueError):
+            verifier['validate_native_environment'](report, 'scale', list(self.images.values()))
 
     def test_cpu_request_uses_regular_sum_or_largest_init_plus_overhead(self):
         pod = {'spec': {'containers': [{'resources': {'requests': {'cpu': '250m'}}},

@@ -21,6 +21,7 @@ REQUIRED_TESTS = {
     'TestManagedVitessRecoveryLive',
     'TestManagedVitessNativeReseedLive',
     'TestManagedVitessBackupRevocationLive',
+    'TestManagedVitessScaleLive',
 }
 PACKAGES = {
     'runtime': 'ghcr.io/hakopod/managed-vitess-runtime',
@@ -148,17 +149,24 @@ def accepted_test_events(events, required_tests=REQUIRED_TESTS):
 def validate_native_environment(environment, case, images):
     if not isinstance(environment, dict) or set(environment) != {
             'schema_version', 'case', 'minimum_free_bytes', 'fixture_budget_bytes', 'required_cpu_milli',
-            'cpu_shortfall_milli', 'host_filesystem', 'nodes', 'cluster'}:
+            'required_memory_bytes', 'host_cpu_milli', 'cpu_shortfall_milli', 'memory_shortfall_bytes',
+            'host_filesystem', 'nodes', 'cluster'}:
         raise ValueError('Vitess native environment evidence is missing or malformed')
     if type(environment['schema_version']) is not int or environment['schema_version'] != 1 or environment['case'] != case:
         raise ValueError('Vitess native environment evidence belongs to another case or schema')
     minimum, budget = environment['minimum_free_bytes'], environment['fixture_budget_bytes']
     if type(minimum) is not int or minimum != 12 * 1024 ** 3:
         raise ValueError('Vitess native acceptance requires a 12 GiB filesystem reserve')
-    if type(budget) is not int or not 1024 ** 3 <= budget <= 64 * 1024 ** 3:
+    if type(budget) is not int or not 1024 ** 3 <= budget <= 67 * 1024 ** 3 or case == 'scale' and budget != 67 * 1024 ** 3:
         raise ValueError('Vitess native acceptance requires a separate fixture disk budget')
-    expected_cpu = {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100}
-    if environment['required_cpu_milli'] != expected_cpu.get(case) or environment['cpu_shortfall_milli'] != 0:
+    expected_cpu = {'lifecycle': 8850, 'recovery': 17700, 'reseed': 6550, 'revocation': 5100, 'scale': 45450}
+    expected_memory = 97050 * 1024 ** 2 if case == 'scale' else 0
+    if (environment['required_cpu_milli'] != expected_cpu.get(case)
+            or environment['required_memory_bytes'] != expected_memory
+            or type(environment['host_cpu_milli']) is not int
+            or environment['host_cpu_milli'] < 1
+            or case == 'scale' and environment['host_cpu_milli'] < environment['required_cpu_milli']
+            or environment['cpu_shortfall_milli'] != 0 or environment['memory_shortfall_bytes'] != 0):
         raise ValueError('Vitess native acceptance lacks the fixed case CPU envelope')
 
     def capacity(filesystem, high_water=85):
@@ -214,7 +222,9 @@ def validate_native_environment(environment, case, images):
     for node in nodes:
         if set(node) != {'name', 'architecture', 'operating_system', 'schedulable', 'conditions',
                          'image_gc_high_threshold_percent', 'filesystems', 'cached_images',
-                         'allocatable_cpu_milli', 'requested_cpu_milli', 'available_cpu_milli'}:
+                         'allocatable_cpu_milli', 'requested_cpu_milli', 'available_cpu_milli',
+                         'worker_cpu_limit_milli', 'worker_memory_limit_bytes', 'allocatable_memory_bytes',
+                         'requested_memory_bytes', 'available_memory_bytes'}:
             raise ValueError('Vitess native node evidence is malformed')
         if node['architecture'] != 'amd64' or node['operating_system'] != 'linux' or node['schedulable'] is not True:
             raise ValueError('Vitess native acceptance requires schedulable Linux amd64 nodes')
@@ -222,6 +232,12 @@ def validate_native_environment(environment, case, images):
                 or type(node['available_cpu_milli']) is not int or node['allocatable_cpu_milli'] < 1
                 or node['requested_cpu_milli'] < 0 or node['available_cpu_milli'] != node['allocatable_cpu_milli'] - node['requested_cpu_milli']):
             raise ValueError('Vitess native CPU capacity evidence is invalid')
+        if (type(node['worker_cpu_limit_milli']) is not int or node['worker_cpu_limit_milli'] < node['allocatable_cpu_milli']
+                or type(node['worker_memory_limit_bytes']) is not int or node['worker_memory_limit_bytes'] < node['allocatable_memory_bytes']
+                or type(node['allocatable_memory_bytes']) is not int or type(node['requested_memory_bytes']) is not int
+                or type(node['available_memory_bytes']) is not int or node['requested_memory_bytes'] < 0
+                or node['available_memory_bytes'] != node['allocatable_memory_bytes'] - node['requested_memory_bytes']):
+            raise ValueError('Vitess native worker cgroup or memory capacity evidence is invalid')
         if node['conditions'] != {'Ready': 'True', 'DiskPressure': 'False', 'MemoryPressure': 'False', 'PIDPressure': 'False'}:
             raise ValueError('Vitess native acceptance requires healthy development nodes without pressure')
         high_water = node['image_gc_high_threshold_percent']
@@ -236,6 +252,8 @@ def validate_native_environment(environment, case, images):
             raise ValueError('Vitess native acceptance requires every canonical image digest cached on every selected node')
     if sum(node['available_cpu_milli'] for node in nodes) < environment['required_cpu_milli']:
         raise ValueError('Vitess native acceptance lacks selected-node CPU capacity')
+    if sum(node['available_memory_bytes'] for node in nodes) < environment['required_memory_bytes']:
+        raise ValueError('Vitess native acceptance lacks selected-node memory capacity')
 
 
 def validate_metadata(directory, root=ROOT):
@@ -297,9 +315,9 @@ def validate_metadata(directory, root=ROOT):
     if set(acceptance.get('passed_tests', [])) != passed or acceptance.get('failed_tests') != []:
         raise ValueError('Vitess native lifecycle, security and recovery acceptance is incomplete')
     attempts = acceptance.get('attempts')
-    cases = {'lifecycle', 'recovery', 'reseed', 'revocation'}
+    cases = {'lifecycle', 'recovery', 'reseed', 'revocation', 'scale'}
     if not isinstance(attempts, list) or len(attempts) != len(cases) or any(not isinstance(attempt, dict) for attempt in attempts):
-        raise ValueError('Vitess native acceptance requires environment evidence for all four cases')
+        raise ValueError('Vitess native acceptance requires environment evidence for all five cases')
     if any(not isinstance(attempt.get('case'), str) for attempt in attempts) or {attempt['case'] for attempt in attempts} != cases:
         raise ValueError('Vitess native acceptance environment cases are missing or duplicated')
     for attempt in attempts:

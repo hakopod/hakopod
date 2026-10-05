@@ -50,6 +50,7 @@ class VitessQualificationRecordTest(unittest.TestCase):
         self.assertTrue(record.VERIFIER['REQUIRED_TESTS'].issubset(result['passed_tests']))
         self.assertNotIn('private fixture diagnostic', json.dumps(result))
         self.assertTrue(all(set(event) == {'Action', 'Package', 'Test'} for event in result['test_events']))
+        self.assertEqual(record.CASES['scale'], 'TestManagedVitessScaleLive')
 
     def test_rejects_failed_bounded_foreign_or_changed_runs(self):
         changes = [{'schema_version': 2}, {'passed': False}, {'exit_code': 1}, {'exit_code': False},
