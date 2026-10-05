@@ -77,8 +77,13 @@ lose the selected TLS policy. Private endpoints still need the installation's
 approved network access; supplying a hostname does not create a network grant.
 
 The public Caddy service forwards HTTPS requests to the private Mathesar backend
-and serves uploaded media. Supply a `ReadWriteMany` storage class for their shared
-media claim; ordinary local-path and block volumes cannot replace it. Both services
+and serves uploaded media. **Automatic local storage** creates a retained
+`ReadWriteOnce` media claim using the installation default storage class and keeps
+both services on the same node. Ordinary local-path or block storage works in
+this mode. Local disk is not replicated; node or disk loss requires restoring
+backups. **Existing shared storage** accepts a `ReadWriteMany` class such as NFS
+or EFS and permits separate nodes. Existing claims keep their class and access
+mode; changing modes requires a deliberate migration. Both services
 use the same non-root filesystem group, and Caddy mounts media read-only. Static
 assets are collected into a bounded temporary mount and served by WhiteNoise.
 PostgreSQL, when bundled, uses its own persistent claim. The signing key is a
@@ -88,7 +93,7 @@ the first administrator setup before sharing the URL.
 See the [shared Mathesar blueprint](../templates/blueprints/mathesar/README.md)
 for recovery, optional upstream configuration, media URL access and verification
 limits. Choosing an external database saves the bundled database's resources; it
-does not remove the shared-media storage requirement.
+retains the same automatically created media claim.
 
 ## Additional complete presets
 

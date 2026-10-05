@@ -286,6 +286,12 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 			return Application{}, fmt.Errorf("unknown configuration field %q", key)
 		}
 	}
+	// Preserve existing callers that supplied a shared class before storage modes existed.
+	if id == "mathesar" {
+		if _, explicit := o.Values["media-storage-mode"]; !explicit && values["media-storage-class"] != "" {
+			values["media-storage-mode"] = "shared"
+		}
+	}
 	// Resolve defaults before checking conditions so catalog field order does not
 	// affect which fields are required. Inactive drafts never alter the workload.
 	activeValues := make(map[string]string, len(values))
@@ -370,6 +376,12 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 			volume.StorageClass = strings.ReplaceAll(volume.StorageClass, "{{config."+key+"}}", value)
 		}
 		app.Volumes[name] = volume
+	}
+	if id == "mathesar" && values["media-storage-mode"] == "shared" {
+		media := app.Volumes["media"]
+		media.AccessMode = "ReadWriteMany"
+		media.StorageClass = values["media-storage-class"]
+		app.Volumes["media"] = media
 	}
 	main := app.Services["main"]
 	switch id {

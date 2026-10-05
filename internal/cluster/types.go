@@ -114,6 +114,7 @@ type Client struct {
 type Target struct {
 	databaseConnections  map[string]map[string]DatabaseConnection
 	serverlessGatewayIPs []string
+	sharedVolumeNodes    map[string][]string
 
 	privateEgress                                    map[string][]PrivateEgressBinding
 	containerDaemon                                  map[string]ContainerDaemonBinding

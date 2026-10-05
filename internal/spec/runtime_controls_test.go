@@ -118,7 +118,7 @@ func TestRuntimeControlsRejectUnsafeOrUnboundedValues(t *testing.T) {
 			a.Services["api"] = s
 		},
 		"invalid-protocol": func(a *Application) { s := a.Services["api"]; s.Ports[0].Protocol = "SCTP"; a.Services["api"] = s },
-		"shared-rwo": func(a *Application) {
+		"shared-rwo-group-mismatch": func(a *Application) {
 			s := a.Services["client"]
 			s.Mounts = []Mount{{Volume: "data", MountPath: "/data"}}
 			a.Services["client"] = s
