@@ -317,7 +317,7 @@ func TestLiveOutpostTemplate(t *testing.T) {
 
 func outpostFixture(t *testing.T, name, modes string, node *corev1.Node) (spec.Application, map[string]string) {
 	t.Helper()
-	values := map[string]string{"redis-host": "fixture-redis", "redis-port": "6379", "redis-username": "default", "redis-database": "2", "redis-tls": "false"}
+	values := map[string]string{"redis-host": "fixture-redis." + Namespace(name) + ".svc.cluster.local", "redis-port": "6379", "redis-username": "default", "redis-database": "2", "redis-tls": "false"}
 	for i, field := range []string{"database-mode", "redis-mode", "broker-mode"} {
 		values[field] = "bundled"
 		if modes[i] == '1' {
@@ -339,9 +339,6 @@ func outpostFixture(t *testing.T, name, modes string, node *corev1.Node) (spec.A
 		fixture := "fixture-" + dependency
 		app.Services[fixture] = base.Services[dependency]
 		for _, role := range []string{"main", "delivery", "log", "migrate"} {
-			if role == "migrate" && dependency == "broker" {
-				continue
-			}
 			service := app.Services[role]
 			service.DependsOn = append(service.DependsOn, fixture)
 			app.Services[role] = service
@@ -558,6 +555,7 @@ func outpostCleanup(t *testing.T, c *Client, ns *corev1.Namespace, target Target
 					}
 					t.Logf("container %s ready=%t restarts=%d reason=%s exit=%d", status.Name, status.Ready, status.RestartCount, reason, exit)
 				}
+				outpostFailureLog(t, ctx, c, target, pod, secrets)
 			}
 		}
 	}
@@ -599,6 +597,38 @@ func outpostCleanup(t *testing.T, c *Client, ns *corev1.Namespace, target Target
 		}
 	}
 	t.Error("fixture resource cleanup timed out")
+}
+
+// Keep useful startup evidence without emitting fixture credentials or
+// unbounded application output into public CI logs.
+func outpostFailureLog(t *testing.T, ctx context.Context, c *Client, target Target, pod corev1.Pod, secrets map[string]string) {
+	t.Helper()
+	if owned(&pod, target) != nil || !slices.Contains([]string{"main", "delivery", "log", "migrate"}, pod.Labels[serviceKey]) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	mask, err := c.podLogMasker(ctx, pod, "app")
+	if err != nil {
+		t.Log("fixture startup logs withheld: redaction unavailable")
+		return
+	}
+	for _, secret := range secrets {
+		mask.Add(secret)
+	}
+	lines, limit := int64(80), int64(16<<10)
+	stream, err := c.kube.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: "app", TailLines: &lines, LimitBytes: &limit}).Stream(ctx)
+	if err != nil {
+		t.Log("fixture startup logs unavailable", pod.Name)
+		return
+	}
+	defer stream.Close()
+	output, err := io.ReadAll(io.LimitReader(mask.Reader(io.LimitReader(stream, limit)), 32<<10))
+	if err != nil {
+		t.Log("fixture startup logs could not be read", pod.Name)
+		return
+	}
+	t.Logf("redacted fixture startup log %s:\n%s", pod.Name, output)
 }
 
 const outpostReceiverScript = `import json
