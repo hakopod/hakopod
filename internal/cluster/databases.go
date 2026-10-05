@@ -599,6 +599,13 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 	if len(pods.Items) > database.MaxMembers || pods.Continue != "" {
 		return o, fmt.Errorf("database member list exceeds its bound")
 	}
+	var vitessInventory *vitessObservationInventory
+	if d.Spec.Engine == "vitess" {
+		vitessInventory, err = c.newVitessObservationInventory(ctx, d, ns, object, vitessIdentity, pods.Items)
+		if err != nil {
+			return o, err
+		}
+	}
 	primary, _, _ := unstructured.NestedString(object.Object, "status", "currentPrimary")
 	o.Primary = primary
 	ready := 0
@@ -612,7 +619,11 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 		if d.Spec.Engine == "postgresql" && pod.Labels["cnpg.io/jobRole"] != "" {
 			continue
 		}
-		if !c.databasePodOwned(ctx, pod, object.GetUID()) {
+		owned := d.Spec.Engine == "vitess"
+		if !owned {
+			owned = c.databasePodOwned(ctx, pod, object.GetUID())
+		}
+		if !owned {
 			return o, fmt.Errorf("database member ownership changed")
 		}
 		m := database.Member{Name: pod.Name, UID: string(pod.UID), Role: "unknown", Node: pod.Spec.NodeName, Phase: string(pod.Status.Phase)}
@@ -690,7 +701,7 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 			o.Endpoints = append(o.Endpoints, database.Endpoint{Purpose: "read_only", Host: "database-ro." + ns.Name + ".svc", Port: 5432})
 		}
 	} else if d.Spec.Engine == "vitess" {
-		if err = c.observeVitessDatabase(ctx, d, object, &o, vitessIdentity); err != nil {
+		if err = c.observeVitessDatabase(ctx, d, object, &o, vitessIdentity, vitessInventory); err != nil {
 			return o, err
 		}
 	} else if d.Spec.Engine == "mysql" {
@@ -723,9 +734,14 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 	if err = c.databaseEndpointsReady(ctx, d, o); err != nil {
 		return o, err
 	}
-	if err = c.observeDatabaseTLS(ctx, d, &o); err != nil {
+	if err = c.observeDatabaseTLS(ctx, d, &o, vitessInventory); err != nil {
 		o.Message = "Database TLS enforcement could not be verified."
 		return o, err
+	}
+	if d.Spec.Engine == "vitess" {
+		if err = c.verifyVitessObservationInventory(ctx, vitessInventory); err != nil {
+			return o, err
+		}
 	}
 	o.Status = "ready"
 	o.Message = ""

@@ -112,7 +112,7 @@ func (c *Client) vitessGatewayClientWithReadTimeout(ctx context.Context, d datab
 	return client, nil
 }
 
-func (c *Client) verifyVitessTLS(ctx context.Context, d database.Resource, o *database.Observation, trust database.PublicTrust, status *database.TLSObservation) error {
+func (c *Client) verifyVitessTLS(ctx context.Context, d database.Resource, o *database.Observation, trust database.PublicTrust, status *database.TLSObservation, inventory *vitessObservationInventory) error {
 	if o.Routing == nil || len(o.Routing.Members) != d.Spec.VitessGateways() {
 		return fmt.Errorf("Vitess gateway inventory is unavailable")
 	}
@@ -142,7 +142,7 @@ func (c *Client) verifyVitessTLS(ctx context.Context, d database.Resource, o *da
 				_ = client.Close()
 				return fmt.Errorf("Vitess gateway TLS or authentication failed")
 			}
-			if err = c.verifyVitessGatewayTablets(step, client, d, o.Members); err != nil {
+			if err = c.verifyVitessGatewayTablets(step, client, d, o.Members, inventory); err != nil {
 				_ = client.Close()
 				return err
 			}

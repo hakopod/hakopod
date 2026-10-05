@@ -119,7 +119,7 @@ fi
 openssl s_client -starttls postgres -connect "$1:$2" -servername "$1" -verify_hostname "$1" -verify_return_error -CAfile "$work/ca.crt" -showcerts < /dev/null 2>/dev/null
 `
 
-func (c *Client) observeDatabaseTLS(ctx context.Context, d database.Resource, o *database.Observation) error {
+func (c *Client) observeDatabaseTLS(ctx context.Context, d database.Resource, o *database.Observation, vitessInventory *vitessObservationInventory) error {
 	o.TLS = &database.TLSObservation{Required: d.Spec.TLSRequired()}
 	if !d.Spec.TLSRequired() {
 		o.TLS.Message = "Legacy database: enforced client TLS has not been configured. Migrate to a secure database before production use."
@@ -154,7 +154,7 @@ func (c *Client) observeDatabaseTLS(ctx context.Context, d database.Resource, o 
 		return fmt.Errorf("database TLS probe has no owned member")
 	}
 	if d.Spec.Engine == "vitess" {
-		if err = c.verifyVitessTLS(step, d, o, trust, &status); err != nil {
+		if err = c.verifyVitessTLS(step, d, o, trust, &status, vitessInventory); err != nil {
 			status.Message = "Vitess did not pass verified TLS and plaintext rejection checks."
 			return err
 		}

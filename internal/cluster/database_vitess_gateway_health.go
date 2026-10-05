@@ -45,10 +45,10 @@ func vitessGatewayTabletsMatch(d database.Resource, members []vitessGatewayMembe
 	return true
 }
 
-func (c *Client) verifyVitessGatewayTablets(ctx context.Context, client *sql.DB, d database.Resource, members []database.Member) error {
+func (c *Client) verifyVitessGatewayTablets(ctx context.Context, client *sql.DB, d database.Resource, members []database.Member, inventory *vitessObservationInventory) error {
 	owned := make([]vitessGatewayMember, 0, len(members))
 	for _, member := range members {
-		pod, container, err := c.vitessExecTarget(ctx, d, member)
+		pod, container, err := inventory.tablet(member)
 		if err != nil || container != "vttablet" {
 			return fmt.Errorf("Vitess gateway tablet ownership changed")
 		}
