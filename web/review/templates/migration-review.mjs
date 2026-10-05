@@ -25,11 +25,15 @@ async function loaded() {
 
 async function capture(state, target) {
   await loaded()
-  await target.scrollIntoViewIfNeeded()
+  // Center the inspected passage so the sticky review footer cannot obscure
+  // the lower part of a code pane that is technically inside the viewport.
+  await target.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }))
   const bounds = await target.evaluate(element => {
     const rect = element.getBoundingClientRect()
     const style = getComputedStyle(element)
-    return { x: rect.x, y: rect.y, right: rect.right, width: rect.width, height: rect.height,
+    const footer = document.querySelector('.form-footer')?.getBoundingClientRect()
+    return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height,
+      viewportHeight: innerHeight, footerTop: footer?.top,
       documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth,
       clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
       clientHeight: element.clientHeight, scrollHeight: element.scrollHeight,
@@ -39,6 +43,10 @@ async function capture(state, target) {
   })
   assert.equal(bounds.documentWidth, bounds.viewportWidth, `${state}: document overflow`)
   assert.ok(bounds.x >= 0 && bounds.right <= bounds.viewportWidth, `${state}: target bounds`)
+  assert.ok(bounds.y >= 0 && bounds.bottom <= bounds.viewportHeight, `${state}: target vertical bounds`)
+  if (bounds.footerTop >= 0 && bounds.footerTop < bounds.viewportHeight) {
+    assert.ok(bounds.bottom <= bounds.footerTop, `${state}: review footer obscures the target`)
+  }
   const filename = `${label}-${state}.png`
   // The viewport retains surrounding review context. Full canonical documents
   // are intentionally not expanded into enormous full-page screenshots.
@@ -68,14 +76,16 @@ async function showDiff(field, expected) {
   assert.fail(`Migration ${field} row exceeded the bounded pagination search`)
 }
 
-async function scrollCanonicalToCommand(pre) {
-  return pre.evaluate(element => {
+async function scrollCanonicalToPassage(pre, passage) {
+  return pre.evaluate((element, passage) => {
     const text = element.textContent
     const section = text.indexOf('[services.migrate]')
     if (section < 0) throw new Error('Missing migration TOML section')
     const match = /^\s*command\s*=/m.exec(text.slice(section))
     if (!match) throw new Error('Missing migration command in TOML')
-    const offset = section + match.index + match[0].indexOf('command')
+    const offset = passage === 'environment' ? text.indexOf('[services.migrate.env]')
+      : section + match.index + match[0].indexOf('command')
+    if (offset < 0) throw new Error('Missing migration environment in TOML')
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
     let node, consumed = 0
     while ((node = walker.nextNode())) {
@@ -90,7 +100,7 @@ async function scrollCanonicalToCommand(pre) {
       consumed += node.length
     }
     throw new Error('Migration command range is missing')
-  })
+  }, passage)
 }
 
 try {
@@ -143,23 +153,27 @@ try {
       await summary.focus()
       await page.keyboard.press('Tab')
       assert.equal(await pre.evaluate(element => document.activeElement === element), true)
-      const passage = await scrollCanonicalToCommand(pre)
+      const passage = await scrollCanonicalToPassage(pre, 'command')
       await capture('canonical-command', pre)
       assert.equal(await pre.evaluate(element => getComputedStyle(element).outlineStyle), 'solid')
       const before = await pre.evaluate(element => element.scrollLeft)
       const canScrollHorizontally = await pre.evaluate(element => element.scrollWidth > element.clientWidth)
       if (canScrollHorizontally) {
+        const expectedScroll = await pre.evaluate(element => Math.min(32, element.scrollWidth - element.clientWidth))
         await page.keyboard.press('ArrowRight')
-        await page.waitForFunction(() => document.querySelector('.config-details pre')?.scrollLeft > 0)
+        await page.waitForFunction(expected => document.querySelector('.config-details pre')?.scrollLeft >= expected, expectedScroll)
       }
       const after = await pre.evaluate(element => element.scrollLeft)
       if (canScrollHorizontally) assert.ok(after > before)
       assert.equal(await page.evaluate(() => scrollX), 0)
+      const environmentPassage = await scrollCanonicalToPassage(pre, 'environment')
+      await capture('canonical-environment', pre)
       results.push({ label, database, commandBounds, passage,
         interactions: [width < 640 ? 'touch diff pagination and disclosure' : 'keyboard diff pagination and disclosure',
           'Tab enters canonical code from programmatically focused disclosure',
           ...(canScrollHorizontally ? ['ArrowRight scrolls canonical code without moving the document'] : [])],
         horizontalScroll: { available: canScrollHorizontally, before, after }, canonicalTextMatchesPlan: true,
+        environmentPassage,
         migrationRetries: migration.job.retries, postgresTLSOverride: database === 'bundled' ? 'disable' : 'absent' })
       await summary.focus()
       await page.keyboard.press('Enter')
