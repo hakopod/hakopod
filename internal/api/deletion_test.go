@@ -23,6 +23,24 @@ func TestResourceDeletionAPIReviewAndPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.call("DELETE", "/projects/delete-api", limited, map[string]string{"confirm_name": "delete-api"}, 403)
+	h.call("POST", "/projects/delete-api/environments", owner, map[string]string{"name": "other"}, 201)
+	keys := make(map[string]string)
+	for _, grant := range []struct {
+		name        string
+		environment string
+		permissions []string
+	}{
+		{"deployer", "test", []string{"deployments:read", "deployments:write"}},
+		{"manager-without-write", "test", []string{"deployments:read", "applications:manage"}},
+		{"wrong-environment-manager", "other", []string{"deployments:read", "deployments:write", "applications:manage"}},
+		{"manager", "test", []string{"deployments:read", "deployments:write", "applications:manage"}},
+	} {
+		_, key, keyErr := h.db.CreateKey(ctx, p, store.KeyInput{Name: grant.name, Project: "delete-api", Environment: grant.environment, Permissions: grant.permissions, ExpiresAt: time.Now().Add(time.Hour)})
+		if keyErr != nil {
+			t.Fatal(keyErr)
+		}
+		keys[grant.name] = key
+	}
 	app, err := spec.Normalize(spec.Application{Name: "remove-api", Services: map[string]spec.Service{"web": {Image: "python:3.13"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +61,16 @@ func TestResourceDeletionAPIReviewAndPermissions(t *testing.T) {
 	if _, err = h.db.Pool.Exec(ctx, "UPDATE deployments SET status='succeeded',spec=$2 WHERE id=$1", d.ID, store.JSON(app)); err != nil {
 		t.Fatal(err)
 	}
-	h.call("DELETE", "/applications/"+d.ApplicationID, owner, map[string]any{"confirm_name": app.Name, "expected_revision": 1}, 200)
+	deletion := map[string]any{"confirm_name": app.Name, "expected_revision": 1}
+	for _, name := range []string{"deployer", "manager-without-write", "wrong-environment-manager"} {
+		t.Run(name, func(t *testing.T) {
+			request := *h
+			request.t = t
+			request.call("DELETE", "/applications/"+d.ApplicationID, keys[name], deletion, 403)
+			request.call("GET", "/applications/"+d.ApplicationID, owner, nil, 200)
+		})
+	}
+	h.call("DELETE", "/applications/"+d.ApplicationID, keys["manager"], deletion, 200)
 	h.call("GET", "/applications/"+d.ApplicationID, owner, nil, 404)
 	h.call("DELETE", "/projects/delete-api", owner, map[string]string{"confirm_name": "delete-api"}, 409)
 	h.call("GET", "/storage/retained?project=delete-api&environment=test", limited, nil, 403)

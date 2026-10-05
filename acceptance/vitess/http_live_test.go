@@ -389,6 +389,18 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, cleanupToken, err := database.CreateKey(ctx, owner, store.KeyInput{Name: "vitess-http-application-cleanup", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write", "applications:manage"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deployer, err := database.Authenticate(ctx, scopedToken)
+	if err != nil || !deployer.Allows("deployments:write", project, environment, "") || !deployer.Allows("logs:read", project, environment, "") || deployer.CanManageApplication(project, environment, "vitess-http-client") {
+		t.Fatal("scoped deployment key permissions differ")
+	}
+	cleanupPrincipal, err := database.Authenticate(ctx, cleanupToken)
+	if err != nil || !cleanupPrincipal.CanManageApplication(project, environment, "vitess-http-client") || cleanupPrincipal.Allows("logs:read", project, environment, "") {
+		t.Fatal("scoped application cleanup key permissions differ")
+	}
 	administrator := httpClient{t: t, ctx: ctx, server: httpServer, token: rootToken}
 	if status, body := administrator.request(http.MethodPost, "/projects/"+project+"/environments", map[string]string{"name": "production"}, nil, ""); status != http.StatusCreated {
 		t.Fatalf("create wrong-scope environment: status=%d body=%s", status, body)
@@ -398,6 +410,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := httpClient{t: t, ctx: ctx, server: httpServer, token: scopedToken}
+	cleanupClient := httpClient{t: t, ctx: ctx, server: httpServer, token: cleanupToken}
 	workers, stopWorkers := context.WithCancel(ctx)
 	databaseDone, applicationDone := make(chan struct{}), make(chan struct{})
 	go func() { defer close(databaseDone); server.RunManagedDatabases(workers) }()
@@ -680,15 +693,21 @@ exec sleep 86400`
 	if readErr != nil || len(logData) > 64<<10 || !bytes.Contains(logData, []byte("VITESS_RECOVERED_BOUND_TLS_QUERY_OK")) {
 		t.Fatal("bound application did not prove its TLS query")
 	}
+	t.Log("phase=application-query state=verified")
 	empty := spec.Application{SchemaVersion: 1, Name: application.Name, Services: map[string]spec.Service{}}
 	var emptyDeployment store.Deployment
 	if status, code := client.request("POST", "/deployments", map[string]any{"project": project, "environment": environment, "spec": empty, "expected_revision": redeploy.Revision}, &emptyDeployment, "vitess-http-client-empty"); status != http.StatusAccepted {
 		t.Fatal("empty application deployment", status, code)
 	}
 	emptyDeployment = waitDeployment(t, ctx, client, emptyDeployment)
-	if status, code := client.request("DELETE", "/applications/"+redeploy.ApplicationID, map[string]any{"expected_revision": emptyDeployment.Revision, "confirm_name": application.Name, "delete_data": true}, nil, ""); status != http.StatusOK {
+	deleteRequest := map[string]any{"expected_revision": emptyDeployment.Revision, "confirm_name": application.Name, "delete_data": true}
+	if status, _ := client.request("DELETE", "/applications/"+redeploy.ApplicationID, deleteRequest, nil, ""); status != http.StatusForbidden {
+		t.Fatal("deployment key application deletion was not denied", status)
+	}
+	if status, code := cleanupClient.request("DELETE", "/applications/"+redeploy.ApplicationID, deleteRequest, nil, ""); status != http.StatusOK {
 		t.Fatal("application deletion", status, code)
 	}
+	t.Log("phase=application-deletion state=completed")
 	t.Log("phase=application state=completed")
 
 	deleteDatabase := func(item managed.Resource) {
@@ -701,6 +720,7 @@ exec sleep 86400`
 	}
 	deleteDatabase(target)
 	deleteDatabase(source)
+	t.Log("phase=database-deletion state=completed")
 	t.Log("Vitess HTTP create, scope, credentials, trust, backup, restore, inspection, bound application query and deletion passed")
 }
 
