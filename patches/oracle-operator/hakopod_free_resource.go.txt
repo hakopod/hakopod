@@ -30,7 +30,13 @@ func validateHakopodFreeResource(m *dbapi.SingleInstanceDatabase) error {
 		Dataguard:   &dbapi.DataguardProducerSpec{Mode: "Disabled", Prereqs: &dbapi.DataguardPrereqsSpec{Enabled: false}},
 		Persistence: dbapi.SingleInstanceDatabasePersistence{Oradata: m.Spec.Persistence.Oradata, AdditionalPVCs: m.Spec.Persistence.AdditionalPVCs, SetWritePermissions: &no},
 	}
-	if !reflect.DeepEqual(m.Spec, wanted) {
+	actual := m.Spec
+	// A typed controller update serializes the unused legacy secret object.
+	// CRD admission then supplies its default key even though no secret is named.
+	if reflect.DeepEqual(actual.AdminPassword, dbapi.SingleInstanceDatabaseAdminPassword{SecretKey: "oracle_pwd"}) {
+		actual.AdminPassword = dbapi.SingleInstanceDatabaseAdminPassword{}
+	}
+	if !reflect.DeepEqual(actual, wanted) {
 		return fmt.Errorf("managed Oracle Free contains unsupported lifecycle settings")
 	}
 	data, backup := m.Spec.Persistence.Oradata, m.Spec.Persistence.AdditionalPVCs[0]

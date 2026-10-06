@@ -199,9 +199,42 @@ func (c *Client) applyOracleFreeDatabase(ctx context.Context, d database.Resourc
 }
 
 func oracleFreeSpecMatches(current, wanted *unstructured.Unstructured) bool {
-	actual, _, _ := unstructured.NestedMap(current.Object, "spec")
-	desired, _, _ := unstructured.NestedMap(wanted.Object, "spec")
+	actual, found, err := unstructured.NestedMap(current.Object, "spec")
+	if err != nil || !found {
+		return false
+	}
+	desired, found, err := unstructured.NestedMap(wanted.Object, "spec")
+	if err != nil || !found {
+		return false
+	}
+	oracleFreeNormalizeSpec(actual)
+	oracleFreeNormalizeSpec(desired)
 	return reflect.DeepEqual(actual, desired) && current.GetAnnotations()[oracleFreePodPolicy] == wanted.GetAnnotations()[oracleFreePodPolicy]
+}
+
+// The v4 controller writes an unused legacy secret default and omits these
+// false booleans when it serializes the resource. Keep all other fields exact.
+func oracleFreeNormalizeSpec(spec map[string]any) {
+	if legacy, ok := spec["adminPassword"].(map[string]any); ok && len(legacy) == 2 && legacy["secretName"] == "" && legacy["secretKey"] == "oracle_pwd" {
+		delete(spec, "adminPassword")
+	}
+	if enabled, found, err := unstructured.NestedBool(spec, "dataguard", "prereqs", "enabled"); err == nil && found && !enabled {
+		unstructured.RemoveNestedField(spec, "dataguard", "prereqs", "enabled")
+	}
+	services, ok := spec["services"].(map[string]any)
+	if !ok {
+		return
+	}
+	endpoints, _ := services["endpoints"].([]any)
+	for _, raw := range endpoints {
+		endpoint, ok := raw.(map[string]any)
+		if !ok || endpoint["name"] != "cluster" {
+			continue
+		}
+		if enabled, found, err := unstructured.NestedBool(endpoint, "tcp", "enabled"); err == nil && found && !enabled {
+			unstructured.RemoveNestedField(endpoint, "tcp", "enabled")
+		}
+	}
 }
 
 func (c *Client) renewOracleFreeWorkload(ctx context.Context, d database.Resource, before func() error) error {
