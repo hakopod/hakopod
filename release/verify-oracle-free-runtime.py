@@ -55,7 +55,7 @@ def read_json(path):
 
 def source_files(root):
     paths = {root / "go.mod", root / "go.sum", *[root / name for name in BUILD_INPUTS]}
-    for name in ("auth", "cmd/hakopod-server", "internal", "templates", "patches/oracle-operator"):
+    for name in ("api", "auth", "cmd/hakopod-server", "internal", "templates", "patches/oracle-operator"):
         directory = root / name
         if directory.is_symlink() or not directory.is_dir():
             raise ValueError("Missing or symbolic Oracle qualification source: " + name)

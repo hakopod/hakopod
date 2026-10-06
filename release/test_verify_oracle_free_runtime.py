@@ -25,7 +25,7 @@ class OracleQualification(unittest.TestCase):
         self.root = Path(self.tmp.name) / "source"
         self.directory = Path(self.tmp.name) / "qualification"
         self.directory.mkdir()
-        for name in ("auth", "cmd/hakopod-server", "internal/cluster", "internal/database", "templates", "patches/oracle-operator"):
+        for name in ("api", "auth", "cmd/hakopod-server", "internal/cluster", "internal/database", "templates", "patches/oracle-operator"):
             (self.root / name).mkdir(parents=True, exist_ok=True)
         for name in ["go.mod", "go.sum", *ORACLE.BUILD_INPUTS,
                      "scripts/export-oracle-free-crd.py", "scripts/package-managed-oracle-free.py",
@@ -121,6 +121,18 @@ class OracleQualification(unittest.TestCase):
         (self.root / "internal/cluster/new-runtime.go").write_text("changed orchestration\n")
         with self.assertRaisesRegex(ValueError, "source changed"):
             ORACLE.validate_metadata(self.directory, self.root)
+
+    def test_api_package_and_embedded_schema_are_fingerprinted(self):
+        for name, content in (("api/schema.go", b"package api\n"), ("api/openapi.json", b'{"openapi":"3.1.0"}\n')):
+            path = self.root / name
+            path.write_bytes(content)
+            try:
+                with self.subTest(name=name):
+                    self.assertEqual(ORACLE.source_files(self.root)[name], sha(content))
+                    with self.assertRaisesRegex(ValueError, "source changed"):
+                        ORACLE.validate_metadata(self.directory, self.root)
+            finally:
+                path.unlink()
 
     def test_empty_source_files_are_included_in_the_inventory(self):
         names = ("internal/managedplatform/supabase-assets/db/init/data.sql",
