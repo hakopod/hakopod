@@ -240,11 +240,45 @@ func ValidateTemplateSecretSet(id string, required []string, values map[string]s
 			return err
 		}
 	}
-	if id == "mysql" && subtle.ConstantTimeCompare([]byte(values["database-password"]), []byte(values["database-root-password"])) == 1 {
+	return validateTemplateSecretRelationships(id, required, values)
+}
+
+// Edited templates validate the known references they retain. Removed template
+// services do not leave required credentials behind; new references are checked
+// by the ordinary application secret preflight.
+func ValidateEditedTemplateSecretSet(id string, required []string, values map[string]string) error {
+	for _, name := range required {
+		if _, known := TemplateSecretFieldByName(id, name); !known {
+			continue
+		}
+		value, exists := values[name]
+		if !exists {
+			return fmt.Errorf("save required secret %s before deploying", name)
+		}
+		if err := ValidateTemplateSecret(id, name, value); err != nil {
+			return err
+		}
+	}
+	return validateTemplateSecretRelationships(id, required, values)
+}
+
+func validateTemplateSecretRelationships(id string, required []string, values map[string]string) error {
+	retained := func(names ...string) bool {
+		for _, name := range names {
+			if !slices.Contains(required, name) {
+				return false
+			}
+		}
+		return true
+	}
+	if id == "mysql" && retained("database-password", "database-root-password") && subtle.ConstantTimeCompare([]byte(values["database-password"]), []byte(values["database-root-password"])) == 1 {
 		return fmt.Errorf("MySQL root and application passwords must differ")
 	}
 	if id == "infisical" {
 		for reference, password := range map[string]string{"database-url": "database-password", "redis-url": "redis-password"} {
+			if !retained(reference, password) {
+				continue
+			}
 			u, err := url.Parse(values[reference])
 			if err != nil || u.User == nil {
 				return fmt.Errorf("%s must contain a valid connection URL", reference)
@@ -255,7 +289,7 @@ func ValidateTemplateSecretSet(id string, required []string, values map[string]s
 			}
 		}
 	}
-	if id == "cockroachdb" {
+	if id == "cockroachdb" && retained("database-ca", "database-node-cert", "database-node-key") {
 		caBlock, _ := pem.Decode([]byte(values["database-ca"]))
 		ca, err := x509.ParseCertificate(caBlock.Bytes)
 		if err != nil || !ca.IsCA || ca.KeyUsage&x509.KeyUsageCertSign == 0 {

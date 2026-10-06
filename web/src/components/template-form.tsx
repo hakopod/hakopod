@@ -2,7 +2,7 @@ import type { Application } from '../lib/types'
 import { fieldError } from '../lib/form-errors'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
@@ -14,6 +14,8 @@ import { ErrorState, Note, RequestError } from './shared'
 import { DiffTable } from './deploy-dialog'
 import { TemplateSecretField } from './template-secret-field'
 import { TOMLCode } from './toml-code'
+import { TOMLEditor } from './toml-editor'
+import { templateReviewMatches, templateReviewSecretFields } from '../lib/template-review'
 import { FormPage, FormHint, FormSection } from './form-page'
 import { ServiceIcon } from './service-icon'
 import { ComputeNotice } from './compute-notice'
@@ -34,7 +36,10 @@ export default function TemplateForm({
   template: components['schemas']['Template']
   onClose: () => void
 }) {
-  const scope = useScope()
+  const selectedScope = useScope()
+  const scope = application
+    ? { ...selectedScope, project: application.project, environment: application.environment }
+    : selectedScope
   const features = useEditionFeatures()
   const navigate = useNavigate()
   const cache = useQueryClient()
@@ -68,10 +73,19 @@ export default function TemplateForm({
   const [useModelToken, setUseModelToken] = useState(false)
   const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({})
   const [plan, setPlan] = useState<components['schemas']['TemplatePlan'] | null>(null)
+  const [editingTOML, setEditingTOML] = useState(false)
+  const [tomlDraft, setTOMLDraft] = useState('')
   const [key, setKey] = useState('')
   const [saveSecret, setSaveSecret] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const currentTarget = useRef({ name, project: scope.project, environment: scope.environment, applicationId: application?.id, revision: application?.revision || 0 })
+  currentTarget.current = { name, project: scope.project, environment: scope.environment, applicationId: application?.id, revision: application?.revision || 0 }
+  const staleReview = Boolean(plan && !templateReviewMatches(plan, currentTarget.current))
+  useEffect(() => {
+    setSecretDrafts({})
+    setSaveSecret('')
+  }, [scope.project, scope.environment, name, application?.id])
   const query = {
     project: plan?.configuration.project || scope.project,
     environment: plan?.configuration.environment || scope.environment,
@@ -87,6 +101,30 @@ export default function TemplateForm({
     plan?.required_secrets.filter(
       (required) => !secrets.data?.items.some((secret) => secret.name === required),
     ) || []
+  const requiredFields = templateReviewSecretFields(template.secret_fields, plan?.required_secrets || [])
+  function acceptReview(result: components['schemas']['TemplatePlan']) {
+    if (!templateReviewMatches(result, currentTarget.current)) throw new Error('The application changed or the reviewed scope differs. Reload and review the template again.')
+    setPlan(result)
+    setTOMLDraft(result.toml)
+    setEditingTOML(false)
+    setSaveSecret('')
+    setKey(crypto.randomUUID())
+  }
+  async function reviewTOML() {
+    if (!plan || busy || staleReview) return
+    setBusy(true)
+    setError('')
+    try {
+      acceptReview(await unwrap(client.POST('/templates/{id}/plan', {
+        params: { path: { id: template.id } },
+        body: { ...plan.configuration, toml: tomlDraft },
+      })))
+    } catch (err) {
+      setError(message(err))
+    } finally {
+      setBusy(false)
+    }
+  }
   async function review() {
     if (
       application &&
@@ -135,15 +173,7 @@ export default function TemplateForm({
           },
         }),
       )
-      if (
-        result.expected_revision !== (application?.revision || 0) ||
-        (application && result.application_id !== application.id)
-      )
-        throw new Error(
-          'The application changed or this name is already taken. Reload and review the template again.',
-        )
-      setPlan(result)
-      setKey(crypto.randomUUID())
+      acceptReview(result)
     } catch (err) {
       setError(message(err))
     } finally {
@@ -151,7 +181,7 @@ export default function TemplateForm({
     }
   }
   async function deploy() {
-    if (!plan || missing.length || busy) return
+    if (!plan || editingTOML || !templateReviewMatches(plan, currentTarget.current) || tomlDraft !== plan.toml || missing.length || busy) return
     setBusy(true)
     setError('')
     try {
@@ -288,7 +318,7 @@ export default function TemplateForm({
           </>
         )
       }
-      title={plan ? `Review ${plan.spec.name}` : `Configure ${template.name}`}
+      title={plan ? `${editingTOML ? 'Edit' : 'Review'} ${plan.spec.name}` : `Configure ${template.name}`}
       description={`${scope.project} / ${scope.environment} · ${plan ? 'Review the exact revision before deploying.' : template.description}`}
     >
       <div className="form-body auth-form">
@@ -296,11 +326,21 @@ export default function TemplateForm({
         {application && (
           <Note>
             Adding services to <strong>{application.display_name || application.name}</strong>.
-            Existing services are retained. Service names and volume names must be unique.
+            Review the complete application before deploying. Changes to existing services appear in the review.
           </Note>
         )}
-        {plan ? (
+        {plan && editingTOML ? (
+          <FormSection title="TOML configuration" description="Edit the generated application configuration, then review it before deploying.">
+            <p className="field-help">You can add, change or remove services and settings. Keep the application name unchanged and use secret references for passwords and keys.</p>
+            <TOMLEditor label="Template TOML configuration" value={tomlDraft} onChange={setTOMLDraft} disabled={busy} />
+            <p className="field-help">Validation errors keep your edits. Deployment uses the configuration from the next successful review.</p>
+          </FormSection>
+        ) : plan ? (
           <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button disabled={busy} onClick={() => { setEditingTOML(true); setSaveSecret(''); setError('') }}>Edit TOML</Button>
+              {plan.configuration.toml && <span className="text-sm muted-text">Custom configuration reviewed</span>}
+            </div>
             {!!plan.warnings.length && (
               <Note>
                 <ul className="template-review-notes" aria-label="Deployment notes">
@@ -320,9 +360,7 @@ export default function TemplateForm({
               <section className="panel service-summary-panel">
                 <h3>Required secrets</h3>
                 {secrets.error && <ErrorState error={secrets.error} />}
-                {template.secret_fields
-                  .filter((field) => plan.required_secrets.includes(field.name))
-                  .map((field) => (
+                {requiredFields.map((field) => (
                     <div className="settings-list-row" key={field.name}>
                       <div>
                         <strong className="mono">{field.name}</strong>
@@ -335,12 +373,12 @@ export default function TemplateForm({
                       </div>
                       <Button
                         size="sm"
-                        disabled={busy || (!!application && !missing.includes(field.name))}
+                        disabled={busy || ((!!application || !template.secret_fields.some((known) => known.name === field.name)) && !missing.includes(field.name))}
                         onClick={() => setSaveSecret(field.name)}
                       >
                         {missing.includes(field.name)
                           ? 'Set value'
-                          : application
+                          : application || !template.secret_fields.some((known) => known.name === field.name)
                             ? 'Using saved secret'
                             : 'Replace'}
                       </Button>
@@ -350,7 +388,8 @@ export default function TemplateForm({
                   <TemplateSecretField
                     key={saveSecret}
                     templateId={template.id}
-                    field={template.secret_fields.find((field) => field.name === saveSecret)!}
+                    field={requiredFields.find((field) => field.name === saveSecret)!}
+                    custom={!template.secret_fields.some((field) => field.name === saveSecret)}
                     query={query}
                     value={secretDrafts[saveSecret] || ''}
                     onChange={(value) =>
@@ -636,15 +675,21 @@ export default function TemplateForm({
           </FormSection>
         )}
         {error && <RequestError error={error} />}
+        {staleReview && <Note>The application or scope changed. Return to configuration and review it again before deploying.</Note>}
       </div>
       <div className="form-footer">
-        <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>
-          {plan ? 'Back to configuration' : 'Cancel'}
+        <Button disabled={busy} onClick={() => {
+          setError('')
+          if (editingTOML && plan) { setTOMLDraft(plan.toml); setEditingTOML(false) }
+          else if (plan) { setPlan(null); setSaveSecret('') }
+          else onClose()
+        }}>
+          {editingTOML ? tomlDraft === plan?.toml ? 'Back to review' : 'Discard TOML edits' : plan ? 'Back to configuration' : 'Cancel'}
         </Button>
         <Button
           variant="primary"
           disabled={
-            busy ||
+            busy || staleReview || (editingTOML ? !tomlDraft.trim() :
             !name ||
             activeConfigFields.some((field) => field.required && !values[field.name]?.trim()) ||
             (template.workload_requirements?.includes('persistent_storage') &&
@@ -659,11 +704,11 @@ export default function TemplateForm({
             Boolean(
               plan &&
               (missing.length || saveSecret || (plan.required_secrets.length && secrets.isPending)),
-            )
+            ))
           }
-          onClick={() => void (plan ? deploy() : review())}
+          onClick={() => void (editingTOML ? reviewTOML() : plan ? deploy() : review())}
         >
-          {busy ? 'Working…' : plan ? 'Deploy template' : 'Review template'}
+          {busy ? 'Working…' : editingTOML ? 'Review configuration' : plan ? 'Deploy template' : 'Review template'}
         </Button>
       </div>
     </FormPage>

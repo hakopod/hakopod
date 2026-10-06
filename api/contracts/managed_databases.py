@@ -116,12 +116,13 @@ schemas['BackupSource']['properties']['engine']['enum'].append('vitess')
 schemas['BackupTarget']['properties'].update({'managed_database_id': S, 'managed_database_name': S, 'runtime_fingerprint': S})
 schemas['BackupArtifact']['properties'].update({'source_revision': I, 'captured_at': T, 'verified_at': T})
 
-schemas['ServiceBinding']['properties'].update({'managed_database': S, 'endpoint': S, 'cluster_aware': B})
+binding_ssl_mode = {'type': 'string', 'enum': ['', 'disable', 'require', 'verify-ca', 'verify-full'], 'description': 'Omit to follow the managed database TLS policy. PostgreSQL supports require, verify-ca and verify-full. Other TLS engines support verify-full except MySQL/Vitess, whose driver must configure TLS separately. disable is allowed only for legacy plaintext PostgreSQL or Redis.'}
+schemas['ServiceBinding']['properties'].update({'managed_database': S, 'endpoint': S, 'cluster_aware': B, 'ssl_mode': binding_ssl_mode})
 schemas['ServiceBinding']['properties']['protocol']['enum'].append('mongodb')
 schemas['ServiceBinding']['properties']['protocol']['enum'].append('clickhouse')
 schemas['ServiceBinding']['properties']['protocol']['enum'].append('oracle')
 schemas['DatabaseConnectionPlan'] = obj({'id': S, 'database_id': S, 'database_name': S, 'database_revision': I, 'application_id': S, 'application_name': S, 'application_revision': I, 'service': S, 'variable': S, 'previous_kind': S, 'binding': ref('ServiceBinding'), 'recovery': ref('DatabaseRecovery'), 'expires_at': T, 'warnings': array(S)}, ['id', 'database_id', 'database_name', 'database_revision', 'application_id', 'application_name', 'application_revision', 'service', 'variable', 'previous_kind', 'binding', 'expires_at', 'warnings'])
-route('/databases/{id}/connection-plan', 'post', 'reviewDatabaseConnection', ref('DatabaseConnectionPlan'), obj({'application_id': S, 'service': S, 'variable': S, 'endpoint': S, 'cluster_aware': B}, ['application_id', 'service', 'variable', 'endpoint', 'cluster_aware']))
+route('/databases/{id}/connection-plan', 'post', 'reviewDatabaseConnection', ref('DatabaseConnectionPlan'), obj({'application_id': S, 'service': S, 'variable': S, 'endpoint': S, 'cluster_aware': B, 'username': S, 'database': S, 'password': ref('SecretRef'), 'ssl_mode': binding_ssl_mode}, ['application_id', 'service', 'variable', 'endpoint', 'cluster_aware']))
 route('/databases/{id}/connect', 'post', 'replaceDatabaseConnection', ref('Deployment'), obj({'review_id': S, 'confirm_application': S}, ['review_id', 'confirm_application']), '202', idem=True)
 route('/databases/{id}/inspect', 'post', 'attestDatabaseInspection', ref('ManagedDatabase'), obj({'job_id': S, 'confirm_name': S, 'expected_revision': I, 'inspected': B}, ['job_id', 'confirm_name', 'expected_revision', 'inspected']))
 

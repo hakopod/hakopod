@@ -63,7 +63,7 @@ function ConfigureTemplate() {
     )
   return (
     <TemplateForm
-      key={`${template.id}:${scope.project}:${scope.environment}`}
+      key={`${template.id}:${targetId || 'new'}:${target.data?.project || scope.project}:${target.data?.environment || scope.environment}`}
       template={template}
       application={target.data}
       onClose={() => void navigate({ to: '/templates', search: { application: targetId } })}

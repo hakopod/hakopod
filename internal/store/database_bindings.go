@@ -29,6 +29,18 @@ func managedDatabaseIDs(app spec.Application) []string {
 }
 
 func validateDatabaseBinding(d database.Resource, b spec.Binding) error {
+	if err := b.ValidateManagedOptions(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInput, err)
+	}
+	if b.SSLMode == "disable" && d.Spec.TLSRequired() {
+		return fmt.Errorf("%w: this managed database requires TLS", ErrInput)
+	}
+	if b.SSLMode != "" && b.SSLMode != "disable" && !d.Spec.TLSRequired() {
+		return fmt.Errorf("%w: this managed database has no verified TLS endpoint; migrate it to TLS first", ErrInput)
+	}
+	if d.Spec.Engine == "vitess" && (b.Username != "" && b.Username != "app" || b.Database != "" && b.Database != "app") {
+		return fmt.Errorf("%w: managed Vitess supports only the app login and keyspace; the selected endpoint sets its route", ErrInput)
+	}
 	if d.DeletedAt != nil || d.Status != "ready" || d.Observation.Status != "ready" {
 		return fmt.Errorf("%w: managed database is not ready", ErrConflict)
 	}

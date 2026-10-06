@@ -22,6 +22,7 @@ type Binding struct {
 	Database                 string     `json:"database,omitempty" toml:"database"`
 	Username                 string     `json:"username,omitempty" toml:"username"`
 	Password                 *SecretRef `json:"password,omitempty" toml:"password"`
+	SSLMode                  string     `json:"ssl_mode,omitempty" toml:"ssl_mode"`
 }
 
 func BindingSecretKey(name string) string { return "__binding_" + name }
@@ -54,8 +55,8 @@ func validateBindings(app Application) error {
 				return fmt.Errorf("external_database_revision requires an external database")
 			}
 			if b.ManagedDatabase != "" {
-				if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(b.ManagedDatabase) || b.Service != "" || b.Password != nil || b.Username != "" || b.Database != "" {
-					return fmt.Errorf("managed database bindings require only a database ID, protocol and endpoint")
+				if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(b.ManagedDatabase) || b.Service != "" {
+					return fmt.Errorf("managed database bindings require a database ID without a service target")
 				}
 				if b.Protocol != "postgres" && b.Protocol != "redis" && b.Protocol != "mysql" && b.Protocol != "mongodb" && b.Protocol != "clickhouse" && b.Protocol != "oracle" {
 					return fmt.Errorf("managed database protocol must be postgres, mysql, redis, mongodb, clickhouse or oracle")
@@ -78,7 +79,13 @@ func validateBindings(app Application) error {
 				if b.Protocol == "oracle" && (b.Endpoint != "read_write" || b.ClusterAware) {
 					return fmt.Errorf("Oracle Free bindings require the primary TCPS endpoint")
 				}
+				if err := b.ValidateManagedOptions(); err != nil {
+					return fmt.Errorf("services.%s.bindings.%s: %w", name, key, err)
+				}
 				continue
+			}
+			if b.SSLMode != "" {
+				return fmt.Errorf("ssl_mode requires a managed database")
 			}
 			if b.Endpoint != "" || b.ClusterAware {
 				return fmt.Errorf("endpoint and cluster_aware require a managed database")

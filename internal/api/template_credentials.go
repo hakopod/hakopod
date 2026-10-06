@@ -30,7 +30,7 @@ func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 		TOML             string                `json:"toml"`
 		ExpectedRevision *int64                `json:"expected_revision"`
 	}
-	if !decode(w, r, &in) {
+	if !decodeLimited(w, r, &in, 4*spec.MaxBytes+64<<10) {
 		return
 	}
 	if in.ExpectedRevision == nil || in.TOML == "" {
@@ -88,6 +88,17 @@ func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	templateSpec := expected
+	if cfg.TOML != "" {
+		expected, err = spec.Parse([]byte(cfg.TOML))
+		if err != nil {
+			problem(w, 400, "invalid_spec", err.Error())
+			return
+		}
+		if expected.Name != cfg.Name {
+			problem(w, 400, "template_scope", "The edited TOML must keep the selected application name.")
+			return
+		}
+	}
 	if cfg.ApplicationID != "" {
 		base, ok := s.authorizedApp(w, r, cfg.ApplicationID, "deployments:write")
 		if !ok {
@@ -106,10 +117,12 @@ func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 			problem(w, 409, "application_busy", pinErr.Error())
 			return
 		}
-		expected, err = spec.AddServices(baseSpec, expected)
-		if err != nil {
-			problem(w, 400, "template_conflict", err.Error())
-			return
+		if cfg.TOML == "" {
+			expected, err = spec.AddServices(baseSpec, expected)
+			if err != nil {
+				problem(w, 400, "template_conflict", err.Error())
+				return
+			}
 		}
 	} else if *in.ExpectedRevision != 0 {
 		problem(w, 400, "review_required", "Select the existing application before adding a template")
@@ -124,6 +137,16 @@ func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	required := spec.TemplateSecretNames(templateSpec)
+	if cfg.TOML != "" {
+		// Only catalog credentials need value-level template validation. The
+		// ordinary deployment preflight checks every application reference.
+		required = nil
+		for _, name := range spec.LocalSecretNames(next) {
+			if _, known := spec.TemplateSecretFieldByName(r.PathValue("id"), name); known {
+				required = append(required, name)
+			}
+		}
+	}
 	if len(required) > 0 {
 		if s.Cluster == nil {
 			problem(w, 503, "unavailable", "Kubernetes secret storage is unavailable")
@@ -136,7 +159,12 @@ func (s *Server) deployTemplate(w http.ResponseWriter, r *http.Request) {
 			problem(w, 400, "template_secrets", err.Error())
 			return
 		}
-		if err = spec.ValidateTemplateSecretSet(r.PathValue("id"), required, values); err != nil {
+		if cfg.TOML != "" {
+			err = spec.ValidateEditedTemplateSecretSet(r.PathValue("id"), required, values)
+		} else {
+			err = spec.ValidateTemplateSecretSet(r.PathValue("id"), required, values)
+		}
+		if err != nil {
 			problem(w, 400, "template_secrets", err.Error())
 			return
 		}

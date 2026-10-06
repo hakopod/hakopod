@@ -12,7 +12,7 @@
     "build": "node ../templates/scripts/sync-assets.mjs public/template-assets && vite build",
     "typecheck": "tsc --noEmit",
     "start": "node --max-old-space-size=192 --env-file-if-exists=.env.local scripts/serve.mjs",
-    "generate:api": "openapi-typescript ../api/openapi.json -o src/lib/api.generated.ts",
+    "generate:api": "openapi-typescript ../api/openapi.json -o src/lib/api.generated.ts && node scripts/generate-editor-schema.mjs",
     "test": "node --experimental-strip-types --test src/server/*.test.ts src/lib/process-command.test.ts src/lib/proxy-settings.test.ts && node scripts/test-ui.mjs",
     "smoke": "node scripts/smoke-proxy.mjs",
     "format": "prettier --write src scripts vite.config.ts package.json tsconfig.json components.json",

@@ -4364,6 +4364,8 @@ export interface components {
             private_egress?: string[];
             /** @description Exact Kubernetes node name. Uses scheduler affinity; never bypasses taints, runtime policy or resource checks. */
             node_name?: string;
+            /** @description Name of an operator-approved container daemon binding for this service. Empty leaves it unbound. */
+            container_daemon?: string;
             serverless?: components["schemas"]["Serverless"];
         };
         Spec: {
@@ -5861,6 +5863,11 @@ export interface components {
             managed_database?: string;
             endpoint?: string;
             cluster_aware?: boolean;
+            /**
+             * @description Omit to follow the managed database TLS policy. PostgreSQL supports require, verify-ca and verify-full. Other TLS engines support verify-full except MySQL/Vitess, whose driver must configure TLS separately. disable is allowed only for legacy plaintext PostgreSQL or Redis.
+             * @enum {string}
+             */
+            ssl_mode?: "" | "disable" | "require" | "verify-ca" | "verify-full";
             external_database?: string;
             external_database_revision?: number;
         };
@@ -7613,6 +7620,8 @@ export interface components {
             application_id?: string;
             expected_revision?: number;
             service_name?: string;
+            /** @description Optional edited full application TOML. Review returns its canonical form; deployment must submit that exact reviewed specification and revision. */
+            toml?: string;
         };
         TemplatePlan: {
             application_id: string;
@@ -14285,6 +14294,14 @@ export interface operations {
                     variable: string;
                     endpoint: string;
                     cluster_aware: boolean;
+                    username?: string;
+                    database?: string;
+                    password?: components["schemas"]["SecretRef"];
+                    /**
+                     * @description Omit to follow the managed database TLS policy. PostgreSQL supports require, verify-ca and verify-full. Other TLS engines support verify-full except MySQL/Vitess, whose driver must configure TLS separately. disable is allowed only for legacy plaintext PostgreSQL or Redis.
+                     * @enum {string}
+                     */
+                    ssl_mode?: "" | "disable" | "require" | "verify-ca" | "verify-full";
                 };
             };
         };

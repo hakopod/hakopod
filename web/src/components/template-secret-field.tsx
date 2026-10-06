@@ -58,6 +58,7 @@ export function TemplateSecretField({
   onBusy,
   onSaved,
   onCancel,
+  custom = false,
 }: {
   templateId: string
   field: components['schemas']['TemplateSecretField']
@@ -69,6 +70,7 @@ export function TemplateSecretField({
   onBusy: (value: boolean) => void
   onSaved: () => void
   onCancel: () => void
+  custom?: boolean
 }) {
   const [error, setError] = useState('')
   const [generating, setGenerating] = useState(false)
@@ -79,7 +81,12 @@ export function TemplateSecretField({
     onBusy(true)
     setError('')
     try {
-      await unwrap(
+      if (custom) {
+        await unwrap(client.POST('/secrets/{name}', {
+          params: { path: { name: field.name }, query },
+          body: { value },
+        }))
+      } else await unwrap(
         client.PUT('/templates/{id}/secrets/{name}', {
           params: { path: { id: templateId, name: field.name }, query },
           body: { ...(generate ? { generate: true } : { value }), replace: replacing },
@@ -102,8 +109,9 @@ export function TemplateSecretField({
     >
       <label>
         {field.name}
-        {pem ? (
+        {pem || custom ? (
           <Textarea
+            aria-label={field.name}
             value={value}
             onChange={(event) => onChange(event.target.value)}
             rows={5}
@@ -115,6 +123,7 @@ export function TemplateSecretField({
           />
         ) : (
           <Input
+            aria-label={field.name}
             type="password"
             value={value}
             onChange={(event) => onChange(event.target.value)}

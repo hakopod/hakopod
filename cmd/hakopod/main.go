@@ -102,6 +102,10 @@ func run() error {
 	databaseApplication := fs.String("application-id", "", "application ID for a managed database connection")
 	databaseVariable := fs.String("variable", "DATABASE_URL", "managed database connection environment variable")
 	databaseEndpoint := fs.String("endpoint", "read_write", "managed database endpoint: read_write, read_only or cluster")
+	databaseUsername := fs.String("username", "", "existing managed database login; omit for the managed default")
+	databaseName := fs.String("database", "", "existing database name or Redis database number; omit for the managed default")
+	databasePasswordSecret := fs.String("password-secret", "", "native secret containing the database password in the application's scope")
+	databaseSSLMode := fs.String("ssl-mode", "", "binding SSL mode supported by the database; omit to follow its TLS policy")
 	databaseHistoryRange := fs.String("range", "1h", "database monitoring range: 1h, 6h or 24h")
 	databaseClusterAware := fs.Bool("cluster-aware", false, "acknowledge that the application uses a cluster-aware Redis client")
 	databaseRecoveryJob := fs.String("job-id", "", "completed database recovery job to inspect")
@@ -323,7 +327,7 @@ func run() error {
 			// A retry uses its saved specification, not the default application file.
 			*file = ""
 		}
-		return databaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *reviewID, *artifactID, *name, *revision, databaseConnectionFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, HistoryRange: *databaseHistoryRange, JobID: *databaseRecoveryJob, TargetMember: *databaseTargetMember, OperationID: *databaseOperation, PublicEndpointID: *databasePublicEndpointID, PublicEndpointPurpose: *databasePublicEndpointPurpose, PublicEndpointCIDRs: *databasePublicEndpointCIDRs, PublicEndpointRevision: *databasePublicEndpointRevision, PublicEndpointMaxConnections: *databasePublicEndpointMaxConnections, ClusterAware: *databaseClusterAware, Inspected: *databaseInspected, Import: databaseImportFlags{*importDestination, *importEngine, *importVersion, *importCaptured}})
+		return databaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *reviewID, *artifactID, *name, *revision, databaseConnectionFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, Username: *databaseUsername, Database: *databaseName, PasswordSecret: *databasePasswordSecret, SSLMode: *databaseSSLMode, HistoryRange: *databaseHistoryRange, JobID: *databaseRecoveryJob, TargetMember: *databaseTargetMember, OperationID: *databaseOperation, PublicEndpointID: *databasePublicEndpointID, PublicEndpointPurpose: *databasePublicEndpointPurpose, PublicEndpointCIDRs: *databasePublicEndpointCIDRs, PublicEndpointRevision: *databasePublicEndpointRevision, PublicEndpointMaxConnections: *databasePublicEndpointMaxConnections, ClusterAware: *databaseClusterAware, Inspected: *databaseInspected, Import: databaseImportFlags{*importDestination, *importEngine, *importVersion, *importCaptured}})
 	case "platform":
 		return managedPlatformCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *name)
 	case "previews", "preview-create", "preview-delete":
@@ -811,7 +815,7 @@ func help() {
   hakopod database public-endpoint-publish DATABASE_ID --review-id REVIEW_ID --revision 1 --endpoint-revision 0 --idempotency-key RETRY_KEY
   hakopod database public-endpoint-revoke DATABASE_ID --public-endpoint-id ENDPOINT_ID --endpoint-revision 1 --idempotency-key RETRY_KEY
   hakopod database public-endpoint-operation OPERATION_ID
-  hakopod database connection-plan DATABASE_ID --application-id APP_ID --service api --variable DATABASE_URL --endpoint read_write
+  hakopod database connection-plan DATABASE_ID --application-id APP_ID --service api --variable DATABASE_URL --endpoint read_write --username app_user --database app_db --password-secret db-password --ssl-mode verify-full
   hakopod database connect DATABASE_ID --review-id REVIEW_ID --name APP_NAME
   hakopod database inspect DATABASE_ID --job-id JOB_ID --revision 1 --name DATABASE_NAME --inspected
   hakopod database import-plan --file DUMP --destination-id DESTINATION_ID --name docker-source --engine postgresql --source-version 17 --captured-at RFC3339

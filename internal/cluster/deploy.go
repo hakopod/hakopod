@@ -74,10 +74,10 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err != nil {
 		return Observation{}, err
 	}
-	if err := c.snapshotDatabaseBindings(ctx, &target); err != nil {
+	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
 		return Observation{}, err
 	}
-	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
+	if err := c.snapshotDatabaseBindings(ctx, &target); err != nil {
 		return Observation{}, err
 	}
 	target.privateEgress, err = c.resolvePrivateEgress(target)

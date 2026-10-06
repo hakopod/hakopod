@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import type { Application } from '../lib/types'
 import { HeadingHelp } from './shared'
 import { Button } from './ui/button'
+import { databaseBindingSummary } from './database-binding-options'
 
 export function ManagedDatabaseConnections({
   application,
@@ -29,7 +30,7 @@ export function ManagedDatabaseConnections({
       </div>
       <ul className="grid gap-3">
         {bindings.map(({ service: name, variable, binding }) => (
-          <li key={`${name}/${variable}`} className="flex flex-wrap items-center gap-2">
+          <li key={`${name}/${variable}`} className="flex min-w-0 flex-wrap items-center gap-2">
             <code className="break-all">
               {name} / {variable}
             </code>
@@ -43,6 +44,9 @@ export function ManagedDatabaseConnections({
                 Database {binding.managed_database!.slice(0, 8)}
               </Link>
             </Button>
+            <dl className="flex min-w-0 basis-full flex-wrap gap-x-4 gap-y-1 text-xs">
+              {databaseBindingSummary(binding).map(([label, value]) => <div key={label} className="flex min-w-0 gap-1"><dt className="text-muted-foreground">{label}:</dt><dd className="min-w-0 break-all">{value}</dd></div>)}
+            </dl>
           </li>
         ))}
       </ul>

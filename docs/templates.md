@@ -10,6 +10,21 @@ All enabled presets use immutable image digests. `templates/images.lock.json` re
 
 The form exposes ordinary configuration separately from scoped secrets and retains inputs after a failed request. Required configuration is checked before review and again by the API. Never substitute secret values into TOML.
 
+After generating a review, choose **Edit TOML** to change or remove services,
+volumes, bindings and other settings. **Review configuration** validates the
+edited application and refreshes its changes and required secrets before
+deployment. Invalid TOML or a failed request keeps the draft. Keep the selected
+application name unchanged; when adding to an existing application, the editor
+contains its complete configuration and the review includes any removals.
+
+Removed secret references disappear from the review. New native references can
+be saved as application secrets, including multiline values, without replacing
+an existing secret. Retained catalog credentials keep their format checks.
+Deployment uses the canonical configuration from the successful review and
+still enforces application permissions, revision checks and runtime policy.
+Edited configurations have their own validation; the catalog's runtime
+verification describes the original template.
+
 ## Original presets
 
 Memory values below are Kubernetes request / limit. These are small starting configurations, not production capacity claims. Every persistent service has one replica and uses a PVC with a Recreate update strategy. Increasing replicas does not turn a single-writer database into a cluster.
@@ -39,7 +54,14 @@ PostgreSQL and MySQL expose initial database and user names. They default to `ap
 
 During review, generate or supply each required credential. Browser generation uses Web Crypto, including RSA key generation for Xem; copying a generated value is available before saving. The write-only secret API validates formats, and generation through the API uses Go's cryptographic random source. Existing references are preserved unless explicitly replaced. Infisical connection URLs can be built directly from the saved password references without returning those passwords to the browser. Provider keys and certificate material must come from their actual provider or issuer.
 
-The template deployment endpoint parses the reviewed TOML, compares it with the current template and chosen options, then reads the scoped secret references and checks their formats and relationships before durable acceptance. A changed catalog or TOML requires another review. Failed validation queues no deployment. These checks apply to the guided template endpoint; ordinary TOML deployment remains available for custom specifications. Secret values remain mutable references and are not revision-pinned by this check.
+The template deployment endpoint parses the reviewed TOML and compares it with
+the generated template or the reviewed custom configuration. It reads the scoped
+secret references and checks retained template credentials before durable
+acceptance. Failed validation queues no deployment. API clients can submit an
+optional `toml` in `POST /templates/{id}/plan`; deploy with the returned
+`configuration`, `toml` and `expected_revision`. Ordinary TOML deployment remains
+available. Secret values remain mutable references and are not revision-pinned
+by this check.
 
 ## Application setup
 
