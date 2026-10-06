@@ -122,6 +122,34 @@ class OracleQualification(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source changed"):
             ORACLE.validate_metadata(self.directory, self.root)
 
+    def test_empty_source_files_are_included_in_the_inventory(self):
+        names = ("internal/managedplatform/supabase-assets/db/init/data.sql",
+                 "internal/managedplatform/supabase-assets/snippets/.gitkeep",
+                 "internal/managedplatform/supabase-assets/storage/.gitkeep")
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"")
+        sources = ORACLE.source_files(self.root)
+        for name in names:
+            with self.subTest(name=name):
+                self.assertEqual(sources[name], sha(b""))
+        with self.assertRaisesRegex(ValueError, "source changed"):
+            ORACLE.validate_metadata(self.directory, self.root)
+        (self.root / names[0]).write_bytes(b"SELECT 1;\n")
+        self.assertNotEqual(ORACLE.source_files(self.root)[names[0]], sources[names[0]])
+
+    def test_empty_runtime_artifacts_remain_invalid(self):
+        for name in ORACLE.FILES:
+            path = self.directory / name
+            original = path.read_bytes()
+            path.write_bytes(b"")
+            try:
+                with self.subTest(name=name), self.assertRaisesRegex(ValueError, "Missing, symbolic or oversized"):
+                    ORACLE.validate_metadata(self.directory, self.root)
+            finally:
+                path.write_bytes(original)
+
     def test_only_the_qualification_literal_may_change_after_native_acceptance(self):
         gate = self.root / ORACLE.GATE_PATH
         before = ORACLE.source_files(self.root)
