@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/netip"
+	"reflect"
 	"testing"
 	"time"
 
@@ -98,8 +99,8 @@ func TestVitessBackupRevocationStopsNativeWorkAndPreservesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := root.Object["spec"].(map[string]any)["backup"]; ok || root.GetAnnotations()[vitessBackupRevoked] != "true" {
-		t.Fatal("native backup desired authority remains")
+	if _, ok := root.Object["spec"].(map[string]any)["backup"]; !ok || root.GetAnnotations()[vitessBackupRevoked] != "true" {
+		t.Fatal("revocation changed tablet configuration before native processes exited")
 	}
 	for _, target := range []struct {
 		gvr  schema.GroupVersionResource
@@ -127,6 +128,155 @@ func TestVitessBackupRevocationStopsNativeWorkAndPreservesData(t *testing.T) {
 	err = c.ReconcileVitessBackupAuthority(ctx, d, func() error { return nil })
 	if err == nil || errors.Is(err, VitessBackupRevocationPending) {
 		t.Fatal("revocation did not finish cleanup while preserving refusal", err)
+	}
+	root, err = c.dynamic.Resource(vitessDatabaseResource).Namespace(ns).Get(ctx, "database", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := root.Object["spec"].(map[string]any)["backup"]; ok || root.GetAnnotations()[vitessBackupRevoked] != "true" {
+		t.Fatal("completed revocation retained native backup desired authority")
+	}
+}
+
+func TestVitessBackupRevocationQuiescesControllerBeforeChangingTabletConfig(t *testing.T) {
+	c, d, storage := vitessRevocationFixture(t, false)
+	ctx := context.Background()
+	ns := DatabaseNamespace(d.ID)
+	api := c.dynamic.Resource(vitessDatabaseResource).Namespace(ns)
+	original, err := api.Get(ctx, "database", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalBackup, _, _ := unstructured.NestedMap(original.Object, "spec", "backup")
+	operator, err := c.kube.AppsV1().Deployments(ns).Get(ctx, "vitess-operator", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operator.Generation = 7
+	operator.Status = appsv1.DeploymentStatus{ObservedGeneration: 7, Replicas: 1, ReadyReplicas: 1, AvailableReplicas: 1, UpdatedReplicas: 1}
+	if _, err = c.kube.AppsV1().Deployments(ns).Update(ctx, operator, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.revokeVitessBackupAuthority(ctx, d, func() error { return nil }); !errors.Is(err, VitessBackupRevocationPending) {
+		t.Fatal("unobserved controller shutdown did not remain pending", err)
+	}
+	assertUnchangedBackup := func() {
+		t.Helper()
+		root, err := api.Get(ctx, "database", metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		backup, _, _ := unstructured.NestedMap(root.Object, "spec", "backup")
+		if !reflect.DeepEqual(backup, originalBackup) || root.GetAnnotations()[vitessBackupRevoked] != "true" {
+			t.Fatal("pending revocation changed desired tablet backup configuration")
+		}
+	}
+	assertUnchangedBackup()
+	for _, target := range []struct {
+		gvr  schema.GroupVersionResource
+		name string
+	}{
+		{schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}, "database-vitess-backup-egress"},
+		{schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, "database-vitess-native-backup"},
+	} {
+		if _, err = c.dynamic.Resource(target.gvr).Namespace(ns).Get(ctx, target.name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+			t.Fatal("pending shutdown retained native backup access", err)
+		}
+	}
+	schedule, err := c.dynamic.Resource(schema.GroupVersionResource{Group: "planetscale.com", Version: "v2", Resource: "vitessbackupschedules"}).Namespace(ns).Get(ctx, "schedule", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if suspended, _, _ := unstructured.NestedBool(schedule.Object, "spec", "suspend"); !suspended {
+		t.Fatal("pending shutdown retained its active backup schedule")
+	}
+	c.options.VitessBackup = func(context.Context, database.Resource) (VitessBackupStorage, error) { return storage, nil }
+	if err = c.ReconcileVitessBackupAuthority(ctx, d, func() error { return nil }); !errors.Is(err, VitessBackupRevocationPending) {
+		t.Fatal("reapproval bypassed unfinished controller shutdown", err)
+	}
+	assertUnchangedBackup()
+	operator, err = c.kube.AppsV1().Deployments(ns).Get(ctx, "vitess-operator", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operator.Status = appsv1.DeploymentStatus{ObservedGeneration: operator.Generation - 1}
+	if _, err = c.kube.AppsV1().Deployments(ns).UpdateStatus(ctx, operator, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.ReconcileVitessBackupAuthority(ctx, d, func() error { return nil }); !errors.Is(err, VitessBackupRevocationPending) {
+		t.Fatal("stale zero-replica status allowed reapproval", err)
+	}
+	assertUnchangedBackup()
+	operator.Status.ObservedGeneration = operator.Generation
+	if _, err = c.kube.AppsV1().Deployments(ns).UpdateStatus(ctx, operator, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.ReconcileVitessBackupAuthority(ctx, d, func() error { return nil }); err != nil {
+		t.Fatal("reapproval could not resume after observed shutdown", err)
+	}
+	root, err := api.Get(ctx, "database", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup, _, _ := unstructured.NestedMap(root.Object, "spec", "backup")
+	if !reflect.DeepEqual(backup, originalBackup) || root.GetAnnotations()[vitessBackupRevoked] != "" {
+		t.Fatal("reapproval did not restore the original backup configuration")
+	}
+}
+
+func TestVitessBackupRevocationRejectsControllerReplacementDuringShutdown(t *testing.T) {
+	for _, target := range []string{"operator", "database"} {
+		t.Run(target, func(t *testing.T) {
+			c, d, _ := vitessRevocationFixture(t, false)
+			ctx := context.Background()
+			ns := DatabaseNamespace(d.ID)
+			gets := 0
+			if target == "operator" {
+				c.kube.(*kubefake.Clientset).PrependReactor("get", "deployments", func(action ktesting.Action) (bool, runtime.Object, error) {
+					gets++
+					if gets != 2 {
+						return false, nil, nil
+					}
+					object, err := c.kube.(*kubefake.Clientset).Tracker().Get(appsv1.SchemeGroupVersion.WithResource("deployments"), ns, "vitess-operator")
+					if err != nil {
+						return true, nil, err
+					}
+					operator := object.(*appsv1.Deployment).DeepCopy()
+					operator.UID = "replacement-operator"
+					return true, operator, nil
+				})
+			} else {
+				shutdownObserved := false
+				c.kube.(*kubefake.Clientset).PrependReactor("get", "deployments", func(action ktesting.Action) (bool, runtime.Object, error) {
+					gets++
+					shutdownObserved = gets >= 2
+					return false, nil, nil
+				})
+				c.dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("get", "vitessclusters", func(action ktesting.Action) (bool, runtime.Object, error) {
+					if !shutdownObserved {
+						return false, nil, nil
+					}
+					shutdownObserved = false
+					object, err := c.dynamic.(*dynamicfake.FakeDynamicClient).Tracker().Get(vitessDatabaseResource, ns, "database")
+					if err != nil {
+						return true, nil, err
+					}
+					root := object.(*unstructured.Unstructured).DeepCopy()
+					root.SetUID("replacement-database")
+					return true, root, nil
+				})
+			}
+			if err := c.revokeVitessBackupAuthority(ctx, d, func() error { return nil }); err == nil || errors.Is(err, VitessBackupRevocationPending) {
+				t.Fatal("replacement controller did not stop revocation", err)
+			}
+			root, err := c.dynamic.Resource(vitessDatabaseResource).Namespace(ns).Get(ctx, "database", metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, found, _ := unstructured.NestedMap(root.Object, "spec", "backup"); !found {
+				t.Fatal("revocation changed tablet configuration after controller replacement")
+			}
+		})
 	}
 }
 
@@ -172,8 +322,8 @@ func TestVitessBackupRevocationWaitsForOrphansBeforeRegrant(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := root.Object["spec"].(map[string]any)["backup"]; ok {
-				t.Fatal("regrant restored backup authority before orphan cleanup")
+			if _, ok := root.Object["spec"].(map[string]any)["backup"]; !ok || root.GetAnnotations()[vitessBackupRevoked] != "true" {
+				t.Fatal("orphan cleanup changed tablet configuration or lost the revocation marker")
 			}
 			if _, err = c.dynamic.Resource(schema.GroupVersionResource{Version: "v1", Resource: "secrets"}).Namespace(ns).Get(ctx, "database-vitess-native-backup", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 				t.Fatal("regrant restored storage credentials before orphan cleanup", err)
