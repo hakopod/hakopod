@@ -89,12 +89,12 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
-          bash -n scripts/local-tools.sh scripts/local-up.sh scripts/local-down.sh scripts/install.sh release/install-syft.sh deploy/cert-manager/install.sh
+          bash -n scripts/local-tools.sh scripts/local-up.sh scripts/local-down.sh scripts/install.sh scripts/build-managed-oracle-free.sh release/install-syft.sh deploy/cert-manager/install.sh
           python3 -m py_compile scripts/*.py api/generate.py api/contracts/*.py examples/shop/variants.py tests/restart.py release/*.py
           python3 -m unittest discover -s tests -p 'test_*.py'
           python3 -m unittest discover -s installer -p 'test_*.py'
           python3 -m unittest discover -s release -p 'test_*.py'
-          for test in scripts/test-development-*.py scripts/test-managed-oracle-wallet.py; do
+          for test in scripts/test-development-*.py scripts/test-managed-oracle-wallet.py scripts/test-package-managed-oracle-free.py; do
             python3 -B "$test"
           done
           python3 -B scripts/test-supabase-qualification.py

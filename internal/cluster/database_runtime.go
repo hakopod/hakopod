@@ -215,6 +215,12 @@ func (c *Client) databaseExecVerifiedPod(ctx context.Context, pod *corev1.Pod, c
 // Resolve the owned exec target without running a command. Native transport
 // uses the same checks, avoiding an extra exec for every health connection.
 func (c *Client) databaseExecTarget(ctx context.Context, d database.Resource, member database.Member) (*corev1.Pod, string, error) {
+	if d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
+		if c.execConfig == nil || c.restClient() == nil {
+			return nil, "", fmt.Errorf("Oracle execution transport is unavailable")
+		}
+		return c.oracleFreeExecTarget(ctx, d, member)
+	}
 	if oracleEnterprise(d.Spec) {
 		if c.execConfig == nil || c.restClient() == nil {
 			return nil, "", fmt.Errorf("Oracle execution transport is unavailable")

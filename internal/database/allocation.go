@@ -2,6 +2,9 @@ package database
 
 import "k8s.io/apimachinery/pkg/api/resource"
 
+const OracleFreeOperatorCPU = "100m"
+const OracleFreeOperatorMemory = "256Mi"
+
 const OracleBrokerCPU = "100m"
 const OracleBrokerMemory = "256Mi"
 
@@ -40,6 +43,9 @@ func (s Spec) CPUReservationMilli() (int64, error) {
 		total += cpuMilli(VitessOperatorCPU) * 2
 		total += cpuMilli(VitessBackupControllerCPU)
 		total += 2 * int64(s.Shards) * (cpuMilli(s.CPU) + cpuMilli(VitessTabletCPU))
+	}
+	if s.Engine == "oracle" && s.Oracle != nil && s.Oracle.Edition == "free" {
+		total += 2 * cpuMilli(OracleFreeOperatorCPU)
 	}
 	total += cpuMilli(OracleBrokerCPU) * int64(s.OracleBrokerInstances())
 	return total, nil

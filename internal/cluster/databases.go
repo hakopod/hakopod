@@ -48,7 +48,7 @@ func databaseGVR(s database.Spec) (schema.GroupVersionResource, string) {
 		return oracleEnterpriseResource, "SingleInstanceDatabase"
 	}
 	if s.Engine == "oracle" {
-		return oracleDatabaseResource, "StatefulSet"
+		return oracleDatabaseResource, "SingleInstanceDatabase"
 	}
 	if s.Engine == "clickhouse" {
 		return clickhouseDatabaseResource, "ClickHouseInstallation"
@@ -71,8 +71,7 @@ func databaseLabels(d database.Resource) map[string]string {
 	return map[string]string{managedBy: "hakopod", databaseOwner: d.ID, "hakopod.io/project": d.Project, "hakopod.io/environment": d.Environment}
 }
 func (c *Client) DatabaseControllerAvailable(ctx context.Context, s database.Spec) error {
-	switch s.Engine {
-	case "oracle":
+	if s.Engine == "oracle" && !oracleFreeReleaseQualified {
 		return fmt.Errorf("Oracle Database is unavailable in this release pending native qualification")
 	}
 	if c == nil || c.dynamic == nil || c.kube == nil {
@@ -91,11 +90,17 @@ func (c *Client) DatabaseControllerAvailable(ctx context.Context, s database.Spe
 		}
 		return nil
 	}
-	if oracleEnterprise(s) {
-		return c.oracleEnterpriseControllerAvailable(ctx)
-	}
 	if s.Engine == "oracle" {
-		return oracleRuntimeSupported(s)
+		if err := oracleRuntimeSupported(s); err != nil {
+			return err
+		}
+		if err := validateOracleFreeOperatorImage(); err != nil {
+			return err
+		}
+		if _, err := c.dynamic.Resource(oracleDatabaseResource).Namespace("default").List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
+			return fmt.Errorf("Oracle Free controller API is unavailable")
+		}
+		return nil
 	}
 	gvr, _ := databaseGVR(s)
 	_, err := c.dynamic.Resource(gvr).Namespace("default").List(ctx, metav1.ListOptions{Limit: 1})
@@ -205,6 +210,9 @@ func DatabaseObject(d database.Resource) (*unstructured.Unstructured, error) {
 		}
 		return oracleEnterpriseObject(d, 0, registry, nil, d.Spec.Placement.NodeNames), nil
 	}
+	if d.Spec.Engine == "oracle" {
+		return oracleFreeObject(d, nil, d.Spec.Placement.NodeNames)
+	}
 	gvr, kind := databaseGVR(d.Spec)
 	image, ok := databaseImages[d.Spec.Engine+":"+d.Spec.Version]
 	if d.Spec.Engine == "vitess" {
@@ -231,11 +239,6 @@ func DatabaseObject(d database.Resource) (*unstructured.Unstructured, error) {
 		spec = mongodbDatabaseSpec(d, resources)
 	} else if d.Spec.Engine == "clickhouse" {
 		spec = clickhouseDatabaseSpec(d, resources)
-	} else if d.Spec.Engine == "oracle" {
-		if err := oracleRuntimeSupported(d.Spec); err != nil {
-			return nil, err
-		}
-		spec = oracleDatabaseSpec(d, resources)
 	} else {
 		spec = map[string]any{"kubernetesConfig": map[string]any{"image": image, "imagePullPolicy": "IfNotPresent", "resources": resources, "redisSecret": map[string]any{"name": "database-credentials", "key": "password"}}, "podSecurityContext": map[string]any{"runAsUser": int64(1000), "fsGroup": int64(1000)}, "storage": map[string]any{"volumeClaimTemplate": map[string]any{"spec": map[string]any{"accessModes": []any{"ReadWriteOnce"}, "resources": map[string]any{"requests": map[string]any{"storage": fmt.Sprintf("%dGi", d.Spec.StorageGiB)}}}}}}
 		if d.Spec.TLSRequired() {
@@ -287,6 +290,9 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 	}
 	if oracleEnterprise(d.Spec) {
 		return c.applyOracleEnterpriseDatabase(ctx, d, password, before)
+	}
+	if d.Spec.Engine == "oracle" {
+		return c.applyOracleFreeDatabase(ctx, d, password, before)
 	}
 	if d.Spec.Engine == "vitess" {
 		if err := c.ReconcileVitessBackupAuthority(ctx, d, before); err != nil {
@@ -382,13 +388,6 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 		if err = c.applyVitessIdentity(ctx, d, object); err != nil {
 			return err
 		}
-	}
-	if d.Spec.Engine == "oracle" {
-		identity, e := c.kube.CoreV1().Secrets(ns).Get(ctx, "database-tls", metav1.GetOptions{})
-		if e != nil {
-			return e
-		}
-		_ = unstructured.SetNestedField(object.Object, oracleIdentityFingerprint(identity), "spec", "template", "metadata", "annotations", "hakopod.io/oracle-identity")
 	}
 	gvr, _ := databaseGVR(d.Spec)
 	api := c.dynamic.Resource(gvr).Namespace(ns)
@@ -489,11 +488,19 @@ func (c *Client) DeleteDatabase(ctx context.Context, d database.Resource, before
 			return false, err
 		}
 	}
+	if d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
+		removed, err := c.deleteOracleFreeController(ctx, d, before)
+		if err != nil || !removed {
+			return false, err
+		}
+	}
 	if ns.DeletionTimestamp != nil {
 		return false, nil
 	}
-	if err = c.prepareDatabaseVolumeDeletion(ctx, ns.Name, before); err != nil {
-		return false, err
+	if d.Spec.Engine != "oracle" || oracleEnterprise(d.Spec) {
+		if err = c.prepareDatabaseVolumeDeletion(ctx, ns.Name, before); err != nil {
+			return false, err
+		}
 	}
 	if err = before(); err != nil {
 		return false, err
@@ -591,6 +598,9 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 	memberSelector := "!" + databaseRecoveryHelper + ",!" + databasePoolerLabel + ",!" + databaseRouterLabel + ",!" + databaseKeeperLabel
 	if d.Spec.Engine == "vitess" {
 		memberSelector = vitessComponentLabel + "=tablet"
+	}
+	if d.Spec.Engine == "oracle" {
+		memberSelector = oracleEnterpriseMemberLabel + "=true"
 	}
 	pods, err := c.kube.CoreV1().Pods(ns.Name).List(ctx, metav1.ListOptions{Limit: database.MaxMembers + 1, LabelSelector: memberSelector, FieldSelector: activeDatabasePodFields})
 	if err != nil {
@@ -792,6 +802,9 @@ func overlayDatabaseFields(current, desired map[string]any) {
 	}
 }
 func databasePodMatches(p corev1.Pod, d database.Resource) bool {
+	if d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
+		return oracleFreePodMatches(p, d)
+	}
 	if d.Spec.Engine == "vitess" {
 		return vitessPodMatches(p, d)
 	}
@@ -825,6 +838,9 @@ func databasePodMatches(p corev1.Pod, d database.Resource) bool {
 func (c *Client) DatabaseRevisionApplied(ctx context.Context, d database.Resource) (bool, error) {
 	if oracleEnterprise(d.Spec) {
 		return c.oracleEnterpriseRevisionApplied(ctx, d)
+	}
+	if d.Spec.Engine == "oracle" {
+		return c.oracleFreeRevisionApplied(ctx, d)
 	}
 	gvr, _ := databaseGVR(d.Spec)
 	current, err := c.dynamic.Resource(gvr).Namespace(DatabaseNamespace(d.ID)).Get(ctx, "database", metav1.GetOptions{})

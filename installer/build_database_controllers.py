@@ -18,6 +18,7 @@ from urllib.request import urlopen
 
 from database_controllers import validate_controller_objects
 from vitess_controller import qualification as qualify_vitess, render as render_vitess
+from oracle_free_controller import qualification as qualify_oracle_free, render as render_oracle_free
 
 IMAGE = re.compile(r'^[^\s]+:[^/@:]+@sha256:[0-9a-f]{64}$')
 REDIS_CONTROLLER_IMAGE = 'ghcr.io/hakopod/managed-redis-operator:candidate-36996745177-1@sha256:87a426b087355e41247210d176d82812a5c8c462cc2856789513dd00a37ab32a'
@@ -153,6 +154,7 @@ def build(destination, redis_image, include_vitess=None):
     pins=json.loads((HERE/'database-controller-sources.json').read_text())
     if destination.exists():raise ValueError('Use a fresh controller bundle directory')
     if include_vitess:qualify_vitess(HERE.parent)
+    if managed_runtimes['oracle-free']:qualify_oracle_free(HERE.parent)
     with tempfile.TemporaryDirectory(prefix='hakopod-controller-build-') as tmp:
         files={}
         helm=helm_binary(Path(tmp))
@@ -164,9 +166,13 @@ def build(destination, redis_image, include_vitess=None):
             root=Path(tmp)/'vitess';root.mkdir()
             objects,pins['vitess']=render_vitess(HERE.parent,root,fetch);validate(objects)
             files['vitess.json']=(json.dumps({'apiVersion':'v1','kind':'List','items':objects},sort_keys=True)+'\n').encode()
+        if managed_runtimes['oracle-free']:
+            root=Path(tmp)/'oracle-free';root.mkdir()
+            objects,pins['oracle-free']=render_oracle_free(HERE.parent,root,fetch);validate(objects)
+            files['oracle-free.json']=(json.dumps({'apiVersion':'v1','kind':'List','items':objects},sort_keys=True)+'\n').encode()
         if (availability['release_availability'](HERE.parent)!=managed_runtimes or availability['source_gate_hashes'](HERE.parent)!=source_gates or availability['source_revision'](HERE.parent)!=source_revision):
             raise ValueError('Release source changed while building database controllers')
-        manifest={'schema_version':2,'source_revision':source_revision,'managed_runtimes':managed_runtimes,'sources':pins,'helm':json.loads((HERE/'pins.json').read_text())['helm'],'redis_controller_image':redis_image,'files':{name:hashlib.sha256(data).hexdigest() for name,data in files.items()}}
+        manifest={'schema_version':3,'source_revision':source_revision,'managed_runtimes':managed_runtimes,'sources':pins,'helm':json.loads((HERE/'pins.json').read_text())['helm'],'redis_controller_image':redis_image,'files':{name:hashlib.sha256(data).hexdigest() for name,data in files.items()}}
         destination.mkdir(parents=True)
         for name,data in files.items():(destination/name).write_bytes(data)
         (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

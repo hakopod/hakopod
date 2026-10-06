@@ -2,13 +2,12 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/database"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestOracleRuntimeSecurityAndPlacement(t *testing.T) {
@@ -17,14 +16,17 @@ func TestOracleRuntimeSecurityAndPlacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if object.GetKind() != "StatefulSet" {
+	if object.GetKind() != "SingleInstanceDatabase" {
 		t.Fatal("Oracle must use an owned workload")
 	}
-	podMap, _, _ := unstructured.NestedMap(object.Object, "spec", "template", "spec")
-	var pod corev1.PodSpec
-	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(podMap, &pod); err != nil {
-		t.Fatal(err)
+	var envelope struct {
+		Profile string         `json:"profile"`
+		PodSpec corev1.PodSpec `json:"podSpec"`
 	}
+	if err = json.Unmarshal([]byte(object.GetAnnotations()[oracleFreePodPolicy]), &envelope); err != nil || envelope.Profile != oracleFreePolicy {
+		t.Fatal("Oracle Free pod policy is invalid", err)
+	}
+	pod := envelope.PodSpec
 	if pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken || len(pod.Containers) != 1 || pod.Containers[0].Image != database.OracleFreeImage || *pod.Containers[0].SecurityContext.AllowPrivilegeEscalation {
 		t.Fatal("Oracle workload security boundary is incomplete")
 	}
@@ -43,11 +45,11 @@ func TestOracleRuntimeSecurityAndPlacement(t *testing.T) {
 	if !hook || oracleConfiguration(d)["app-quota-gib"] != "2" {
 		t.Fatal("Oracle must wait for image initialization and reserve system storage")
 	}
-	applyDatabasePolicy(object, d.Spec, DatabasePolicy{NodeName: "worker", Pool: "free", RuntimeClass: "runsc", StorageClass: "block"})
-	applyDatabasePlacement(object, d.Spec, []string{"worker"})
-	runtimeName, _, _ := unstructured.NestedString(object.Object, "spec", "template", "spec", "runtimeClassName")
-	affinity, _, _ := unstructured.NestedMap(object.Object, "spec", "template", "spec", "affinity")
-	if runtimeName != "runsc" || len(affinity) == 0 {
+	object, err = oracleFreeObject(d, &DatabasePolicy{NodeName: "worker", Pool: "free", RuntimeClass: "runsc", StorageClass: "block"}, []string{"worker"})
+	if err != nil || json.Unmarshal([]byte(object.GetAnnotations()[oracleFreePodPolicy]), &envelope) != nil {
+		t.Fatal("Oracle Free placement could not be rendered", err)
+	}
+	if envelope.PodSpec.RuntimeClassName == nil || *envelope.PodSpec.RuntimeClassName != "runsc" || envelope.PodSpec.Affinity == nil {
 		t.Fatal("Oracle escaped the authorized sandbox or node selection")
 	}
 	if strings.Contains(oracleStart, "-password pass:") || strings.Contains(oracleStart, "set -x") || !strings.Contains(oracleStart, "SQLNET.INBOUND_CONNECT_TIMEOUT") {

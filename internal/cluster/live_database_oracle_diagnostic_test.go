@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,10 +31,20 @@ func TestOracleDevelopmentTransportDiagnostic(t *testing.T) {
 	defer cancel()
 	d := oracleFixture()
 	d.ID = id
-	pod, err := c.kube.CoreV1().Pods(DatabaseNamespace(id)).Get(ctx, "database-0", metav1.GetOptions{})
+	d.Spec.Placement.NodeNames = developmentRecoveryFixtureNodes(t)
+	object, err := c.dynamic.Resource(oracleDatabaseResource).Namespace(DatabaseNamespace(id)).Get(ctx, "database", metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	d.Revision, err = strconv.ParseInt(object.GetAnnotations()["hakopod.io/database-revision"], 10, 64)
+	if err != nil || d.Revision < 1 {
+		t.Fatal("invalid Oracle diagnostic revision")
+	}
+	pods, err := c.kube.CoreV1().Pods(DatabaseNamespace(id)).List(ctx, metav1.ListOptions{LabelSelector: oracleEnterpriseMemberLabel + "=true", Limit: 2})
+	if err != nil || pods.Continue != "" || len(pods.Items) != 1 {
+		t.Fatal("Oracle diagnostic requires one owned SIDB member", err)
+	}
+	pod := &pods.Items[0]
 	member := database.Member{Name: pod.Name, UID: string(pod.UID)}
 	secret, err := c.kube.CoreV1().Secrets(pod.Namespace).Get(ctx, "database-credentials", metav1.GetOptions{})
 	if err != nil {

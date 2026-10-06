@@ -1,0 +1,28 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+)
+
+// Readiness requires the initial watches and a current request with the scoped
+// identity. A running process alone cannot safely replace a database member.
+func hakopodFreeReadiness(reader client.Reader, syncCache func(context.Context) bool, namespace string) healthz.Checker {
+	return func(request *http.Request) error {
+		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+		defer cancel()
+		if !syncCache(ctx) {
+			return fmt.Errorf("Oracle Free controller cache is not ready")
+		}
+		if err := reader.List(ctx, &dbapi.SingleInstanceDatabaseList{}, client.InNamespace(namespace), client.Limit(1)); err != nil {
+			return fmt.Errorf("Oracle Free controller API is not ready")
+		}
+		return nil
+	}
+}

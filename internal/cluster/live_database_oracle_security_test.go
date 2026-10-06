@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/database"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -22,8 +23,13 @@ func TestManagedOracleObservedSecurityLive(t *testing.T) {
 	}
 	d := oracleFixture()
 	d.ID = id
-	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(id), metav1.GetOptions{})
-	if err != nil || ns.Labels[databaseOwner] != id || ns.Labels[managedBy] != "hakopod" {
+	testOracleObservedSecurity(t, ctx, c, d)
+}
+
+func testOracleObservedSecurity(t *testing.T, ctx context.Context, c *Client, d database.Resource) {
+	t.Helper()
+	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
+	if err != nil || ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
 		t.Fatal("Oracle development fixture ownership changed")
 	}
 	o, err := c.ObserveDatabase(ctx, d)

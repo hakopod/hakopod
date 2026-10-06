@@ -69,10 +69,8 @@ func (c *Client) observeOracleDatabase(ctx context.Context, d database.Resource,
 	if len(o.Members) != 1 {
 		return fmt.Errorf("Oracle has no unique instance")
 	}
-	observed, _, _ := unstructured.NestedInt64(object.Object, "status", "observedGeneration")
-	updated, _, _ := unstructured.NestedInt64(object.Object, "status", "updatedReplicas")
-	if observed < object.GetGeneration() || updated != 1 {
-		return fmt.Errorf("Oracle workload revision has not converged")
+	if err := c.oracleFreeRevisionReady(ctx, d, object); err != nil {
+		return err
 	}
 	query := `SELECT JSON_OBJECT('role' VALUE database_role, 'mode' VALUE open_mode,
  'version' VALUE (SELECT version_full FROM v$instance),
