@@ -22,7 +22,7 @@ import (
 
 // Filled only after the source-tested operator is published and anonymously
 // pulled for native qualification. An empty pin cannot create any resources.
-const oracleFreeOperatorImage = "ghcr.io/hakopod/managed-oracle-free-operator@sha256:ce6a767e9364a97d0c4bb342f0c2a621a59ecf230dabbd5517c06c88884d0471"
+const oracleFreeOperatorImage = "ghcr.io/hakopod/managed-oracle-free-operator@sha256:e728b6283d4f27947af96232b9d74dc31d9adf288a62722c026c2ce3b6fe7660"
 const oracleFreeControllerLabel = "hakopod.io/oracle-free-controller"
 
 func validateOracleFreeOperatorImage() error {
