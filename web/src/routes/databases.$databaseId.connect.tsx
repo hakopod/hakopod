@@ -1,9 +1,9 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { endpointName } from '../lib/database-view'
 import { useDatabase } from '../lib/databases'
-import { useScope, canAccess } from '../lib/scope'
+import { useScope, useResourceScope, canAccess } from '../lib/scope'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
 import type { components } from '../lib/api.generated'
@@ -12,6 +12,8 @@ import { Empty, ErrorState, Loading, Note, PageHeader } from '../components/shar
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
+import { DatabaseBindingFields, DatabaseBindingSummary } from '../components/database-binding-options'
+import { databaseBindingIssue, databaseBindingOptions, databaseConnectionReviewIssue, emptyDatabaseBindingDraft, saveDatabaseBindingPassword } from '../lib/database-binding'
 
 export const Route = createFileRoute('/databases/$databaseId/connect')({ component: Page })
 function Page() {
@@ -34,15 +36,25 @@ function Connect({ id }: { id: string }) {
   const [variable, setVariable] = useState('DATABASE_URL')
   const [endpoint, setEndpoint] = useState('')
   const [clusterAware, setClusterAware] = useState(false)
+  const [options, setOptions] = useState(emptyDatabaseBindingDraft)
+  const [savedSecret, setSavedSecret] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [plan, setPlan] = useState<components['schemas']['DatabaseConnectionPlan'] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [cursor, setCursor] = useState('')
+  const [now, setNow] = useState(Date.now)
   const key = useRef('')
+  const review = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const cache = useQueryClient()
   const d = database.data
+  useResourceScope(d)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(timer)
+  }, [])
+  useEffect(() => { if (plan) review.current?.focus() }, [plan])
   const applications = useQuery({
     queryKey: ['applications', d?.project, d?.environment, cursor],
     queryFn: ({ signal }) =>
@@ -62,9 +74,27 @@ function Connect({ id }: { id: string }) {
     queryFn: ({ signal }) =>
       unwrap(client.GET('/applications/{id}', { signal, params: { path: { id: applicationId } } })),
     enabled: Boolean(applicationId),
+    refetchInterval: 5000,
     gcTime: 0,
   })
-  if (database.error)
+  const selectedApplication = application.data?.id === applicationId && application.data.project === d?.project && application.data.environment === d?.environment ? application.data : undefined
+  const secretScope = selectedApplication ? { project: selectedApplication.project, environment: selectedApplication.environment, application: selectedApplication.name } : undefined
+  const secretScopeKey = secretScope ? `${secretScope.project}/${secretScope.environment}/${secretScope.application}` : ''
+  useEffect(() => {
+    setOptions((previous) => ({ ...previous, passwordSource: 'managed', passwordRef: '', passwordValue: '' }))
+    setSavedSecret('')
+    setPlan(null)
+    setConfirmation('')
+    key.current = ''
+  }, [secretScopeKey])
+  const secrets = useQuery({
+    queryKey: ['secrets', secretScope?.project, secretScope?.environment, secretScope?.application],
+    queryFn: ({ signal }) => unwrap(client.GET('/secrets', { signal, params: { query: secretScope! } })),
+    enabled: Boolean(secretScope),
+    retry: false,
+    gcTime: 0,
+  })
+  if (database.error && !d)
     return (
       <ConnectionState>
         <ErrorState error={database.error} />
@@ -76,7 +106,7 @@ function Connect({ id }: { id: string }) {
         <Loading />
       </ConnectionState>
     )
-  if (database.error || applications.error)
+  if (applications.error && !applications.data)
     return (
       <ConnectionState>
         <ErrorState error={database.error || applications.error} />
@@ -115,7 +145,15 @@ function Connect({ id }: { id: string }) {
     )
   const chosenEndpoint =
     endpoint || (d.spec.engine === 'mongodb' || ['redis', 'clickhouse'].includes(d.spec.engine) && d.spec.mode === 'cluster' ? 'cluster' : 'read_write')
-  const expired = Boolean(plan && Date.parse(plan.expires_at) <= Date.now())
+  const optionIssue = databaseBindingIssue(d.spec, options, chosenEndpoint)
+  const reviewIssue = databaseConnectionReviewIssue(plan, d.revision, selectedApplication?.revision, Math.max(now, Date.now()))
+  const refreshFailed = Boolean(database.error || applications.error || application.error)
+  const secretNames = [...new Set([...(secrets.data?.items.map((secret) => secret.name) || []), ...(savedSecret ? [savedSecret] : [])])].sort()
+  const secretsFailed = Boolean(secrets.error) && (!savedSecret || options.passwordRef !== savedSecret)
+  const unavailableSecret = options.passwordSource === 'existing' && (secretsFailed || !secretNames.includes(options.passwordRef))
+  const selectedService = Boolean(selectedApplication?.spec.services[service])
+  const canSavePassword = Boolean(selectedApplication && canAccess(identity, selectedApplication.project, 'deployments:write'))
+  const invalid = refreshFailed || Boolean(reviewIssue) || Boolean(optionIssue) || unavailableSecret || !selectedService
   function reset() {
     setPlan(null)
     setConfirmation('')
@@ -129,12 +167,28 @@ function Connect({ id }: { id: string }) {
       breadcrumbs={[]}
     >
       <form
+        className="grid gap-4"
         onSubmit={async (event) => {
           event.preventDefault()
+          if (busy || invalid || !selectedApplication || !secretScope) return
+          if (plan && databaseConnectionReviewIssue(plan, d.revision, selectedApplication.revision, Date.now())) {
+            setNow(Date.now())
+            return
+          }
+          if (!applicationId || !service || chosenEndpoint === 'cluster' && !clusterAware) return
           setBusy(true)
           setError('')
           try {
             if (!plan) {
+              let draft = options
+              if (draft.passwordSource === 'enter') {
+                if (!canSavePassword) throw new Error('Saving an application password requires deployment permission.')
+                const passwordRef = await saveDatabaseBindingPassword(draft.passwordValue, secretScope)
+                draft = { ...draft, passwordSource: 'existing', passwordRef, passwordValue: '' }
+                setOptions(draft)
+                setSavedSecret(passwordRef)
+                void cache.invalidateQueries({ queryKey: ['secrets', secretScope.project, secretScope.environment, secretScope.application] })
+              }
               setPlan(
                 await unwrap(
                   client.POST('/databases/{id}/connection-plan', {
@@ -145,11 +199,13 @@ function Connect({ id }: { id: string }) {
                       variable,
                       endpoint: chosenEndpoint,
                       cluster_aware: clusterAware,
+                      ...databaseBindingOptions(draft),
                     },
                   }),
                 ),
               )
             } else {
+              if (confirmation !== plan.application_name) return
               if (!key.current) key.current = crypto.randomUUID()
               const deployment = await unwrap(
                 client.POST('/databases/{id}/connect', {
@@ -159,6 +215,7 @@ function Connect({ id }: { id: string }) {
               )
               void cache.invalidateQueries({ queryKey: ['applications'] })
               void cache.invalidateQueries({ queryKey: ['application', plan.application_id] })
+              void cache.invalidateQueries({ queryKey: ['database-connections', id] })
               void navigate({
                 to: '/deployments/$deploymentId',
                 params: { deploymentId: deployment.id },
@@ -171,11 +228,13 @@ function Connect({ id }: { id: string }) {
           }
         }}
       >
+        {refreshFailed && <FormError focus={false}>Database or application status could not be refreshed. Your entries are preserved; retry after the connection recovers.</FormError>}
         <FormSection title="Saved connection">
           <p>
             Database: {d.spec.name} · {d.project} / {d.environment}
           </p>
-          <label>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+          <label className="min-w-0">
             Application
             <SelectField
               label="Application"
@@ -194,11 +253,12 @@ function Connect({ id }: { id: string }) {
             />
           </label>
           {(cursor || applications.data.next_cursor) && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 sm:col-span-2">
               <Button
                 disabled={busy || Boolean(plan) || !cursor}
                 onClick={() => {
                   setCursor('')
+                  reset()
                   setApplicationId('')
                   setService('')
                 }}
@@ -209,6 +269,7 @@ function Connect({ id }: { id: string }) {
                 disabled={busy || Boolean(plan) || !applications.data.next_cursor}
                 onClick={() => {
                   setCursor(applications.data.next_cursor || '')
+                  reset()
                   setApplicationId('')
                   setService('')
                 }}
@@ -218,7 +279,7 @@ function Connect({ id }: { id: string }) {
             </div>
           )}
           {application.error && <ErrorState error={application.error} />}
-          <label>
+          <label className="min-w-0">
             Service
             <SelectField
               label="Service"
@@ -231,14 +292,14 @@ function Connect({ id }: { id: string }) {
               }}
               options={[
                 { value: '', label: 'Choose a service' },
-                ...Object.keys(application.data?.spec.services || {}).map((name) => ({
+                ...Object.keys(selectedApplication?.spec.services || {}).map((name) => ({
                   value: name,
                   label: name,
                 })),
               ]}
             />
           </label>
-          <label>
+          <label className="min-w-0">
             Environment variable
             <Input
               required
@@ -252,7 +313,7 @@ function Connect({ id }: { id: string }) {
               }}
             />
           </label>
-          <label>
+          <label className="min-w-0">
             Endpoint
             <SelectField
               label="Endpoint"
@@ -270,6 +331,7 @@ function Connect({ id }: { id: string }) {
               }))}
             />
           </label>
+          </div>
           {chosenEndpoint.startsWith('pooled_') && <Note>PgBouncer uses {d.spec.pooling?.mode} pooling. Choose write or replica traffic explicitly. Clients must reconnect after failover.{d.spec.pooling?.mode === 'transaction' ? ' Session settings and temporary tables across transactions need a direct or session connection.' : ''}</Note>}
           {chosenEndpoint === 'cluster' && (
             <label className="flex min-h-11 items-center gap-2">
@@ -287,12 +349,30 @@ function Connect({ id }: { id: string }) {
             </label>
           )}
         </FormSection>
+        {application.data && !selectedApplication && <FormError focus={false}>This application is outside the database’s project or environment. Choose an application in the displayed scope.</FormError>}
+        <DatabaseBindingFields
+          spec={d.spec}
+          draft={options}
+          onChange={(draft) => { reset(); setOptions(draft) }}
+          disabled={busy || Boolean(plan)}
+          applicationName={selectedApplication?.name}
+          secretNames={secretNames}
+          secretsLoading={secrets.isPending}
+          secretsFailed={secretsFailed}
+          canSavePassword={canSavePassword}
+        />
+        {secrets.error && options.passwordSource === 'existing' && <Button className="justify-self-start" disabled={busy || secrets.isFetching || Boolean(plan)} onClick={() => void secrets.refetch()}>Retry application secrets</Button>}
+        {savedSecret && <p role="status" className="break-all text-sm">Password saved as {savedSecret} for {selectedApplication?.name}. It remains in application secrets if you leave without connecting.</p>}
+        {optionIssue && <p className="field-help" role="status">{optionIssue}</p>}
+        {unavailableSecret && options.passwordRef && <Note>The selected password is unavailable in this application. Refresh the secret list or choose another password.</Note>}
         {plan && (
+          <div ref={review} tabIndex={-1} className="outline-offset-4 focus:outline-2 focus:outline-ring">
           <FormSection title="Review connection and redeployment">
             <p>
               {plan.application_name} / {plan.service} · revision {plan.application_revision} →{' '}
               {plan.application_revision + 1}
             </p>
+            <DatabaseBindingSummary binding={plan.binding} />
             <p>
               {plan.variable}: replace {plan.previous_kind} with {plan.database_name} (
               {plan.binding.endpoint?.replaceAll('_', ' ')}), database revision{' '}
@@ -313,7 +393,7 @@ function Connect({ id }: { id: string }) {
               <Input
                 required
                 value={confirmation}
-                disabled={busy}
+                disabled={busy || Boolean(reviewIssue) || refreshFailed}
                 onChange={(e) => setConfirmation(e.target.value)}
               />
             </label>
@@ -321,11 +401,12 @@ function Connect({ id }: { id: string }) {
               Edit or refresh review
             </Button>
           </FormSection>
+          </div>
         )}
         {error && (
           <FormError>{error}</FormError>
         )}
-        {expired && <Note>This review expired. Refresh it before continuing.</Note>}
+        {reviewIssue && <Note>{reviewIssue}</Note>}
         <div className="py-4">
           <Button
             type="submit"
@@ -334,7 +415,7 @@ function Connect({ id }: { id: string }) {
               busy ||
               !applicationId ||
               !service ||
-              expired ||
+              invalid ||
               (chosenEndpoint === 'cluster' && !clusterAware) ||
               Boolean(plan && confirmation !== plan.application_name)
             }

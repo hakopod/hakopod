@@ -29,6 +29,15 @@ type DatabaseConnectionPlan struct {
 	Warnings            []string           `json:"warnings"`
 }
 
+// DatabaseConnectionOptions select an existing login and database. Passwords
+// remain application-scoped references in both reviews and saved revisions.
+type DatabaseConnectionOptions struct {
+	Username string          `json:"username,omitempty"`
+	Database string          `json:"database,omitempty"`
+	Password *spec.SecretRef `json:"password,omitempty"`
+	SSLMode  string          `json:"ssl_mode,omitempty"`
+}
+
 type databaseConnectionReview struct {
 	Plan DatabaseConnectionPlan `json:"plan"`
 	Spec spec.Application       `json:"spec"`
@@ -40,7 +49,7 @@ func databaseConnectionReviewID(ctx context.Context) string {
 	return id
 }
 
-func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, appID, service, variable, endpoint string, clusterAware bool) (DatabaseConnectionPlan, error) {
+func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, appID, service, variable, endpoint string, clusterAware bool, options ...DatabaseConnectionOptions) (DatabaseConnectionPlan, error) {
 	d, err := s.Database(ctx, p, id, true)
 	if err != nil {
 		return DatabaseConnectionPlan{}, err
@@ -67,6 +76,12 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 	}
 	if d.Spec.Engine == "oracle" {
 		b.Protocol = "oracle"
+	}
+	if len(options) > 1 {
+		return DatabaseConnectionPlan{}, ErrInput
+	}
+	if len(options) == 1 {
+		b.Username, b.Database, b.Password, b.SSLMode = options[0].Username, options[0].Database, options[0].Password, options[0].SSLMode
 	}
 	if err = validateDatabaseBinding(d, b); err != nil {
 		return DatabaseConnectionPlan{}, err
@@ -105,6 +120,15 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 		return DatabaseConnectionPlan{}, fmt.Errorf("%w: %v", ErrInput, err)
 	}
 	plan := DatabaseConnectionPlan{ID: NewID(), DatabaseID: id, DatabaseName: d.Spec.Name, DatabaseRevision: d.Revision, ApplicationID: a.ID, ApplicationName: a.Name, ApplicationRevision: a.Revision, Service: service, Variable: variable, PreviousKind: previous, Binding: b, Recovery: d.Recovery, ExpiresAt: time.Now().UTC().Add(database.ReviewLifetime), Warnings: []string{"This replaces the saved connection and queues a new application deployment. Existing pods use their previous connection until replaced.", "Source data remains available. Keep any Git-managed configuration in sync with the new binding."}}
+	if b.Username != "" || b.Password != nil || b.Database != "" {
+		plan.Warnings = append(plan.Warnings, "This binding uses an existing database and login. It does not create users, databases or grants; verify their access before deploying.")
+	}
+	if b.SSLMode == "require" {
+		plan.Warnings = append(plan.Warnings, "SSL mode require encrypts traffic but does not verify the database certificate identity.")
+	}
+	if b.SSLMode == "verify-ca" {
+		plan.Warnings = append(plan.Warnings, "SSL mode verify-ca verifies the certificate authority but does not verify the endpoint hostname.")
+	}
 	if d.Spec.Pooling != nil && (endpoint == "pooled_read_write" || endpoint == "pooled_read_only") {
 		plan.Warnings = append(plan.Warnings, "PgBouncer uses "+d.Spec.Pooling.Mode+" pooling. Clients must reconnect after failover; replica reads may lag. Routing does not grant read-only database permissions.")
 		if d.Spec.Pooling.Mode == "transaction" {

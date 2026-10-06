@@ -27,6 +27,7 @@ schemas["Spec"]["properties"].update({
 schemas["Service"]["properties"]["private_egress"] = {"type": "array", "maxItems": 16, "uniqueItems": True, "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$"}, "description": "Self-hosted: named private destinations approved by the installation administrator for this service."}
 
 schemas["Service"]["properties"]["node_name"] = {**S,"maxLength":253,"description":"Exact Kubernetes node name. Uses scheduler affinity; never bypasses taints, runtime policy or resource checks."}
+schemas["Service"]["properties"]["container_daemon"] = {**S,"maxLength":63,"pattern":"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$","description":"Name of an operator-approved container daemon binding for this service. Empty leaves it unbound."}
 
 schemas["PlacementNode"] = obj({"name":S,"architecture":S,"available":B,"reason":S}, ["name","architecture","available","reason"])
 route("/placement/nodes", "get", "listPlacementNodes", obj({"items":array(ref("PlacementNode")),"serverless_available":B},["items","serverless_available"]), scope=True)

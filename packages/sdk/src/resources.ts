@@ -1010,6 +1010,10 @@ export class DatabaseRef {
         | "pooled_read_write"
         | "pooled_read_only";
       clusterAware?: boolean;
+      username?: string;
+      database?: string;
+      password?: Schema["SecretRef"];
+      sslMode?: "" | "disable" | "require" | "verify-ca" | "verify-full";
     },
     options: RequestOptions = {},
   ): Promise<Review<Schema["DatabaseConnectionPlan"], DeploymentRun>> {
@@ -1026,13 +1030,23 @@ export class DatabaseRef {
         variable: required(input.variable, "variable"),
         endpoint: binding.endpoint,
         cluster_aware: input.clusterAware ?? false,
+        ...(binding.username === undefined ? {} : { username: binding.username }),
+        ...(binding.database === undefined ? {} : { database: binding.database }),
+        ...(binding.password === undefined ? {} : { password: binding.password }),
+        ...(binding.ssl_mode === undefined ? {} : { ssl_mode: binding.ssl_mode }),
       },
     });
     if (
       plan.database_id !== current.id ||
       plan.application_id !== input.applicationId ||
       plan.service !== input.service ||
-      plan.variable !== input.variable
+      plan.variable !== input.variable ||
+      !plan.binding ||
+      (["managed_database", "protocol", "endpoint", "username", "database", "ssl_mode"] as const)
+        .some((field) => (plan.binding[field] ?? "") !== (binding[field] ?? "")) ||
+      Boolean(plan.binding.cluster_aware) !== Boolean(binding.cluster_aware) ||
+      (["ref", "provider", "path", "key"] as const)
+        .some((field) => (plan.binding.password?.[field] ?? "") !== (binding.password?.[field] ?? ""))
     )
       throw new HakopodError(
         "The API planned a different connection replacement.",
@@ -1069,6 +1083,10 @@ export class DatabaseRef {
         | "pooled_read_write"
         | "pooled_read_only";
       clusterAware?: boolean;
+      username?: string;
+      database?: string;
+      password?: Schema["SecretRef"];
+      sslMode?: "" | "disable" | "require" | "verify-ca" | "verify-full";
     } = {},
   ): Promise<Schema["ServiceBinding"]> {
     const current = await this.get(options);
@@ -1111,6 +1129,14 @@ export class DatabaseRef {
         "Choose a connection route supported by this database configuration.",
         "invalid_binding",
       );
+    const password = options.password;
+    if (password !== undefined &&
+      (!password || typeof password !== "object" ||
+        Object.keys(password).some((key) => !["ref", "provider", "path", "key"].includes(key)) ||
+        Object.values(password).some((value) => typeof value !== "string") ||
+        (password.ref ? Boolean(password.provider || password.path || password.key) : !password.provider || !password.key))) {
+      throw new HakopodError("Use a password secret reference, never a plaintext password.", "invalid_binding");
+    }
     return {
       managed_database: current.id,
       protocol:
@@ -1119,6 +1145,10 @@ export class DatabaseRef {
       ...(options.clusterAware === undefined
         ? {}
         : { cluster_aware: options.clusterAware }),
+      ...(options.username === undefined ? {} : { username: options.username }),
+      ...(options.database === undefined ? {} : { database: options.database }),
+      ...(password === undefined ? {} : { password: snapshot(password) }),
+      ...(options.sslMode === undefined ? {} : { ssl_mode: options.sslMode }),
     };
   }
   /** Review a graceful role change. Availability still depends on the gated Enterprise runtime. */

@@ -23,6 +23,7 @@ func (s *Server) registerTemplateRoutes(routes *http.ServeMux) {
 }
 
 type templateConfiguration struct {
+	TOML             string `json:"toml,omitempty"`
 	ServiceName      string `json:"service_name,omitempty"`
 	ApplicationID    string `json:"application_id,omitempty"`
 	ExpectedRevision *int64 `json:"expected_revision,omitempty"`
@@ -44,7 +45,7 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		problem(w, 403, "forbidden", "deployment scope is not permitted")
 		return
 	}
-	if r.PathValue("id") == "vllm" && in.ModelRevision == "" {
+	if r.PathValue("id") == "vllm" && in.ModelRevision == "" && in.TOML == "" {
 		if in.UseModelToken {
 			problem(w, 400, "model_revision_required", "provide the immutable model revision for a private or gated model, then save its Hugging Face token during review")
 			return
@@ -95,6 +96,17 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if in.TOML != "" {
+		next, err = spec.Parse([]byte(in.TOML))
+		if err != nil {
+			problem(w, 400, "invalid_spec", err.Error())
+			return
+		}
+		if next.Name != in.Name {
+			problem(w, 400, "template_scope", "The edited TOML must keep the selected application name.")
+			return
+		}
+	}
 	if in.ApplicationID != "" {
 		base, ok := s.authorizedApp(w, r, in.ApplicationID, "deployments:write")
 		if !ok {
@@ -113,10 +125,12 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 			problem(w, 409, "application_busy", pinErr.Error())
 			return
 		}
-		next, err = spec.AddServices(baseSpec, next)
-		if err != nil {
-			problem(w, 400, "template_conflict", err.Error())
-			return
+		if in.TOML == "" {
+			next, err = spec.AddServices(baseSpec, next)
+			if err != nil {
+				problem(w, 400, "template_conflict", err.Error())
+				return
+			}
 		}
 	}
 	next, previous, ok := s.prepare(w, r, input{Project: in.Project, Environment: in.Environment, Spec: &next}, "deployments:write")
@@ -134,11 +148,18 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 	warnings := deliveryWarnings(r, next)
 	templateSpec, _ := spec.PlanTemplate(r.PathValue("id"), in.TemplateOptions)
 	required := spec.TemplateSecretNames(templateSpec)
-	for _, t := range spec.Templates() {
-		if t.ID == r.PathValue("id") {
-			warnings = append(warnings, t.Verification, t.ResourceSummary)
-			warnings = append(warnings, t.Requirements...)
+	if in.TOML != "" {
+		required = spec.LocalSecretNames(next)
+	}
+	if in.TOML == "" {
+		for _, t := range spec.Templates() {
+			if t.ID == r.PathValue("id") {
+				warnings = append(warnings, t.Verification, t.ResourceSummary)
+				warnings = append(warnings, t.Requirements...)
+			}
 		}
+	} else {
+		warnings = append(warnings, "This edited application uses the configuration shown in the review. Catalog verification applies to the original template.")
 	}
 	if len(required) > 0 {
 		warnings = append(warnings, fmt.Sprintf("Before deployment, save these secret references for %s/%s/%s: %s", in.Project, in.Environment, in.Name, strings.Join(required, ", ")))
@@ -148,8 +169,11 @@ func (s *Server) planTemplate(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	if in.TOML != "" {
+		in.TOML = string(canonical)
+	}
 	s.writeDeploymentPlan(w, r, in.Project, in.Environment, next, map[string]any{"application_id": id, "expected_revision": revision, "spec": next, "toml": string(canonical), "configuration": in, "changes": spec.Diff(before, next), "warnings": warnings, "resource_profiles": spec.Profiles, "required_secrets": required, "model_source": func() string {
-		if in.Model == "" || r.PathValue("id") != "vllm" {
+		if in.TOML != "" || in.Model == "" || r.PathValue("id") != "vllm" {
 			return ""
 		}
 		return "https://huggingface.co/" + in.Model + "/tree/" + url.PathEscape(in.ModelRevision)

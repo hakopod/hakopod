@@ -56,3 +56,23 @@ test('RSA credential input accepts existing 4096-bit keys within a bounded field
   assert.ok(limit >= 5 * 1024, 'the field accepts a Base64-wrapped 4096-bit private key')
   assert.ok(limit <= 8192, 'the field remains bounded')
 })
+
+test('custom template references preserve multiline secret values', () => {
+  const html = renderToStaticMarkup(
+    <TemplateSecretField
+      templateId="fixture-only"
+      custom
+      field={{ name: 'custom-certificate', description: '', format: 'password', generate: false, optional: false }}
+      query={{ project: 'fixture', environment: 'development', application: 'fixture' }}
+      value={'first line\nsecond line'}
+      onChange={() => {}}
+      replacing={false}
+      busy={false}
+      onBusy={() => {}}
+      onCancel={() => {}}
+      onSaved={() => {}}
+    />,
+  )
+  assert.match(html, /<textarea[^>]*maxLength="65536"/i)
+  assert.ok(html.includes('first line\nsecond line'))
+})

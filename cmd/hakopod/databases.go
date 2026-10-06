@@ -10,11 +10,13 @@ import (
 	"strings"
 
 	"github.com/hakopod/hakopod/internal/database"
+	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
 type databaseConnectionFlags struct {
 	ApplicationID, Service, Variable, Endpoint, JobID, HistoryRange string
+	Username, Database, PasswordSecret, SSLMode                     string
 	TargetMember, OperationID                                       string
 	PublicEndpointID, PublicEndpointPurpose, PublicEndpointCIDRs    string
 	PublicEndpointRevision, PublicEndpointMaxConnections            int64
@@ -27,6 +29,9 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 		return fmt.Errorf("database requires list, nodes, show, create, resize-plan, resize, resize-retry-plan, resize-retry, switchover-plan, switchover, switchover-retry, operation, public-endpoint-capabilities, public-endpoint-list, public-endpoint-plan, public-endpoint-publish, public-endpoint-revoke, public-endpoint-operation, delete, credentials, trust, metrics, connections, restore-plan, restore, connection-plan, connect or inspect, followed by an ID where needed")
 	}
 	action := args[0]
+	if action != "connection-plan" && (connection.Username != "" || connection.Database != "" || connection.PasswordSecret != "" || connection.SSLMode != "") {
+		return fmt.Errorf("--username, --database, --password-secret and --ssl-mode apply only to database connection-plan")
+	}
 	if connection.TargetMember != "" && action != "switchover-plan" {
 		return fmt.Errorf("--target-member applies only to switchover-plan; switchover and retries use the approved target")
 	}
@@ -158,7 +163,24 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 		if connection.ApplicationID == "" || connection.Service == "" || connection.Variable == "" {
 			return fmt.Errorf("connection-plan requires --application-id, --service and --variable")
 		}
-		method, path, body = "POST", path+"/"+id+"/connection-plan", map[string]any{"application_id": connection.ApplicationID, "service": connection.Service, "variable": connection.Variable, "endpoint": connection.Endpoint, "cluster_aware": connection.ClusterAware}
+		request := map[string]any{"application_id": connection.ApplicationID, "service": connection.Service, "variable": connection.Variable, "endpoint": connection.Endpoint, "cluster_aware": connection.ClusterAware}
+		if connection.Username != "" {
+			request["username"] = connection.Username
+		}
+		if connection.Database != "" {
+			request["database"] = connection.Database
+		}
+		if connection.SSLMode != "" {
+			request["ssl_mode"] = connection.SSLMode
+		}
+		if connection.PasswordSecret != "" {
+			ref := spec.SecretRef{Ref: connection.PasswordSecret}
+			if !ref.Valid() {
+				return fmt.Errorf("--password-secret must name a native secret in the application's scope")
+			}
+			request["password"] = ref
+		}
+		method, path, body = "POST", path+"/"+id+"/connection-plan", request
 	case "connect":
 		if review == "" || confirmation == "" {
 			return fmt.Errorf("connect requires --review-id and --name matching the reviewed application")

@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/spec"
+	"github.com/hakopod/hakopod/internal/store"
 )
 
 func (s *Server) databaseConnectionPlan(w http.ResponseWriter, r *http.Request) {
@@ -20,11 +22,12 @@ func (s *Server) databaseConnectionPlan(w http.ResponseWriter, r *http.Request) 
 		Variable      string `json:"variable"`
 		Endpoint      string `json:"endpoint"`
 		ClusterAware  bool   `json:"cluster_aware"`
+		store.DatabaseConnectionOptions
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	plan, err := s.Store.PlanDatabaseConnection(r.Context(), who(r), r.PathValue("id"), in.ApplicationID, in.Service, in.Variable, in.Endpoint, in.ClusterAware)
+	plan, err := s.Store.PlanDatabaseConnection(r.Context(), who(r), r.PathValue("id"), in.ApplicationID, in.Service, in.Variable, in.Endpoint, in.ClusterAware, in.DatabaseConnectionOptions)
 	if err != nil {
 		failure(w, err)
 		return
@@ -120,51 +123,11 @@ func (s *Server) ConfigureDatabaseBindings() {
 					if endpoint.Purpose != b.Endpoint {
 						continue
 					}
-					user, db := "app", "app"
-					if d.Spec.Engine == "vitess" {
-						db = "app@primary"
-						if b.Endpoint == "read_only" {
-							db = "app@replica"
-						}
+					password := passwords[d.ID]
+					if b.Password != nil {
+						password = nil
 					}
-					if d.Spec.Engine == "oracle" {
-						user, db = "APP", "FREEPDB1"
-						if d.Spec.Oracle != nil && d.Spec.Oracle.Edition == "enterprise" {
-							db = "APPDB"
-						}
-					}
-					if d.Spec.Engine == "redis" {
-						user, db = "default", "0"
-					}
-					u := url.URL{Scheme: b.Protocol, Host: net.JoinHostPort(endpoint.Host, strconv.Itoa(endpoint.Port)), Path: "/" + db, User: url.UserPassword(user, string(passwords[d.ID]))}
-					if d.Spec.TLSRequired() {
-						if d.Spec.Engine == "postgresql" {
-							query := u.Query()
-							query.Set("sslmode", "verify-full")
-							query.Set("sslrootcert", cluster.DatabaseTrustPath(d.ID))
-							u.RawQuery = query.Encode()
-						} else if d.Spec.Engine == "redis" {
-							u.Scheme = "rediss"
-						} else if d.Spec.Engine == "clickhouse" {
-							query := u.Query()
-							query.Set("secure", "true")
-							query.Set("skip_verify", "false")
-							u.RawQuery = query.Encode()
-						} else if d.Spec.Engine == "oracle" {
-							query := u.Query()
-							query.Set("SSL", "enable")
-							query.Set("SSL VERIFY", "true")
-							query.Set("FAST LOGIN", "false")
-							u.RawQuery = query.Encode()
-						} else if d.Spec.Engine == "mongodb" {
-							query := u.Query()
-							for key, value := range map[string]string{"tls": "true", "tlsCAFile": cluster.DatabaseTrustPath(d.ID), "replicaSet": "database", "authSource": "app", "w": "majority", "readConcernLevel": "majority", "readPreference": "primary", "retryWrites": "true"} {
-								query.Set(key, value)
-							}
-							u.RawQuery = query.Encode()
-						}
-					}
-					result[name][variable] = cluster.DatabaseConnection{URL: u.String(), Port: int32(endpoint.Port), CA: trusts[d.ID]}
+					result[name][variable] = cluster.DatabaseConnection{URL: managedDatabaseURL(d, b, endpoint, password), Port: int32(endpoint.Port), CA: trusts[d.ID]}
 					found = true
 					break
 				}
@@ -175,4 +138,67 @@ func (s *Server) ConfigureDatabaseBindings() {
 		}
 		return result, nil
 	})
+}
+
+// managedDatabaseURL never persists its result. The worker replaces referenced
+// passwords from its application-scoped secret snapshot before creating a Secret.
+func managedDatabaseURL(d database.Resource, b spec.Binding, endpoint database.Endpoint, password []byte) string {
+	user, db := "app", "app"
+	if d.Spec.Engine == "oracle" {
+		user, db = "APP", "FREEPDB1"
+		if d.Spec.Oracle != nil && d.Spec.Oracle.Edition == "enterprise" {
+			db = "APPDB"
+		}
+	}
+	if d.Spec.Engine == "redis" {
+		user, db = "default", "0"
+	}
+	if b.Username != "" {
+		user = b.Username
+	}
+	if b.Database != "" {
+		db = b.Database
+	}
+	if d.Spec.Engine == "vitess" {
+		db += "@primary"
+		if b.Endpoint == "read_only" {
+			db = strings.TrimSuffix(db, "@primary") + "@replica"
+		}
+	}
+	u := url.URL{Scheme: b.Protocol, Host: net.JoinHostPort(endpoint.Host, strconv.Itoa(endpoint.Port)), Path: "/" + db, User: url.UserPassword(user, string(password))}
+	query := u.Query()
+	if d.Spec.TLSRequired() {
+		switch d.Spec.Engine {
+		case "postgresql":
+			mode := b.SSLMode
+			if mode == "" {
+				mode = "verify-full"
+			}
+			query.Set("sslmode", mode)
+			if mode == "verify-full" || mode == "verify-ca" {
+				query.Set("sslrootcert", cluster.DatabaseTrustPath(d.ID))
+			}
+		case "redis":
+			u.Scheme = "rediss"
+		case "clickhouse":
+			query.Set("secure", "true")
+			query.Set("skip_verify", "false")
+		case "oracle":
+			query.Set("SSL", "enable")
+			query.Set("SSL VERIFY", "true")
+			query.Set("FAST LOGIN", "false")
+		case "mongodb":
+			authSource := "app"
+			if user != "app" {
+				authSource = db
+			}
+			for key, value := range map[string]string{"tls": "true", "tlsCAFile": cluster.DatabaseTrustPath(d.ID), "replicaSet": "database", "authSource": authSource, "w": "majority", "readConcernLevel": "majority", "readPreference": "primary", "retryWrites": "true"} {
+				query.Set(key, value)
+			}
+		}
+	} else if b.SSLMode == "disable" && b.Protocol == "postgres" {
+		query.Set("sslmode", "disable")
+	}
+	u.RawQuery = query.Encode()
+	return u.String()
 }

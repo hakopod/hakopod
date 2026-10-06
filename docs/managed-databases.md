@@ -194,10 +194,10 @@ physical zone/provider resilience or a throughput guarantee.
 
 ## Application connections
 
-The database detail page can review a connection replacement, save it to the application specification and queue a redeployment in one transaction. It requires the application's exact name as confirmation. A review expires after ten minutes and becomes invalid when either revision or the recovery evidence changes.
+The database detail page asks which application, service, endpoint, database, login and SSL mode to bind. Keep the managed credentials or supply the password using an existing scoped secret or a new write-only password entry. The review saves the connection to the application specification and queues a redeployment in one transaction. It requires the application's exact name as confirmation. A review expires after ten minutes and becomes invalid when either revision or the recovery evidence changes.
 
 ```sh
-hakopod database connection-plan DATABASE_ID --application-id APP_ID --service api --variable DATABASE_URL --endpoint read_write
+hakopod database connection-plan DATABASE_ID --application-id APP_ID --service api --variable DATABASE_URL --endpoint read_write --username infisical_user --database infisical --password-secret infisical-password --ssl-mode verify-full
 hakopod database connect DATABASE_ID --review-id REVIEW_ID --name orders-app
 ```
 
@@ -210,6 +210,40 @@ The saved application specification contains a reference, not a password:
 managed_database = "DATABASE_ID"
 protocol = "postgres"
 endpoint = "read_write"
+username = "infisical_user"
+database = "infisical"
+ssl_mode = "verify-full"
+
+[services.api.bindings.DATABASE_URL.password]
+ref = "infisical-password"
+```
+
+The login and database must already exist, with the appropriate database grants.
+Binding does not create accounts or change their privileges. Omitted fields keep
+the managed defaults, so existing configurations continue to work. A custom login
+requires a password reference. Native references resolve in the application's
+project, environment and application scope; external provider references use the
+same `provider`, `path` and `key` fields as other service secrets. Password values
+never enter connection reviews, application specifications or deployment history.
+
+For Redis, `database` is an index from `0` to `15`; cluster clients use `0`.
+Pooled PostgreSQL endpoints currently accept only the managed `app` login and
+database; choose a direct endpoint for custom credentials. The managed Vitess
+gateway currently provisions only the `app` login and keyspace. Its selected
+endpoint adds `@primary` or `@replica`. For a custom MongoDB login, the selected
+database is also its authentication database; the managed default login continues
+to authenticate against `app`. For Oracle, `database` selects the service name.
+
+The TypeScript SDK accepts the same options in `database.binding()` and
+`database.connectionPlan()`, using `sslMode` for `ssl_mode`:
+
+```ts
+const binding = await client.database(databaseId).binding({
+  username: "infisical_user",
+  database: "infisical",
+  password: { ref: "infisical-password" },
+  sslMode: "verify-full",
+});
 ```
 
 At deployment time, the worker verifies live database health and resolves application credentials into that service's environment Secret. Namespace and service network rules permit the connection. Removing a binding removes its grant. Application-scoped keys can redeploy an unchanged, previously authorized binding; adding or changing a binding requires project deployment permission. Referenced databases cannot be deleted.
@@ -240,7 +274,16 @@ Managed application bindings mount each bound database's public CA at
 `/var/run/secrets/hakopod-database/DATABASE_ID.crt`. This is a read-only,
 service-scoped ConfigMap containing no private key. Unbound services receive no
 trust mount. PostgreSQL connection URLs set `sslmode=verify-full` and the mounted
-`sslrootcert` path. External PostgreSQL clients must set that path to their own
+`sslrootcert` path by default. PostgreSQL bindings can explicitly choose
+`verify-full` (CA and hostname verification), `verify-ca` (CA verification), or
+`require` (encryption without guaranteed server identity verification).
+`verify-full` is recommended. `disable` is accepted only for a legacy PostgreSQL
+or Redis database whose policy permits plaintext. Choosing a mode does not change
+the database's TLS policy. Redis, MongoDB, ClickHouse and Oracle support
+`verify-full`; their driver may still need the mounted CA configured separately.
+MySQL and Vitess use driver-specific TLS settings, so leave `ssl_mode` omitted and
+configure the driver to verify the endpoint hostname with the mounted CA.
+External PostgreSQL clients must set the certificate path to their own
 downloaded CA file and connect to the endpoint hostname.
 
 Redis bindings use `rediss://`. Redis drivers do not share a universal CA URI
@@ -249,6 +292,12 @@ Python redis-py uses `Redis.from_url(url, ssl_ca_certs=ca_path,
 ssl_cert_reqs="required", ssl_check_hostname=True)`. Cluster clients must also
 verify the advertised member names and reach all members. Never disable
 verification to make a private CA connection work.
+
+For Node clients that use the default trust store, including Infisical's ioredis
+connection, set `NODE_EXTRA_CA_CERTS` to the mounted Redis CA path before the Node
+process starts. A driver that supplies its own `ca` option must load that CA
+explicitly instead. SSL mode selection alone cannot configure every client
+library's trust store.
 
 PostgreSQL certificate issuance and renewal use CloudNativePG. Redis uses one
 private issuer per database and rotates its 30-day server identity seven days
