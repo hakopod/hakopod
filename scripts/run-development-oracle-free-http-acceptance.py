@@ -221,7 +221,7 @@ def run(args):
     limits = runner_limits()
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     sources, images = VERIFIER["source_files"](ROOT), VERIFIER["source_images"](ROOT)
-    kube = [str(args.kubectl), "--kubeconfig", str(args.kubeconfig), "--context", "k3d-hakopod-dev"]
+    kube = NATIVE["kubectl_command"](args.kubectl, args.kubeconfig, args.cache)
     identity, capacity = NATIVE["environment"](kube, args.nodes.split(","), images, args.sidb_crd, "http-api", args.output, args.docker)
     (args.output / "host-capacity-before.json").write_text(json.dumps(host_capacity(kube, limits, args.docker), indent=2, sort_keys=True) + "\n")
     env = {key: value for key, value in os.environ.items() if not key.startswith(("GO", "CGO_", "HAKOPOD_", "AWS_"))}
@@ -230,9 +230,8 @@ def run(args):
                CGO_ENABLED="0", GOOS="linux", GOARCH="amd64", GOCACHE=str(args.cache / "go-build"),
                GOMODCACHE=str(args.cache / "go-mod"), GOTMPDIR=str(args.cache / "go-tmp"), TMPDIR=str(args.cache / "tmp"),
                HAKOPOD_ORACLE_FREE_HTTP_TEST="1", HAKOPOD_KEEP_DATABASE_FIXTURES="1",
-               HOME=str(args.cache / "home"),
                HAKOPOD_TEST_KUBECONFIG=str(args.kubeconfig), HAKOPOD_ORACLE_FREE_HTTP_NODES=args.nodes)
-    for key in ("GOCACHE", "GOMODCACHE", "GOTMPDIR", "TMPDIR", "HOME"):
+    for key in ("GOCACHE", "GOMODCACHE", "GOTMPDIR", "TMPDIR"):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
     log = args.output / "native-test.jsonl"
     test = "TestManagedOracleFreeHTTPLive"

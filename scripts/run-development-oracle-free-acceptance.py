@@ -161,6 +161,17 @@ def metadata(kube, arguments):
     return RUNNER["command_json"]([*kube, *arguments, "-o", "json"])
 
 
+def kubectl_command(kubectl, kubeconfig, cache):
+    if (not cache.is_absolute() or ".." in cache.parts or cache.is_relative_to(ROOT)
+            or any(path.is_symlink() for path in (cache, *cache.parents))):
+        raise ValueError("Oracle kubectl cache requires an absolute nonsymbolic path outside source")
+    directory = cache / "kubectl"
+    if directory.is_symlink():
+        raise ValueError("Oracle kubectl cache must not be a symbolic link")
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return [str(kubectl), "--cache-dir", str(directory), "--kubeconfig", str(kubeconfig), "--context", "k3d-hakopod-dev"]
+
+
 def environment(kube, nodes, images, crd, case, scratch, docker, evidence_name="capacity-before.json"):
     import yaml
     if not nodes or len(nodes) != len(set(nodes)) or not set(nodes) <= NODES:
@@ -230,9 +241,9 @@ def cleanup(kube, namespaces, case):
 def run(args):
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise ValueError("Oracle acceptance requires the approved Linux amd64 VM")
+    kube = kubectl_command(args.kubectl, args.kubeconfig, args.cache)
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     sources, images = VERIFIER["source_files"](ROOT), VERIFIER["source_images"](ROOT)
-    kube = [str(args.kubectl), "--kubeconfig", str(args.kubeconfig), "--context", "k3d-hakopod-dev"]
     identity, capacity = environment(kube, args.nodes.split(","), images, args.sidb_crd, args.case, args.output, args.docker)
     env = {key: value for key, value in os.environ.items() if not key.startswith(("GO", "CGO_", "HAKOPOD_", "AWS_"))}
     env.update(PATH=str(args.go.parent) + ":" + str(args.kubectl.parent) + ":/usr/local/bin:/usr/bin:/bin",
