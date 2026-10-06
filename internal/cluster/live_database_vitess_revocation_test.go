@@ -19,12 +19,11 @@ func TestManagedVitessBackupRevocationLive(t *testing.T) {
 	health := waitVitessFixture(t, ctx, c, d, password)
 	client := vitessFixtureClient(t, ctx, c, d, health, password, "app@primary", 0)
 	seedVitessFixture(t, ctx, client)
-	original := map[string]string{}
-	for _, member := range health.Members {
-		original[member.Name] = member.UID
-	}
-	revoke := func() {
+	original := vitessFixtureTabletIdentities(t, ctx, c, d, health)
+	revoke := func(phase string) {
 		t.Helper()
+		before := vitessFixtureTabletIdentities(t, ctx, c, d, health)
+		t.Logf("Vitess %s starts at %s with %d tablets", phase, time.Now().UTC().Format(time.RFC3339Nano), len(before))
 		fixtures.revoked[d.ID] = true
 		wait, stop := context.WithTimeout(ctx, 3*time.Minute)
 		defer stop()
@@ -39,15 +38,11 @@ func TestManagedVitessBackupRevocationLive(t *testing.T) {
 				t.Fatal("Vitess native backup revocation did not finish")
 			}
 		}
-		for name, uid := range original {
-			pod, err := c.kube.CoreV1().Pods(DatabaseNamespace(d.ID)).Get(ctx, name, metav1.GetOptions{})
-			if err != nil || string(pod.UID) != uid || pod.DeletionTimestamp != nil {
-				t.Fatal("Vitess storage revocation replaced a database tablet")
-			}
-		}
+		checkVitessFixtureTabletIdentities(t, ctx, c, d, before, phase)
 		checkVitessFixtureData(t, ctx, client)
+		t.Logf("Vitess %s preserved tablet identities at %s", phase, time.Now().UTC().Format(time.RFC3339Nano))
 	}
-	revoke()
+	revoke("first storage revocation")
 	fixtures.revoked[d.ID] = false
 	wait, stop := context.WithTimeout(ctx, 5*time.Minute)
 	defer stop()
@@ -61,6 +56,7 @@ func TestManagedVitessBackupRevocationLive(t *testing.T) {
 		}
 	}
 	health = waitVitessFixture(t, wait, c, d, password)
+	checkVitessFixtureTabletIdentities(t, ctx, c, d, original, "storage reapproval")
 	object, err := c.dynamic.Resource(vitessDatabaseResource).Namespace(DatabaseNamespace(d.ID)).Get(ctx, "database", metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -77,10 +73,39 @@ func TestManagedVitessBackupRevocationLive(t *testing.T) {
 	}
 	client = vitessFixtureClient(t, ctx, c, d, health, password, "app@primary", 0)
 	checkVitessFixtureData(t, ctx, client)
-	revoke()
+	revoke("second storage revocation")
 	// Fixture cleanup must finish deletion with approval still absent. The
 	// namespace operator may resume only to finish the owned native finalizers.
 	t.Log("Vitess native backup revocation removed new-backup authority, retained tablet data, restored the approved schedule and enters deletion with approval revoked")
+}
+
+func vitessFixtureTabletIdentities(t *testing.T, ctx context.Context, c *Client, d database.Resource, health database.Observation) map[string]string {
+	t.Helper()
+	if len(health.Members) == 0 || len(health.Members) > database.MaxMembers {
+		t.Fatal("Vitess tablet identity inventory is empty or exceeds its bound")
+	}
+	identities := make(map[string]string, len(health.Members))
+	for _, member := range health.Members {
+		if member.Name == "" || member.UID == "" || identities[member.Name] != "" {
+			t.Fatal("Vitess tablet identity inventory is incomplete or duplicated")
+		}
+		identities[member.Name] = member.UID
+	}
+	checkVitessFixtureTabletIdentities(t, ctx, c, d, identities, "revocation baseline")
+	return identities
+}
+
+func checkVitessFixtureTabletIdentities(t *testing.T, ctx context.Context, c *Client, d database.Resource, identities map[string]string, phase string) {
+	t.Helper()
+	for name, uid := range identities {
+		pod, err := c.kube.CoreV1().Pods(DatabaseNamespace(d.ID)).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("Vitess %s lost tablet %q: %v", phase, name, err)
+		}
+		if string(pod.UID) != uid || pod.DeletionTimestamp != nil {
+			t.Fatalf("Vitess %s replaced tablet %q: expected UID %s, observed UID %s, deleting=%t", phase, name, uid, pod.UID, pod.DeletionTimestamp != nil)
+		}
+	}
 }
 
 func vitessFixtureRevocationComplete(t *testing.T, ctx context.Context, c *Client, d database.Resource) bool {

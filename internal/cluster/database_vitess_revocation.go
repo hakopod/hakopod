@@ -196,7 +196,9 @@ func (c *Client) revokeVitessBackupAuthority(ctx context.Context, d database.Res
 		}
 		databaseUID = object.GetUID()
 		updated := object.DeepCopy()
-		unstructured.RemoveNestedField(updated.Object, "spec", "backup")
+		// Mark the refusal before stopping processes so reapproval cannot skip
+		// unfinished cleanup. Keep the tablet backup configuration unchanged
+		// until the operator has exited; removing it can trigger a tablet roll.
 		annotations := updated.GetAnnotations()
 		if annotations == nil {
 			annotations = map[string]string{}
@@ -219,10 +221,12 @@ func (c *Client) revokeVitessBackupAuthority(ctx context.Context, d database.Res
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
+	var operatorUID types.UID
 	if err == nil {
 		if !vitessNamespaceObjectOwned(operator, d, ns.UID) {
 			return fmt.Errorf("Vitess revocation operator ownership changed")
 		}
+		operatorUID = operator.UID
 		if operator.Spec.Replicas == nil || *operator.Spec.Replicas != 0 {
 			operator.Spec.Replicas = ptr(int32(0))
 			if err = before(); err != nil {
@@ -251,11 +255,11 @@ func (c *Client) revokeVitessBackupAuthority(ctx context.Context, d database.Res
 		if !vitessNamespaceObjectOwned(current, d, ns.UID) {
 			return fmt.Errorf("Vitess native backup revocation resource ownership changed")
 		}
-		uid := current.GetUID()
+		uid, resourceVersion := current.GetUID(), current.GetResourceVersion()
 		if err = before(); err != nil {
 			return err
 		}
-		if err = resource.Delete(ctx, target.name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); err != nil && !apierrors.IsNotFound(err) {
+		if err = resource.Delete(ctx, target.name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}}); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -286,7 +290,46 @@ func (c *Client) revokeVitessBackupAuthority(ctx context.Context, d database.Res
 			}
 		}
 	}
-	return c.stopVitessBackupProcesses(ctx, d, ns.UID, databaseUID, before)
+	if err = c.stopVitessBackupProcesses(ctx, d, ns.UID, databaseUID, before); err != nil {
+		return err
+	}
+	// A scale request alone does not prove that the Deployment controller
+	// has observed it. Wait for both its zero-replica status and the empty
+	// process inventory above before changing desired tablet configuration.
+	operator, err = c.kube.AppsV1().Deployments(ns.Name).Get(ctx, "vitess-operator", metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	if err == nil {
+		if !vitessNamespaceObjectOwned(operator, d, ns.UID) || operator.UID != operatorUID {
+			return fmt.Errorf("Vitess revocation operator changed during cleanup")
+		}
+		if operator.Spec.Replicas == nil || *operator.Spec.Replicas != 0 || operator.Status.ObservedGeneration < operator.Generation || operator.Status.Replicas != 0 || operator.Status.ReadyReplicas != 0 || operator.Status.AvailableReplicas != 0 || operator.Status.UpdatedReplicas != 0 {
+			return VitessBackupRevocationPending
+		}
+	}
+	if databaseUID == "" {
+		return nil
+	}
+	current, err := api.Get(ctx, "database", metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if current.GetUID() != databaseUID || current.GetLabels()[databaseOwner] != d.ID || current.GetLabels()[managedBy] != "hakopod" || current.GetAnnotations()[vitessBackupRevoked] != "true" {
+		return fmt.Errorf("Vitess native backup controller changed during revocation")
+	}
+	updated := current.DeepCopy()
+	unstructured.RemoveNestedField(updated.Object, "spec", "backup")
+	if !reflect.DeepEqual(updated.Object, current.Object) {
+		if err = before(); err != nil {
+			return err
+		}
+		_, err = api.Update(ctx, updated, metav1.UpdateOptions{})
+	}
+	return err
 }
 
 func (c *Client) stopVitessBackupProcesses(ctx context.Context, d database.Resource, namespaceUID, databaseUID types.UID, before func() error) error {
@@ -311,7 +354,7 @@ func (c *Client) stopVitessBackupProcesses(ctx context.Context, d database.Resou
 			return err
 		}
 		foreground := metav1.DeletePropagationForeground
-		if err = c.kube.BatchV1().Jobs(ns).Delete(ctx, job.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &job.UID}, PropagationPolicy: &foreground}); err != nil && !apierrors.IsNotFound(err) {
+		if err = c.kube.BatchV1().Jobs(ns).Delete(ctx, job.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &job.UID, ResourceVersion: &job.ResourceVersion}, PropagationPolicy: &foreground}); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -344,7 +387,7 @@ func (c *Client) stopVitessBackupProcesses(ctx context.Context, d database.Resou
 		if err = before(); err != nil {
 			return err
 		}
-		if err = c.kube.CoreV1().Pods(ns).Delete(ctx, pod.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &pod.UID}}); err != nil && !apierrors.IsNotFound(err) {
+		if err = c.kube.CoreV1().Pods(ns).Delete(ctx, pod.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &pod.UID, ResourceVersion: &pod.ResourceVersion}}); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
