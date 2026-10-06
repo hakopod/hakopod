@@ -33,8 +33,9 @@ FILES = {"operator-upstream.patch", "sidb-v4.yaml", "build-artifacts.txt", "sour
          "packaging-receipt.json", "native-acceptance.json"}
 
 
-def file_hash(path, limit=64 * 1024 * 1024):
-    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= limit:
+def file_hash(path, limit=64 * 1024 * 1024, *, allow_empty=False):
+    minimum_size = 0 if allow_empty else 1
+    if path.is_symlink() or not path.is_file() or not minimum_size <= path.stat().st_size <= limit:
         raise ValueError("Missing, symbolic or oversized Oracle qualification artifact: " + path.name)
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
@@ -84,7 +85,7 @@ def source_files(root):
         if any((root / parent).is_symlink() for parent in path.relative_to(root).parents):
             raise ValueError("Oracle source directory is symbolic")
         relative = path.relative_to(root).as_posix()
-        digest = file_hash(path)
+        digest = file_hash(path, allow_empty=True)
         result[relative] = qualification_gate_hash(path) if relative == GATE_PATH else digest
         total += path.stat().st_size
         if total > 128 * 1024 * 1024:
