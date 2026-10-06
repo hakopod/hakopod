@@ -1,6 +1,3 @@
-Draft candidate notes. Five native cases passed on the current source.
-Publication still requires the complete HTTP workflow and alpha.55 package checks.
-
 Hakopod 0.1.0-alpha.55 adds self-hosted Managed Vitess for applications that
 need an explicit MySQL sharding key. It supports standalone Vitess and fixed
 cluster layouts with one, two, four or eight shards and up to five replicas per
@@ -10,8 +7,8 @@ select `app@primary` or `app@replica` explicitly.
 The native qualification covers lifecycle, recovery, replica reseeding, backup
 approval revocation and the maximum supported topology. Anonymous image
 verification passed against the recorded binary checksums. The official HTTP
-workflow and package checks remain pending; the earlier HTTP diagnostic does
-not satisfy that release requirement.
+workflow passed creation, encrypted backup, separate-target restore, inspection,
+verified application access and scoped deletion with complete fixture cleanup.
 
 The service runs Vitess 23.0.6 with MySQL 8.4.6, Vitess Operator 2.16.0 and a
 three-member etcd topology. Hakopod owns authorization and durable operations.

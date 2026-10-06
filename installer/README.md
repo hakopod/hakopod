@@ -311,7 +311,7 @@ Managed Actions is an optional Pro module. See [the setup and lifecycle guide](.
 
 The installer kit carries a `deploy/database-controllers` bundle. Release
 packaging renders PostgreSQL, Redis, MySQL, MongoDB and ClickHouse controller
-sources with pinned checksums and image digests. The alpha.55 candidate can
+sources with pinned checksums and image digests. Alpha.55 can
 render Vitess only when its installed release evidence matches the compiled
 source and image identities. Use the bundle from the same
 release as the installed server. Oracle Database remains held for a later
@@ -344,8 +344,7 @@ images; packaging stops when those records are missing or stale. An enabled
 Vitess payload contains eight CRDs. Hakopod creates a separate,
 namespace-scoped operator for each Vitess database; this module does not install
 a shared Vitess controller. A kit that omits Vitess cannot enable it. The
-alpha.55 candidate passed its five native cases and still requires the official
-HTTP workflow and package checks against its final source and images;
+alpha.55 runtime passed its five native cases and the official HTTP workflow;
 ARM64 remains unqualified.
 
 From the matching extracted installer kit on a completed installer-owned host:
@@ -386,7 +385,7 @@ These commands install controller infrastructure only. They do not create or
 resize databases, delete volumes, change node runtimes, enable Cloud admission,
 or establish native acceptance. `scripts/install-development-*` remain confined
 to the named development cluster and are not the shipped installation path.
-Vitess requires fresh evidence matching the current alpha.55 candidate, a
+Vitess requires evidence matching the installed alpha.55 source, a
 complete passing HTTP recovery report, completed package checks and the compiled
 release gate.
 Oracle Free uses its own engine-owned workload and has no additional controller

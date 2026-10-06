@@ -1,8 +1,7 @@
 # Managed Vitess
 
-Status: release candidate for Hakopod 0.1.0-alpha.55 on Linux amd64 workers.
-Five native cases passed on the current source after rebasing. The official
-HTTP run and package checks remain required before publication.
+Status: included in Hakopod 0.1.0-alpha.55 on Linux amd64 workers.
+Five native cases and the official HTTP workflow passed on the qualified source.
 Development acceptance does not establish independent
 multi-zone or multi-provider availability. See the
 [acceptance record](managed-database-release-acceptance.md) for exact evidence.
@@ -46,7 +45,7 @@ key, replication credentials or backup storage credentials.
 
 The release selects Vitess 23.0.6, MySQL 8.4.6, Vitess Operator 2.16.0 and etcd
 3.5.17. Hakopod's patched runtime and operator images are pinned to the digests
-in the alpha.55 candidate records. The runtime targets amd64. ARM64 has not been
+in the alpha.55 qualification records. The runtime targets amd64. ARM64 has not been
 qualified.
 
 ## Layout and routing
@@ -67,7 +66,7 @@ needs this routing. A query that includes that key can target its shard;
 queries without it may visit several shards. Choose the key around access
 patterns and transaction boundaries, rather than choosing a shard count first.
 
-This configuration is an example for the release candidate. The
+This configuration is an example for the managed runtime. The
 backup destination ID must come from an existing, operator-approved destination;
 the placeholder below is not a usable ID.
 
@@ -189,7 +188,7 @@ replication transport settings, the reviewed VSchema, owned pod identities and
 allocated resources. Gateway checks authenticate through TLS, compare the served
 certificate with the issued certificate and require plaintext refusal.
 Certificate rotation and primary failover passed native lifecycle acceptance
-on the source recorded for the alpha.55 candidate.
+on the source recorded for alpha.55.
 
 Requested resources and measured resource samples are separate facts. A desired
 replica count is not evidence that replicas are healthy. Missing native metrics
@@ -240,7 +239,7 @@ path. The file must be regular, no larger than 64 KiB and not writable by group
 or other users. Changing endpoint addresses requires operator review and a
 runtime restart. An address change is allowed to interrupt backups rather than
 silently expanding network access. The runtime remains disabled unless the
-compiled release gate is enabled and the installation uses the pinned candidate
+compiled release gate is enabled and the installation uses the pinned release
 images and satisfies the approval, worker and capacity checks.
 
 Native storage approval is checked separately from certificate renewal. A
