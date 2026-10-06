@@ -1,0 +1,361 @@
+package controllers
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	structuralschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/defaulting"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/pruning"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"os"
+	"path/filepath"
+	"reflect"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
+	"slices"
+	"testing"
+
+	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
+	dbcommons "github.com/oracle/oracle-database-operator/commons/database"
+)
+
+func TestHakopodOracleFreeResourceRejectsOtherLifecyclePaths(t *testing.T) {
+	root := os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR")
+	if root == "" {
+		t.Fatal("requires the exported Hakopod Free candidate")
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "database.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object dbapi.SingleInstanceDatabase
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&object); err != nil {
+		t.Fatal("candidate is not a valid v4 SIDB", err)
+	}
+	if err = validateHakopodFreeResource(&object); err != nil {
+		t.Fatal("candidate failed its fixed resource contract", err)
+	}
+	for name, change := range map[string]func(*dbapi.SingleInstanceDatabase){
+		"restore":           func(m *dbapi.SingleInstanceDatabase) { m.Spec.Restore = &dbapi.SingleInstanceDatabaseRestoreSpec{} },
+		"custom scripts":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.Scripts = &dbapi.SingleInstanceDatabaseScriptsSpec{} },
+		"truecache":         func(m *dbapi.SingleInstanceDatabase) { m.Spec.TrueCache = &dbapi.SingleInstanceDatabaseTrueCacheSpec{} },
+		"archive logging":   func(m *dbapi.SingleInstanceDatabase) { yes := true; m.Spec.ArchiveLog = &yes },
+		"external endpoint": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Services.Endpoints[0].Type = "LoadBalancer" },
+		"foreign admin":     func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.Secrets.Admin.SecretName = "foreign" },
+		"data guard wallet": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.TCPS.ClientWalletSecret = "foreign" },
+		"existing data":     func(m *dbapi.SingleInstanceDatabase) { m.Spec.Persistence.Oradata.PvcName = "foreign" },
+		"extra backup": func(m *dbapi.SingleInstanceDatabase) {
+			m.Spec.Persistence.AdditionalPVCs = append(m.Spec.Persistence.AdditionalPVCs, m.Spec.Persistence.AdditionalPVCs[0])
+		},
+		"partial image": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Image.PrebuiltDB = false },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := object.DeepCopy()
+			change(changed)
+			if validateHakopodFreeResource(changed) == nil {
+				t.Fatal("accepted unsupported lifecycle settings")
+			}
+		})
+	}
+}
+
+func TestHakopodOracleFreeCreatesProtectedClaims(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR"), "database.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object dbapi.SingleInstanceDatabase
+	if err = json.Unmarshal(raw, &object); err != nil {
+		t.Fatal(err)
+	}
+	object.UID = "database-uid"
+	scheme := runtime.NewScheme()
+	if err = corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err = dbapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	reconciler := &SingleInstanceDatabaseReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build(), Scheme: scheme, Log: logr.Discard()}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: object.Namespace, Name: object.Name}}
+	if _, err = reconciler.createOrReplacePVCforDatafilesVol(context.Background(), request, &object); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = reconciler.createOrReplacePVCsForAdditionalPVCs(context.Background(), request, &object); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"database", "database-additional-0"} {
+		var claim corev1.PersistentVolumeClaim
+		if err = reconciler.Get(context.Background(), types.NamespacedName{Namespace: object.Namespace, Name: name}, &claim); err != nil {
+			t.Fatal(err)
+		}
+		owner := metav1.GetControllerOf(&claim)
+		if !slices.Contains(claim.Finalizers, dbcommons.HakopodOracleFreeStorageFinalizer) || owner == nil || owner.UID != object.UID || owner.BlockOwnerDeletion == nil || !*owner.BlockOwnerDeletion {
+			t.Fatal("claim can disappear before Hakopod finishes reclamation")
+		}
+	}
+}
+
+func TestHakopodOracleFreeCandidateSurvivesCRDAdmission(t *testing.T) {
+	root := os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR")
+	raw, err := os.ReadFile(filepath.Join(root, "database.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := os.ReadFile(filepath.Join(root, "sidb.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var crd apiextensionsv1.CustomResourceDefinition
+	if err = yaml.UnmarshalStrict(definition, &crd); err != nil {
+		t.Fatal(err)
+	}
+	if len(crd.Spec.Versions) != 1 || crd.Spec.Versions[0].Name != "v4" || crd.Spec.Versions[0].Schema == nil {
+		t.Fatal("requires the actual v4-only SIDB definition")
+	}
+	var props apiextensions.JSONSchemaProps
+	if err = apiextensionsv1.Convert_v1_JSONSchemaProps_To_apiextensions_JSONSchemaProps(crd.Spec.Versions[0].Schema.OpenAPIV3Schema, &props, nil); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := structuralschema.NewStructural(&props)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, _, err := validation.NewSchemaValidator(&props)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original, admitted map[string]any
+	if err = json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(raw, &admitted); err != nil {
+		t.Fatal(err)
+	}
+	pruning.Prune(admitted, schema, true)
+	defaulting.Default(admitted, schema)
+	if failures := validation.ValidateCustomResource(field.NewPath("candidate"), admitted, validator); len(failures) != 0 {
+		t.Fatal(failures.ToAggregate())
+	}
+	if !reflect.DeepEqual(original["spec"], admitted["spec"]) {
+		t.Fatal("CRD admission changed the accepted Free specification")
+	}
+	encoded, err := json.Marshal(admitted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object dbapi.SingleInstanceDatabase
+	if err = json.Unmarshal(encoded, &object); err != nil {
+		t.Fatal(err)
+	}
+	if err = validateHakopodFreeResource(&object); err != nil {
+		t.Fatal("defaulted candidate rejected", err)
+	}
+}
+
+func freeControllerFixture(t *testing.T) (*dbapi.SingleInstanceDatabase, *corev1.Pod, *runtime.Scheme) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR"), "database.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object dbapi.SingleInstanceDatabase
+	if err = json.Unmarshal(raw, &object); err != nil {
+		t.Fatal(err)
+	}
+	object.UID, object.ResourceVersion = "database-uid", "7"
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "database-member", Namespace: object.Namespace, UID: "member-uid", ResourceVersion: "8", Labels: map[string]string{"app": object.Name}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: object.Spec.Image.PullFrom}}}}
+	if err = dbcommons.ApplyHakopodFreePodPolicy(pod, object.ObjectMeta); err != nil {
+		t.Fatal(err)
+	}
+	yes := true
+	pod.OwnerReferences = []metav1.OwnerReference{{APIVersion: "database.oracle.com/v4", Kind: "SingleInstanceDatabase", Name: object.Name, UID: object.UID, Controller: &yes, BlockOwnerDeletion: &yes}}
+	pod.Status = corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "database", Ready: true}}}
+	scheme := runtime.NewScheme()
+	if err = corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err = dbapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	return &object, pod, scheme
+}
+
+func TestHakopodOracleFreeFindPodsRejectsSpoofedExecTargets(t *testing.T) {
+	for _, mode := range []string{"owned", "foreign owner", "empty containers", "unbounded inventory"} {
+		t.Run(mode, func(t *testing.T) {
+			object, pod, scheme := freeControllerFixture(t)
+			if mode == "foreign owner" {
+				pod.OwnerReferences[0].UID = "another-database"
+			}
+			if mode == "empty containers" {
+				pod.Spec.Containers = nil
+			}
+			objects := []client.Object{object, pod}
+			if mode == "unbounded inventory" {
+				for _, name := range []string{"second-member", "third-member"} {
+					other := pod.DeepCopy()
+					other.Name, other.UID = name, types.UID(name)
+					objects = append(objects, other)
+				}
+			}
+			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
+			ready, count, available, deleting, err := dbcommons.FindPods(reader, "", "", object.Name, object.Namespace, context.Background(), request)
+			if mode == "owned" {
+				if err != nil || ready.UID != pod.UID || count != 1 || len(available) != 0 || len(deleting) != 0 {
+					t.Fatal("owned member was not selected", err)
+				}
+			} else if err == nil || ready.UID != "" || count != 0 || len(available) != 0 || len(deleting) != 0 {
+				t.Fatal("unsafe inventory exposed an execution target")
+			}
+		})
+	}
+}
+
+type freeDeletionClient struct {
+	client.Client
+	deletes   []client.DeleteOptions
+	deleteErr error
+}
+
+func (c *freeDeletionClient) Delete(ctx context.Context, object client.Object, options ...client.DeleteOption) error {
+	var applied client.DeleteOptions
+	for _, option := range options {
+		option.ApplyToDelete(&applied)
+	}
+	c.deletes = append(c.deletes, applied)
+	if c.deleteErr != nil {
+		return c.deleteErr
+	}
+	return c.Client.Delete(ctx, object, options...)
+}
+
+func TestHakopodOracleFreeDeletePodsFencesIdentityAndPropagatesFailure(t *testing.T) {
+	for _, mode := range []string{"owned", "foreign owner", "delete failed"} {
+		t.Run(mode, func(t *testing.T) {
+			object, pod, scheme := freeControllerFixture(t)
+			if mode == "foreign owner" {
+				pod.OwnerReferences[0].UID = "another-database"
+			}
+			probe := &freeDeletionClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(object, pod).Build()}
+			if mode == "delete failed" {
+				probe.deleteErr = errors.New("identity changed before deletion")
+			}
+			reconciler := &SingleInstanceDatabaseReconciler{Client: probe, Scheme: scheme, Log: logr.Discard()}
+			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
+			_, err := reconciler.deletePods(context.Background(), request, object, []corev1.Pod{*pod}, corev1.Pod{}, 1, 0)
+			if mode == "owned" && err != nil || mode != "owned" && err == nil {
+				t.Fatal("unexpected deletion result", err)
+			}
+			if mode == "foreign owner" {
+				if len(probe.deletes) != 0 {
+					t.Fatal("attempted to delete a foreign member")
+				}
+				return
+			}
+			if len(probe.deletes) != 1 {
+				t.Fatal("expected one fenced delete")
+			}
+			options := probe.deletes[0]
+			if options.GracePeriodSeconds != nil || options.Preconditions == nil || options.Preconditions.UID == nil || *options.Preconditions.UID != pod.UID || options.Preconditions.ResourceVersion == nil || *options.Preconditions.ResourceVersion != pod.ResourceVersion {
+				t.Fatal("delete discarded the graceful shutdown or member identity")
+			}
+		})
+	}
+}
+
+func TestHakopodOracleFreeCleanupFencesClaims(t *testing.T) {
+	for _, mode := range []string{"owned", "foreign owner", "missing protection", "delete failed"} {
+		t.Run(mode, func(t *testing.T) {
+			object, _, scheme := freeControllerFixture(t)
+			probe := &freeDeletionClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(object).Build()}
+			reconciler := &SingleInstanceDatabaseReconciler{Client: probe, Scheme: scheme, Log: logr.Discard()}
+			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
+			if _, err := reconciler.createOrReplacePVCforDatafilesVol(context.Background(), request, object); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := reconciler.createOrReplacePVCsForAdditionalPVCs(context.Background(), request, object); err != nil {
+				t.Fatal(err)
+			}
+			expected := map[types.UID]string{}
+			for _, name := range []string{"database", "database-additional-0"} {
+				var claim corev1.PersistentVolumeClaim
+				if err := probe.Get(context.Background(), types.NamespacedName{Namespace: object.Namespace, Name: name}, &claim); err != nil {
+					t.Fatal(err)
+				}
+				claim.UID = types.UID("claim-" + name)
+				if name == "database-additional-0" && mode == "foreign owner" {
+					claim.OwnerReferences[0].UID = "another-database"
+				}
+				if name == "database-additional-0" && mode == "missing protection" {
+					claim.Finalizers = nil
+				}
+				if err := probe.Update(context.Background(), &claim); err != nil {
+					t.Fatal(err)
+				}
+				expected[claim.UID] = claim.ResourceVersion
+			}
+			if mode == "delete failed" {
+				probe.deleteErr = errors.New("claim changed before deletion")
+			}
+			pending, err := reconciler.cleanupManagedSingleInstanceDatabasePVCs(context.Background(), object)
+			if mode == "owned" && (!pending || err != nil) || mode != "owned" && err == nil {
+				t.Fatal("unexpected cleanup result", pending, err)
+			}
+			if mode == "foreign owner" || mode == "missing protection" {
+				if len(probe.deletes) != 0 {
+					t.Fatal("attempted to delete an unreviewed claim")
+				}
+				return
+			}
+			count := 2
+			if mode == "delete failed" {
+				count = 1
+			}
+			if len(probe.deletes) != count {
+				t.Fatal("unexpected count of fenced claim deletes", len(probe.deletes))
+			}
+			for _, options := range probe.deletes {
+				if options.Preconditions == nil || options.Preconditions.UID == nil || expected[*options.Preconditions.UID] == "" || options.Preconditions.ResourceVersion == nil || *options.Preconditions.ResourceVersion != expected[*options.Preconditions.UID] {
+					t.Fatal("claim deletion discarded its reviewed identity")
+				}
+				delete(expected, *options.Preconditions.UID)
+			}
+			if mode == "owned" {
+				pending, err = reconciler.cleanupManagedSingleInstanceDatabasePVCs(context.Background(), object)
+				if err != nil || !pending || len(probe.deletes) != 2 {
+					t.Fatal("cleanup did not wait for protected claim finalization", pending, err)
+				}
+				for _, name := range []string{"database", "database-additional-0"} {
+					var claim corev1.PersistentVolumeClaim
+					if err := probe.Get(context.Background(), types.NamespacedName{Namespace: object.Namespace, Name: name}, &claim); err != nil || claim.DeletionTimestamp == nil {
+						t.Fatal("claim was not retained for the reclamation controller", err)
+					}
+					claim.Finalizers = nil
+					if err := probe.Update(context.Background(), &claim); err != nil {
+						t.Fatal(err)
+					}
+				}
+				pending, err = reconciler.cleanupManagedSingleInstanceDatabasePVCs(context.Background(), object)
+				if err != nil || pending {
+					t.Fatal("cleanup did not finish after both claims were reclaimed", pending, err)
+				}
+			}
+		})
+	}
+}

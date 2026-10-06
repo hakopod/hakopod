@@ -27,3 +27,16 @@ func TestOracleEnterpriseAllocationIncludesRecoveryVolumesAndBroker(t *testing.T
 		t.Fatal("Free allocation inherited Enterprise infrastructure")
 	}
 }
+
+func TestOracleFreeAllocationIncludesScopedOperatorReplacement(t *testing.T) {
+	s := database.Spec{SchemaVersion: 1, Name: "oracle-free-allocation", Engine: "oracle", Version: "23.26", Mode: "standalone", Shards: 1, CPU: "1", Memory: "4Gi", StorageGiB: 10, TLS: &database.TLSConfig{Mode: "required"}, Oracle: &database.OracleConfig{Edition: "free"}}
+	if got := DatabaseStorageReservation(s); got != 20 {
+		t.Fatalf("Free data and backup reservation = %d GiB", got)
+	}
+	if got := DatabaseMemoryReservation(s); got != (2*(4096+50)+128+2*(256+50))<<20 {
+		t.Fatalf("Free omitted operator replacement and sandbox memory: %d", got)
+	}
+	if got, err := s.CPUReservationMilli(); err != nil || got != 2200 {
+		t.Fatalf("Free CPU reservation = %d, %v; want 2200m", got, err)
+	}
+}

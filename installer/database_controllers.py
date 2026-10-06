@@ -18,7 +18,7 @@ import time
 
 OWNER='hakopod.com/installation'
 MANAGER='hakopod-database-controllers'
-ENGINES=('postgresql','redis','mysql','mongodb','clickhouse','vitess')
+ENGINES=('postgresql','redis','mysql','mongodb','clickhouse','vitess','oracle-free')
 MAX_BYTES=32*1024*1024
 MAX_OBJECTS=300
 CONTROLLER_RESOURCES = {
@@ -103,12 +103,14 @@ def manifest_object(pairs):
 def validate_release_availability(bundle,manifest):
     """Validate the packaged record without a source checkout on the target host."""
     availability=manifest.get('managed_runtimes')
-    if (not isinstance(availability,dict) or set(availability)!={'vitess','supabase','neon'} or
+    gates={'vitess','supabase','neon'}|({'oracle-free'} if manifest['schema_version']==3 else set())
+    if (not isinstance(availability,dict) or set(availability)!=gates or
             any(type(value) is not bool for value in availability.values()) or
             not isinstance(manifest.get('source_revision'),str) or not re.fullmatch(r'[0-9a-f]{40}',manifest['source_revision'])):
         raise ValueError('Controller bundle requires exact managed runtime availability and source revision')
     expected={'postgresql.json','redis.json','mysql.json','mongodb.json','clickhouse.json'}
     if availability['vitess']:expected.add('vitess.json')
+    if availability.get('oracle-free'):expected.add('oracle-free.json')
     found=set()
     for path in bundle.iterdir():
         if path.name not in expected|{'manifest.json'}:
@@ -124,12 +126,14 @@ def validate_release_availability(bundle,manifest):
 def load_bundle(bundle,engines):
     raw=bundle_file(bundle/'manifest.json',256*1024)
     manifest=json.loads(raw,object_pairs_hook=manifest_object)
-    if not isinstance(manifest,dict) or type(manifest.get('schema_version')) is not int or manifest['schema_version'] not in (1,2) or not isinstance(manifest.get('files'),dict):
-        raise ValueError('Controller manifest requires schema 1 or 2 and a file checksum inventory')
-    if manifest['schema_version']==2:
+    if not isinstance(manifest,dict) or type(manifest.get('schema_version')) is not int or manifest['schema_version'] not in (1,2,3) or not isinstance(manifest.get('files'),dict):
+        raise ValueError('Controller manifest requires schema 1, 2 or 3 and a file checksum inventory')
+    if manifest['schema_version'] in (2,3):
         validate_release_availability(bundle,manifest)
     elif 'vitess.json' in manifest['files'] or (bundle/'vitess.json').exists() or (bundle/'vitess.json').is_symlink():
         raise ValueError('Vitess requires a release availability record in schema 2')
+    if manifest['schema_version']!=3 and ('oracle-free.json' in manifest['files'] or (bundle/'oracle-free.json').exists() or (bundle/'oracle-free.json').is_symlink()):
+        raise ValueError('Oracle Free requires a release availability record in schema 3')
     if not engines or len(set(engines))!=len(engines) or any(e not in ENGINES for e in engines):
         raise ValueError('Select supported, distinct database controllers')
     objects=[]
@@ -144,6 +148,9 @@ def load_bundle(bundle,engines):
         if engine=='vitess':
             from vitess_controller import validate_objects
             validate_objects(items)
+        if engine=='oracle-free':
+            from oracle_free_controller import validate_objects
+            validate_objects(items)
         objects.extend(items)
     validate_controller_objects(objects)
     return digest(raw),objects
@@ -155,8 +162,8 @@ def make_plan(bundle,engines,installation,kube):
     cluster=read(kube,'get','namespace','kube-system')['metadata']['uid']
     nodes=read(kube,'get','nodes')['items']
     if len(nodes)>256:raise ValueError('Node list exceeds installation bound')
-    if any(e in engines for e in ('mysql','mongodb','vitess')) and not any(n['metadata'].get('labels',{}).get('kubernetes.io/arch')=='amd64' and not n.get('spec',{}).get('unschedulable') and any(c.get('type')=='Ready' and c.get('status')=='True' for c in n.get('status',{}).get('conditions',[])) for n in nodes):
-        raise ValueError('MySQL, MongoDB and Vitess require a ready schedulable AMD64 node')
+    if any(e in engines for e in ('mysql','mongodb','vitess','oracle-free')) and not any(n['metadata'].get('labels',{}).get('kubernetes.io/arch')=='amd64' and not n.get('spec',{}).get('unschedulable') and any(c.get('type')=='Ready' and c.get('status')=='True' for c in n.get('status',{}).get('conditions',[])) for n in nodes):
+        raise ValueError('MySQL, MongoDB, Vitess and Oracle Free require a ready schedulable AMD64 node')
     resources=[]
     for obj in objects:
         item={'identity':list(key(obj)),'existing':fingerprint(current(kube,obj),installation)}

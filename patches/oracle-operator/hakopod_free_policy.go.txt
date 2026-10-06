@@ -1,0 +1,278 @@
+package commons
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"reflect"
+	"slices"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const HakopodOracleFreeProfile = "hakopod-oracle-free-tcps-v1"
+const HakopodOracleFreeStorageFinalizer = "hakopod.io/oracle-free-storage"
+const hakopodFreeImage = "container-registry.oracle.com/database/free:23.26.3.0@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba"
+
+// ApplyHakopodFreePodPolicy accepts only the fixed Free startup contract emitted
+// by Hakopod. No application identity has permission to write this annotation.
+func ApplyHakopodFreePodPolicy(pod *corev1.Pod, owner metav1.ObjectMeta) error {
+	raw := owner.Annotations["hakopod.io/oracle-free-pod-policy"]
+	var envelope struct {
+		Profile string         `json:"profile"`
+		PodSpec corev1.PodSpec `json:"podSpec"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	id := owner.Labels["hakopod.io/database-id"]
+	decodedID, err := hex.DecodeString(id)
+	identity, identityErr := hex.DecodeString(owner.Annotations["hakopod.io/oracle-identity"])
+	if len(raw) > 32<<10 || decoder.Decode(&envelope) != nil || decoder.Decode(new(any)) != io.EOF || envelope.Profile != HakopodOracleFreeProfile || err != nil || len(decodedID) != 16 || identityErr != nil || len(identity) != 32 || owner.Name != "database" || owner.Namespace != "hdb-"+id || owner.Labels["app.kubernetes.io/managed-by"] != "hakopod" || owner.Labels["hakopod.io/project"] == "" || owner.Labels["hakopod.io/environment"] == "" || owner.Annotations["hakopod.io/database-revision"] == "" {
+		return fmt.Errorf("managed Oracle Free identity or policy is invalid")
+	}
+	spec := envelope.PodSpec
+	if spec.NodeSelector[corev1.LabelArchStable] != "amd64" {
+		return fmt.Errorf("managed Oracle Free requires amd64 placement")
+	}
+	allowedSpec := corev1.PodSpec{Containers: spec.Containers, Volumes: spec.Volumes, AutomountServiceAccountToken: spec.AutomountServiceAccountToken, SecurityContext: spec.SecurityContext, TerminationGracePeriodSeconds: spec.TerminationGracePeriodSeconds, NodeSelector: spec.NodeSelector, Tolerations: spec.Tolerations, Affinity: spec.Affinity, RuntimeClassName: spec.RuntimeClassName}
+	if !reflect.DeepEqual(spec, allowedSpec) || spec.TerminationGracePeriodSeconds == nil || *spec.TerminationGracePeriodSeconds != 120 || spec.RuntimeClassName != nil && *spec.RuntimeClassName != "runsc" {
+		return fmt.Errorf("managed Oracle Free contains unsupported pod settings")
+	}
+	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Image != hakopodFreeImage || len(spec.Containers) != 1 || len(spec.InitContainers) != 0 || len(spec.EphemeralContainers) != 0 || spec.HostNetwork || spec.HostPID || spec.HostIPC || spec.NodeName != "" || spec.ServiceAccountName != "" || spec.AutomountServiceAccountToken == nil || *spec.AutomountServiceAccountToken || len(spec.ImagePullSecrets) != 0 || len(spec.HostAliases) != 0 {
+		return fmt.Errorf("managed Oracle Free workload boundary is invalid")
+	}
+	security := &corev1.PodSecurityContext{RunAsNonRoot: freePtr(true), RunAsUser: freePtr(int64(54321)), RunAsGroup: freePtr(int64(54321)), FSGroup: freePtr(int64(54321)), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
+	if !reflect.DeepEqual(spec.SecurityContext, security) {
+		return fmt.Errorf("managed Oracle Free pod security is invalid")
+	}
+	container := spec.Containers[0]
+	allowedContainer := corev1.Container{Name: container.Name, Image: container.Image, ImagePullPolicy: container.ImagePullPolicy, Command: container.Command, Resources: container.Resources, SecurityContext: container.SecurityContext, Ports: container.Ports, VolumeMounts: container.VolumeMounts, ReadinessProbe: container.ReadinessProbe, StartupProbe: container.StartupProbe}
+	if !reflect.DeepEqual(container, allowedContainer) {
+		return fmt.Errorf("managed Oracle Free contains unsupported container settings")
+	}
+	cs := &corev1.SecurityContext{RunAsNonRoot: freePtr(true), RunAsUser: freePtr(int64(54321)), RunAsGroup: freePtr(int64(54321)), AllowPrivilegeEscalation: freePtr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}}
+	if container.Name != "database" || container.Image != hakopodFreeImage || container.ImagePullPolicy != corev1.PullIfNotPresent || !reflect.DeepEqual(container.Command, []string{"bash", "/etc/hakopod-config/start.sh"}) || !reflect.DeepEqual(container.SecurityContext, cs) {
+		return fmt.Errorf("managed Oracle Free container security is invalid")
+	}
+	for _, key := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, corev1.ResourceEphemeralStorage} {
+		request, limit := container.Resources.Requests[key], container.Resources.Limits[key]
+		if request.Sign() <= 0 || limit.Sign() <= 0 || request.Cmp(limit) > 0 {
+			return fmt.Errorf("managed Oracle Free resources must be bounded")
+		}
+	}
+	if len(container.Ports) != 1 || container.Ports[0].ContainerPort != 2484 || container.Ports[0].HostPort != 0 || container.ReadinessProbe == nil || container.StartupProbe == nil {
+		return fmt.Errorf("managed Oracle Free listener or readiness is invalid")
+	}
+	if container.ReadinessProbe.Exec == nil || !reflect.DeepEqual(container.ReadinessProbe.Exec.Command, []string{"bash", "-c", "test -f /tmp/hakopod/ready && /opt/oracle/checkDBStatus.sh >/dev/null 2>&1"}) || container.StartupProbe.Exec == nil || !reflect.DeepEqual(container.StartupProbe.Exec.Command, []string{"test", "-f", "/tmp/hakopod/ready"}) {
+		return fmt.Errorf("managed Oracle Free readiness command changed")
+	}
+	wantedMounts := map[string]corev1.VolumeMount{}
+	for _, mount := range []corev1.VolumeMount{
+		{Name: "data", MountPath: "/opt/oracle/oradata"}, {Name: "additional-pvc-0", MountPath: "/opt/oracle/hakopod-backup"},
+		{Name: "database-tls", MountPath: "/etc/hakopod-tls", ReadOnly: true}, {Name: "database-access", MountPath: "/etc/hakopod-oracle", ReadOnly: true},
+		{Name: "database-app", MountPath: "/etc/hakopod-app", ReadOnly: true}, {Name: "database-config", MountPath: "/etc/hakopod-config", ReadOnly: true},
+		{Name: "database-config", MountPath: "/opt/oracle/scripts/startup/99-hakopod-ready.sh", SubPath: "ready.sh", ReadOnly: true},
+		{Name: "diagnostics", MountPath: "/opt/oracle/diag"}, {Name: "temporary", MountPath: "/tmp"}, {Name: "shm", MountPath: "/dev/shm"},
+	} {
+		wantedMounts[mount.MountPath] = mount
+	}
+	if len(container.VolumeMounts) != len(wantedMounts) {
+		return fmt.Errorf("managed Oracle Free mounts are incomplete")
+	}
+	for _, mount := range container.VolumeMounts {
+		expected, ok := wantedMounts[mount.MountPath]
+		if !ok || !reflect.DeepEqual(mount, expected) {
+			return fmt.Errorf("managed Oracle Free mount changed")
+		}
+		delete(wantedMounts, mount.MountPath)
+	}
+	wantedVolumes := map[string]corev1.VolumeSource{
+		"data":             {PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "database"}},
+		"additional-pvc-0": {PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "database-additional-0"}},
+		"database-tls":     {Secret: &corev1.SecretVolumeSource{SecretName: "database-tls", DefaultMode: freePtr(int32(0440))}},
+		"database-access":  {Secret: &corev1.SecretVolumeSource{SecretName: "database-oracle-access", DefaultMode: freePtr(int32(0440))}},
+		"database-app":     {Secret: &corev1.SecretVolumeSource{SecretName: "database-credentials", DefaultMode: freePtr(int32(0440))}},
+		"database-config":  {ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "database-oracle-config"}, DefaultMode: freePtr(int32(0550))}},
+		"diagnostics":      {EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: freePtr(resource.MustParse("512Mi"))}},
+		"temporary":        {EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: freePtr(resource.MustParse("256Mi"))}},
+		"shm":              {EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory, SizeLimit: freePtr(resource.MustParse("1Gi"))}},
+	}
+	if len(spec.Volumes) != len(wantedVolumes) {
+		return fmt.Errorf("managed Oracle Free volume contract is incomplete")
+	}
+	for _, volume := range spec.Volumes {
+		expected, ok := wantedVolumes[volume.Name]
+		if !ok || !equality.Semantic.DeepEqual(volume.VolumeSource, expected) {
+			return fmt.Errorf("managed Oracle Free volume source changed")
+		}
+		delete(wantedVolumes, volume.Name)
+	}
+	// The guarded full-image entrypoint performs initialization itself. Reusing
+	// the upstream prebuilt copier would place its completion marker before the
+	// data copy, making an interrupted copy appear initialized on the next run.
+	pod.Spec = spec
+	if pod.Labels == nil {
+		pod.Labels = map[string]string{}
+	}
+	for _, key := range []string{"hakopod.io/database-id", "app.kubernetes.io/managed-by", "hakopod.io/project", "hakopod.io/environment"} {
+		pod.Labels[key] = owner.Labels[key]
+	}
+	pod.Labels["hakopod.io/oracle-member"] = "true"
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	for _, key := range []string{"hakopod.io/database-revision", "hakopod.io/oracle-identity", "hakopod.io/oracle-free-pod-policy"} {
+		pod.Annotations[key] = owner.Annotations[key]
+	}
+	return nil
+}
+
+// Storage is immutable for this profile. In particular, the upstream replace
+// path must never delete an initialized data claim after a drifted setting.
+func ValidateHakopodFreePVC(pvc *corev1.PersistentVolumeClaim, owner metav1.ObjectMeta, name, storage, size string) error {
+	controller := metav1.GetControllerOf(pvc)
+	quantity, err := resource.ParseQuantity(size)
+	if err != nil || quantity.Sign() <= 0 || storage == "" || pvc.Name != name || pvc.Namespace != owner.Namespace || pvc.DeletionTimestamp != nil || !slices.Contains(pvc.Finalizers, HakopodOracleFreeStorageFinalizer) || len(pvc.OwnerReferences) != 1 || controller == nil || controller.APIVersion != "database.oracle.com/v4" || controller.Kind != "SingleInstanceDatabase" || controller.Name != owner.Name || controller.UID != owner.UID || controller.BlockOwnerDeletion == nil || !*controller.BlockOwnerDeletion {
+		return fmt.Errorf("managed Oracle Free storage identity changed")
+	}
+	current := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != storage || len(pvc.Spec.AccessModes) != 1 || pvc.Spec.AccessModes[0] != corev1.ReadWriteOnce || current.Cmp(quantity) != 0 || pvc.Spec.VolumeMode != nil && *pvc.Spec.VolumeMode != corev1.PersistentVolumeFilesystem || pvc.Spec.DataSource != nil || pvc.Spec.DataSourceRef != nil || pvc.Spec.Selector != nil {
+		return fmt.Errorf("managed Oracle Free storage is immutable; use a separate restore target")
+	}
+	return nil
+}
+
+func ValidateHakopodFreeService(service *corev1.Service, owner metav1.ObjectMeta) error {
+	controller := metav1.GetControllerOf(service)
+	if service.Name != "database" || service.Namespace != owner.Namespace || service.DeletionTimestamp != nil || len(service.OwnerReferences) != 1 || controller == nil || controller.APIVersion != "database.oracle.com/v4" || controller.Kind != "SingleInstanceDatabase" || controller.Name != owner.Name || controller.UID != owner.UID {
+		return fmt.Errorf("managed Oracle Free service ownership changed")
+	}
+	expected := map[string]string{"app": owner.Name, "hakopod.io/database-id": owner.Labels["hakopod.io/database-id"], "hakopod.io/oracle-member": "true"}
+	if !reflect.DeepEqual(service.Spec.Selector, expected) || service.Spec.Type != corev1.ServiceTypeClusterIP || service.Spec.ExternalName != "" || len(service.Spec.ExternalIPs) != 0 || service.Spec.PublishNotReadyAddresses || len(service.Spec.Ports) != 1 {
+		return fmt.Errorf("managed Oracle Free service route changed")
+	}
+	port := service.Spec.Ports[0]
+	if port.Name != "tcps" || port.Protocol != corev1.ProtocolTCP || port.Port != 2484 || port.TargetPort.IntVal != 2484 || port.TargetPort.Type != 0 || port.NodePort != 0 {
+		return fmt.Errorf("managed Oracle Free requires only private TCPS")
+	}
+	return nil
+}
+
+func ValidateHakopodFreeObservedMember(pod *corev1.Pod, owner metav1.ObjectMeta) error {
+	controller := metav1.GetControllerOf(pod)
+	if pod.UID == "" || pod.Namespace != owner.Namespace || len(pod.OwnerReferences) != 1 || controller == nil || controller.APIVersion != "database.oracle.com/v4" || controller.Kind != "SingleInstanceDatabase" || controller.Name != owner.Name || controller.UID != owner.UID || pod.Labels["hakopod.io/database-id"] != owner.Labels["hakopod.io/database-id"] || pod.Labels["app.kubernetes.io/managed-by"] != "hakopod" || pod.Labels["hakopod.io/oracle-member"] != "true" {
+		return fmt.Errorf("managed Oracle Free member ownership changed")
+	}
+	expected := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: hakopodFreeImage}}}}
+	if err := ApplyHakopodFreePodPolicy(expected, owner); err != nil {
+		return err
+	}
+	for _, key := range []string{"hakopod.io/database-revision", "hakopod.io/oracle-identity", "hakopod.io/oracle-free-pod-policy"} {
+		if pod.Annotations[key] != owner.Annotations[key] {
+			return fmt.Errorf("managed Oracle Free member identity changed")
+		}
+	}
+	if !hakopodFreePodSpecsEqual(pod.Spec, expected.Spec) {
+		return fmt.Errorf("managed Oracle Free member execution policy changed")
+	}
+	return nil
+}
+func freePtr[T any](value T) *T { return &value }
+func freeSandboxOverheadValid(resources corev1.ResourceList) bool {
+	limits := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("50Mi")}
+	for name, quantity := range resources {
+		limit, ok := limits[name]
+		if !ok || quantity.Sign() < 0 || quantity.Cmp(limit) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func hakopodFreePodSpecsEqual(actual, expected corev1.PodSpec) bool {
+	normalize := func(spec *corev1.PodSpec) {
+		spec.NodeName = ""
+		if spec.RuntimeClassName != nil && *spec.RuntimeClassName == "runsc" {
+			if freeSandboxOverheadValid(spec.Overhead) {
+				spec.Overhead = nil
+			}
+		}
+		if spec.ServiceAccountName == "default" {
+			spec.ServiceAccountName = ""
+		}
+		if spec.DeprecatedServiceAccount == "default" {
+			spec.DeprecatedServiceAccount = ""
+		}
+		if spec.RestartPolicy == "" {
+			spec.RestartPolicy = corev1.RestartPolicyAlways
+		}
+		if spec.DNSPolicy == "" {
+			spec.DNSPolicy = corev1.DNSClusterFirst
+		}
+		if spec.SchedulerName == "" {
+			spec.SchedulerName = "default-scheduler"
+		}
+		if spec.EnableServiceLinks == nil {
+			spec.EnableServiceLinks = freePtr(true)
+		}
+		if spec.Priority == nil {
+			spec.Priority = freePtr(int32(0))
+		}
+		if spec.PreemptionPolicy == nil {
+			value := corev1.PreemptLowerPriority
+			spec.PreemptionPolicy = &value
+		}
+		if spec.TerminationGracePeriodSeconds == nil {
+			spec.TerminationGracePeriodSeconds = freePtr(int64(30))
+		}
+		spec.Tolerations = slices.DeleteFunc(spec.Tolerations, func(value corev1.Toleration) bool {
+			return (value.Key == "node.kubernetes.io/not-ready" || value.Key == "node.kubernetes.io/unreachable") && value.Operator == corev1.TolerationOpExists && value.Effect == corev1.TaintEffectNoExecute && value.Value == "" && value.TolerationSeconds != nil && *value.TolerationSeconds == 300
+		})
+		if len(spec.Tolerations) == 0 {
+			spec.Tolerations = nil
+		}
+		for i := range spec.Containers {
+			container := &spec.Containers[i]
+			if container.ImagePullPolicy == "" {
+				container.ImagePullPolicy = corev1.PullIfNotPresent
+			}
+			if container.TerminationMessagePath == "" {
+				container.TerminationMessagePath = "/dev/termination-log"
+			}
+			if container.TerminationMessagePolicy == "" {
+				container.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+			}
+			for j := range container.Ports {
+				if container.Ports[j].Protocol == "" {
+					container.Ports[j].Protocol = corev1.ProtocolTCP
+				}
+			}
+			for _, probe := range []*corev1.Probe{container.StartupProbe, container.ReadinessProbe, container.LivenessProbe} {
+				if probe == nil {
+					continue
+				}
+				if probe.TimeoutSeconds == 0 {
+					probe.TimeoutSeconds = 1
+				}
+				if probe.PeriodSeconds == 0 {
+					probe.PeriodSeconds = 10
+				}
+				if probe.SuccessThreshold == 0 {
+					probe.SuccessThreshold = 1
+				}
+				if probe.FailureThreshold == 0 {
+					probe.FailureThreshold = 3
+				}
+			}
+		}
+	}
+	left, right := actual.DeepCopy(), expected.DeepCopy()
+	normalize(left)
+	normalize(right)
+	return reflect.DeepEqual(left, right)
+}

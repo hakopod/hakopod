@@ -97,6 +97,25 @@ func (c *Client) databaseObject(ctx context.Context, d database.Resource) (*unst
 	if err != nil {
 		return object, err
 	}
+	if d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
+		nodes := d.Spec.Placement.NodeNames
+		if len(nodes) == 0 && p != nil {
+			nodes = p.nodes()
+		}
+		object, err := oracleFreeObject(d, p, nodes)
+		if err != nil {
+			return nil, err
+		}
+		storage, err := c.oracleFreeStorageClass(ctx, d, p)
+		if err != nil {
+			return nil, err
+		}
+		_ = unstructured.SetNestedField(object.Object, storage, "spec", "persistence", "oradata", "storageClass")
+		claims, _, _ := unstructured.NestedSlice(object.Object, "spec", "persistence", "additionalPVCs")
+		claims[0].(map[string]any)["storageClass"] = storage
+		_ = unstructured.SetNestedSlice(object.Object, claims, "spec", "persistence", "additionalPVCs")
+		return object, nil
+	}
 	if p != nil {
 		applyDatabasePolicy(object, d.Spec, *p)
 	}

@@ -95,7 +95,7 @@ class VitessControllerBundleTest(unittest.TestCase):
             (source/'database-controller-sources.json').write_text(json.dumps({engine:{} for engine in builder.NAMESPACES}))
             (source/'pins.json').write_text(json.dumps({'helm':{}}))
             enabled=False
-            availability={'release_availability':lambda _: {'vitess':enabled,'supabase':False,'neon':False},
+            availability={'release_availability':lambda _: {'vitess':enabled,'supabase':False,'neon':False,'oracle-free':False},
                           'source_revision':lambda _: 'a'*40,'source_gate_hashes':lambda _: {}}
             with patch.object(builder,'HERE',source), patch.object(builder.runpy,'run_path',return_value=availability), patch.object(builder,'qualify_vitess') as qualify, patch.object(builder,'helm_binary',return_value=root/'helm') as helm, patch.object(builder,'render',return_value=[]), patch.object(builder,'render_vitess',return_value=(list(self.objects.values()),{'qualification_sha256':'b'*64})) as render:
                 builder.build(root/'without-vitess','qualified-redis-fixture',include_vitess=False)

@@ -14,13 +14,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-var oracleDatabaseResource = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}
+var oracleDatabaseResource = schema.GroupVersionResource{Group: "database.oracle.com", Version: "v4", Resource: "singleinstancedatabases"}
 
 //go:embed database_oracle_start.sh
 var oracleStart string
@@ -38,9 +35,9 @@ func oracleRuntimeSupported(s database.Spec) error {
 	return nil
 }
 
-// The built-in reconciler owns the single-instance StatefulSet. Installing a
-// cluster-wide Oracle operator is unnecessary for this lifecycle.
-func oracleDatabaseSpec(d database.Resource, resources map[string]any) map[string]any {
+// The Free operator profile uses this fixed pod contract. It is constructed
+// by Go, never accepted as a user-supplied pod template.
+func oracleFreeWorkloadSpec(d database.Resource, resources map[string]any) map[string]any {
 	resources["requests"].(map[string]any)["ephemeral-storage"] = "256Mi"
 	resources["limits"].(map[string]any)["ephemeral-storage"] = "2Gi"
 	security := map[string]any{"runAsNonRoot": true, "runAsUser": int64(54321), "runAsGroup": int64(54321), "allowPrivilegeEscalation": false, "capabilities": map[string]any{"drop": []any{"ALL"}}}
@@ -147,67 +144,7 @@ func (c *Client) prepareOracleSecurity(ctx context.Context, d database.Resource,
 	if err != nil {
 		return err
 	}
-	meta.Name = "database"
-	service := &corev1.Service{ObjectMeta: meta, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: map[string]string{databaseOwner: d.ID, managedBy: "hakopod"}, Ports: []corev1.ServicePort{{Name: "tcps", Port: 2484, TargetPort: intstr.FromInt(2484), Protocol: corev1.ProtocolTCP}}}}
-	services := c.kube.CoreV1().Services(ns.Name)
-	old, err := services.Get(ctx, meta.Name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		if err = before(); err != nil {
-			return err
-		}
-		_, err = services.Create(ctx, service, metav1.CreateOptions{})
-	} else if err == nil && (!mongodbSupportOwned(old, d, ns.UID) || old.Spec.Type != corev1.ServiceTypeClusterIP || len(old.Spec.ExternalIPs) != 0 || !reflect.DeepEqual(old.Spec.Selector, service.Spec.Selector) || !reflect.DeepEqual(old.Spec.Ports, service.Spec.Ports)) {
-		return fmt.Errorf("Oracle private endpoint ownership or routing changed")
-	}
-	if err != nil {
-		return err
-	}
-	// Roll only this owned StatefulSet after an issuer/leaf renewal or startup
-	// policy change. Native readiness verifies the identity actually served.
-	identity, err := secrets.Get(ctx, "database-tls", metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if err = databaseIdentityOwned(identity, d, ns.UID); err != nil {
-		return err
-	}
-	set, err := c.kube.AppsV1().StatefulSets(ns.Name).Get(ctx, "database", metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if set.Labels[databaseOwner] != d.ID || set.Labels[managedBy] != "hakopod" {
-		return fmt.Errorf("Oracle workload ownership changed")
-	}
-	fingerprint := oracleIdentityFingerprint(identity)
-	if set.Spec.Template.Annotations["hakopod.io/oracle-identity"] != fingerprint {
-		// Startup policy can add mounts as well as change script content. Renew
-		// the complete owned pod template even when the user revision is unchanged.
-		object, e := c.databaseObject(ctx, d)
-		if e != nil {
-			return e
-		}
-		template, _, e := unstructured.NestedMap(object.Object, "spec", "template")
-		if e != nil {
-			return e
-		}
-		var desired corev1.PodTemplateSpec
-		if e = runtime.DefaultUnstructuredConverter.FromUnstructured(template, &desired); e != nil {
-			return e
-		}
-		set.Spec.Template = desired
-		if set.Spec.Template.Annotations == nil {
-			set.Spec.Template.Annotations = map[string]string{}
-		}
-		set.Spec.Template.Annotations["hakopod.io/oracle-identity"] = fingerprint
-		if err = before(); err != nil {
-			return err
-		}
-		_, err = c.kube.AppsV1().StatefulSets(ns.Name).Update(ctx, set, metav1.UpdateOptions{})
-	}
-	return err
+	return c.renewOracleFreeWorkload(ctx, d, before)
 }
 
 func oracleIdentityFingerprint(identity *corev1.Secret) string {

@@ -1,0 +1,62 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+type freeReadinessReader struct {
+	client.Reader
+	err   error
+	calls int
+	t     *testing.T
+}
+
+func (r *freeReadinessReader) List(ctx context.Context, list client.ObjectList, options ...client.ListOption) error {
+	r.calls++
+	var settings client.ListOptions
+	for _, option := range options {
+		option.ApplyToList(&settings)
+	}
+	if _, ok := list.(*dbapi.SingleInstanceDatabaseList); !ok || settings.Namespace != "hdb-fixture" || settings.Limit != 1 {
+		r.t.Fatal("readiness left its bounded database scope")
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) > 2*time.Second {
+		r.t.Fatal("readiness request has no short deadline")
+	}
+	return r.err
+}
+
+func TestHakopodOracleFreeReadinessRequiresCacheAndCurrentAPI(t *testing.T) {
+	for _, mode := range []string{"ready", "cache not ready", "API unavailable", "request canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			reader := &freeReadinessReader{t: t}
+			if mode == "API unavailable" {
+				reader.err = errors.New("API unavailable")
+			}
+			request := httptest.NewRequest("GET", "/readyz", nil)
+			if mode == "request canceled" {
+				ctx, cancel := context.WithCancel(request.Context())
+				cancel()
+				request = request.WithContext(ctx)
+			}
+			check := hakopodFreeReadiness(reader, func(ctx context.Context) bool {
+				return mode != "cache not ready" && ctx.Err() == nil
+			}, "hdb-fixture")
+			err := check(request)
+			if mode == "ready" && err != nil || mode != "ready" && err == nil {
+				t.Fatal("incorrect controller readiness", err)
+			}
+			if (mode == "cache not ready" || mode == "request canceled") && reader.calls != 0 {
+				t.Fatal("unready cache performed API calls")
+			}
+		})
+	}
+}

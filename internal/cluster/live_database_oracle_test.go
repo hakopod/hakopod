@@ -69,7 +69,10 @@ func newOracleFixture(t *testing.T, ctx context.Context, c *Client, reuse string
 		if e != nil || revision < 1 {
 			t.Fatal("invalid Oracle fixture revision")
 		}
-		d.Revision = revision + 1
+		d.Revision = revision
+		if e = c.oracleEnterpriseObjectOwned(ctx, d, object); e != nil {
+			t.Fatal(e)
+		}
 	}
 	t.Log("Development Oracle namespace", DatabaseNamespace(d.ID))
 	t.Cleanup(func() {
@@ -93,7 +96,7 @@ func newOracleFixture(t *testing.T, ctx context.Context, c *Client, reuse string
 	})
 	var health database.Observation
 	for ctx.Err() == nil {
-		if err = c.ApplyDatabase(ctx, d, password, func() error { return ctx.Err() }); err == nil {
+		if err = c.applyOracleFreeDatabase(ctx, d, password, func() error { return ctx.Err() }); err == nil {
 			health, err = c.ObserveDatabase(ctx, d)
 			if err == nil && health.Status == "ready" {
 				break
@@ -135,6 +138,7 @@ func TestManagedOracleFreeLive(t *testing.T) {
 			t.Fatal("Oracle application exceeded schema privileges")
 		}
 	}
+	t.Run("security", func(t *testing.T) { testOracleObservedSecurity(t, ctx, c, d) })
 	t.Log("Oracle Free native create, authenticated reads and writes, private TCPS and schema privilege boundaries passed")
 }
 

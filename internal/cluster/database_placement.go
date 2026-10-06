@@ -112,7 +112,8 @@ func (c *Client) validateDatabasePlacementNodes(ctx context.Context, s database.
 	if len(names) == 0 && policy != nil {
 		names = policy.nodes()
 	}
-	if len(names) == 0 && s.Placement.Spread == "" && s.Engine != "mysql" && s.Engine != "mongodb" && s.Engine != "vitess" {
+	oracleFree := s.Engine == "oracle" && !oracleEnterprise(s)
+	if len(names) == 0 && s.Placement.Spread == "" && s.Engine != "mysql" && s.Engine != "mongodb" && s.Engine != "vitess" && !oracleFree {
 		return nil
 	}
 	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 257})
@@ -122,7 +123,7 @@ func (c *Client) validateDatabasePlacementNodes(ctx context.Context, s database.
 	domains := map[string]bool{}
 	found := map[string]bool{}
 	for _, node := range nodes.Items {
-		if (s.Engine == "mysql" || s.Engine == "mongodb" || s.Engine == "vitess") && node.Labels[corev1.LabelArchStable] != "amd64" {
+		if (s.Engine == "mysql" || s.Engine == "mongodb" || s.Engine == "vitess" || oracleFree) && node.Labels[corev1.LabelArchStable] != "amd64" {
 			continue
 		}
 		if len(names) > 0 && !slices.Contains(names, node.Name) {
@@ -165,6 +166,9 @@ func (c *Client) validateDatabasePlacementNodes(ctx context.Context, s database.
 	}
 	if s.Engine == "vitess" && len(found) == 0 {
 		return fmt.Errorf("Vitess requires an available amd64 worker for its pinned images")
+	}
+	if oracleFree && len(found) == 0 {
+		return fmt.Errorf("Oracle Free requires an available amd64 worker for its pinned controller")
 	}
 	if s.Placement.Spread != "" && len(domains) < s.PlacementDomains() {
 		return fmt.Errorf("this placement requires %d distinct %s with ready nodes; only %d are available", s.PlacementDomains(), s.Placement.Spread, len(domains))

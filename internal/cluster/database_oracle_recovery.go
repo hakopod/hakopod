@@ -217,7 +217,12 @@ func (c *Client) RestoreOracleDatabase(ctx context.Context, d database.Resource,
 	if err != nil {
 		return err
 	}
-	if err = c.kube.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &pod.UID}}); err != nil {
+	if !oracleEnterprise(d.Spec) {
+		if err = c.oracleFreeControllerReady(ctx, d); err != nil {
+			return err
+		}
+	}
+	if err = c.kube.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &pod.UID, ResourceVersion: &pod.ResourceVersion}}); err != nil {
 		return err
 	}
 	step, stop := context.WithTimeout(ctx, 8*time.Minute)

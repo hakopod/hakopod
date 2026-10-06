@@ -33,6 +33,8 @@ class BuildDatabaseControllersTest(unittest.TestCase):
             patch.object(builder, 'render', side_effect=lambda engine, *args: [{'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': engine}}]),
             patch.object(builder, 'qualify_vitess'),
             patch.object(builder, 'render_vitess', return_value=([], {'fixture': True})),
+            patch.object(builder, 'qualify_oracle_free'),
+            patch.object(builder, 'render_oracle_free', return_value=([], {'fixture': True})),
         ]
         self.mocks = [item.start() for item in self.patchers]
         for item in self.patchers:
@@ -50,7 +52,7 @@ class BuildDatabaseControllersTest(unittest.TestCase):
         output=self.root/'held'
         builder.build(output,builder.REDIS_CONTROLLER_IMAGE)
         manifest=json.loads((output/'manifest.json').read_text())
-        self.assertEqual(manifest['schema_version'],2)
+        self.assertEqual(manifest['schema_version'],3)
         self.assertEqual(manifest['managed_runtimes'],dict.fromkeys(AVAILABILITY['GATES'],False))
         self.assertEqual(manifest['source_revision'],'a'*40)
         self.assertEqual(set(manifest['files']),{'postgresql.json','redis.json','mysql.json','mongodb.json','clickhouse.json'})
@@ -59,6 +61,9 @@ class BuildDatabaseControllersTest(unittest.TestCase):
         self.assertFalse((output/'vitess.json').exists())
         self.mocks[4].assert_not_called()
         self.mocks[5].assert_not_called()
+        self.mocks[6].assert_not_called()
+        self.mocks[7].assert_not_called()
+        self.assertFalse((output/'oracle-free.json').exists())
 
     def test_caller_and_environment_cannot_enable_a_held_runtime(self):
         with patch.dict(builder.os.environ,{'HAKOPOD_INCLUDE_VITESS':'true','HAKOPOD_VITESS_RELEASE_QUALIFIED':'true'}):
@@ -77,6 +82,19 @@ class BuildDatabaseControllersTest(unittest.TestCase):
         self.mocks[5].assert_called_once()
         self.assertTrue((output/'vitess.json').is_file())
         self.assertTrue(json.loads((output/'manifest.json').read_text())['managed_runtimes']['vitess'])
+        self.mocks[6].assert_called_once_with(self.root)
+        self.mocks[7].assert_called_once()
+        self.assertTrue((output/'oracle-free.json').is_file())
+
+    def test_oracle_qualification_failure_stops_before_downloads(self):
+        relative,name,_=AVAILABILITY['GATES']['oracle-free']
+        (self.root/relative).write_text('package fixture\nconst '+name+' = true\n')
+        self.mocks[6].side_effect=ValueError('Oracle native evidence is absent')
+        output=self.root/'oracle-unqualified'
+        with self.assertRaisesRegex(ValueError,'Oracle native evidence is absent'):
+            builder.build(output,builder.REDIS_CONTROLLER_IMAGE)
+        self.assertFalse(output.exists())
+        self.mocks[2].assert_not_called()
 
     def test_enabled_qualification_failure_cannot_create_a_bundle(self):
         self.set_gates(True)
