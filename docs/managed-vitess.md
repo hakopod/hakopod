@@ -1,10 +1,11 @@
 # Managed Vitess
 
-Status: release candidate under native qualification, October 5, 2026. The
-dashboard, API and runtime source implement creation, routing and recovery, but
-release availability remains gated until the pinned images pass the recorded
-native lifecycle, security and recovery checks. This page does not announce a
-released or production-verified service.
+Status: release candidate for Hakopod 0.1.0-alpha.55 on Linux amd64 workers.
+Five native cases passed on the current source after rebasing. The official
+HTTP run and package checks remain required before publication.
+Development acceptance does not establish independent
+multi-zone or multi-provider availability. See the
+[acceptance record](managed-database-release-acceptance.md) for exact evidence.
 
 Vitess runs MySQL behind a routing layer. Use it when a database needs explicit
 shards and your application can choose a stable sharding key. An ordinary MySQL
@@ -43,12 +44,10 @@ inside this database's namespace. Applications receive the database account and
 public trust material. They do not receive Kubernetes credentials, the issuer
 key, replication credentials or backup storage credentials.
 
-The source currently selects Vitess 23.0.6, MySQL 8.4.6, Vitess Operator 2.16.0
-and etcd 3.5.17. The patched Vitess and operator images have been built for
-development acceptance; their upstream images alone do not satisfy this
-contract. Candidate publication remains blocked until native acceptance and
-release verification pass. The pinned runtime
-targets amd64. ARM64 has not been qualified.
+The release selects Vitess 23.0.6, MySQL 8.4.6, Vitess Operator 2.16.0 and etcd
+3.5.17. Hakopod's patched runtime and operator images are pinned to the digests
+in the alpha.55 candidate records. The runtime targets amd64. ARM64 has not been
+qualified.
 
 ## Layout and routing
 
@@ -68,7 +67,7 @@ needs this routing. A query that includes that key can target its shard;
 queries without it may visit several shards. Choose the key around access
 patterns and transaction boundaries, rather than choosing a shard count first.
 
-This configuration is an example for the implementation under validation. The
+This configuration is an example for the release candidate. The
 backup destination ID must come from an existing, operator-approved destination;
 the placeholder below is not a usable ID.
 
@@ -108,6 +107,12 @@ Create the same specification through the shared API with the CLI:
 ```sh
 hakopod database create --project orders --environment production --file orders-vitess.toml
 ```
+
+Installing or upgrading the Hakopod server does not install the Vitess
+controller. After the core upgrade, follow the reviewed controller plan and
+apply procedure in the [installer guide](../installer/README.md#managed-database-controllers)
+from the matching extracted release kit. Do not use a development controller
+script on an operator cluster.
 
 The dashboard collects the same fields. It lists destinations from the selected
 project and environment and records the selected immutable revision. The server
@@ -182,9 +187,9 @@ request and checks that the direct application account refuses global changes.
 The observation code checks native MySQL roles, unique server identities,
 replication transport settings, the reviewed VSchema, owned pod identities and
 allocated resources. Gateway checks authenticate through TLS, compare the served
-certificate with the issued certificate and require plaintext refusal. Certificate
-rotation and failover still require native acceptance before these fields can be
-presented as a supported guarantee.
+certificate with the issued certificate and require plaintext refusal.
+Certificate rotation and primary failover passed native lifecycle acceptance
+on the source recorded for the alpha.55 candidate.
 
 Requested resources and measured resource samples are separate facts. A desired
 replica count is not evidence that replicas are healthy. Missing native metrics
@@ -234,8 +239,9 @@ Set `backups.vitess_approvals_file` in the operator's versioned server TOML, or
 path. The file must be regular, no larger than 64 KiB and not writable by group
 or other users. Changing endpoint addresses requires operator review and a
 runtime restart. An address change is allowed to interrupt backups rather than
-silently expanding network access. The runtime remains disabled until the
-acceptance checks at the end of this page pass.
+silently expanding network access. The runtime remains disabled unless the
+compiled release gate is enabled and the installation uses the pinned candidate
+images and satisfies the approval, worker and capacity checks.
 
 Native storage approval is checked separately from certificate renewal. A
 removed approval pauses new backup work, removes its Secret and allowed storage
@@ -335,8 +341,9 @@ exact source and test files alongside the image digests. The release verifier
 checks those records, pulls the same images anonymously, and compares the
 binaries inside them with the recorded hashes. It does not rebuild an image
 after testing it. Missing, skipped, failed or incomplete native test events
-cannot qualify a release. These checks remain part of the work under validation
-until real acceptance evidence and published digests are recorded.
+cannot qualify a release. Five native cases, the complete official HTTP workflow
+and package checks must pass against the final alpha.55 source. A different
+image, source revision or deployment environment requires its own verification.
 
 Image packaging on the development VM must use a builder whose storage is under
 the approved scratch directory. Its OCI archives preserve the manifests used

@@ -5,7 +5,9 @@ Managed databases have their own project and environment, resource allocation, c
 PostgreSQL and Redis are included in the self-hosted development release starting
 with `v0.1.0-alpha.37`. MongoDB joins them in `v0.1.0-alpha.47`, and private
 MySQL 8.4 support is included in `v0.1.0-alpha.50`. Private ClickHouse 26.3 joins
-them in `v0.1.0-alpha.52`. Use a published release's
+them in `v0.1.0-alpha.52`. Private Vitess 23 is an alpha.55 candidate for
+Linux amd64 workers. Its five native cases passed on the current source;
+the official HTTP run and package checks remain required before publication. Use a published release's
 verified assets; a tag or candidate build alone is not an installation package.
 Provisioning requires the controller installation described below; upgrading
 Hakopod does not install missing controllers. Cloud workspace admission, quotas,
@@ -15,9 +17,8 @@ a separate operator rollout. This OSS release does not enable hosted provisionin
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md) and [Oracle Database](managed-oracle.md)
 implementations have separate guides with their exact development evidence and
-remaining limits. Vitess is a release candidate and stays unavailable until its
-native qualification evidence passes the release gate. Oracle Database remains
-held. Neon and Supabase are deferred. MySQL, MongoDB, ClickHouse and Vitess public endpoints remain unavailable.
+remaining limits. Oracle Database remains held. Neon and Supabase are deferred.
+MySQL, MongoDB, ClickHouse and Vitess public endpoints remain unavailable.
 See the
 [release acceptance record](managed-database-release-acceptance.md) for tested
 source revisions and immutable runtime references.
@@ -278,15 +279,19 @@ earlier steps without losing entered values. A failed request keeps the reviewed
 configuration and its retry key until you change the configuration.
 
 Alpha.50 supports guided creation for PostgreSQL, Redis, MySQL and MongoDB;
-alpha.52 adds ClickHouse. The next Vitess candidate includes guided standalone
-and sharded creation with a scoped native backup destination and explicit table
-routing. MySQL, ClickHouse and candidate Vitess creation require
+alpha.52 adds ClickHouse. The alpha.55 candidate adds guided standalone and
+sharded Vitess creation with a scoped native backup destination and explicit
+table routing.
+MySQL, ClickHouse and Vitess creation require
 their pinned controller, a healthy controller rollout, required permissions,
 eligible placement and sufficient capacity. Sandboxed ClickHouse also needs
 the dedicated verified runtime profile. Vitess also needs an exact operator
 approval for the destination revision, project, environment and database name.
-The release gate keeps Vitess unavailable until native acceptance succeeds.
-Oracle Database remains held. Its engine guide describes implementation details
+Vitess acceptance records bind the exact tested source and image digests. The
+current alpha.55 candidate passed native acceptance after rebasing and still
+requires the official HTTP workflow and package checks.
+Oracle Database remains held.
+Its engine guide describes implementation details
 separately from released availability.
 
 ## Monitoring history

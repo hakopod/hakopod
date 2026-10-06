@@ -1,5 +1,62 @@
 # Managed database release acceptance
 
+## Vitess 23 — alpha.55 candidate
+
+Five native cases passed on October 6, 2026, in the named development cluster
+against source `6e7028e02c52ffb1c982bd421c5a78d249d93d7d`, after rebasing onto
+`fe3159aaafa3d80201c94499371df8d8ccecc0f3`. Every case used the same runtime
+source and pinned images. The full 2,857-file shipping inventory remained
+unchanged throughout each run.
+
+The runtime was
+`ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a`
+and the operator was
+`ghcr.io/hakopod/managed-vitess-operator@sha256:275c3ce3794dc5be502450cef38b7ac632a81a4b2f2834f7889b83e28a3cae9b`.
+The [manifest](../release/managed-vitess/manifest.json) and
+[native record](../release/managed-vitess/native-acceptance.json) bind source
+files, binary checksums, image digests and structural test results. Anonymous
+pulls of both images passed, and their binaries matched the recorded checksums.
+The manifest SHA-256 is
+`5c32ebfd3490cd30442a3314a11ec3a5e39aab9a474ba863d628c72811533412`;
+the native record SHA-256 is
+`082249f911d16010c542545400037d32ac2ecb95abf3e7278b771c7b029eabc2`.
+
+| Native case | Runner seconds | Evidence SHA-256 |
+| --- | ---: | --- |
+| Lifecycle | 977.016 | `adbcb3006b56535941a2900e3401ea84793d387aa4c319f68fb802b0f7751fef` |
+| Maximum topology | 864.212 | `e925766cd1750641ccc76cd7682c71b3ae973b47b87da6d14dcb802435088214` |
+| Recovery | 671.812 | `89c423311869c646b58ec45f39a386b7017d119ad757b5dcb484d4cab534c3f4` |
+| Replica reseed | 429.218 | `a9409f02642ae12458eceb8570f6edbfa5650483ff272c53ddb5e5ca02cc5630` |
+| Backup approval revocation | 284.974 | `a26d07f0a98153e96efeb05a50a5d8bf958bd89be62c827ecd956767a03b685b` |
+
+The maximum-topology case created eight shards with five replicas per shard:
+48 tablets behind two gateways and three topology voters. Three consecutive
+observations completed in 13,854 ms, 16,113 ms and 15,483 ms. Each observation
+used 140 core, 123 grouped-list and 157 exec requests; the fixed limits remained
+176, 150 and 25 seconds respectively. Every case passed runtime and label
+restoration, and removed its fixture namespaces and persistent volumes.
+
+The complete HTTP workflow remains a separate release requirement. It must
+cover creation, backup, separate-target restore, fresh topology, inspection,
+a bound application query with TLS hostname verification, scoped deletion and
+cleanup against the qualified source. The earlier HTTP diagnostic on
+`40b970473bb70e0f98b4236e6a52a8adb53484d0` passed in 808.778 seconds, but that
+historical result does not satisfy the final alpha.55 HTTP gate.
+
+The release targets Linux amd64 workers and fixed standalone or sharded layouts.
+Its maximum declared layout is eight shards with five replicas per shard. The
+workers in native acceptance shared one physical development VM, so the result
+does not establish independent host, zone or provider availability. ARM64
+Vitess workers, public endpoints, online resharding, in-place capacity changes,
+cross-shard transactions and native latency or replication-lag telemetry remain
+outside the release contract.
+
+Independent dashboard review covered the affected route families in light and
+dark themes at desktop and mobile widths, including keyboard and touch
+interaction and the artificial maximum-topology fixture. That UI evidence is
+separate from live cluster acceptance. Cloud packaging and production rollout
+require their own release, controller, worker and capacity checks.
+
 ## ClickHouse 26.3 — alpha.52
 
 Six native runtime tests and the HTTP API recovery workflow passed on

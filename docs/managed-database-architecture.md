@@ -1,6 +1,14 @@
 # How Hakopod manages a database
 
-Status: self-hosted alpha.52 includes PostgreSQL, Redis, MySQL, MongoDB and private ClickHouse. Vitess is staged as a release candidate and remains unavailable until its native qualification evidence passes the release gate. Oracle Database remains held; Neon and Supabase are deferred. Sections about unavailable engines explain source implementations. Cloud provisioning requires a separate operator rollout and approved capacity. See the [acceptance record](managed-database-release-acceptance.md) for the exact development tests and their limits.
+Status: published self-hosted releases through alpha.54 include PostgreSQL,
+Redis, MySQL, MongoDB and private ClickHouse. Vitess is a candidate for
+alpha.55 on Linux amd64 workers. Five native cases passed after the latest
+rebase; the official HTTP run and package checks remain required before
+publication. See the
+[acceptance record](managed-database-release-acceptance.md) for the tested scope.
+Oracle Database
+remains held; Neon and Supabase are deferred. Cloud availability requires a
+separate Cloud release, operator rollout and approved capacity.
 
 ## Follow one create request
 
@@ -64,7 +72,7 @@ Ownership checks matter during retries and deletion. A matching name is insuffic
 | MongoDB 8.0 | MongoDB Kubernetes Controller, replica-set members and agents | The driver discovers members and selects according to read preference and write concern. |
 | ClickHouse 26.3 | Altinity operator, data members, three Keeper members for clusters | Local tables remain local to a shard. Distributed tables or explicit queries combine shards. |
 | Oracle Database Free 26ai | Hakopod-owned standalone StatefulSet, TCPS listener and volumes | One PDB service. Free does not implement a Data Guard cluster. |
-| Vitess 23, release candidate | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Release availability still depends on passing native qualification. |
+| Vitess 23, alpha.55 candidate | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native acceptance passed; the final HTTP workflow and packaging remain pending. |
 
 Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Enterprise and Data Guard have a source implementation, but deployment remains disabled pending licensed native acceptance of the hardened controller and customer image.
 
@@ -78,7 +86,10 @@ MySQL Router likewise exposes different routes for primary and replica traffic. 
 
 Redis Cluster advertises one set of member addresses. The public endpoint source preserves private discovery for applications inside the cluster and allocates a separate TLS listener for each member. An outside client must map each advertised private address to that member's public hostname and port, verify its certificate, and refresh the mapping after a member changes. A `rediss://` seed URI alone does not configure this. Public Redis access remains disabled until outside-in client routing, failover, source filtering and session revocation pass native acceptance.
 
-The Vitess candidate uses declared integer hash sharding columns and SINGLE transaction mode. It does not provide cross-shard transaction guarantees or live resharding. Its controller, internal TLS, replication identity verification and recovery must pass the recorded native qualification gate before release. See [Vitess configuration](../internal/database/vitess.go) and [runtime source](../internal/cluster/database_vitess.go).
+Vitess uses declared integer hash sharding columns and SINGLE transaction mode.
+It does not provide cross-shard transaction guarantees or live resharding. See
+the [Managed Vitess guide](managed-vitess.md) for its fixed topology, pinned
+runtime and recovery requirements.
 
 Every route needs a retry policy. A broken connection after `COMMIT` does not prove the transaction failed. Reconnect with bounded retries, and use application idempotency for writes whose outcome is unknown.
 
@@ -125,7 +136,7 @@ An encrypted archive can be intact and still represent a different consistency b
 | MongoDB | One snapshot read timestamp across supported application collections, with metadata checks. | Continuous oplog recovery. |
 | ClickHouse | A native archive for each shard, captured sequentially. | A transactionally consistent snapshot across shards. |
 | Oracle Free | APP schema Data Pump capture at a flashback SCN, with a DDL guard. | RMAN, archived-redo recovery or Data Guard. |
-| Vitess, under construction | Framed per-shard logical dumps with version, shard map and VSchema. | Global cross-shard snapshot consistency or accepted runtime recovery. |
+| Vitess | Framed per-shard logical dumps with version, shard map and VSchema. | One globally consistent cross-shard snapshot or continuous point-in-time recovery. |
 
 The managed backup pipeline encrypts archives, records their digest and verifies stored bytes. Restore authenticates the archive before database writes. It requires a separate compatible empty target, closes application ingress, revokes existing target sessions and records recovery progress durably. Failed recovery leaves that target isolated for inspection or deletion; it must not be treated as an empty target for another attempt.
 
