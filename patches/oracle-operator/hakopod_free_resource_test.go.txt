@@ -49,15 +49,29 @@ func TestHakopodOracleFreeResourceRejectsOtherLifecyclePaths(t *testing.T) {
 	if err = validateHakopodFreeResource(&object); err != nil {
 		t.Fatal("candidate failed its fixed resource contract", err)
 	}
+	defaulted := object.DeepCopy()
+	defaulted.Spec.AdminPassword = dbapi.SingleInstanceDatabaseAdminPassword{SecretKey: "oracle_pwd"}
+	before := defaulted.DeepCopy()
+	if err = validateHakopodFreeResource(defaulted); err != nil {
+		t.Fatal("unused legacy secret default rejected", err)
+	}
+	if !reflect.DeepEqual(defaulted, before) {
+		t.Fatal("validation changed the resource")
+	}
 	for name, change := range map[string]func(*dbapi.SingleInstanceDatabase){
-		"restore":           func(m *dbapi.SingleInstanceDatabase) { m.Spec.Restore = &dbapi.SingleInstanceDatabaseRestoreSpec{} },
-		"custom scripts":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.Scripts = &dbapi.SingleInstanceDatabaseScriptsSpec{} },
-		"truecache":         func(m *dbapi.SingleInstanceDatabase) { m.Spec.TrueCache = &dbapi.SingleInstanceDatabaseTrueCacheSpec{} },
-		"archive logging":   func(m *dbapi.SingleInstanceDatabase) { yes := true; m.Spec.ArchiveLog = &yes },
-		"external endpoint": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Services.Endpoints[0].Type = "LoadBalancer" },
-		"foreign admin":     func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.Secrets.Admin.SecretName = "foreign" },
-		"data guard wallet": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.TCPS.ClientWalletSecret = "foreign" },
-		"existing data":     func(m *dbapi.SingleInstanceDatabase) { m.Spec.Persistence.Oradata.PvcName = "foreign" },
+		"legacy secret name":   func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.SecretName = "another-secret" },
+		"legacy secret key":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.SecretKey = "admin" },
+		"legacy secret keep":   func(m *dbapi.SingleInstanceDatabase) { no := false; m.Spec.AdminPassword.KeepSecret = &no },
+		"legacy secret mount":  func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.MountPath = "/another-path" },
+		"legacy wallet bypass": func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.SkipInitWallet = true },
+		"restore":              func(m *dbapi.SingleInstanceDatabase) { m.Spec.Restore = &dbapi.SingleInstanceDatabaseRestoreSpec{} },
+		"custom scripts":       func(m *dbapi.SingleInstanceDatabase) { m.Spec.Scripts = &dbapi.SingleInstanceDatabaseScriptsSpec{} },
+		"truecache":            func(m *dbapi.SingleInstanceDatabase) { m.Spec.TrueCache = &dbapi.SingleInstanceDatabaseTrueCacheSpec{} },
+		"archive logging":      func(m *dbapi.SingleInstanceDatabase) { yes := true; m.Spec.ArchiveLog = &yes },
+		"external endpoint":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.Services.Endpoints[0].Type = "LoadBalancer" },
+		"foreign admin":        func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.Secrets.Admin.SecretName = "foreign" },
+		"data guard wallet":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.TCPS.ClientWalletSecret = "foreign" },
+		"existing data":        func(m *dbapi.SingleInstanceDatabase) { m.Spec.Persistence.Oradata.PvcName = "foreign" },
 		"extra backup": func(m *dbapi.SingleInstanceDatabase) {
 			m.Spec.Persistence.AdditionalPVCs = append(m.Spec.Persistence.AdditionalPVCs, m.Spec.Persistence.AdditionalPVCs[0])
 		},
@@ -164,6 +178,34 @@ func TestHakopodOracleFreeCandidateSurvivesCRDAdmission(t *testing.T) {
 	}
 	if err = validateHakopodFreeResource(&object); err != nil {
 		t.Fatal("defaulted candidate rejected", err)
+	}
+	// The first admission does not create an absent legacy object. A later
+	// typed update does, so exercise serialization followed by admission too.
+	encoded, err = json.Marshal(&object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updated map[string]any
+	if err = json.Unmarshal(encoded, &updated); err != nil {
+		t.Fatal(err)
+	}
+	pruning.Prune(updated, schema, true)
+	defaulting.Default(updated, schema)
+	if failures := validation.ValidateCustomResource(field.NewPath("updated"), updated, validator); len(failures) != 0 {
+		t.Fatal(failures.ToAggregate())
+	}
+	encoded, err = json.Marshal(updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(encoded, &object); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(object.Spec.AdminPassword, dbapi.SingleInstanceDatabaseAdminPassword{SecretKey: "oracle_pwd"}) {
+		t.Fatal("typed round trip did not exercise the actual legacy default")
+	}
+	if err = validateHakopodFreeResource(&object); err != nil {
+		t.Fatal("typed controller round trip rejected", err)
 	}
 }
 
