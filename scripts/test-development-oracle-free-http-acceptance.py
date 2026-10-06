@@ -18,7 +18,7 @@ SPEC.loader.exec_module(HTTP)
 
 class HTTPRunnerTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(dir=os.environ["TMPDIR"])
+        self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
@@ -97,6 +97,9 @@ class HTTPRunnerTests(unittest.TestCase):
 
     def test_interrupt_during_fixture_prepare_still_cleans_host_resources(self):
         actions = []
+        original_is_relative_to = Path.is_relative_to
+        def in_test_scratch(path, other):
+            return original_is_relative_to(path, self.root if other == "/srv/hakopod-backup-scratch" else other)
         class Fixtures:
             def __init__(self, *args):
                 pass
@@ -110,6 +113,7 @@ class HTTPRunnerTests(unittest.TestCase):
         args = SimpleNamespace(output=self.root / "output", cache=self.root / "cache", kubeconfig=Path("config"),
             kubectl=Path("kubectl"), go=Path("go"), docker=Path("docker"), sidb_crd=Path("sidb"), nodes="node")
         with mock.patch.object(HTTP, "runner_limits", return_value={}), mock.patch.object(HTTP, "host_capacity", return_value={}), \
+                mock.patch.object(Path, "is_relative_to", in_test_scratch), \
                 mock.patch.dict(HTTP.NATIVE, environment=mock.Mock(return_value=({}, {}))), \
                 mock.patch.dict(HTTP.VERIFIER, source_files=lambda root: {}, source_images=lambda root: {}), \
                 mock.patch.object(HTTP.runpy, "run_path", return_value={"Fixtures": Fixtures}), \
@@ -123,12 +127,22 @@ class HTTPRunnerTests(unittest.TestCase):
 
     def test_output_and_cache_reject_parent_directory_escape(self):
         for field in ("output", "cache"):
-            args = SimpleNamespace(output=self.root / "output", cache=self.root / "cache")
+            scratch = Path("/srv/hakopod-backup-scratch/oracle-http-escape-test")
+            args = SimpleNamespace(output=scratch / "output", cache=scratch / "cache")
             setattr(args, field, Path("/srv/hakopod-backup-scratch/../outside"))
-            with self.subTest(field=field), mock.patch.object(HTTP, "runner_limits", return_value={}), \
+            checked = []
+            original_is_absolute = Path.is_absolute
+            def is_absolute(path):
+                checked.append(path)
+                return original_is_absolute(path)
+            with self.subTest(field=field), mock.patch.object(Path, "is_absolute", is_absolute), \
+                    mock.patch.object(HTTP, "runner_limits") as limits, \
+                    mock.patch.object(Path, "mkdir", side_effect=AssertionError("directory creation attempted")) as mkdir, \
                     self.assertRaisesRegex(ValueError, "managed scratch paths"):
                 HTTP.run(args)
-            self.assertFalse((self.root / "output").exists())
+            self.assertEqual(checked, [args.output] if field == "output" else [args.output, args.cache])
+            limits.assert_not_called()
+            mkdir.assert_not_called()
 
 
 if __name__ == "__main__":
