@@ -309,9 +309,11 @@ Managed Actions is an optional Pro module. See [the setup and lifecycle guide](.
 
 ## Managed database controllers
 
-The installer kit now carries a `deploy/database-controllers` bundle. Release
+The installer kit carries a `deploy/database-controllers` bundle. Release
 packaging renders PostgreSQL, Redis, MySQL, MongoDB and ClickHouse controller
-sources with pinned checksums and image digests. Use the bundle from the same
+sources with pinned checksums and image digests. The alpha.55 candidate can
+render Vitess only when its installed release evidence matches the compiled
+source and image identities. Use the bundle from the same
 release as the installed server. Oracle Database remains held for a later
 release. Building that bundle requires
 PyYAML on a Linux build host and `HAKOPOD_REDIS_CONTROLLER_IMAGE` naming the
@@ -336,18 +338,21 @@ Sandboxed workers also need the [dedicated runtime](#optional-clickhouse-sandbox
 before creation. Installing the controller does not configure that runtime or
 reserve database capacity.
 
-Vitess remains behind a compiled release gate, so the current package
-omits it. Enabling that gate requires native qualification records matching the
-current source and exact runtime images; packaging stops when those records are
-missing or stale. An enabled Vitess payload contains eight CRDs. Hakopod creates
-a separate, namespace-scoped operator for each Vitess database; this module does
-not install a shared Vitess controller. A kit that omits Vitess cannot enable it.
+Vitess remains behind a compiled release gate. Enabling that gate requires
+native qualification records matching the current source and exact runtime
+images; packaging stops when those records are missing or stale. An enabled
+Vitess payload contains eight CRDs. Hakopod creates a separate,
+namespace-scoped operator for each Vitess database; this module does not install
+a shared Vitess controller. A kit that omits Vitess cannot enable it. The
+alpha.55 candidate passed its five native cases and still requires the official
+HTTP workflow and package checks against its final source and images;
+ARM64 remains unqualified.
 
 From the matching extracted installer kit on a completed installer-owned host:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mysql mongodb clickhouse \
+  --engines postgresql redis mysql mongodb clickhouse vitess \
   --plan /root/hakopod-database-controllers-plan.json
 ```
 
@@ -360,7 +365,7 @@ Then apply that exact plan within 30 minutes:
 
 ```sh
 sudo python3 installer/modules.py managed-databases \
-  --engines postgresql redis mysql mongodb clickhouse \
+  --engines postgresql redis mysql mongodb clickhouse vitess \
   --apply-reviewed-plan /root/hakopod-database-controllers-plan.json
 ```
 
@@ -381,8 +386,11 @@ These commands install controller infrastructure only. They do not create or
 resize databases, delete volumes, change node runtimes, enable Cloud admission,
 or establish native acceptance. `scripts/install-development-*` remain confined
 to the named development cluster and are not the shipped installation path.
-Vitess is excluded until its patched images and runtime are qualified. Oracle
-Free uses its own engine-owned workload and has no additional controller module.
+Vitess requires fresh evidence matching the current alpha.55 candidate, a
+complete passing HTTP recovery report, completed package checks and the compiled
+release gate.
+Oracle Free uses its own engine-owned workload and has no additional controller
+module.
 Oracle Enterprise and Data Guard have a source implementation, but deployment
 remains disabled pending licensed native acceptance of the hardened controller
 and customer image. Public database endpoints are not included in this installer.

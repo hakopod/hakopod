@@ -140,3 +140,46 @@ the horizontal canvas, and 320-pixel guided forms retained usable controls and
 summaries. No actionable UI defect remained. Evidence is retained on the review
 VM under `ui-release-c0bf711/reviewer/database-review/` and
 `ui-release-c0bf711/reviewer/review/` within the owned scratch directory.
+
+## Vitess release review, 5 October 2026
+
+An independent reviewer checked the Vitess dashboard at source
+`b2472bdbc19013dbe8a749921cf92b7b72f5f44a`. All records were explicitly marked as
+artificial fixtures. The review covered 54 route cases in dark and Paper themes
+at 1440, 390 and 320 pixels: standalone and clustered details, monitoring,
+connections and security, backups, recovery, dense topology and all five creation
+steps. Four separate checks covered keyboard focus, mobile tab scrolling, touch
+selection, recovery eligibility and corrected singular tablet wording.
+
+The dense fixture contained eight shards, five replicas per shard, 48 tablets,
+15 applications, two vtgate gateways and three etcd members. The graph showed
+the selected shard while the inventory retained all 48 tablets. The creation
+form displayed only the native backup destination in the selected project and
+environment. A failed request preserved the name, topology, destination revision
+and table-routing entry. Recovery displayed only the compatible verified archive.
+
+The reviewer inspected full-resolution screenshots after checking real element
+bounds. Controls remained inside the viewport, keyboard focus stayed visible,
+and the mobile tab row and topology canvas scrolled within their own containers.
+Every route retained the shared 24-pixel desktop or 16-pixel mobile inset, one
+page heading and no document-level horizontal overflow or browser error. No
+actionable visual finding remained after the singular tablet copy was fixed.
+The same VM source passed 65 server/proxy tests, 218 UI tests, the production
+build and TypeScript checks.
+
+A later capacity correction at `815949a341f6588b70630ab36701b1dab329d70f` passed
+24 additional rendered cases covering allocation, deployment review and details
+for both layouts and themes at 1440 and 320 pixels. The standalone total was
+5.1 CPU cores and 9.656 GiB; the two-shard, one-replica cluster total was 8.85 CPU
+cores and 17.248 GiB. A final copy correction at
+`255479be4954af74fb34871f42c0508a6f7071b5` passed eight screenshot cases for one
+and two table-routing entries at those widths in both themes.
+
+The release candidate `6e7028e02c52ffb1c982bd421c5a78d249d93d7d` retains those
+rendered dashboard bytes. Its later web changes affect generated API metadata
+and the server proxy, not the rendered components. The retained evidence is in
+`work/database-enterprise/vitess-ui-review-v1/`, including the reviewer notes,
+measured results, interaction results, screenshots and SHA-256 lists for the
+main, capacity and copy reviews. VM preview processes were stopped after export.
+These reviews establish the stated UI coverage; native database acceptance and
+Cloud or production availability require separate evidence.

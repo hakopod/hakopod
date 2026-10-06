@@ -1,29 +1,68 @@
-Hakopod 0.1.0-alpha.54 adds the Outpost webhook delivery template with independently bundled or existing PostgreSQL, Redis and RabbitMQ.
+Draft candidate notes. Five native cases passed on the current source.
+Publication still requires the complete HTTP workflow and alpha.55 package checks.
 
-The preset runs Outpost v1.6.0 as separate API, delivery and log services. A deployment job applies upstream PostgreSQL and Redis migrations before the server roles start. Only the API can receive public HTTP ingress; bundled databases and the broker keep private listeners and separate persistent volumes. All images are digest-pinned, and Outpost runs without root or cluster credentials.
+Hakopod 0.1.0-alpha.55 adds self-hosted Managed Vitess for applications that
+need an explicit MySQL sharding key. It supports standalone Vitess and fixed
+cluster layouts with one, two, four or eight shards and up to five replicas per
+shard. Applications connect privately through vtgate with verified TLS and
+select `app@primary` or `app@replica` explicitly.
 
-Each dependency choice changes the rendered services and required secrets. Private AMQP bindings URL-escape the bundled broker credentials at deployment time. External PostgreSQL and RabbitMQ URLs stay in application-scoped secrets; PostgreSQL requires an explicit TLS policy and external Redis verifies TLS by default. Keep the API, JWT and encryption keys stable with coordinated data backups. This is a new-install preset; switching images or reverting a deployment does not reverse upstream data migrations.
+The native qualification covers lifecycle, recovery, replica reseeding, backup
+approval revocation and the maximum supported topology. Anonymous image
+verification passed against the recorded binary checksums. The official HTTP
+workflow and package checks remain pending; the earlier HTTP diagnostic does
+not satisfy that release requirement.
 
-All eight dependency combinations passed on native AMD64 and ARM64 in isolated Kubernetes clusters. The checks covered migrations, API and tenant authorization, private webhook delivery, data persistence after service and dependency restarts, and owned-resource cleanup. External dependencies were separately named private fixtures; see the [runtime acceptance record](https://github.com/hakopod/hakopod/blob/main/docs/outpost-template-runtime.md) for the exact scope and evidence.
+The service runs Vitess 23.0.6 with MySQL 8.4.6, Vitess Operator 2.16.0 and a
+three-member etcd topology. Hakopod owns authorization and durable operations.
+A namespace-scoped operator reconciles each database, and applications never
+receive Kubernetes credentials.
 
-Shared hosted compute does not provide the job and binding capabilities required by this stack. Use self-hosted Hakopod or connect your own server in Cloud. Public TLS, arbitrary external providers, portal integration, scaling and backup restoration require separate operator validation.
+Creation requires a dedicated, operator-approved native backup destination.
+Native backups seed replacement tablets. Downloadable logical archives are
+separate and restore into an empty compatible target while application access
+remains closed for inspection. Removing backup approval stops approved backup
+work; revoke the provider key separately when it must become unusable.
 
-This release retains the database network maintenance and bounded Actions drain fixes from [alpha.53](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.53), and private self-hosted ClickHouse support from [alpha.52](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.52).
+Vitess requires Linux amd64 workers with the fixed capacity described in the
+Managed Vitess guide. ARM64 is not qualified. Dedicated public endpoints,
+online resharding, in-place capacity changes, automatic SQL read/write
+splitting, cross-shard transactions and arbitrary custom vindexes remain
+outside this release contract.
 
-Install alpha.54 with the published installer:
+The core install or upgrade does not install a missing Vitess controller. After
+upgrading, use the matching extracted release kit and follow the reviewed plan
+and apply procedure in the
+[installer guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.55/installer/README.md#managed-database-controllers).
+Creation remains closed until the installation has approved workers, enough
+capacity and the database's dedicated native backup destination.
+
+Alpha.55 retains the Outpost webhook delivery template and its verified scope
+from [alpha.54](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.54).
+See the [runtime acceptance record](https://github.com/hakopod/hakopod/blob/main/docs/outpost-template-runtime.md)
+for its dependency combinations, limits and evidence.
+
+Install alpha.55 with the published installer:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.54/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.54
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.55/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.55
 ```
 
 Upgrade an existing installation with:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.54/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.54
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.55/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.55
 ```
 
-Direct upgrades are supported from alpha.52 and alpha.53. Older installations need a supported intermediate release. Each upgrade backs up PostgreSQL and configuration and restarts the management API and dashboard. Retain backups because swapping binaries does not undo database migrations.
+Direct upgrades are supported from alpha.53 and alpha.54. Older installations
+need a supported intermediate release. Each upgrade backs up PostgreSQL and
+configuration and restarts the management API and dashboard. Retain backups
+because replacing binaries does not reverse database migrations.
+
+This OSS release does not establish Hakopod Cloud availability. Cloud requires
+a separate package, pinned engine revision, controller rollout, qualified
+workers, capacity approval and production verification.
