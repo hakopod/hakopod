@@ -1,6 +1,6 @@
 # Managed database release acceptance
 
-## Vitess 23 — alpha.55 candidate
+## Vitess 23 — alpha.55
 
 Five native cases passed on October 6, 2026, in the named development cluster
 against source `6e7028e02c52ffb1c982bd421c5a78d249d93d7d`, after rebasing onto
@@ -32,16 +32,24 @@ the native record SHA-256 is
 The maximum-topology case created eight shards with five replicas per shard:
 48 tablets behind two gateways and three topology voters. Three consecutive
 observations completed in 13,854 ms, 16,113 ms and 15,483 ms. Each observation
-used 140 core, 123 grouped-list and 157 exec requests; the fixed limits remained
-176, 150 and 25 seconds respectively. Every case passed runtime and label
+used 140 core, 123 grouped API and 157 exec requests. Core and grouped requests
+stayed below their limits of 176 and 150. Every observation completed within
+25 seconds. Every case passed runtime and label
 restoration, and removed its fixture namespaces and persistent volumes.
 
-The complete HTTP workflow remains a separate release requirement. It must
-cover creation, backup, separate-target restore, fresh topology, inspection,
-a bound application query with TLS hostname verification, scoped deletion and
-cleanup against the qualified source. The earlier HTTP diagnostic on
-`40b970473bb70e0f98b4236e6a52a8adb53484d0` passed in 808.778 seconds, but that
-historical result does not satisfy the final alpha.55 HTTP gate.
+The official HTTP workflow passed on source
+`80ff8546f5a1657a960e1288fbf3124d7ad132d3`, whose runtime and HTTP harness match
+the native qualification. The test took 857.14 seconds; the full runner took
+1062.224 seconds including cold compilation. It verified creation, scoped
+authorization, encrypted backup, separate-target restore, fresh topology,
+inspection, a bound application query with TLS hostname verification and scoped
+application and database deletion. The wrapper confirmed source integrity,
+runtime and label restoration, and no remaining fixture namespaces or volumes.
+
+The [HTTP evidence](../release/managed-vitess-http/evidence.json) SHA-256 is
+`f702587ade68b3a2d7c7c511c45d8e68fd6bcef455379ff42ccc6f952fc22f6b`.
+The canonical release verifier accepted that report. Its wrapper receipt has
+SHA-256 `aaed7b9ee266d88acb1f6581b0ee9b7d949ca98019086eea444df6b88cdb2bac`.
 
 The release targets Linux amd64 workers and fixed standalone or sharded layouts.
 Its maximum declared layout is eight shards with five replicas per shard. The

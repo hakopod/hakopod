@@ -5,9 +5,8 @@ Managed databases have their own project and environment, resource allocation, c
 PostgreSQL and Redis are included in the self-hosted development release starting
 with `v0.1.0-alpha.37`. MongoDB joins them in `v0.1.0-alpha.47`, and private
 MySQL 8.4 support is included in `v0.1.0-alpha.50`. Private ClickHouse 26.3 joins
-them in `v0.1.0-alpha.52`. Private Vitess 23 is an alpha.55 candidate for
-Linux amd64 workers. Its five native cases passed on the current source;
-the official HTTP run and package checks remain required before publication. Use a published release's
+them in `v0.1.0-alpha.52`. Private Vitess 23 joins them in
+`v0.1.0-alpha.55` for Linux amd64 workers. Use a published release's
 verified assets; a tag or candidate build alone is not an installation package.
 Provisioning requires the controller installation described below; upgrading
 Hakopod does not install missing controllers. Cloud workspace admission, quotas,
@@ -279,7 +278,7 @@ earlier steps without losing entered values. A failed request keeps the reviewed
 configuration and its retry key until you change the configuration.
 
 Alpha.50 supports guided creation for PostgreSQL, Redis, MySQL and MongoDB;
-alpha.52 adds ClickHouse. The alpha.55 candidate adds guided standalone and
+alpha.52 adds ClickHouse. Alpha.55 adds guided standalone and
 sharded Vitess creation with a scoped native backup destination and explicit
 table routing.
 MySQL, ClickHouse and Vitess creation require
@@ -288,8 +287,8 @@ eligible placement and sufficient capacity. Sandboxed ClickHouse also needs
 the dedicated verified runtime profile. Vitess also needs an exact operator
 approval for the destination revision, project, environment and database name.
 Vitess acceptance records bind the exact tested source and image digests. The
-current alpha.55 candidate passed native acceptance after rebasing and still
-requires the official HTTP workflow and package checks.
+alpha.55 runtime passed all five native cases and the official HTTP workflow
+after rebasing. Packaging verifies those records against the source and images.
 Oracle Database remains held.
 Its engine guide describes implementation details
 separately from released availability.

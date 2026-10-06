@@ -1,10 +1,8 @@
 # How Hakopod manages a database
 
-Status: published self-hosted releases through alpha.54 include PostgreSQL,
-Redis, MySQL, MongoDB and private ClickHouse. Vitess is a candidate for
-alpha.55 on Linux amd64 workers. Five native cases passed after the latest
-rebase; the official HTTP run and package checks remain required before
-publication. See the
+Status: self-hosted alpha.55 includes PostgreSQL, Redis, MySQL, MongoDB,
+private ClickHouse and private Vitess on Linux amd64 workers. The Vitess runtime
+passed five native cases and the official HTTP workflow. See the
 [acceptance record](managed-database-release-acceptance.md) for the tested scope.
 Oracle Database
 remains held; Neon and Supabase are deferred. Cloud availability requires a
@@ -72,7 +70,7 @@ Ownership checks matter during retries and deletion. A matching name is insuffic
 | MongoDB 8.0 | MongoDB Kubernetes Controller, replica-set members and agents | The driver discovers members and selects according to read preference and write concern. |
 | ClickHouse 26.3 | Altinity operator, data members, three Keeper members for clusters | Local tables remain local to a shard. Distributed tables or explicit queries combine shards. |
 | Oracle Database Free 26ai | Hakopod-owned standalone StatefulSet, TCPS listener and volumes | One PDB service. Free does not implement a Data Guard cluster. |
-| Vitess 23, alpha.55 candidate | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native acceptance passed; the final HTTP workflow and packaging remain pending. |
+| Vitess 23 | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native and HTTP acceptance passed for the fixed layouts in alpha.55. |
 
 Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Enterprise and Data Guard have a source implementation, but deployment remains disabled pending licensed native acceptance of the hardened controller and customer image.
 
