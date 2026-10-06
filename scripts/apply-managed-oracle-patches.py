@@ -93,7 +93,8 @@ def main():
 \t\tlogDataguardBrokerRunnerCreation(ctx, r, broker, runtime, podName, runtimeHash)
 ''')
     text = replace(text, '\t\t\tdataguardBrokerRunnerLabelComponent: dataguardBrokerRunnerComponentValue,\n\t\t},\n\t); err != nil {', '\t\t\tdataguardBrokerRunnerLabelComponent: dataguardBrokerRunnerComponentValue,\n\t\t},\n\t\tclient.Limit(3),\n\t); err != nil {')
-    text = replace(text, '\treturn pods.Items, nil\n', '\tif pods.Continue != "" || len(pods.Items) > 2 { return nil, fmt.Errorf("Oracle runner inventory exceeds its bound") }\n\treturn pods.Items, nil\n')
+    runner_bound = 'dbcommons.HakopodOracleListExceedsBound(pods.Continue, len(pods.Items))' if args.free_only else 'pods.Continue != "" || len(pods.Items) > 2'
+    text = replace(text, '\treturn pods.Items, nil\n', '\tif ' + runner_bound + ' { return nil, fmt.Errorf("Oracle runner inventory exceeds its bound") }\n\treturn pods.Items, nil\n')
     text = replace(text, '\t\tpod := buildDataguardBrokerRunnerPod(broker, runtime, runtimeHash)\n', '\t\tpod := buildDataguardBrokerRunnerPod(broker, runtime, runtimeHash)\n\t\tif err := dbcommons.ApplyHakopodPodPolicy(pod, broker.ObjectMeta); err != nil {\n\t\t\treturn false, "", err\n\t\t}\n')
     text = replace(text, '\t\t"executionKey":     executionCandidateKey(candidate),', '\t\t"executionKey":     executionCandidateKey(candidate),\n\t\t"hakopodPodPolicy": broker.Annotations["hakopod.io/oracle-pod-policy"],')
     changes[path] = text
@@ -224,12 +225,25 @@ def main():
         end = text.index("func (r *SingleInstanceDatabaseReconciler) manageConvPhysicalToSnapshot(", start)
         deletion = replace(text[start:end], "if result.Requeue {", "if err != nil || result.Requeue {", 2)
         deletion = replace(deletion, "client.MatchingLabels(dbcommons.GetLabelsForController(\"\", req.Name))}", "client.MatchingLabels(dbcommons.GetLabelsForController(\"\", req.Name)), client.Limit(3)}")
-        deletion = replace(deletion, "\t\tif len(podList.Items) == 0 {", "\t\tif podList.Continue != \"\" || len(podList.Items) > 2 { return requeueY, fmt.Errorf(\"managed Oracle pod inventory exceeds its bound\") }\n\t\tfor i := range podList.Items { if err := dbcommons.ValidateHakopodFreeObservedMember(&podList.Items[i], m.ObjectMeta); err != nil { return requeueY, err } }\n\t\tif len(podList.Items) == 0 {")
+        deletion = replace(deletion, "\t\tif len(podList.Items) == 0 {", "\t\tif dbcommons.HakopodOracleListExceedsBound(podList.Continue, len(podList.Items)) { return requeueY, fmt.Errorf(\"managed Oracle pod inventory exceeds its bound\") }\n\t\tfor i := range podList.Items { if err := dbcommons.ValidateHakopodFreeObservedMember(&podList.Items[i], m.ObjectMeta); err != nil { return requeueY, err } }\n\t\tif len(podList.Items) == 0 {")
         claim_start = deletion.index("func (r *SingleInstanceDatabaseReconciler) cleanupManagedSingleInstanceDatabasePVCs(")
         claim_end = deletion.index("\n// #############################################################################################", claim_start)
         deletion = deletion[:claim_start] + "func (r *SingleInstanceDatabaseReconciler) cleanupManagedSingleInstanceDatabasePVCs(ctx context.Context, m *dbapi.SingleInstanceDatabase) (bool, error) {\n\treturn r.cleanupHakopodFreeClaims(ctx, m)\n}\n" + deletion[claim_end:]
         text = text[:start] + deletion + text[end:]
         # Validate immutable storage before upstream replacement can delete data.
+        # Free forbids custom-script storage. The upstream legacy cleanup also
+        # treats declared additional claims as stale scripts and can delete the
+        # backup claim, so do not enter it after validating the fixed Free spec.
+        start = text.index("func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforCustomScriptsVol(")
+        end = text.index("func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforDatafilesVol(", start)
+        text = text[:start] + '''func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforCustomScriptsVol(ctx context.Context, req ctrl.Request,
+    m *dbapi.SingleInstanceDatabase) (ctrl.Result, error) {
+    if err := validateHakopodFreeResource(m); err != nil { return requeueN, err }
+    return requeueN, nil
+}
+
+''' + text[end:]
+
         start = text.index("func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforDatafilesVol(")
         end = text.index("func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforFRAVol(", start)
         data = text[start:end]
@@ -269,7 +283,7 @@ func (r *SingleInstanceDatabaseReconciler) upstreamConfigTcps(m *dbapi.SingleIns
         text = changes[path]
         text = replace(text, 'metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"', 'metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"\n\t"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"')
         text = replace(text, "listOpts := []client.ListOption{client.InNamespace(namespace), client.MatchingLabels(GetLabelsForController(version, name))}", "listOpts := []client.ListOption{client.InNamespace(namespace), client.MatchingLabels(GetLabelsForController(version, name)), client.Limit(3)}")
-        text = replace(text, "\t// r.List() lists all the pods", """	if podList.Continue != "" || len(podList.Items) > 2 { return readyPod, 0, nil, nil, fmt.Errorf("managed Oracle pod inventory exceeds its bound") }
+        text = replace(text, "\t// r.List() lists all the pods", """	if HakopodOracleListExceedsBound(podList.Continue, len(podList.Items)) { return readyPod, 0, nil, nil, fmt.Errorf("managed Oracle pod inventory exceeds its bound") }
 	root := &unstructured.Unstructured{}
 	root.SetAPIVersion("database.oracle.com/v4")
 	root.SetKind("SingleInstanceDatabase")

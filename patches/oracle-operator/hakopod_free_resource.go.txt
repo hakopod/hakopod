@@ -61,7 +61,7 @@ func (r *SingleInstanceDatabaseReconciler) cleanupHakopodFreeClaims(ctx context.
 	if err := r.List(ctx, claims, client.InNamespace(m.Namespace), client.Limit(3)); err != nil {
 		return false, err
 	}
-	if claims.Continue != "" || len(claims.Items) > 2 {
+	if dbcommons.HakopodOracleListExceedsBound(claims.Continue, len(claims.Items)) {
 		return false, fmt.Errorf("managed Oracle Free claim inventory exceeds its bound")
 	}
 	for i := range claims.Items {
