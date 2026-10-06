@@ -124,6 +124,52 @@ func TestHakopodOracleFreeCreatesProtectedClaims(t *testing.T) {
 	}
 }
 
+func TestHakopodOracleFreeCustomScriptsPhasePreservesManagedClaims(t *testing.T) {
+	object, _, scheme := freeControllerFixture(t)
+	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(object).Build()
+	reconciler := &SingleInstanceDatabaseReconciler{Client: reader, Scheme: scheme, Log: logr.Discard()}
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
+	ctx := context.Background()
+	if _, err := reconciler.createOrReplacePVCforDatafilesVol(ctx, request, object); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reconciler.createOrReplacePVCsForAdditionalPVCs(ctx, request, object); err != nil {
+		t.Fatal(err)
+	}
+	before := &corev1.PersistentVolumeClaimList{}
+	if err := reader.List(ctx, before, client.InNamespace(object.Namespace)); err != nil || len(before.Items) != 2 {
+		t.Fatal("managed claims were not created", err)
+	}
+	result, err := reconciler.createOrReplacePVCforCustomScriptsVol(ctx, request, object)
+	if err != nil || result.Requeue || result.RequeueAfter != 0 {
+		t.Fatal("unsupported legacy cleanup blocked the Free lifecycle", err)
+	}
+	for name, change := range map[string]func(*dbapi.SingleInstanceDatabase){
+		"legacy scripts volume": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Persistence.ScriptsVolumeName = "foreign-volume" },
+		"explicit scripts":      func(m *dbapi.SingleInstanceDatabase) { m.Spec.Scripts = &dbapi.SingleInstanceDatabaseScriptsSpec{} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := object.DeepCopy()
+			change(changed)
+			if _, err := reconciler.createOrReplacePVCforCustomScriptsVol(ctx, request, changed); err == nil {
+				t.Fatal("custom scripts bypassed strict Free validation")
+			}
+		})
+	}
+	after := &corev1.PersistentVolumeClaimList{}
+	if err := reader.List(ctx, after, client.InNamespace(object.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before.Items, after.Items) {
+		t.Fatal("custom scripts cleanup changed a managed data or backup claim")
+	}
+	for _, claim := range after.Items {
+		if claim.DeletionTimestamp != nil {
+			t.Fatal("custom scripts cleanup began deleting a managed claim")
+		}
+	}
+}
+
 func TestHakopodOracleFreeCandidateSurvivesCRDAdmission(t *testing.T) {
 	root := os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR")
 	raw, err := os.ReadFile(filepath.Join(root, "database.json"))
@@ -266,6 +312,61 @@ func TestHakopodOracleFreeFindPodsRejectsSpoofedExecTargets(t *testing.T) {
 				t.Fatal("unsafe inventory exposed an execution target")
 			}
 		})
+	}
+}
+
+type freeListContinuationClient struct {
+	client.Client
+	continuation  string
+	probeObserved bool
+}
+
+func (c *freeListContinuationClient) List(ctx context.Context, list client.ObjectList, options ...client.ListOption) error {
+	settings := &client.ListOptions{}
+	settings.ApplyOptions(options)
+	if settings.Limit != 3 {
+		return errors.New("managed inventory must probe for a third item")
+	}
+	c.probeObserved = true
+	if err := c.Client.List(ctx, list, options...); err != nil {
+		return err
+	}
+	list.SetContinue(c.continuation)
+	return nil
+}
+
+func TestHakopodOracleFreeFindPodsHandlesBoundedCacheLists(t *testing.T) {
+	for tokenName, token := range map[string]string{"api": "", "cache": "continue-not-supported", "api continuation": "opaque-next-page", "different marker": "continue-not-supported "} {
+		for countName, count := range map[string]int{"zero": 0, "one": 1, "two": 2, "excess": 3} {
+			t.Run(tokenName+"/"+countName, func(t *testing.T) {
+				object, pod, scheme := freeControllerFixture(t)
+				objects := []client.Object{object}
+				for _, name := range []string{"first-member", "second-member", "third-member"}[:count] {
+					member := pod.DeepCopy()
+					member.Name, member.UID = name, types.UID(name)
+					objects = append(objects, member)
+				}
+				reader := &freeListContinuationClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build(), continuation: token}
+				request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
+				ready, found, available, deleting, err := dbcommons.FindPods(reader, "", "", object.Name, object.Namespace, context.Background(), request)
+				if !reader.probeObserved {
+					t.Fatal("bounded list was not requested")
+				}
+				if count > 2 || tokenName == "api continuation" || tokenName == "different marker" {
+					if err == nil || ready.UID != "" || found != 0 || len(available) != 0 || len(deleting) != 0 {
+						t.Fatal("incomplete inventory exposed execution targets")
+					}
+					return
+				}
+				readyCount := 0
+				if ready.UID != "" {
+					readyCount = 1
+				}
+				if err != nil || found != count || readyCount+len(available) != count || len(deleting) != 0 {
+					t.Fatal("complete bounded inventory was rejected", err)
+				}
+			})
+		}
 	}
 }
 

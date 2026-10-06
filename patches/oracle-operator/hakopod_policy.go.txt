@@ -14,6 +14,13 @@ import (
 
 const hakopodOracleProfile = "hakopod-oracle-tcps-v1"
 
+// Callers request three items so a third result proves the two-item bound was
+// exceeded. controller-runtime v0.24.1 marks every cached list, including an
+// empty one, with this sentinel; it is not an API pagination token.
+func HakopodOracleListExceedsBound(continuation string, count int) bool {
+	return count < 0 || count > 2 || continuation != "" && continuation != "continue-not-supported"
+}
+
 // ApplyHakopodPodPolicy is used by the two database controllers. The
 // managed platform supplies this bounded envelope on its owned CR, rather than
 // accepting arbitrary user-supplied pod templates.
