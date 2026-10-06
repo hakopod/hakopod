@@ -97,6 +97,7 @@ jobs:
           for test in scripts/test-development-*.py scripts/test-managed-oracle-wallet.py scripts/test-package-managed-oracle-free.py; do
             python3 -B "$test"
           done
+          python3 -B scripts/test-oracle-free-http-fixtures.py
           python3 -B scripts/test-supabase-qualification.py
           python3 -B scripts/test-supabase-cancellation.py
           python3 -B scripts/test-supabase-held-review.py
