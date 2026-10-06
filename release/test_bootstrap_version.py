@@ -134,7 +134,7 @@ class BootstrapVersionTests(unittest.TestCase):
                 (root / folder).mkdir(parents=True, exist_ok=True)
             for name in ('upgrade-paths.py', 'upgrade-paths.json', 'managed-runtime-availability.py'):
                 (root / 'release' / name).write_bytes((ROOT / 'release' / name).read_bytes())
-            for name in ('internal/cluster/database_vitess.go', 'internal/managedplatform/neon_qualification.go',
+            for name in ('internal/cluster/database_vitess.go', 'internal/cluster/database_oracle_free_qualification.go', 'internal/managedplatform/neon_qualification.go',
                          'internal/managedplatform/supabase_qualification.go'):
                 path=root/name
                 path.parent.mkdir(parents=True,exist_ok=True)

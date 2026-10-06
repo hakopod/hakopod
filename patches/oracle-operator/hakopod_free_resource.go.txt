@@ -1,0 +1,84 @@
+package controllers
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+
+	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
+	dbcommons "github.com/oracle/oracle-database-operator/commons/database"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// Validate before reconciliation can create storage or enter an upstream
+// lifecycle path. The Free build has no generic Oracle resource-template API.
+func validateHakopodFreeResource(m *dbapi.SingleInstanceDatabase) error {
+	if m == nil || m.Spec.Persistence.Oradata == nil || len(m.Spec.Persistence.AdditionalPVCs) != 1 {
+		return fmt.Errorf("managed Oracle Free storage is incomplete")
+	}
+	no, yes := false, true
+	pull := corev1.PullIfNotPresent
+	wanted := dbapi.SingleInstanceDatabaseSpec{
+		Edition: "free", Sid: "FREE", Pdbname: "FREEPDB1", Charset: "AL32UTF8", CreateAs: "primary", Replicas: 1,
+		Image:                        dbapi.SingleInstanceDatabaseImage{PullFrom: "container-registry.oracle.com/database/free:23.26.3.0@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba", PrebuiltDB: true, ImagePullPolicy: &pull},
+		AutomountServiceAccountToken: &no, ShmSize: "1Gi", DisableDefaultDiagVolumeClaim: true, Resources: m.Spec.Resources,
+		FlashBack: &no, ArchiveLog: &no, ForceLogging: &no,
+		Security:    &dbapi.SingleInstanceDatabaseSecurity{TCPS: &dbapi.SingleInstanceDatabaseSecurityTCPS{Enabled: true, TlsSecret: "database-tls"}, Secrets: &dbapi.SingleInstanceDatabaseSecrets{Admin: &dbapi.SingleInstanceDatabaseAdminPassword{SecretName: "database-oracle-access", SecretKey: "admin", KeepSecret: &yes}}},
+		Services:    &dbapi.SingleInstanceDatabaseServices{Endpoints: []dbapi.SingleInstanceDatabaseServiceEndpoint{{Name: "cluster", Type: "ClusterIP", TCP: &dbapi.SingleInstanceDatabaseServiceEndpointPort{Enabled: false}, TCPS: &dbapi.SingleInstanceDatabaseServiceEndpointPort{Enabled: true, Port: 2484}}}},
+		Dataguard:   &dbapi.DataguardProducerSpec{Mode: "Disabled", Prereqs: &dbapi.DataguardPrereqsSpec{Enabled: false}},
+		Persistence: dbapi.SingleInstanceDatabasePersistence{Oradata: m.Spec.Persistence.Oradata, AdditionalPVCs: m.Spec.Persistence.AdditionalPVCs, SetWritePermissions: &no},
+	}
+	if !reflect.DeepEqual(m.Spec, wanted) {
+		return fmt.Errorf("managed Oracle Free contains unsupported lifecycle settings")
+	}
+	data, backup := m.Spec.Persistence.Oradata, m.Spec.Persistence.AdditionalPVCs[0]
+	if data.PvcName != "" || data.StorageClass == "" || data.AccessMode != "ReadWriteOnce" || backup.PvcName != "" || backup.StorageClass != data.StorageClass || backup.StorageSizeInGb < 10 || data.Size != fmt.Sprintf("%dGi", backup.StorageSizeInGb) || backup.MountPath != "/opt/oracle/hakopod-backup" {
+		return fmt.Errorf("managed Oracle Free requires matching operator-owned data and backup claims")
+	}
+	pod := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: m.Spec.Image.PullFrom}}}}
+	if err := dbcommons.ApplyHakopodFreePodPolicy(pod, m.ObjectMeta); err != nil {
+		return err
+	}
+	if m.Spec.Resources == nil || !reflect.DeepEqual(*m.Spec.Resources, pod.Spec.Containers[0].Resources) {
+		return fmt.Errorf("managed Oracle Free resource reservation differs from its member")
+	}
+	return nil
+}
+
+func (r *SingleInstanceDatabaseReconciler) cleanupHakopodFreeClaims(ctx context.Context, m *dbapi.SingleInstanceDatabase) (bool, error) {
+	if err := validateHakopodFreeResource(m); err != nil {
+		return false, err
+	}
+	claims := &corev1.PersistentVolumeClaimList{}
+	if err := r.List(ctx, claims, client.InNamespace(m.Namespace), client.Limit(3)); err != nil {
+		return false, err
+	}
+	if claims.Continue != "" || len(claims.Items) > 2 {
+		return false, fmt.Errorf("managed Oracle Free claim inventory exceeds its bound")
+	}
+	for i := range claims.Items {
+		claim := &claims.Items[i]
+		owner := metav1.GetControllerOf(claim)
+		if claim.Name != "database" && claim.Name != "database-additional-0" || claim.UID == "" || claim.ResourceVersion == "" || len(claim.OwnerReferences) != 1 || owner == nil || owner.APIVersion != "database.oracle.com/v4" || owner.Kind != "SingleInstanceDatabase" || owner.Name != m.Name || owner.UID != m.UID || owner.BlockOwnerDeletion == nil || !*owner.BlockOwnerDeletion {
+			return false, fmt.Errorf("managed Oracle Free refuses to delete a foreign claim")
+		}
+		if claim.DeletionTimestamp != nil {
+			continue
+		}
+		if err := dbcommons.ValidateHakopodFreePVC(claim, m.ObjectMeta, claim.Name, m.Spec.Persistence.Oradata.StorageClass, m.Spec.Persistence.Oradata.Size); err != nil {
+			return false, err
+		}
+	}
+	for i := range claims.Items {
+		claim := &claims.Items[i]
+		if claim.DeletionTimestamp != nil {
+			continue
+		}
+		if err := r.Delete(ctx, claim, client.Preconditions{UID: &claim.UID, ResourceVersion: &claim.ResourceVersion}); err != nil {
+			return false, err
+		}
+	}
+	return len(claims.Items) != 0, nil
+}

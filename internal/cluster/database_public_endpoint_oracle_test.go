@@ -14,9 +14,7 @@ import (
 	"github.com/hakopod/hakopod/internal/database"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -316,56 +314,22 @@ func TestOracleFreePublicIssuedCARequiresReviewedFingerprint(t *testing.T) {
 	}
 }
 
-func TestOracleFreePublicCancelledIssuanceKeepsActualNetworkPolicyClosed(t *testing.T) {
+func TestOracleFreeOperatorCannotEnterLegacyPublicTransition(t *testing.T) {
 	ctx := context.Background()
 	d := oraclePublicEndpointUnitFixture()
 	ns := oraclePublicEndpointNamespace(d)
-	set := oraclePublicEndpointStatefulSet(d)
-	set.Generation = 1
-	resources := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(d.Spec.CPU), corev1.ResourceMemory: resource.MustParse(d.Spec.Memory)}
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "database-0", Namespace: ns.Name, UID: "pod-uid", Labels: databaseLabels(d), OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "StatefulSet", Name: set.Name, UID: set.UID}}},
-		Spec:       corev1.PodSpec{NodeName: "worker-a", Containers: []corev1.Container{{Name: "oracle", Image: databaseImages["oracle:23.26"], Resources: corev1.ResourceRequirements{Requests: resources, Limits: resources.DeepCopy()}, Ports: []corev1.ContainerPort{{Name: "tcps", ContainerPort: 2484, Protocol: corev1.ProtocolTCP}}}}, Volumes: []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "data-database-0"}}}, {Name: "backup", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "backup-database-0"}}}}},
-		Status:     corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
-	}
-	claim := func(name, uid string) *corev1.PersistentVolumeClaim {
-		return &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns.Name, UID: types.UID(uid), Labels: databaseLabels(d)}, Spec: corev1.PersistentVolumeClaimSpec{VolumeName: "pv-" + name}, Status: corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound}}
-	}
-	volume := func(name, claimUID, volumeUID string) *corev1.PersistentVolume {
-		return &corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-" + name, UID: types.UID(volumeUID)}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{APIVersion: "v1", Kind: "PersistentVolumeClaim", Namespace: ns.Name, Name: name, UID: types.UID(claimUID)}, PersistentVolumeSource: corev1.PersistentVolumeSource{CSI: &corev1.CSIPersistentVolumeSource{Driver: "storage.example.test", VolumeHandle: name + "-handle"}}}}
-	}
-	base := kubefake.NewSimpleClientset(ns, set, oraclePublicEndpointService(d), pod, claim("data-database-0", "data-uid"), claim("backup-database-0", "backup-uid"), volume("data-database-0", "data-uid", "data-pv-uid"), volume("backup-database-0", "backup-uid", "backup-pv-uid"))
-	object := &unstructured.Unstructured{}
-	object.SetAPIVersion("apps/v1")
-	object.SetKind("StatefulSet")
-	object.SetNamespace(ns.Name)
-	object.SetName(set.Name)
-	object.SetUID(set.UID)
-	object.SetLabels(databaseLabels(d))
-	core := oraclePublicEndpointCoreV1{CoreV1Interface: base.CoreV1()}
-	c := &Client{kube: oraclePublicEndpointKubeClient{Interface: base, core: core}, dynamic: dynamicfake.NewSimpleDynamicClient(k8sruntime.NewScheme(), object), execConfig: &rest.Config{Host: "https://127.0.0.1"}, options: Options{ProxyNamespace: "haproxy-controller", ProxyRelease: "hakopod-ingress"}}
-	if err := c.prepareDatabaseIdentity(ctx, d, func() error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	leaf, err := base.CoreV1().Secrets(ns.Name).Get(ctx, "database-tls", metav1.GetOptions{})
+	object, err := oracleFreeObject(d, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaf.UID = "database-tls-uid"
-	leaf, err = base.CoreV1().Secrets(ns.Name).Update(ctx, leaf, metav1.UpdateOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	trust, ca, err := database.ParsePublicTrust(leaf.Data["ca.crt"], time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity, err := database.VerifyServerCertificate(leaf.Data[corev1.TLSCertKey], ca, databaseIdentityNames(d), time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.Observation.TLS.Fingerprint, d.Observation.TLS.CAFingerprint = identity.Fingerprint, trust.Fingerprint
-	if err = c.databaseNetworkPolicy(ctx, d, func() error { return nil }); err != nil {
+	object.SetUID("root-uid")
+	object.SetOwnerReferences([]metav1.OwnerReference{{APIVersion: "v1", Kind: "Namespace", Name: ns.Name, UID: ns.UID}})
+	pod := oracleFreeTestPod(t, d)
+	base := kubefake.NewSimpleClientset(ns, &pod)
+	c := &Client{kube: base, dynamic: dynamicfake.NewSimpleDynamicClient(k8sruntime.NewScheme(), object), options: Options{ProxyNamespace: "haproxy-controller", ProxyRelease: "hakopod-ingress"}}
+	closed := d
+	closed.PublicEndpointAccess = false
+	if err = c.databaseNetworkPolicy(ctx, closed, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	endpoint := database.PublicEndpoint{ID: "endpoint", DatabaseID: d.ID, Revision: 2, Spec: database.PublicEndpointSpec{Purpose: "read_write"}}
@@ -374,12 +338,8 @@ func TestOracleFreePublicCancelledIssuanceKeepsActualNetworkPolicyClosed(t *test
 		t.Fatal(err)
 	}
 	operation := database.PublicEndpointOperation{ID: "operation", EndpointID: endpoint.ID, DatabaseID: d.ID, Revision: endpoint.Revision, Kind: "publish", Review: &database.PublicEndpointReview{DatabaseRevision: d.Revision, TopologyFingerprint: d.Observation.TopologyFingerprint, TLSFingerprint: d.Observation.TLS.Fingerprint, Route: &route, RouteFingerprint: route.Fingerprint()}}
-	transition, err := c.BeginOraclePublicEndpointIdentityTransition(ctx, operation, d, endpoint, []string{"database-12484.example.test"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = c.IssueOraclePublicEndpointIdentity(ctx, d, transition, false, func() error { return nil }); err != nil {
-		t.Fatal(err)
+	if _, err = c.BeginOraclePublicEndpointIdentityTransition(ctx, operation, d, endpoint, []string{"database-12484.example.test"}); err == nil {
+		t.Fatal("SIDB entered a StatefulSet-only public identity transition")
 	}
 	policy, err := base.NetworkingV1().NetworkPolicies(ns.Name).Get(ctx, "database", metav1.GetOptions{})
 	if err != nil {
@@ -388,7 +348,7 @@ func TestOracleFreePublicCancelledIssuanceKeepsActualNetworkPolicyClosed(t *test
 	for _, rule := range policy.Spec.Ingress {
 		for _, peer := range rule.From {
 			if peer.NamespaceSelector != nil && peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] == "haproxy-controller" {
-				t.Fatal("cancelled Oracle identity issuance opened HAProxy ingress", policy.Spec.Ingress)
+				t.Fatal("unqualified SIDB public transition opened ingress")
 			}
 		}
 	}

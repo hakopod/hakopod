@@ -1,25 +1,27 @@
 # Managed Oracle Database
 
-Oracle Database Free is unavailable in `v0.1.0-alpha.47`. Earlier standalone
-checks passed, but current native recovery qualification is incomplete after
-an import failure. Creation remains disabled in the API and dashboard. The
-implementation and earlier evidence below do not establish released availability.
-Enterprise and Data Guard have a separate source implementation. Their runtime
-gate stays closed until the hardened controller and a licensed customer image
-pass native acceptance. Passing the Free tests does not open that gate.
+Oracle Database Free support through Oracle's Database Operator is under
+development. Creation remains disabled in the API and dashboard until the
+operator image, installation and complete lifecycle pass native acceptance.
+Earlier tests used a StatefulSet; they do not qualify the new operator path.
+
+Free runs one database instance. Enterprise and Data Guard have separate source
+implementations and acceptance requirements. Passing Free's tests will not enable
+them. This page describes the implementation being qualified, not an available
+managed service.
 
 ## Editions and images
 
 Oracle Database Free is proprietary, free-to-use software. It is not open source.
 Hakopod's standalone implementation uses the full Oracle Database Free 26ai image,
-version `23.26.3.0`, pinned to an immutable multi-platform digest. The full image
+version `23.26.3.0`, pinned by digest. The full image
 includes SQL*Plus, Data Pump and wallet tooling; the Lite image omits tools needed
 by this implementation. The platform version in a database revision is `23.26`.
 
-Free is limited by Oracle to two CPUs, 2 GB of database memory and 12 GB of user
-data. The container reservation is larger because it also runs the listener and
-management tools. These upstream limits do not become larger when a user reserves
-a larger container. Free does not provide a Data Guard cluster.
+Oracle limits Free to two CPUs, 2 GB of database memory and 12 GB of user data.
+The container reservation also covers the listener and management tools.
+Reserving a larger container does not increase Oracle's edition limits. Free
+does not provide Data Guard, RAC, replicas or automatic failover.
 
 The Enterprise configuration contract accepts an explicit image with a SHA-256
 digest, an optional registry-credential reference scoped to the database's project
@@ -29,7 +31,46 @@ Enterprise deployments: validating an image reference does not prove image
 compatibility, entitlement or failover safety. RAC, Active Data Guard, TDE and
 licensed monitoring packs are separate support decisions.
 
+## How the Free stack fits together
+
+The Go API owns authorization, immutable revisions, capacity reservations and
+durable operations. [Oracle Database Operator](https://github.com/oracle/oracle-database-operator)
+2.2.0 reconciles a
+`database.oracle.com/v4` `SingleInstanceDatabase` resource. That resource uses
+`edition: free`, a prebuilt database image and exactly one instance.
+
+The operator source is pinned to
+`ff6f9178c1650df30afbf203ebdb633e9b80760a`. Hakopod's
+`hakopod-oracle-free-tcps-v1` profile limits the controller to the single-instance
+API and one database namespace. Its Kubernetes Role is namespaced; applications
+receive neither its service-account token nor cluster credentials. The operator
+uses the UPL 1.0 license. That license covers the operator, not Oracle Database.
+
+```mermaid
+flowchart LR
+    API[Hakopod API and durable operations] --> SIDB[SingleInstanceDatabase]
+    Controller[Namespace-scoped Oracle operator] --> SIDB
+    SIDB --> Instance[One Oracle Free instance]
+    App[Bound application] -->|Verified TCPS on port 2484| Endpoint[Private PDB endpoint]
+    Endpoint --> Instance
+    Instance --> Data[Database volume]
+    Instance --> Staging[Backup staging volume]
+```
+
+The database starts through Hakopod's guarded initialization script. Partial
+initialization retains its files for inspection. The operator profile keeps the
+existing credential files, wallet setup and Data Pump staging contract. It does
+not copy the upstream example's public or plaintext endpoints.
+
+The operator and a possible replacement add 200 millicores and 612 MiB to the
+reservation, including sandbox overhead. These are configured budgets; native
+acceptance must confirm they are sufficient. The database and both volumes have
+their own allocations. A controller process is not a second database replica.
+
 ## Standalone configuration
+
+This example describes the Free configuration under development. Creation is
+still held by the server's release gate.
 
 ```toml
 schema_version = 1
@@ -51,13 +92,22 @@ edition = "free"
 ```
 
 The shared API and CLI parse the same versioned configuration. API creation still
-checks authorization, scope, allocation and runtime availability. Enterprise image,
-edition and resource changes cannot bypass the reviewed migration restrictions.
+checks authorization, scope, allocation and runtime availability. Capacity is
+fixed at creation. To change CPU, memory or storage, restore into a separate
+compatible database and inspect it before switching applications. Edition and
+image changes also require a separate target.
 
-Each standalone database owns one StatefulSet, a data volume and a backup-staging
-volume of the same size. Initialization may take several minutes. Failed or
-partial initialization retains its data for inspection; the startup script must
-not silently replace it. Hosted placement uses an authorized sandboxed worker.
+Each database owns one operator-managed instance, a data volume and a separate
+backup-staging volume of the same size. A 10 GiB data setting therefore requests
+20 GiB of persistent storage before the storage provider's own overhead.
+Initialization can take several minutes. Hosted placement must use an authorized
+sandboxed amd64 worker with enough capacity. The pinned Free operator currently
+supports linux/amd64; an ARM worker is not an eligible placement.
+
+An existing experimental StatefulSet is not adopted in place. Moving its data
+requires a separate compatible target and an inspected restore. Changing the
+controller must not silently attach a second database process to an existing
+data volume.
 
 The APP schema's quota is the smaller of 10 GiB and the data volume minus 8 GiB.
 At the 10 GiB minimum volume, APP can use 2 GiB; the remaining space is reserved
@@ -79,34 +129,39 @@ managed binding. A connection URL alone does not install a private CA in a drive
 SQL*Plus clients need a wallet containing that public CA and server-name matching
 enabled. They do not need the server's wallet or private key.
 
-The Go runtime uses `go-ora/v3` with an explicit TLS configuration. Version 2.9.0
-failed authentication against this pinned 26ai image in native testing. Version
-3.0.1 passed repeated application connections with `FAST LOGIN=false`; every
-physical connection negotiates afresh. Keep `SSL=enable` and `SSL VERIFY=true`,
+The Go runtime uses `go-ora/v3` with an explicit TLS configuration and
+`FAST LOGIN=false`; every physical connection negotiates afresh. Keep
+`SSL=enable` and `SSL VERIFY=true`,
 load the public CA into the client's root pool, and set the endpoint hostname.
 Never use `InsecureSkipVerify` or replace hostname verification with encryption
 alone.
+
+Oracle loads its server wallet at startup. Certificate renewal therefore replaces
+the single instance and ends existing sessions. The runtime checks the old pod's
+owner, UID and resource version before deletion, then checks the new pod's
+identity and the certificate it actually serves. Applications must reconnect;
+Free does not have another replica to serve traffic during that restart.
 
 Readiness verifies native database role, PDB state, supported version, authenticated
 APP access and the issued certificate actually served. It also checks that
 plaintext access is rejected. Metrics use ordinary dynamic performance views;
 they do not query AWR, ASH, ADDM or separately licensed diagnostic packs.
 
-## Public endpoints in development
+## Public endpoints
 
-The unreleased Oracle Free public endpoint uses TCPS to reach the `APP` account
-in one standalone `FREEPDB1` database. Its backend listens on port 2484; the
-public port comes from operator-owned inventory. Publication stays disabled
-until the release candidate passes native TCPS, identity-transition and
-revocation checks. Enterprise and Data Guard require separate licensed native
-acceptance. See the [route definitions](../internal/database/public_endpoint.go).
+Oracle Free public endpoints remain disabled. The existing endpoint workflow
+expects the earlier StatefulSet workload and cannot publish an operator-managed
+instance. It must be adapted to SIDB ownership, member replacement and persistent
+volume identities, then pass native identity-transition and revocation tests.
+Free's private TCPS acceptance will not enable public access. Enterprise and
+Data Guard require separate licensed native acceptance.
 
 A publication review would bind the approved hostname, CA and SANs to the
 current single-member workload, service and persistent-volume identities. Oracle
 loads its server wallet at startup, so changing public names replaces the only
 pod. The route must stay closed during that durable, reviewed identity transition;
 existing sessions end and clients must reconnect after the replacement. The
-implementation records and checks these identities in the
+earlier implementation records and checks these identities in the
 [Oracle endpoint workflow](../internal/cluster/database_public_endpoint_oracle.go).
 
 Cloud public database endpoints remain unavailable. This under-development
@@ -115,13 +170,14 @@ firewall rule.
 
 ## Backup and recovery contract
 
-The initial implementation captures the APP schema with Data Pump and a flashback
-SCN. It is not a physical RMAN backup, archived-redo recovery or point-in-time
+The implementation captures the APP schema with Data Pump at a selected
+system change number, or SCN. An SCN identifies the database state used for the
+export. This is not a physical RMAN backup, archived-redo recovery or point-in-time
 recovery. A SYS-owned DDL guard coordinates with the capture session before the
 SCN is selected. Application schema changes temporarily fail with a retry message
 while a capture holds that guard; ordinary data changes continue against the
-SCN-based snapshot. Native acceptance has verified that guard, ordinary DML during
-capture, and cancellation after a server-side Data Pump job starts.
+SCN-based snapshot. The new operator runtime must pass the guard, concurrent-write
+and cancellation checks again.
 
 The bounded archive carries version, edition, source identity, revision, SCN,
 dump size and a SHA-256 checksum. The managed-backup service provides the outer
@@ -132,42 +188,57 @@ Import runs as APP with temporary directory access. Failed job cleanup or grant
 revocation prevents a successful recovery result. Access stays closed until the
 completed recovery has been inspected.
 
-Native acceptance covered binary and Unicode data, concurrent DDL, corrupted
-input, empty-target checks, cancellation, revoked sessions, independent source
-and target writes, cleanup and inspection gates. Production qualification must
-also cover the supported workload sizes and schema features.
+Restore preserves the target's managed account grants and quota. It does not
+import the source account's privileges, roles or storage allowance. The operator
+runtime must prove this with different source and target quotas, as well as
+corrupted-input refusal, nonempty-target refusal, cancellation, session
+revocation and independent writes after recovery.
 
 ## Current evidence and remaining work
 
-On September 29, the standalone development test passed native initialization,
-authenticated reads and writes, required TCPS, plaintext refusal, schema privilege
-boundaries and ordered deletion. The development environment is one physical VM;
-it establishes no multi-zone or multi-provider availability guarantee.
+The earlier StatefulSet implementation passed standalone initialization, private
+TCPS, application privilege boundaries, restart persistence, certificate renewal
+and deletion on the named development cluster. Its final September 29 recovery
+run passed in 617.44 seconds, including cleanup. The retained local evidence is
+`work/database-enterprise/oracle-recovery-live-v6.log`. The earlier import failure
+was corrected before that run; it is not the current reason for holding Oracle.
 
-Subsequent runs verified fresh-target initialization and hardened replacement
-startup. The script waits for the image's completion hook and data marker before
-configuring TCPS and APP. It tolerates an already-stopped listener during wallet
-replacement but still requires the new listener to start successfully. Native
-renewal replaced the single Oracle pod with a new pod UID, reached ready without
-a container crash, preserved data, and kept old-CA overlap working. The
-replacement ends existing sessions, so clients must reconnect.
+Those results cover the old controller path on one physical development VM.
+They do not qualify the SIDB operator, a released service, every Oracle schema
+feature or independent failure domains.
 
-The final September 29 native recovery run passed in 617.44 seconds, including
-owned resource cleanup. It verified binary and Unicode data, a view, sequence,
-stored function and trigger, separate source/target writes, session revocation,
-incomplete-archive and nonempty-target refusal, and inspection-gated ingress.
-It also passed the public-CA-only application wallet, unbound-service denial,
-binding revocation, SCN/DDL guard and cancellation cleanup checks.
+The SIDB implementation has since passed 161 Oracle-focused Go tests on the
+development VM with PostgreSQL for durable operations. The installer, release
+verifier and operator packaging checks also pass. These cover source behavior
+and artifact boundaries; the three native operator cases have not run yet.
+The scoped operator image has been built and inspected on the development VM. It
+has not been published.
 
-An earlier import failed with `ORA-31685` because account grants, default roles
-and quotas are separate metadata paths from object grants. Capture and import
-now exclude each of those account-policy paths. The native test used a different
-source quota and confirmed that restore retained the target's managed quota and
-restricted application privileges. Diagnostics expose only error codes and
-known metadata categories, without SQL, credentials or object names.
-The passing log is `work/database-enterprise/oracle-recovery-live-v6.log`.
-This is development acceptance, not a production release or proof of recovery
-for every Oracle schema feature and workload size.
+The release gate requires native lifecycle and security, separate-target
+recovery, and controller-loss tests. Each case records the exact source, image
+and cluster identities, and checks namespace and persistent-volume cleanup.
+It also requires a separate HTTP acceptance case covering scoped authorization,
+application access, encrypted backup, recovery inspection and deletion through
+the API with PostgreSQL-backed operations.
+That case keeps an authenticated SQL session open in a bound application while
+the target database is restored. It must prove that the database replacement
+ends the session without restarting the application, that fresh access stays
+closed until inspection, and that an unbound service cannot reach the target.
+The HTTP harness and its host-fixture cleanup passed source review and focused
+checks on the development VM. The complete native HTTP case has not run yet.
+Enabling Oracle Free afterward does not enable Enterprise, Data Guard or public
+endpoints.
+
+The operator release still needs:
+
+- A published, digest-pinned operator image built from the reviewed source and
+  patch, plus a verified installer payload containing only the required API.
+- Native creation, restart, persistence, TLS and privilege tests on k3s.
+- Certificate and credential renewal, application binding and access revocation.
+- Data Pump backup and separate-target recovery, failure and cancellation checks,
+  inspection gating, and verified namespace and volume cleanup.
+- API, CLI and dashboard acceptance, required builds and tests, then separate OSS
+  and Cloud release verification.
 
 The Enterprise adapter includes scoped image-pull credentials, per-member
 storage and placement, primary routing, native transport/apply checks, schema

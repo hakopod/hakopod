@@ -1,0 +1,10 @@
+FROM scratch
+
+LABEL org.opencontainers.image.source="https://github.com/hakopod/hakopod" \
+      io.hakopod.oracle.operator-upstream="ff6f9178c1650df30afbf203ebdb633e9b80760a" \
+      io.hakopod.oracle.patch="hakopod-oracle-free-tcps-v1"
+
+COPY --chmod=0755 bin/manager /manager
+COPY LICENSE.txt /licenses/oracle-operator-UPL-1.0.txt
+USER 65532:65532
+ENTRYPOINT ["/manager"]

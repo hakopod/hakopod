@@ -152,7 +152,7 @@ class ManagedRuntimeAvailabilityTest(unittest.TestCase):
         self.set_gates(True)
         with patch.object(subprocess, 'run', side_effect=self.verifier_output) as run, patch.object(subprocess, 'check_output', return_value='1000\n'):
             output = self.prepare_all()
-        self.assertEqual(run.call_count, 3)
+        self.assertEqual(run.call_count, len(MODULE['GATES']))
         with patch.dict(STATE, _verify_archive=lambda runtime, path, root: None):
             self.assertEqual(MODULE['verify_evidence'](output, self.root), dict.fromkeys(MODULE['GATES'], True))
             archive = output / 'managed-neon-qualification.tar.gz'
@@ -190,7 +190,7 @@ class ManagedRuntimeAvailabilityTest(unittest.TestCase):
                           'deployment_qualified': False, 'images': {}}
                 if runtime == 'supabase':
                     report['image_config_identities_verified'] = True
-                elif runtime == 'vitess':
+                elif runtime in ('vitess', 'oracle-free'):
                     report.update(schema_version=1, image_binary_hashes_verified=True)
                     del report['release_runtime_qualified'], report['deployment_qualified']
                 (directory / 'manifest.json').write_text(json.dumps(manifest))

@@ -42,6 +42,9 @@ func DatabaseMemoryReservation(s database.Spec) int64 {
 		total += quantityBytes(database.VitessBackupControllerMemory) + (50 << 20)
 		total += 2 * int64(s.Shards) * (q.Value() + quantityBytes(database.VitessBackupMemory) + (50 << 20))
 	}
+	if s.Engine == "oracle" && s.Oracle != nil && s.Oracle.Edition == "free" {
+		total += 2 * (quantityBytes(database.OracleFreeOperatorMemory) + (50 << 20))
+	}
 	total += int64(s.OracleBrokerInstances()) * (quantityBytes(database.OracleBrokerMemory) + (50 << 20))
 	return total
 }

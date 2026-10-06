@@ -172,6 +172,13 @@ func TestDatabaseRequiresSafeCurrentRedisController(t *testing.T) {
 }
 
 func TestUnqualifiedOracleRemainsUnavailable(t *testing.T) {
+	if oracleFreeReleaseQualified {
+		if err := validateOracleFreeOperatorImage(); err != nil {
+			t.Fatal("qualified Oracle Free has no pinned operator", err)
+		}
+		return
+	}
+	t.Setenv("HAKOPOD_ORACLE_TEST", "1")
 	c := &Client{kube: fake.NewClientset(), dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())}
 	err := c.DatabaseControllerAvailable(context.Background(), database.Spec{Engine: "oracle", Mode: "standalone"})
 	if err == nil || !strings.Contains(err.Error(), "unavailable in this release pending native qualification") {
