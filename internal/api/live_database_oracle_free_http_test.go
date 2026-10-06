@@ -150,7 +150,12 @@ func oracleHTTPApplication() spec.Application {
 }
 
 func oracleHTTPApplicationExec(ctx context.Context, kubeconfig, namespace, service, script string, output io.Writer) error {
-	command := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfig, "--context", "k3d-hakopod-dev", "-n", namespace, "exec", "deployment/"+service, "--", "bash", "-c", script)
+	cache, err := os.MkdirTemp("", "oracle-http-kubectl-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(cache)
+	command := exec.CommandContext(ctx, "kubectl", "--cache-dir", cache, "--kubeconfig", kubeconfig, "--context", "k3d-hakopod-dev", "-n", namespace, "exec", "deployment/"+service, "--", "bash", "-c", script)
 	command.Stdout, command.Stderr = output, io.Discard
 	return command.Run()
 }

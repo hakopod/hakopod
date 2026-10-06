@@ -112,15 +112,19 @@ class HTTPRunnerTests(unittest.TestCase):
                 return {"postgres_container_absent": True, "s3_container_absent": True, "credential_files_absent": True}
         args = SimpleNamespace(output=self.root / "output", cache=self.root / "cache", kubeconfig=Path("config"),
             kubectl=Path("kubectl"), go=Path("go"), docker=Path("docker"), sidb_crd=Path("sidb"), nodes="node")
+        environment = mock.Mock(return_value=({}, {}))
         with mock.patch.object(HTTP, "runner_limits", return_value={}), mock.patch.object(HTTP, "host_capacity", return_value={}), \
                 mock.patch.object(Path, "is_relative_to", in_test_scratch), \
-                mock.patch.dict(HTTP.NATIVE, environment=mock.Mock(return_value=({}, {}))), \
+                mock.patch.dict(HTTP.NATIVE, environment=environment), \
                 mock.patch.dict(HTTP.VERIFIER, source_files=lambda root: {}, source_images=lambda root: {}), \
                 mock.patch.object(HTTP.runpy, "run_path", return_value={"Fixtures": Fixtures}), \
                 mock.patch.object(HTTP, "run_test", side_effect=AssertionError("native run attempted")), \
                 self.assertRaisesRegex(RuntimeError, "inspect retained"):
             HTTP.run(args)
         self.assertEqual(actions, ["prepare", "cleanup"])
+        self.assertEqual(environment.call_args.args[0], ["kubectl", "--cache-dir", str(args.cache / "kubectl"),
+            "--kubeconfig", "config", "--context", "k3d-hakopod-dev"])
+        self.assertFalse((args.cache / "home").exists())
         failure = json.loads((args.output / "failed-attempt.json").read_text())
         self.assertEqual(failure["failure_type"], "InterruptedError")
         self.assertTrue(failure["host_cleanup_receipt_written"])

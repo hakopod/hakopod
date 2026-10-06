@@ -14,6 +14,27 @@ SPEC.loader.exec_module(ORACLE)
 
 
 class OracleNativeBoundary(unittest.TestCase):
+    def test_kubectl_cache_is_explicit_and_external_without_home(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(ORACLE.os.environ, {}, clear=True):
+            cache = Path(tmp) / "cache"
+            command = ORACLE.kubectl_command(Path("/bin/kubectl"), Path("/run/kubeconfig"), cache)
+            self.assertEqual(command, ["/bin/kubectl", "--cache-dir", str(cache / "kubectl"),
+                "--kubeconfig", "/run/kubeconfig", "--context", "k3d-hakopod-dev"])
+            self.assertTrue((cache / "kubectl").is_dir())
+            self.assertNotIn("HOME", ORACLE.os.environ)
+
+    def test_kubectl_cache_rejects_source_relative_and_symbolic_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "target").mkdir()
+            (root / "linked").symlink_to(root / "target", target_is_directory=True)
+            (root / "cache").mkdir()
+            (root / "cache/kubectl").symlink_to(root / "target", target_is_directory=True)
+            paths = [Path("cache"), ORACLE.ROOT / "cache", root / "a/../cache", root / "linked/cache", root / "cache"]
+            for path in paths:
+                with self.subTest(path=path), self.assertRaisesRegex(ValueError, "cache"):
+                    ORACLE.kubectl_command(Path("kubectl"), Path("config"), path)
+
     def test_foreign_or_duplicate_nodes_stop_before_cluster_access(self):
         for nodes in (["production"], ["k3d-hakopod-dev-server-0"] * 2, []):
             with self.subTest(nodes=nodes), mock.patch.dict(ORACLE.RUNNER, command_output=mock.Mock()) as runner:
