@@ -71,6 +71,20 @@ func TestDatabaseQueryAuthorization(t *testing.T) {
 	if databaseQueryAllowed(principal, d, false) {
 		t.Fatal("application received database query access")
 	}
+	for _, readOnly := range []bool{true, false} {
+		cli := store.Principal{Admin: true, CredentialType: "cli", Permissions: []string{"admin"}}
+		if databaseQueryAllowed(cli, d, readOnly) {
+			t.Fatal("administrator CLI bypassed explicit SQL consent", readOnly)
+		}
+		permission := "databases:query"
+		if !readOnly {
+			permission = "databases:write-query"
+		}
+		cli.Permissions = append(cli.Permissions, permission)
+		if !databaseQueryAllowed(cli, d, readOnly) {
+			t.Fatal("explicit CLI SQL consent was rejected", readOnly)
+		}
+	}
 }
 func TestDatabaseQueryErrorDoesNotExposeSQL(t *testing.T) {
 	w := httptest.NewRecorder()

@@ -34,16 +34,16 @@ func databaseQueryAllowed(p store.Principal, d database.Resource, readOnly bool)
 	if p.Application != "" || !p.Allows(permission, d.Project, d.Environment, "") {
 		return false
 	}
-	if p.CredentialType == "machine" {
+	if p.CredentialType == "machine" || p.CredentialType == "cli" {
 		explicit := false
 		for _, grant := range p.Permissions {
 			if grant == permission {
 				explicit = true
 			}
 		}
-		return explicit && p.Project == d.Project && p.Environment == d.Environment && p.Project != "" && p.Environment != ""
+		return explicit && (p.CredentialType == "cli" || p.Project == d.Project && p.Environment == d.Environment && p.Project != "" && p.Environment != "")
 	}
-	return p.CredentialType == "browser" || p.CredentialType == "cli"
+	return p.CredentialType == "browser"
 }
 func (s *Server) databaseQuery(w http.ResponseWriter, r *http.Request) {
 	var q database.QueryRequest

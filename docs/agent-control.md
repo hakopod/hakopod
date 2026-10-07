@@ -47,14 +47,14 @@ See [contract generation](agent-parity/contract-generation.md) for the generatio
 | Run a pod command | `pods:exec` | `--allow-exec` | `allow_exec=true` |
 | Query managed SQL data | `databases:query` | `--allow-sql` for MCP | `allow_sql=true` |
 | Change managed SQL data | `databases:query` and `databases:write-query` | `--allow-sql-write` | `allow_sql_write=true` with `allow_sql=true` |
-| Open application terminals | `pods:exec` | `--allow-exec --allow-terminal` | `allow_exec=true` and `allow_terminal=true` |
+| Open application terminals | `deployments:write` and `pods:exec` | `--allow-exec --allow-terminal` | `allow_exec=true` and `allow_terminal=true` |
 | Use credentials | `agent:credentials` and the resource permission | `--allow-credentials` | `allow_credentials=true` |
 | Administer the installation | `admin` and `agent:admin` | `--installation --allow-admin` | `installation=true` and `allow_admin=true` |
 
 Each option enables only its action category. An option does not grant an API permission.
 CLI and MCP resource inspection also require `deployments:read`. Include it when creating an execution key for those interfaces.
 Machine keys require explicit execution permissions and a project/environment scope.
-An administrator wildcard does not enable machine execution.
+CLI credentials also require explicit execution permissions. An administrator wildcard does not enable machine or CLI execution.
 Database query keys cannot have an application restriction.
 SQL write grants require the SQL query grant.
 Users must request and consent to execution permissions during device login.
@@ -105,7 +105,7 @@ hakopod database query DATABASE_ID --project demo --environment development \
   --sql-file query.sql --parameters-json '["9007199254740993"]'
 ```
 
-The dedicated CLI query defaults to read-only. For a write, add `--allow-sql-write --revision REVISION` and use both SQL permissions.
+The dedicated CLI query defaults to read-only. CLI and machine credentials require explicit SQL grants. An administrator wildcard does not grant SQL access. For a write, add `--allow-sql-write --revision REVISION` and use both SQL permissions.
 Read the database revision before the write review. The API rejects a missing or changed write revision.
 The dashboard database detail page links to the query page. The page reviews the target and statement before a write.
 

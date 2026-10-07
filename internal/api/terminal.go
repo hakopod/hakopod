@@ -98,10 +98,13 @@ func (s *Server) registerTerminalRoutes(m *http.ServeMux) {
 }
 
 func terminalAccessAllowed(p store.Principal, a store.Application) bool {
-	if p.CredentialType != "browser" && p.CredentialType != "cli" && p.CredentialType != "machine" {
+	if p.CredentialType == "machine" || p.CredentialType == "cli" {
+		return podExecAllowed(p, a)
+	}
+	if p.CredentialType != "browser" {
 		return false
 	}
-	return p.CredentialType != "machine" && !p.RuntimeScoped || p.Allows("pods:exec", a.Project, a.Environment, a.Name)
+	return !p.RuntimeScoped || p.Allows("pods:exec", a.Project, a.Environment, a.Name)
 }
 
 func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +114,7 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	p := who(r)
 	if !terminalAccessAllowed(p, a) {
-		problem(w, 403, "terminal_permission_required", "Use a browser or CLI session. Scoped credentials also require pods:exec.")
+		problem(w, 403, "terminal_permission_required", "CLI and machine credentials require an explicit pods:exec grant. Scoped browser sessions also require pods:exec.")
 		return
 	}
 	var o cluster.TerminalOptions
@@ -190,7 +193,7 @@ func (s *Server) terminalFor(w http.ResponseWriter, r *http.Request) (*terminalS
 	s.terminalMu.Unlock()
 	p := who(r)
 	if !terminalAccessAllowed(p, a) {
-		problem(w, 403, "terminal_permission_required", "Use a browser or CLI session. Scoped credentials also require pods:exec.")
+		problem(w, 403, "terminal_permission_required", "CLI and machine credentials require an explicit pods:exec grant. Scoped browser sessions also require pods:exec.")
 		return nil, a, false
 	}
 	polled := false
@@ -352,7 +355,7 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 		go s.guardHostTerminal(x)
 	} else {
 		permissions := []string{"deployments:write"}
-		if who(r).CredentialType == "machine" || who(r).RuntimeScoped {
+		if who(r).CredentialType == "machine" || who(r).CredentialType == "cli" || who(r).RuntimeScoped {
 			permissions = append(permissions, "pods:exec")
 		}
 		go s.guardStream(x.ctx, x.cancel, x.key, a, permissions...)

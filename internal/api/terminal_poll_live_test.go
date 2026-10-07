@@ -71,7 +71,7 @@ func TestTerminalPollLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		clean, done := context.WithTimeout(context.Background(), 45*time.Second)
+		clean, done := context.WithTimeout(context.Background(), 90*time.Second)
 		defer done()
 		current, e := kube.CoreV1().Namespaces().Get(clean, ns.Name, metav1.GetOptions{})
 		if e != nil || current.UID != ns.UID || current.Labels["hakopod.io/acceptance"] != "terminal-poll" {
@@ -168,11 +168,10 @@ func TestTerminalPollLive(t *testing.T) {
 		}
 		if !sent {
 			w = call("POST", base+"/input", `{"data":"Zml4dHVyZS1pbnB1dAo="}`)
-			if w.Code == 204 {
-				sent = true
-			} else if w.Code != 409 {
+			if w.Code != 204 {
 				t.Fatal(w.Code, w.Body.String())
 			}
+			sent = true
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

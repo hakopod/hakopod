@@ -83,6 +83,76 @@ func TestTerminalInputAuthorityAndBackpressure(t *testing.T) {
 	if status := call(session.Token, base+"/input", map[string]int{"cols": 1000, "rows": 30}); status != 400 {
 		t.Fatal("invalid size accepted", status)
 	}
+	t.Run("administrator-machine-needs-execution-grant", func(t *testing.T) {
+		for _, scoped := range []bool{false, true} {
+			in := store.KeyInput{Name: "terminal-admin", Permissions: []string{"admin"}, ExpiresAt: time.Now().Add(time.Hour)}
+			if scoped {
+				in.Project, in.Environment = "demo", "development"
+			}
+			_, token, err := db.CreateKey(ctx, p, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := "/api/v1/applications/" + deployment.ApplicationID + "/services/web/terminal"
+			body := map[string]any{"pod": "fixture", "container": "app", "command": []string{"/bin/sh"}}
+			if status := call(token, path, body); status != 403 {
+				t.Fatal("administrator machine key bypassed explicit terminal grant", scoped, status)
+			}
+		}
+	})
+	t.Run("cli-needs-current-execution-consent", func(t *testing.T) {
+		for _, grants := range [][]string{{"deployments:read", "deployments:write"}, {"admin"}} {
+			cli, err := db.NewSession(ctx, owner.ID, "cli", "demo", "development", grants)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := "/api/v1/applications/" + deployment.ApplicationID + "/services/web/terminal"
+			body := map[string]any{"pod": "fixture", "container": "app", "command": []string{"/bin/sh"}}
+			if status := call(cli.Token, path, body); status != 403 {
+				t.Fatal("CLI opened a terminal without explicit execution consent", status)
+			}
+		}
+		cli, err := db.NewSession(ctx, owner.ID, "cli", "demo", "development", []string{"deployments:read", "deployments:write", "pods:exec"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cliCtx, cliCancel := context.WithCancel(ctx)
+		defer cliCancel()
+		terminal := &terminalSession{id: store.NewID(), app: deployment.ApplicationID, service: "web", owner: cli.User.ID, key: cli.User.KeyID, ctx: cliCtx, cancel: cliCancel, input: make(chan []byte, 1), sizes: make(chan remotecommand.TerminalSize, 1), started: true}
+		s.terminals[terminal.id] = terminal
+		defer s.closeTerminal(terminal)
+		path := "/api/v1/applications/" + deployment.ApplicationID + "/services/web/terminal/" + terminal.id + "/input"
+		if status := call(cli.Token, path, input); status != 204 {
+			t.Fatal("CLI execution consent was not accepted", status)
+		}
+		if _, err := db.Pool.Exec(ctx, "UPDATE api_keys SET permissions=ARRAY['deployments:read','deployments:write'] WHERE id=$1", cli.User.KeyID); err != nil {
+			t.Fatal(err)
+		}
+		if status := call(cli.Token, path, input); status != 403 {
+			t.Fatal("CLI retained input after execution consent removal", status)
+		}
+	})
+	t.Run("poll-propagates-attachment-failure", func(t *testing.T) {
+		for len(s.streams) < cap(s.streams) {
+			s.streams <- struct{}{}
+		}
+		defer func() {
+			for len(s.streams) > 0 {
+				<-s.streams
+			}
+		}()
+		pollCtx, pollCancel := context.WithCancel(ctx)
+		defer pollCancel()
+		terminal := &terminalSession{id: store.NewID(), app: deployment.ApplicationID, service: "web", owner: p.ID, key: p.KeyID, ctx: pollCtx, cancel: pollCancel}
+		s.terminals[terminal.id] = terminal
+		r := httptest.NewRequest("GET", "/api/v1/applications/"+deployment.ApplicationID+"/services/web/terminal/"+terminal.id+"/poll", nil)
+		r.Header.Set("Authorization", "Bearer "+session.Token)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != 429 || pollCtx.Err() == nil {
+			t.Fatal("failed terminal attachment returned success or retained the session", w.Code)
+		}
+	})
 	t.Run("current-scoped-grant", func(t *testing.T) {
 		_, token, err := db.CreateKey(ctx, p, store.KeyInput{Name: "terminal-machine", Project: "demo", Environment: "development", Permissions: []string{"deployments:read", "deployments:write", "pods:exec"}, ExpiresAt: time.Now().Add(time.Hour)})
 		if err != nil {
