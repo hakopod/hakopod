@@ -142,7 +142,7 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	if status := client.request("POST", "/backup-destinations", backup.DestinationInput{Name: "myduck-api-recovery", Endpoint: endpoint, Region: "us-east-1", Bucket: "hakopod-backup-tests", Prefix: "myduck-api", PathStyle: true, AllowHTTP: true, AccessKeyID: access, SecretAccessKey: secret}, &destination, ""); status != 201 {
 		t.Fatal("destination", status)
 	}
-	t.Run("authorization", func(t *testing.T) {
+	if !t.Run("authorization", func(t *testing.T) {
 		if status := (backupRequestClient{t: t, server: httpServer}).request("GET", "/databases?project=demo&environment=development", nil, nil, ""); status != http.StatusUnauthorized {
 			t.Fatal("missing token was not refused", status)
 		}
@@ -156,12 +156,14 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 		if status := scoped.request("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: foreignID, Engine: "duckdb"}}, nil, store.NewID()); status != http.StatusNotFound {
 			t.Fatal("scoped key accepted a cross-project backup", status)
 		}
-		if status := client.request("GET", "/databases", nil, &struct {
+		if status := client.request("GET", "/databases?project=demo&environment=development", nil, &struct {
 			Items []managed.Resource `json:"items"`
 		}{}, ""); status != 200 {
 			t.Fatal("authorized database catalog", status)
 		}
-	})
+	}) {
+		t.FailNow()
+	}
 	runCtx, stopWorkers := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() { defer close(done); server.RunManagedDatabases(runCtx) }()
@@ -217,6 +219,9 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 		if status := client.request("POST", "/databases/"+d.ID+"/credentials", map[string]any{}, &credentials, ""); status != 200 {
 			t.Fatal("credentials", status)
 		}
+		if credentials["username"] != "root" || credentials["database"] != "app" || credentials["password"] == "" {
+			t.Fatal("MyDuck credentials returned unexpected defaults")
+		}
 		trust, e := runtime.DatabaseTrust(ctx, d)
 		if e != nil {
 			t.Fatal(e)
@@ -230,7 +235,7 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 		defer closeForward()
 		if protocol == "mysql" {
 			settings := mysqlclient.NewConfig()
-			settings.User, settings.Passwd, settings.Net, settings.Addr, settings.DBName, settings.TLS, settings.MultiStatements = "root", credentials["password"], "tcp", address, "app", myduckAPITLS(t, trust, host), true
+			settings.User, settings.Passwd, settings.Net, settings.Addr, settings.DBName, settings.TLS, settings.MultiStatements = credentials["username"], credentials["password"], "tcp", address, credentials["database"], myduckAPITLS(t, trust, host), true
 			connector, e := mysqlclient.NewConnector(settings)
 			if e != nil {
 				t.Fatal(e)
@@ -269,7 +274,7 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 		}
 		return value
 	}
-	query(source, "mysql", "CREATE TABLE recovery_rows(id INTEGER PRIMARY KEY, value VARCHAR); INSERT INTO recovery_rows VALUES(1,'captured')")
+	query(source, "mysql", "CREATE TABLE recovery_rows(id INTEGER PRIMARY KEY, value VARCHAR(255)); INSERT INTO recovery_rows VALUES(1,'captured')")
 	if query(source, "postgresql", "SELECT value FROM recovery_rows WHERE id=1") != "captured" {
 		t.Fatal("dual-protocol read differs")
 	}
