@@ -856,7 +856,17 @@
         "type": "string"
       },
       "endpoint": {
-        "type": "string"
+        "type": "string",
+        "enum": [
+          "",
+          "read_write",
+          "read_only",
+          "cluster",
+          "pooled_read_write",
+          "pooled_read_only",
+          "mysql",
+          "postgresql"
+        ]
       },
       "cluster_aware": {
         "type": "boolean"

@@ -5096,7 +5096,7 @@ export interface components {
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess";
+            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess" | "duckdb";
             database?: string;
             managed_database_id?: string;
             external_name?: string;
@@ -5144,7 +5144,7 @@ export interface components {
             application_id?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess";
+            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess" | "duckdb";
             database?: string;
             application_name?: string;
             revision: number;
@@ -5861,7 +5861,8 @@ export interface components {
             username?: string;
             password?: components["schemas"]["SecretRef"];
             managed_database?: string;
-            endpoint?: string;
+            /** @enum {string} */
+            endpoint?: "" | "read_write" | "read_only" | "cluster" | "pooled_read_write" | "pooled_read_only" | "mysql" | "postgresql";
             cluster_aware?: boolean;
             /**
              * @description Omit to follow the managed database TLS policy. PostgreSQL supports require, verify-ca and verify-full. Other TLS engines support verify-full except MySQL/Vitess, whose driver must configure TLS separately. disable is allowed only for legacy plaintext PostgreSQL or Redis.
@@ -5938,8 +5939,11 @@ export interface components {
             /** @constant */
             schema_version: 1;
             name: string;
-            /** @enum {string} */
-            engine: "postgresql" | "redis" | "mysql" | "mongodb" | "clickhouse" | "oracle" | "vitess";
+            /**
+             * @description Managed engine identifier. duckdb selects DuckDB through MyDuck and remains unavailable until native single-node, dual-protocol TLS qualification passes.
+             * @enum {string}
+             */
+            engine: "postgresql" | "redis" | "mysql" | "mongodb" | "clickhouse" | "oracle" | "vitess" | "duckdb";
             version: string;
             /** @enum {string} */
             mode: "standalone" | "cluster";
@@ -5980,7 +5984,8 @@ export interface components {
             providers: number;
         };
         DatabaseEndpoint: {
-            purpose: string;
+            /** @enum {string} */
+            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https" | "cluster" | "mysql" | "postgresql";
             host: string;
             port: number;
         };
@@ -6034,7 +6039,7 @@ export interface components {
         };
         DatabasePublicEndpointSpec: {
             /** @enum {string} */
-            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https" | "cluster";
+            purpose: "read_write" | "read_only" | "pooled_read_write" | "pooled_read_only" | "native" | "https" | "cluster" | "mysql" | "postgresql";
             source_cidrs: string[];
             max_connections: number;
         };
