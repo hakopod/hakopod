@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 )
 
 const myduckColdAnnotation = "hakopod.io/myduck-cold-storage"
@@ -395,23 +396,37 @@ func (c *Client) ReconcileMyDuckColdStorage(ctx context.Context, d database.Reso
 	} else if !apierrors.IsNotFound(err) {
 		return err
 	}
-	set, claim, volume, namespaceUID, err = c.myduckColdSet(ctx, d)
-	if err != nil || !myduckColdIdentities(record, set, claim, volume, namespaceUID) {
-		return fmt.Errorf("MyDuck cleanup storage identity changed")
-	}
-	if _, err = myduckReadColdRecord(set, d, jobID); err != nil {
+	// Controller status updates can race cleanup. Each retry reads the current
+	// object and rechecks storage identity and authority before resuming it.
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		set, claim, volume, namespaceUID, err := c.myduckColdSet(ctx, d)
+		if err != nil || !myduckColdIdentities(record, set, claim, volume, namespaceUID) {
+			return fmt.Errorf("MyDuck cleanup storage identity changed")
+		}
+		current, err := myduckReadColdRecord(set, d, jobID)
+		if err != nil {
+			return err
+		}
+		if current != record {
+			return fmt.Errorf("MyDuck cold-storage receipt changed during cleanup")
+		}
+		if set.Spec.Replicas == nil || *set.Spec.Replicas != 0 {
+			return fmt.Errorf("MyDuck cold-storage process restarted outside its fence")
+		}
+		if _, err = pods.Get(ctx, myduckColdName(jobID), metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+			return fmt.Errorf("MyDuck storage helper reappeared during cleanup")
+		}
+		if err = before(); err != nil {
+			return err
+		}
+		if resume {
+			one := int32(1)
+			set.Spec.Replicas = &one
+		}
+		delete(set.Annotations, myduckColdAnnotation)
+		_, err = c.kube.AppsV1().StatefulSets(set.Namespace).Update(ctx, set, metav1.UpdateOptions{})
 		return err
-	}
-	if err = before(); err != nil {
-		return err
-	}
-	if resume {
-		one := int32(1)
-		set.Spec.Replicas = &one
-	}
-	delete(set.Annotations, myduckColdAnnotation)
-	_, err = c.kube.AppsV1().StatefulSets(set.Namespace).Update(ctx, set, metav1.UpdateOptions{})
-	return err
+	})
 }
 
 func (c *Client) myduckDatabaseEmpty(ctx context.Context, d database.Resource, observed database.Observation) error {
