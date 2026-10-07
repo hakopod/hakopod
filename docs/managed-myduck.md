@@ -1,6 +1,6 @@
 # Managed DuckDB with MyDuck
 
-Status: MyDuck is enabled in alpha.56 candidate source `058c25c` so its native
+Status: MyDuck is enabled in the alpha.56 candidate so its native
 qualification can run. It is not available in the published OSS alpha.55 or
 Cloud alpha.34 releases. Do not offer it until the current candidate passes the
 complete native lifecycle and HTTP acceptance suites and the release is
@@ -45,8 +45,8 @@ The runtime is built from
 [`apecloud/myduckserver` commit `6e3427591fd8895df9585969e7256f958fb639bb`](https://github.com/apecloud/myduckserver/tree/6e3427591fd8895df9585969e7256f958fb639bb)
 with the changes in [the managed runtime patch](../patches/myduck/README.md).
 The published managed image is
-`ghcr.io/hakopod/managed-myduck@sha256:29e6618d70a2f4ac3926eb86293ba015c243984246075eb16049a266cf2ae1cd`,
-version `0.1.0-hakopod.2`. Publication makes the artifact retrievable; it does
+`ghcr.io/hakopod/managed-myduck@sha256:ad324a97360dea53f9e32cb367666b8fefa6f52377000c084a63c1712ca79873`,
+version `0.1.0-hakopod.3`. Publication makes the artifact retrievable; it does
 not qualify the managed service.
 
 ## Configuration
