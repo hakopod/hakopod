@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/framework"
+	"github.com/hakopod/hakopod/internal/operations"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 )
@@ -33,6 +34,7 @@ type Server struct {
 	plans       map[string]agentPlan
 	maxPlans    int
 	options     Options
+	stream      StreamFunc
 }
 
 // New shares tool behavior across stdio and HTTP. Callers serialize access.
@@ -53,10 +55,28 @@ func Serve(ctx context.Context, c RequestFunc, cfg Scope, allowDeploy bool, in i
 	return serveOptions(ctx, c, cfg, Options{AllowDeploy: allowDeploy}, in, out, version)
 }
 func serveOptions(ctx context.Context, c RequestFunc, cfg Scope, options Options, in io.Reader, out io.Writer, version string) error {
-	if cfg.Project == "" || cfg.Environment == "" {
+	return ServeWithStream(ctx, c, cfg, options, nil, in, out, version)
+}
+func ServeWithStream(ctx context.Context, c RequestFunc, cfg Scope, options Options, stream StreamFunc, in io.Reader, out io.Writer, version string) error {
+	if options.HostOnly {
+		if cfg.Project != "" || cfg.Environment != "" || options.Installation || options.AllowAdmin || options.AllowCredentials || options.AllowWrite || options.AllowDeploy || options.AllowExec || options.AllowTerminal || options.AllowSQL || options.AllowSQLWrite || !options.AllowHostTerminal {
+			return errors.New("host-only MCP requires host terminal opt-in and no project or other access flags")
+		}
+		if err := requireHostCredential(ctx, c); err != nil {
+			return err
+		}
+	} else if options.Installation {
+		if cfg.Project != "" || cfg.Environment != "" || !options.AllowAdmin || options.AllowDeploy || options.AllowExec || options.AllowSQL || options.AllowSQLWrite {
+			return errors.New("installation MCP requires --installation --allow-admin and no project/environment")
+		}
+		if err := operations.RequireInstallation(ctx, operations.RequestFunc(c), options.AllowCredentials); err != nil {
+			return err
+		}
+	} else if cfg.Project == "" || cfg.Environment == "" {
 		return errors.New("mcp requires --project and --environment to bound agent access")
 	}
 	server := NewWithOptions(c, cfg, options, 32)
+	server.SetStream(stream)
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 4096), 1<<20)
 	encoder := json.NewEncoder(out)
@@ -130,6 +150,12 @@ func decodeAgent(raw json.RawMessage, out any) error {
 	return nil
 }
 func (s *Server) Tools() []any {
+	if s.options.HostOnly {
+		return s.terminalTools()
+	}
+	if s.options.Installation {
+		return s.operationTools()
+	}
 	str := map[string]any{"type": "string"}
 	tool := func(name, description string, properties map[string]any, required []string, read bool) any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}, "annotations": map[string]any{"readOnlyHint": read, "destructiveHint": !read, "idempotentHint": true, "openWorldHint": true}}
@@ -148,7 +174,7 @@ func (s *Server) Tools() []any {
 		tool("plan", "Validate TOML through the canonical API and return changes, warnings and a ten-minute plan_id. This does not deploy.", map[string]any{"toml": map[string]any{"type": "string", "maxLength": spec.MaxBytes}}, []string{"toml"}, true),
 	}
 	if s.allowDeploy {
-		result = append(result, tool("deploy", "Deploy exactly a previously reviewed plan_id. Requires launch with --allow-deploy and deployments:write. Review changes with the user before calling; it may change running services. Retries use the same idempotency key.", map[string]any{"plan_id": str}, []string{"plan_id"}, false))
+		result = append(result, tool("deploy", "Deploy exactly a previously reviewed plan_id. Requires launch with --allow-deploy and deployments:write. Review changes with the user before calling. This operation can change running services. Retries use the same idempotency key.", map[string]any{"plan_id": str}, []string{"plan_id"}, false))
 	}
 	return append(result, s.operationTools()...)
 }
@@ -169,8 +195,21 @@ func (s *Server) application(ctx context.Context, id string) (store.Application,
 	return a, nil
 }
 func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if s.options.HostOnly && !strings.HasPrefix(name, "host_terminal_") {
+		return nil, errors.New("host-only connection offers only host terminal tools")
+	}
+	if s.options.Installation && name != "api_operations" && name != "api_call" && name != "audit_export" && !strings.HasPrefix(name, "host_terminal_") {
+		return nil, errors.New("project tools require a separate project connection")
+	}
+	if strings.HasPrefix(name, "terminal_") || strings.HasPrefix(name, "host_terminal_") {
+		return s.terminalCall(ctx, name, raw)
+	}
 	switch name {
-	case "api_operations", "api_call", "pod_exec", "database_query", "cancel_deployment", "rollback":
+	case "deployment_events":
+		return s.sampleDeploymentEvents(ctx, raw)
+	case "read_logs":
+		return s.Call(ctx, "logs", raw)
+	case "audit_export", "api_operations", "api_call", "pod_exec", "database_query", "cancel_deployment", "rollback":
 		return s.operationCall(ctx, name, raw)
 	case "detect_framework":
 		var in struct {

@@ -232,6 +232,12 @@ func (p Principal) IsAdmin() bool {
 	return !p.MFARequired && p.Admin && contains(p.Permissions, "admin") && p.Project == "" && p.Environment == "" && p.Application == "" && p.IdentityProject == "" && p.IdentityEnvironment == ""
 }
 
+// Installation agents require the administrator's authority and an explicit grant.
+// Project credentials and pending MFA sessions cannot use this permission.
+func (p Principal) CanUseInstallationAgentAdministration() bool {
+	return p.IsAdmin() && contains(p.Permissions, "agent:admin") && (p.CredentialType == "machine" || p.CredentialType == "cli")
+}
+
 type Key struct {
 	ID           string     `json:"id"`
 	IdentityID   string     `json:"identity_id"`
@@ -294,11 +300,18 @@ func validKeyFields(name, project, environment, application string, permissions 
 		return errors.New("at least one permission is required")
 	}
 	for _, v := range permissions {
-		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "slack:relay", "pods:exec", "databases:query", "databases:write-query"}, v) {
+		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "slack:relay", "pods:exec", "databases:query", "databases:write-query", "agent:admin", "agent:credentials", "nodes:terminal"}, v) {
 			return fmt.Errorf("unsupported permission %q", v)
 		}
 	}
-	if !contains(permissions, "admin") && (project == "" || environment == "") {
+	if contains(permissions, "nodes:terminal") && (project != "" || environment != "" || application != "") {
+		return errors.New("nodes:terminal requires installation scope")
+	}
+	if contains(permissions, "agent:admin") && (!contains(permissions, "admin") || project != "" || environment != "" || application != "") {
+		return errors.New("agent:admin requires admin and an installation scope without project, environment or application restrictions")
+	}
+	hostOnly := len(permissions) == 1 && contains(permissions, "nodes:terminal")
+	if !contains(permissions, "admin") && !hostOnly && (project == "" || environment == "") {
 		return errors.New("machine keys require explicit project and environment")
 	}
 	if (contains(permissions, "pods:exec") || contains(permissions, "databases:query") || contains(permissions, "databases:write-query")) && (project == "" || environment == "") {
@@ -369,6 +382,8 @@ func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte,
 	}
 	if err == nil && p.IsHuman() {
 		p.AvatarURL = AvatarURL(p.AvatarStyle, p.AvatarSeed, p.ID)
+	}
+	if err == nil && p.Email != "" && (p.CredentialType == "browser" || p.CredentialType == "cli" || p.CredentialType == "machine") {
 		p.HostPermissions, err = s.hostPermissions(ctx, p.ID)
 	}
 	if err == nil && p.IsHuman() {

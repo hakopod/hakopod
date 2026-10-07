@@ -145,3 +145,11 @@ test('dashboard execution transports retain session and origin enforcement', asy
   }
   assert.equal(mocked.mock.callCount(), 2)
 })
+
+test('new key route refuses unavailable URL scope and the header uses that scope', () => {
+  const page = readFileSync(new URL('../routes/settings.keys.new.tsx', import.meta.url), 'utf8')
+  const shell = readFileSync(new URL('../components/shell.tsx', import.meta.url), 'utf8')
+  assert.ok(page.includes('resolveProjectRouteScope(projects.data?.items, scope.project, scope.environment)'))
+  assert.ok(page.indexOf("selected.status !== 'ready'") < page.indexOf('<CreateKey'))
+  assert.ok(shell.includes("scopedListPage || location.pathname === '/settings/keys/new'"))
+})

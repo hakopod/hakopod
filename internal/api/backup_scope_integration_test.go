@@ -44,7 +44,7 @@ func TestBackupWorkspaceIsolationAndWorkerRevocation(t *testing.T) {
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 	scoped := func(project, environment string) backupRequestClient {
-		_, token, e := db.CreateKey(ctx, admin, store.KeyInput{Name: "scope", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write"}, ExpiresAt: time.Now().Add(time.Hour)})
+		_, token, e := db.CreateKey(ctx, admin, store.KeyInput{Name: "scope", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
 		if e != nil {
 			t.Fatal(e)
 		}

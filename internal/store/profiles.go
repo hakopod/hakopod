@@ -83,7 +83,7 @@ func (s *Store) UpdateProfile(ctx context.Context, p Principal, in ProfileInput)
 
 func (s *Store) SetTeamUsername(ctx context.Context, p Principal, team, user, username string) (TeamMember, error) {
 	var result TeamMember
-	if p.CredentialType != "browser" || !p.IsHuman() || (user != p.ID && !s.CanManageTeam(ctx, p, team)) {
+	if !p.CanUseInstallationAgentAdministration() && (p.CredentialType != "browser" || !p.IsHuman() || (user != p.ID && !s.CanManageTeam(ctx, p, team))) {
 		return result, ErrForbidden
 	}
 	username = strings.ToLower(strings.TrimSpace(username))

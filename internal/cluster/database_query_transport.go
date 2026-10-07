@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -19,7 +20,14 @@ import (
 // The fixed relay carries encrypted protocol bytes. It does not receive SQL or
 // credentials through command arguments, environment variables or log output.
 func (c *Client) postgresQueryStream(ctx context.Context, d database.Resource, member database.Member) (net.Conn, error) {
-	if d.Spec.Engine != "postgresql" {
+	return c.queryOwnedRelay(ctx, d, member, 5432)
+}
+
+func (c *Client) queryOwnedRelay(ctx context.Context, d database.Resource, member database.Member, port int) (net.Conn, error) {
+	if d.Spec.Engine != "postgresql" && d.Spec.Engine != "mysql" {
+		return nil, queryUnavailable()
+	}
+	if port != 5432 && port != 3306 {
 		return nil, queryUnavailable()
 	}
 	pod, container, err := c.databaseExecTarget(ctx, d, member)
@@ -27,11 +35,11 @@ func (c *Client) postgresQueryStream(ctx context.Context, d database.Resource, m
 		return nil, queryUnavailable()
 	}
 	lifetime, cancel := context.WithTimeout(ctx, 20*time.Second)
-	const relay = `set -eu
-exec 3<>/dev/tcp/127.0.0.1/5432
+	relay := fmt.Sprintf(`set -eu
+exec 3<>/dev/tcp/127.0.0.1/%d
 cat <&3 & reader=$!
 trap 'kill "$reader" 2>/dev/null || true' EXIT
-cat >&3`
+cat >&3`, port)
 	u := c.restClient().Post().Resource("pods").Namespace(pod.Namespace).Name(pod.Name).SubResource("exec").VersionedParams(&corev1.PodExecOptions{
 		Container: container, Command: []string{"/bin/bash", "-c", relay}, Stdin: true, Stdout: true, Stderr: true,
 	}, scheme.ParameterCodec).URL()

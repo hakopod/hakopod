@@ -23,3 +23,6 @@ for path in ['/teams/{id}/members/{user}/username','/host-access/{user}','/host-
     for operation in paths[path].values():
         for name in re.findall(r'\{([^}]+)\}',path):
             if name!='id':operation['parameters'].append({'name':name,'in':'path','required':True,'schema':S})
+
+route('/nodes/{node}/terminal/{session}/poll','get','pollHostTerminal',ref('TerminalPoll'))
+paths['/nodes/{node}/terminal/{session}/poll']['get']['parameters'].append({'name':'cursor','in':'query','schema':S})

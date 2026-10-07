@@ -79,6 +79,10 @@ jobs:
             https://dl.k8s.io/release/v1.35.8/bin/linux/amd64/kubectl -o "$TEST_KUBECTL"
           echo '874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf  .local/bin/kubectl' | sha256sum --check --strict
           chmod 0755 "$TEST_KUBECTL"
+      - name: Verify generated contract and agent routes
+        run: |
+          python3 api/generate.py
+          git diff --exit-code -- api/openapi.json web/src/server/agent-routes.generated.ts
       - run: go test ./...
       - name: Check signup build policies
         run: |

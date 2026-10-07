@@ -35,6 +35,7 @@ type Operation struct {
 	Exclusion    string         `json:"exclusion,omitempty"`
 	Parameters   []parameter    `json:"parameters,omitempty"`
 	Body         map[string]any `json:"body_schema,omitempty"`
+	Policy       Policy         `json:"policy"`
 	bodyRequired bool
 }
 type parameter struct {
@@ -74,6 +75,7 @@ func init() {
 			}
 			var entry struct {
 				ID          string      `json:"operationId"`
+				Policy      Policy      `json:"x-hakopod-agent"`
 				Parameters  []parameter `json:"parameters"`
 				RequestBody struct {
 					Required bool `json:"required"`
@@ -86,47 +88,13 @@ func init() {
 				panic(err)
 			}
 			op := Operation{ID: entry.ID, Method: strings.ToUpper(method), Path: path, Mutating: method != "get", Parameters: entry.Parameters, Body: entry.RequestBody.Content["application/json"].Schema, bodyRequired: entry.RequestBody.Required}
-			op.Exclusion = excluded(op)
+			op.Policy = entry.Policy
+			op.Policy, op.Exclusion = classify(op)
 			op.Available = op.Exclusion == ""
 			catalog = append(catalog, op)
 		}
 	}
 	sort.Slice(catalog, func(i, j int) bool { return catalog[i].ID < catalog[j].ID })
-}
-func excluded(o Operation) string {
-	p := o.Path
-	if p == "/dns-providers" || strings.HasPrefix(p, "/dns-providers/") {
-		return "DNS provider administration can return global records. Use application-scoped DNS metadata or the human administration interface."
-	}
-	if strings.Contains(p, "/credentials") || strings.HasPrefix(p, "/keys") || strings.HasPrefix(p, "/auth") || strings.HasPrefix(p, "/nodes/enrollments") || strings.HasPrefix(p, "/secret-providers") {
-		return "Authentication, credentials and provider secrets require dedicated human flows."
-	}
-	if strings.Contains(p, "/terminal") || strings.Contains(p, "/exec") || strings.HasSuffix(p, "/query") && strings.HasPrefix(p, "/databases/") {
-		return "Execution requires a dedicated tool and separate opt-in."
-	}
-	if p == "/applications/{id}/logs" || p == "/deployments/{id}/events" {
-		return "Streaming responses require a dedicated bounded tool."
-	}
-	if strings.HasSuffix(p, "/archive") || strings.Contains(p, "/certificates") && o.Mutating {
-		return "Binary uploads require their dedicated CLI flow."
-	}
-	if strings.HasPrefix(p, "/managed-platforms/") && !strings.HasPrefix(p, "/managed-platforms/{id}") && p != "/managed-platforms/catalog" {
-		return "Reviewed platform administration requires its dedicated interface."
-	}
-	if o.ID == "createDeployment" || strings.Contains(strings.ToLower(o.ID), "deploy") || strings.Contains(p, "/rollback") {
-		return "Deployment requires the reviewed deployment tool."
-	}
-	if strings.HasPrefix(p, "/applications/") || strings.HasPrefix(p, "/databases/") || strings.HasPrefix(p, "/external-databases/") || strings.HasPrefix(p, "/managed-platforms/") || strings.HasPrefix(p, "/builds/") || strings.HasPrefix(p, "/deployments/") {
-		return ""
-	}
-	switch p {
-	case "/applications", "/databases", "/external-databases", "/managed-platforms", "/builds", "/virtual-networks", "/dns-providers", "/registries", "/secrets", "/alarms", "/alarm-settings", "/requests", "/storage/retained", "/placement/nodes", "/database-placement/nodes", "/actions/capabilities", "/cloud/capabilities", "/templates", "/compose/convert", "/builds/detect":
-		return ""
-	}
-	if strings.HasPrefix(p, "/virtual-networks/") || strings.HasPrefix(p, "/registries/") || strings.HasPrefix(p, "/dns-providers/") || strings.HasPrefix(p, "/secrets/") {
-		return ""
-	}
-	return "This operation has no verified agent scope boundary. Use its dedicated interface."
 }
 func Catalog() []Operation {
 	raw, _ := json.Marshal(catalog)
@@ -150,11 +118,14 @@ func Decode(raw []byte, out any) error {
 	return nil
 }
 func Invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bool, in Invocation) (any, error) {
+	return invoke(ctx, request, scope, allowWrite, in, false, false, false)
+}
+func invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bool, in Invocation, installation, credentials, deploy bool) (any, error) {
 	raw, _ := json.Marshal(in)
 	if len(raw) > MaxBytes {
 		return nil, errors.New("request exceeds 1 MiB")
 	}
-	if scope.Project == "" || scope.Environment == "" {
+	if !installation && (scope.Project == "" || scope.Environment == "") {
 		return nil, errors.New("project and environment are required")
 	}
 	var op *Operation
@@ -167,8 +138,19 @@ func Invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bo
 	if op == nil {
 		return nil, errors.New("unknown operation")
 	}
-	if !op.Available {
+	if op.Policy.CredentialRequired && !credentials {
+		return nil, errors.New("credential operations require explicit credential opt-in")
+	}
+	if op.Policy.Category == "deploy" && !deploy {
+		return nil, errors.New("deployment operations require explicit deployment opt-in")
+	}
+	if !op.Available && !installation {
 		return nil, errors.New(op.Exclusion)
+	}
+	if op.Policy.ScopeRequirement == "project_credential" {
+		if err := requireProjectCredential(ctx, request, scope); err != nil {
+			return nil, err
+		}
 	}
 	if op.Mutating && !allowWrite {
 		return nil, errors.New("mutation requires explicit write opt-in")
@@ -272,10 +254,18 @@ func Invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bo
 			return nil, err
 		}
 	}
-	if err := checkScope(body, scope); err != nil {
-		return nil, err
+	if installation && !credentials && hasSensitiveFields(body, op.Policy.SensitiveFields) {
+		return nil, errors.New("credential fields require separate credential opt-in and agent:credentials")
+	}
+	if !installation {
+		if err := checkScope(body, scope); err != nil {
+			return nil, err
+		}
 	}
 	for _, key := range []string{"project", "environment"} {
+		if installation {
+			continue
+		}
 		wanted := scope.Project
 		if key == "environment" {
 			wanted = scope.Environment
@@ -287,7 +277,7 @@ func Invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bo
 			query.Set(key, wanted)
 		}
 	}
-	if obj, ok := body.(map[string]any); ok {
+	if obj, ok := body.(map[string]any); ok && !installation {
 		schema := resolve(op.Body)
 		props, _ := schema["properties"].(map[string]any)
 		if _, ok := props["project"]; ok {
@@ -297,18 +287,20 @@ func Invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bo
 			obj["environment"] = scope.Environment
 		}
 	}
-	if err := references(ctx, request, scope, body); err != nil {
-		return nil, err
-	}
-	for _, name := range []string{"application_id"} {
-		if app := query.Get(name); app != "" {
-			if err := resourceScope(ctx, request, scope, "applications", app); err != nil {
-				return nil, err
+	if !installation {
+		if err := references(ctx, request, scope, op.Policy.References, body); err != nil {
+			return nil, err
+		}
+		for _, name := range []string{"application_id"} {
+			if app := query.Get(name); app != "" {
+				if err := resourceScope(ctx, request, scope, "applications", app); err != nil {
+					return nil, err
+				}
 			}
 		}
-	}
-	if err := preflight(ctx, request, scope, *op, in.Path, query, body); err != nil {
-		return nil, err
+		if err := preflight(ctx, request, scope, *op, in.Path, query, body); err != nil {
+			return nil, err
+		}
 	}
 	if op.Path == "/templates" {
 		query.Del("project")
@@ -483,12 +475,25 @@ func checkScope(v any, s Scope) error {
 	return nil
 }
 func preflight(ctx context.Context, r RequestFunc, s Scope, o Operation, p map[string]string, q url.Values, body any) error {
+	if o.Policy.FixedScope != nil && (s.Project != o.Policy.FixedScope["project"] || s.Environment != o.Policy.FixedScope["environment"]) {
+		return errors.New("operation belongs to a different fixed project/environment")
+	}
+	if o.ID == "reviewManagedPlatform" || o.ID == "acceptManagedPlatform" {
+		if m, ok := body.(map[string]any); ok {
+			if id, _ := m["id"].(string); id != "" {
+				return resourceScope(ctx, r, s, "managed-platforms", id)
+			}
+		}
+	}
+	if o.Policy.Resource != "" {
+		return resourceScope(ctx, r, s, o.Policy.Resource, p[o.Policy.ResourceParameter])
+	}
 	parts := strings.Split(strings.Trim(o.Path, "/"), "/")
 	resource := ""
 	id := ""
 	if len(parts) > 1 && parts[1] == "{id}" {
 		switch parts[0] {
-		case "applications", "databases", "external-databases", "managed-platforms", "builds", "deployments":
+		case "applications", "databases", "external-databases", "managed-platforms", "builds", "deployments", "managed-platform-operations", "managed-platform-recovery-operations":
 			resource = parts[0]
 			id = p["id"]
 		}
@@ -528,6 +533,17 @@ func resourceScope(ctx context.Context, r RequestFunc, s Scope, resource, id str
 	if err := r(ctx, "GET", "/"+resource+"/"+url.PathEscape(id), nil, "", &out); err != nil {
 		return err
 	}
+	if database, ok := out["database_id"].(string); ok {
+		switch resource {
+		case "database-operations", "database-public-endpoint-operations":
+			return resourceScope(ctx, r, s, "databases", database)
+		case "external-database-operations":
+			return resourceScope(ctx, r, s, "external-databases", database)
+		}
+	}
+	if platform, ok := out["platform_id"].(string); ok && resource == "managed-platform-operations" {
+		return resourceScope(ctx, r, s, "managed-platforms", platform)
+	}
 	if app, ok := out["application_id"].(string); ok && resource == "deployments" {
 		return resourceScope(ctx, r, s, "applications", app)
 	}
@@ -537,28 +553,28 @@ func resourceScope(ctx context.Context, r RequestFunc, s Scope, resource, id str
 	return nil
 }
 
-func references(ctx context.Context, r RequestFunc, s Scope, v any) error {
+func references(ctx context.Context, r RequestFunc, s Scope, refs map[string]string, v any) error {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, val := range x {
-			if strings.HasSuffix(k, "application_id") || k == "destination_id" {
+			if resource := refs[k]; resource != "" {
 				id, ok := val.(string)
 				if !ok {
-					return errors.New("invalid application reference")
+					return errors.New("invalid resource reference")
 				}
 				if id != "" {
-					if err := resourceScope(ctx, r, s, "applications", id); err != nil {
+					if err := resourceScope(ctx, r, s, resource, id); err != nil {
 						return err
 					}
 				}
 			}
-			if err := references(ctx, r, s, val); err != nil {
+			if err := references(ctx, r, s, refs, val); err != nil {
 				return err
 			}
 		}
 	case []any:
 		for _, val := range x {
-			if err := references(ctx, r, s, val); err != nil {
+			if err := references(ctx, r, s, refs, val); err != nil {
 				return err
 			}
 		}

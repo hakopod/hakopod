@@ -282,7 +282,10 @@ func (s *Server) authRevokeSession(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]bool{"revoked": true})
 }
 func (s *Server) authUsers(w http.ResponseWriter, r *http.Request) {
-	if !human(w, r) || !admin(w, r) {
+	if !who(r).CanUseInstallationAgentAdministration() && !human(w, r) {
+		return
+	}
+	if !admin(w, r) {
 		return
 	}
 	v, err := s.Store.Users(r.Context())

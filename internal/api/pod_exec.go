@@ -167,7 +167,7 @@ func (s *Server) executePodCommand(w http.ResponseWriter, r *http.Request) {
 	check := func(ctx context.Context) error {
 		checkCtx, done := context.WithTimeout(ctx, time.Second)
 		defer done()
-		current, err := s.Store.KeyPrincipal(checkCtx, p.KeyID)
+		current, err := s.freshRuntimePrincipal(r.WithContext(checkCtx))
 		if err != nil || !podExecAllowed(current, a) {
 			return store.ErrForbidden
 		}

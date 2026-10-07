@@ -900,7 +900,7 @@ func (s *Server) keys(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"items": keys})
 }
 func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !admin(w, r) || !agentInstallationCredentials(w, r, true) {
 		return
 	}
 	var in store.KeyInput
@@ -912,6 +912,7 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_key", err.Error())
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	write(w, 201, map[string]any{"key": raw, "metadata": key})
 }
 func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
@@ -944,7 +945,7 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]string{"status": "revoked"})
 }
 func (s *Server) rotateKey(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !admin(w, r) || !agentInstallationCredentials(w, r, true) {
 		return
 	}
 	var in struct {
@@ -958,6 +959,7 @@ func (s *Server) rotateKey(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_key", err.Error())
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	write(w, 201, map[string]any{"key": raw, "metadata": key, "previous_key_expires_within_seconds": 900})
 }
 func (s *Server) audit(w http.ResponseWriter, r *http.Request) {

@@ -126,6 +126,48 @@ func TestDevicePermissionsRequireExplicitExecutionConsent(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalDevicePermissionsRecheckedBeforeIssuance(t *testing.T) {
+	s := isolatedDatabase(t)
+	ctx := context.Background()
+	id := NewID()
+	if _, err := s.Pool.Exec(ctx, "INSERT INTO identities(id,name,email,permissions,email_verified) VALUES($1,'Cloud permission fixture','permission@example.test',ARRAY['admin'],true)", id); err != nil {
+		t.Fatal(err)
+	}
+	browser, err := s.NewSession(ctx, id, "browser", "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := DeviceScope{ID: NewID(), Label: "Workspace", Project: "remote-project", Environment: "production"}
+	s.DeviceScopes = func(context.Context, Principal) ([]DeviceScope, error) { return []DeviceScope{scope}, nil }
+	grants := []string{"deployments:read", "pods:exec"}
+	request, err := s.StartDevice(ctx, "", "", grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ApproveDevice(ctx, browser.User, request.UserCode, true, scope); !errors.Is(err, ErrForbidden) {
+		t.Fatal("legacy external scope granted execution", err)
+	}
+	scope.Permissions = grants
+	if err = s.ApproveDevice(ctx, browser.User, request.UserCode, true, scope); err != nil {
+		t.Fatal(err)
+	}
+	scope.Permissions = []string{"deployments:read"}
+	if _, err = s.PollDevice(ctx, request.DeviceCode); !errors.Is(err, ErrForbidden) {
+		t.Fatal("revoked permission issued token", err)
+	}
+	request, err = s.StartDevice(ctx, "", "", grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.Permissions = grants
+	if err = s.ApproveDevice(ctx, browser.User, request.UserCode, true, scope); err != nil {
+		t.Fatal(err)
+	}
+	if session, err := s.PollDevice(ctx, request.DeviceCode); err != nil || !contains(session.User.Permissions, "pods:exec") {
+		t.Fatal("explicit external execution grant lost", err)
+	}
+}
 func TestDeviceConsentIssuesOnlyRequestedExecutionPermissions(t *testing.T) {
 	s := isolatedDatabase(t)
 	ctx := context.Background()

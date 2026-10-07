@@ -37,6 +37,10 @@ function DeviceConsent() {
   const selected = scopes.find(
     (scope) => JSON.stringify([scope.id, scope.project, scope.environment]) === selection,
   )
+  const installation = request.data?.permissions.includes('agent:admin') || false
+  const credentials = request.data?.permissions.includes('agent:credentials') || false
+  const hostTerminal = request.data?.permissions.includes('nodes:terminal') || false
+  const hostOnly = hostTerminal && !installation
   async function decide(approve: boolean) {
     if (busy) return
     setBusy(true)
@@ -98,16 +102,16 @@ function DeviceConsent() {
                 </dd>
               </div>
               <div>
-                <dt>Deployment scope</dt>
+                <dt>Access scope</dt>
                 <dd>
                   {selected
-                    ? `${selected.project} / ${selected.environment}`
+                    ? installation || hostOnly ? selected.label : `${selected.project} / ${selected.environment}`
                     : request.data.project
                       ? `${request.data.project} / ${request.data.environment}`
                       : 'Choose below'}
                 </dd>
               </div>
-              {selected?.id && (
+              {selected?.id && !installation && !hostOnly && (
                 <div>
                   <dt>Workspace</dt>
                   <dd className="break-words">{selected.label}</dd>
@@ -122,14 +126,31 @@ function DeviceConsent() {
                 <dd>{timestamp(request.data.expires_at)}</dd>
               </div>
             </dl>
+            {installation && (
+              <Note>
+                This request grants installation administration, including projects, users and settings.
+                Pod commands and database queries require separate project connections.
+              </Note>
+            )}
+            {credentials && (
+              <Note>
+                Enabled agent tools can retrieve credentials. Retrieved secrets can enter the connected agent's context.
+              </Note>
+            )}
+            {hostTerminal && (
+              <Note>
+                This request permits host terminal commands on authorized nodes. Hakopod checks
+                your current host access for each request.
+              </Note>
+            )}
             <SelectField
-              label="Deployment destination"
+              label={installation ? 'Installation' : hostOnly ? 'Host access' : 'Deployment destination'}
               value={selection}
               onValueChange={setSelection}
               required
               disabled={busy}
               options={[
-                { value: '', label: 'Choose a destination' },
+                { value: '', label: installation ? 'Choose an installation' : hostOnly ? 'Choose host access' : 'Choose a destination' },
                 ...scopes.map((scope) => ({
                   value: JSON.stringify([scope.id, scope.project, scope.environment]),
                   label: scope.label,
@@ -138,8 +159,11 @@ function DeviceConsent() {
             />
             {scopes.length === 0 && (
               <Note>
-                No deployment destination is ready. Set up a project
-                {dashboardEdition.cloud ? ' and its compute' : ''}, then refresh this list.
+                {installation
+                  ? 'No installation is available. Refresh the list or contact your administrator.'
+                  : hostOnly
+                    ? 'No host access is available. Ask your installation owner for a host grant, then refresh this list.'
+                  : `No deployment destination is ready. Set up a project${dashboardEdition.cloud ? ' and its compute' : ''}, then refresh this list.`}
               </Note>
             )}
             <div className="toolbar-actions">
@@ -149,7 +173,7 @@ function DeviceConsent() {
                 </a>
               </Button>
               <Button disabled={request.isFetching || busy} onClick={() => void request.refetch()}>
-                Refresh destinations
+                Refresh scopes
               </Button>
             </div>
             <Note>Approve only when this code matches the terminal where you started sign-in.</Note>

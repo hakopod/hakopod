@@ -16,6 +16,13 @@ export type DatabasePublicEndpointOperation = components['schemas']['DatabasePub
 export type DatabasePlacementNode = components['schemas']['DatabasePlacementNode']
 export type DatabasePublicEndpointRoute = components['schemas']['DatabasePublicEndpointRoute']
 export type DatabasePublicEndpointCapabilities = components['schemas']['DatabasePublicEndpointCapabilities']
+export function useDatabaseQueryCapabilities(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['database-query-capabilities', id],
+    queryFn: ({ signal }) => unwrap(client.GET('/databases/{id}/query-capabilities', { signal, params: { path: { id } } })),
+    enabled, refetchInterval: 30000, gcTime: 0,
+  })
+}
 export function useDatabasePlacementNodes(project: string, environment: string, enabled = true) {
   return useQuery({
     queryKey: ['database-placement-nodes', project, environment],

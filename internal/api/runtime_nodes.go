@@ -82,7 +82,7 @@ func (s *Server) nodeEnrollments(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, value)
 }
 func (s *Server) createNodeEnrollment(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !admin(w, r) || !agentInstallationCredentials(w, r, true) {
 		return
 	}
 	if s.Cluster == nil {

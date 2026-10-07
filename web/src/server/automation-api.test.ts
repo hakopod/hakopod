@@ -252,7 +252,7 @@ test('CI denies cookies, browser tokens, unsupported methods/routes and oversize
     )
   }
   assert.equal((await request('applications/' + app, 'PATCH')).status, 405)
-  assert.equal((await request('keys')).status, 404)
+  assert.equal((await request('unsupported-agent-route')).status, 404)
   assert.equal((await request('cloud/workspaces')).status, 404)
   assert.equal((await request('tls/issuers', 'POST', '{}')).status, 405)
   assert.equal((await request('applications/' + app + '/tls/issuers', 'DELETE')).status, 405)
@@ -335,12 +335,8 @@ test('SDK forwarding retains administrative exclusions and bounds DELETE input',
     throw new Error('must not forward')
   })
   for (const path of [
-    'keys',
     'installation',
-    'nodes',
     'auth/security',
-    'projects/demo/members',
-    'virtual-networks/private/candidates',
   ])
     assert.equal((await request(path)).status, 404, path)
   assert.equal((await request('databases/db', 'DELETE', 'x'.repeat(1024 * 1024 + 1))).status, 413)

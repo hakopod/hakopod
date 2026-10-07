@@ -15,7 +15,7 @@ import (
 
 func (s *Server) installationOwner(w http.ResponseWriter, r *http.Request) bool {
 	mode, err := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
-	if err != nil || mode != cluster.DeploymentSelfHosted || !who(r).IsSuperAdmin() {
+	if err != nil || mode != cluster.DeploymentSelfHosted || !installationOwnerAuthority(who(r)) {
 		failure(w, store.ErrForbidden)
 		return false
 	}

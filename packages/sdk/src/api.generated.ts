@@ -414,8 +414,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Run one PostgreSQL statement that supports EXPLAIN. Requires databases:query. Writes also require databases:write-query. Transaction control and COPY are unavailable. Results can contain private data. */
+        /** @description Run one SQL statement using the managed application identity. Read the engine capabilities first. Reads require databases:query. Writes require databases:write-query and a reviewed database revision. Results can contain private data. Check an unknown outcome before retrying. */
         post: operations["queryManagedDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/query-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read SQL execution support, modes, parameter format, and transaction behavior for this database engine. Requires access to read the database. */
+        get: operations["getDatabaseQueryCapabilities"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1133,10 +1150,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         get: operations["listBackupDestinations"];
         put?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         post: operations["createBackupDestination"];
         delete?: never;
         options?: never;
@@ -1152,10 +1169,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         put: operations["updateBackupDestination"];
         post?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         delete: operations["deleteBackupDestination"];
         options?: never;
         head?: never;
@@ -1171,7 +1188,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         post: operations["testBackupDestination"];
         delete?: never;
         options?: never;
@@ -1186,7 +1203,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         get: operations["listBackupTargets"];
         put?: never;
         post?: never;
@@ -1203,10 +1220,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         get: operations["listBackups"];
         put?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         post: operations["createBackup"];
         delete?: never;
         options?: never;
@@ -1221,7 +1238,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         get: operations["getBackup"];
         put?: never;
         post?: never;
@@ -1240,7 +1257,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         post: operations["cancelBackup"];
         delete?: never;
         options?: never;
@@ -1255,7 +1272,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         get: operations["listBackupArtifacts"];
         put?: never;
         post?: never;
@@ -1272,11 +1289,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         get: operations["getBackupArtifact"];
         put?: never;
         post?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         delete: operations["deleteBackupArtifact"];
         options?: never;
         head?: never;
@@ -1292,7 +1309,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         post: operations["planBackupRestore"];
         delete?: never;
         options?: never;
@@ -1309,7 +1326,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         post: operations["restoreBackup"];
         delete?: never;
         options?: never;
@@ -1324,10 +1341,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         get: operations["listBackupSchedules"];
         put?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         post: operations["createBackupSchedule"];
         delete?: never;
         options?: never;
@@ -1343,10 +1360,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         put: operations["updateBackupSchedule"];
         post?: never;
-        /** @description Administrator only. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
         delete: operations["deleteBackupSchedule"];
         options?: never;
         head?: never;
@@ -2884,9 +2901,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
+        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a machine or CLI bearer credential scoped to one project/environment, or a separate installation credential with explicit admin and agent:admin grants. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
         post: operations["mcpMessage"];
-        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
+        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a machine or CLI bearer credential scoped to one project/environment, or a separate installation credential with explicit admin and agent:admin grants. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
         delete: operations["closeMCPSession"];
         options?: never;
         head?: never;
@@ -2969,6 +2986,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["deleteTerminal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/terminal/{session}/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pollTerminal"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3177,6 +3210,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["closeHostTerminal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/nodes/{node}/terminal/{session}/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["pollHostTerminal"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4947,10 +4996,17 @@ export interface components {
             max_bytes: number;
             /** @description Reviewed database revision. Required when read_only is false. */
             expected_revision?: number;
+            /**
+             * @description Use a mode from the database query capabilities. Nontransactional writes can commit before the response arrives.
+             * @enum {string}
+             */
+            execution_mode?: "transaction" | "nontransactional";
         };
         DatabaseQueryColumn: {
             name: string;
+            /** @description PostgreSQL wire-protocol type OID. Drivers without OIDs return zero. */
             type_oid: number;
+            type_name?: string;
         };
         DatabaseQueryResult: {
             operation_id: string;
@@ -4961,7 +5017,7 @@ export interface components {
             rows_affected: number;
             truncated: boolean;
             /** @enum {string} */
-            outcome: "read" | "committed" | "rolled_back";
+            outcome: "read" | "committed" | "applied";
         };
         DatabaseQueryError: {
             error: {
@@ -4970,7 +5026,22 @@ export interface components {
             };
             operation_id: string;
             /** @enum {string} */
-            outcome: "not_started" | "rolled_back" | "unknown" | "read" | "committed";
+            outcome: "not_started" | "rolled_back" | "unknown" | "read" | "committed" | "applied";
+        };
+        DatabaseQueryCapabilities: {
+            engine: string;
+            /** @description The query API can execute statements for this engine. This value does not grant permission. */
+            supported: boolean;
+            /** @description The engine enforces read-only execution. If false, every SQL request requires explicit write access. */
+            read_only_supported: boolean;
+            execution_modes: ("transaction" | "nontransactional")[];
+            application_identity: string;
+            parameter_style: string;
+            read_only_enforcement: string;
+            transactional_dml: boolean;
+            transactional_ddl: boolean;
+            ddl_commit: string;
+            cancellation: string;
         };
         Alarm: {
             id: string;
@@ -5152,6 +5223,7 @@ export interface components {
             label: string;
             project: string;
             environment: string;
+            permissions?: string[];
         };
         DeviceDetails: {
             user_code: string;
@@ -5188,16 +5260,18 @@ export interface components {
         };
         BackupSource: {
             /** @enum {string} */
-            kind: "database" | "management" | "managed_database" | "docker_import";
+            kind: "database" | "managed_database" | "docker_import" | "management";
             application_id?: string;
-            service?: string;
-            /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess" | "duckdb";
-            database?: string;
             managed_database_id?: string;
             external_name?: string;
+            service?: string;
+            /** @enum {string} */
+            engine: "postgresql" | "redis" | "mysql" | "mongodb" | "clickhouse" | "oracle" | "vitess" | "duckdb";
+            database?: string;
         };
         BackupDestination: {
+            project?: string;
+            environment?: string;
             id: string;
             name: string;
             endpoint: string;
@@ -5213,8 +5287,6 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
-            project?: string;
-            environment?: string;
         };
         BackupDestinationInput: {
             name: string;
@@ -5236,22 +5308,23 @@ export interface components {
         };
         BackupTarget: {
             /** @enum {string} */
-            kind: "database" | "management" | "managed_database" | "docker_import";
+            kind: "database" | "managed_database" | "docker_import" | "management";
             application_id?: string;
+            managed_database_id?: string;
+            external_name?: string;
             service?: string;
             /** @enum {string} */
-            engine: "postgresql" | "mysql" | "clickhouse" | "redis" | "mongodb" | "oracle" | "vitess" | "duckdb";
+            engine: "postgresql" | "redis" | "mysql" | "mongodb" | "clickhouse" | "oracle" | "vitess" | "duckdb";
             database?: string;
             application_name?: string;
+            managed_database_name?: string;
+            source_version?: string;
+            runtime_fingerprint?: string;
             revision: number;
             pod?: string;
             pod_uid?: string;
             available: boolean;
             message?: string;
-            managed_database_id?: string;
-            managed_database_name?: string;
-            runtime_fingerprint?: string;
-            source_version?: string;
         };
         BackupArtifact: {
             id: string;
@@ -5267,17 +5340,17 @@ export interface components {
             format: string;
             scope: string;
             schedule_id?: string;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            deleted_at?: string;
-            deletion_pending?: boolean;
+            source_version?: string;
             source_revision?: number;
             /** Format: date-time */
             captured_at?: string;
             /** Format: date-time */
             verified_at?: string;
-            source_version?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+            deletion_pending?: boolean;
         };
         BackupJob: {
             id: string;
@@ -5732,6 +5805,8 @@ export interface components {
             builds: boolean;
         };
         GitConnection: {
+            project?: string;
+            environment?: string;
             id: string;
             name: string;
             /** @enum {string} */
@@ -7021,6 +7096,18 @@ export interface components {
             container: string;
             /** Format: date-time */
             expires_at: string;
+        };
+        TerminalPollFrame: {
+            cursor: number;
+            data: {
+                [key: string]: unknown;
+            };
+        };
+        TerminalPoll: {
+            frames: components["schemas"]["TerminalPollFrame"][];
+            next_cursor: string;
+            truncated: boolean;
+            done: boolean;
         };
         CustomRole: {
             id: string;
@@ -9070,6 +9157,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"] | components["schemas"]["DatabaseQueryError"];
+                };
+            };
+        };
+    };
+    getDatabaseQueryCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseQueryCapabilities"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -15498,6 +15616,12 @@ export interface operations {
                 allow_exec?: boolean;
                 allow_sql?: boolean;
                 allow_sql_write?: boolean;
+                installation?: boolean;
+                allow_admin?: boolean;
+                allow_credentials?: boolean;
+                allow_terminal?: boolean;
+                allow_host_terminal?: boolean;
+                host_only?: boolean;
             };
             header?: {
                 "Mcp-Session-Id"?: string;
@@ -15549,6 +15673,12 @@ export interface operations {
                 allow_exec?: boolean;
                 allow_sql?: boolean;
                 allow_sql_write?: boolean;
+                installation?: boolean;
+                allow_admin?: boolean;
+                allow_credentials?: boolean;
+                allow_terminal?: boolean;
+                allow_host_terminal?: boolean;
+                host_only?: boolean;
             };
             header: {
                 "Mcp-Session-Id": string;
@@ -15739,6 +15869,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pollTerminal: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalPoll"];
+                };
             };
             /** @description Error */
             default: {
@@ -16336,6 +16500,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    pollHostTerminal: {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalPoll"];
                 };
             };
             /** @description Error */

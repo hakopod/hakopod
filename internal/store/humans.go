@@ -77,7 +77,7 @@ type ProjectRole struct {
 func rolePermissions(role string) []string {
 	switch role {
 	case "admin":
-		return []string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query"}
+		return []string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query", "agent:credentials", "networks:write", "git:manage", "applications:manage"}
 	case "developer":
 		return []string{"deployments:read", "deployments:write", "logs:read"}
 	case "viewer":
@@ -305,7 +305,14 @@ func (s *Store) NewVerifiedSession(ctx context.Context, identity, kind, project,
 		project = ""
 		environment = ""
 	}
-	if kind == "cli" && (project == "" || environment == "" || len(permissions) == 0) {
+	installationAgent := kind == "cli" && project == "" && environment == "" && contains(permissions, "agent:admin")
+	hostAgent := kind == "cli" && project == "" && environment == "" && len(permissions) == 1 && permissions[0] == "nodes:terminal"
+	if installationAgent || hostAgent {
+		if _, err := devicePermissions(permissions); err != nil {
+			return Session{}, err
+		}
+	}
+	if kind == "cli" && !installationAgent && !hostAgent && (project == "" || environment == "" || len(permissions) == 0 || contains(permissions, "agent:admin")) {
 		return Session{}, ErrInput
 	}
 	id, _, _ := makeKey()
@@ -327,6 +334,15 @@ func (s *Store) NewVerifiedSession(ctx context.Context, identity, kind, project,
 	}
 	if !eligible {
 		return Session{}, ErrForbidden
+	}
+	if installationAgent {
+		var administrator bool
+		if err = tx.QueryRow(ctx, "SELECT admin AND project='' AND environment='' FROM identities WHERE id=$1", identity).Scan(&administrator); err != nil {
+			return Session{}, err
+		}
+		if !administrator || s.DeviceScopes != nil {
+			return Session{}, ErrForbidden
+		}
 	}
 	// Preserve rows referenced by durable deployments, revoke older sessions.
 	if _, err = tx.Exec(ctx, "UPDATE api_keys SET revoked_at=now() WHERE identity_id=$1 AND kind IN ('browser','cli') AND revoked_at IS NULL AND id IN (SELECT id FROM api_keys WHERE identity_id=$1 AND kind IN ('browser','cli') AND revoked_at IS NULL ORDER BY created_at DESC OFFSET 19)", identity); err != nil {
@@ -391,7 +407,7 @@ func (s *Store) Sessions(ctx context.Context, p Principal) ([]HumanSession, erro
 	return out, rows.Err()
 }
 func (s *Store) UpdateUser(ctx context.Context, p Principal, id string, disabled, admin bool) error {
-	if p.CredentialType != "browser" || !p.IsAdmin() {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.IsAdmin() {
 		return ErrForbidden
 	}
 	tx, err := s.Pool.Begin(ctx)

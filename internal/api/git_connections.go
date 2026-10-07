@@ -269,6 +269,9 @@ func (s *Server) saveGitConnection(w http.ResponseWriter, r *http.Request) {
 	if !decodeGitInput(w, r, &in) {
 		return
 	}
+	if !agentScopedCredentials(w, r, who(r).Project, who(r).Environment) {
+		return
+	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" || len(in.Name) > 80 || strings.ContainsAny(in.Name, "\r\n\x00") || (in.Provider != "github" && in.Provider != "gitlab") || (in.AuthKind != "token" && in.AuthKind != "github_app" && in.AuthKind != "gitlab_oauth") || (in.AuthKind == "github_app" && in.Provider != "github") || (in.AuthKind == "gitlab_oauth" && in.Provider != "gitlab") || len(in.ClientID) > 1024 || len(in.ClientSecret) > 4096 || strings.ContainsAny(in.ClientID+in.ClientSecret, "\r\n\x00") || (in.Scopes != "" && in.Scopes != "api" && in.Scopes != "read_api") || len(in.Token) > 16384 || len(in.WebhookSecret) > 256 || len(in.PrivateKey) > 16384 || len(in.AppID) > 100 || strings.ContainsAny(in.Token+in.WebhookSecret+in.AppID, "\r\n\x00") {
 		problem(w, 400, "invalid_git_connection", "Choose a name, provider and supported authentication method with bounded credentials")

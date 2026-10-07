@@ -19,6 +19,37 @@ func TestRuntimeMachineNeedsExplicitEmbeddingBindingAndKeepsKeyCeiling(t *testin
 	}
 }
 
+func TestRuntimeExecutionGrantsRequireBothKeyAndWorkspace(t *testing.T) {
+	grants := []string{"pods:exec", "databases:query", "databases:write-query", "agent:credentials"}
+	for _, permission := range grants {
+		t.Run(permission, func(t *testing.T) {
+			p := store.Principal{ID: "alice", CredentialType: "machine", Project: "one", Environment: "production", Permissions: []string{"deployments:read", permission}, IdentityPermissions: []string{"deployments:read", permission}}
+			scope := RuntimeScope{AllowMachine: true, Identity: p.ID, Project: p.Project, Environment: p.Environment, Permissions: []string{"deployments:read", permission}, Authorize: func(context.Context) error { return nil }}
+			narrowed, err := scopedRuntimePrincipal(p, scope)
+			if err != nil || !narrowed.Allows(permission, p.Project, p.Environment, "") {
+				t.Fatal("explicit execution grant lost", err)
+			}
+			scope.Permissions = []string{"deployments:read"}
+			narrowed, err = scopedRuntimePrincipal(p, scope)
+			if err != nil || narrowed.Allows(permission, p.Project, p.Environment, "") {
+				t.Fatal("workspace ceiling bypassed", err)
+			}
+			scope.Permissions = []string{"deployments:read", permission}
+			p.Permissions = []string{"deployments:read"}
+			narrowed, err = scopedRuntimePrincipal(p, scope)
+			if err != nil || narrowed.Allows(permission, p.Project, p.Environment, "") {
+				t.Fatal("key ceiling bypassed", err)
+			}
+			p.Permissions = []string{"deployments:read", permission}
+			p.IdentityPermissions = []string{"deployments:read"}
+			narrowed, err = scopedRuntimePrincipal(p, scope)
+			if err != nil || narrowed.Allows(permission, p.Project, p.Environment, "") {
+				t.Fatal("identity ceiling bypassed", err)
+			}
+		})
+	}
+}
+
 func TestRuntimeScopeCannotGrantOrCrossWorkspaceAuthority(t *testing.T) {
 	p := store.Principal{ID: "alice", Email: "alice@example.test", CredentialType: "browser", Permissions: []string{"admin"}, ProjectRoles: []store.ProjectRole{{Project: "free-alice", Role: "developer"}, {Project: "other", Role: "developer"}}}
 	narrowed, err := scopedRuntimePrincipal(p, RuntimeScope{Identity: "alice", Project: "free-alice", Environment: "production"})

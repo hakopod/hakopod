@@ -26,7 +26,7 @@ func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Princi
 		return store.Principal{}, store.ErrForbidden
 	}
 	permissions := []string{}
-	for _, value := range []string{"deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage"} {
+	for _, value := range []string{"deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "pods:exec", "databases:query", "databases:write-query", "agent:credentials"} {
 		if p.Allows(value, scope.Project, scope.Environment, "") && (scope.Permissions == nil || slices.Contains(scope.Permissions, value)) {
 			permissions = append(permissions, value)
 		}

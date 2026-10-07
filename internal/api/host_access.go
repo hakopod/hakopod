@@ -16,6 +16,7 @@ func (s *Server) registerHostRoutes(m *http.ServeMux) {
 	m.HandleFunc("DELETE /api/v1/host-access/{user}/{node}", s.revokeHostAccess)
 	m.HandleFunc("POST /api/v1/nodes/{node}/terminal", s.createHostTerminal)
 	m.HandleFunc("GET /api/v1/nodes/{node}/terminal/{session}/output", s.terminalOutput)
+	m.HandleFunc("GET /api/v1/nodes/{node}/terminal/{session}/poll", s.terminalPoll)
 	m.HandleFunc("POST /api/v1/nodes/{node}/terminal/{session}/input", s.terminalInput)
 	m.HandleFunc("DELETE /api/v1/nodes/{node}/terminal/{session}", s.deleteTerminal)
 }
@@ -45,7 +46,7 @@ func (s *Server) hostAccess(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	write(w, 200, map[string]any{"super_admin": p.IsSuperAdmin(), "grants": grants, "nodes": nodes})
+	write(w, 200, map[string]any{"super_admin": p.CanManageHostAccess(), "grants": grants, "nodes": nodes})
 }
 func (s *Server) grantHostAccess(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -56,7 +57,7 @@ func (s *Server) grantHostAccess(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if !who(r).IsSuperAdmin() {
+	if !who(r).CanManageHostAccess() {
 		failure(w, store.ErrForbidden)
 		return
 	}
@@ -161,7 +162,7 @@ func (s *Server) hostTerminalFor(w http.ResponseWriter, r *http.Request) (*termi
 	s.terminalMu.Lock()
 	x := s.terminals[r.PathValue("session")]
 	s.terminalMu.Unlock()
-	if x == nil || x.hostNode != node || x.owner != p.ID || x.key != p.KeyID || x.ctx.Err() != nil {
+	if x == nil || (!x.expires.IsZero() && time.Now().After(x.expires.Add(30*time.Second))) || x.hostNode != node || x.owner != p.ID || x.key != p.KeyID || (x.ctx.Err() != nil && x.poll == nil) {
 		problem(w, 404, "terminal_expired", "Terminal is closed or belongs to another session; reconnect")
 		return nil, store.Application{}, false
 	}

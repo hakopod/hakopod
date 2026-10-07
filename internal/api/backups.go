@@ -77,6 +77,11 @@ func (s *Server) putBackupDestination(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if r.Method == "POST" || in.AccessKeyID != "" || in.SecretAccessKey != "" || in.SessionToken != "" || in.EncryptionIdentity != "" {
+		if !agentScopedCredentials(w, r, who(r).Project, who(r).Environment) {
+			return
+		}
+	}
 	if err := in.Validate(); err != nil {
 		backupFailure(w, err)
 		return
@@ -161,6 +166,7 @@ func (s *Server) putBackupDestination(w http.ResponseWriter, r *http.Request) {
 		if recovery != "" {
 			response["recovery_key"] = recovery
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		write(w, 201, response)
 	} else {
 		write(w, 200, d)

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"github.com/hakopod/hakopod/internal/agent"
 	"github.com/hakopod/hakopod/internal/operations"
 	"io"
 	"os"
@@ -10,6 +12,30 @@ import (
 )
 
 func runAPIOperation(ctx context.Context, c *client, cfg config, args []string, pathJSON, queryJSON, bodyFile, idem string, allowWrite bool, cursor, family, operation string, limit int) error {
+	return runAPIAccess(ctx, c, cfg, args, pathJSON, queryJSON, bodyFile, idem, operations.Access{AllowWrite: allowWrite}, cursor, family, operation, limit)
+}
+func runAPIAccess(ctx context.Context, c *client, cfg config, args []string, pathJSON, queryJSON, bodyFile, idem string, access operations.Access, cursor, family, operation string, limit int) error {
+	if len(args) == 2 && args[0] == "export" && args[1] == "exportUserAuditHistory" {
+		var query map[string]string
+		if err := operations.Decode([]byte(queryJSON), &query); err != nil {
+			return err
+		}
+		for key := range query {
+			if key != "identity_id" && key != "before" {
+				return errors.New("unsupported audit export query")
+			}
+		}
+		server := agent.NewWithOptions(c.request, agent.Scope{Project: cfg.Project, Environment: cfg.Environment}, agent.Options{Installation: access.Installation, AllowAdmin: access.AllowAdmin}, 1)
+		raw, err := json.Marshal(map[string]string{"identity_id": query["identity_id"], "before": query["before"]})
+		if err != nil {
+			return err
+		}
+		out, err := server.Call(ctx, "audit_export", raw)
+		if err != nil {
+			return err
+		}
+		return printJSON(out)
+	}
 	if len(args) == 1 && args[0] == "operations" {
 		out, err := operations.Discovery(cursor, family, operation, limit)
 		if err != nil {
@@ -48,7 +74,7 @@ func runAPIOperation(ctx context.Context, c *client, cfg config, args []string, 
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := operations.Invoke(bounded, operations.RequestFunc(c.request), operations.Scope{Project: cfg.Project, Environment: cfg.Environment}, allowWrite, in)
+	out, err := operations.InvokeWithAccess(bounded, operations.RequestFunc(c.request), operations.Scope{Project: cfg.Project, Environment: cfg.Environment}, access, in)
 	if err != nil {
 		return err
 	}

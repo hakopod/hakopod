@@ -1,3 +1,4 @@
+import { generatedAgentRoute } from './agent-routes.ts'
 import { apiURL, boundedBytes, privateHeaders } from './session.ts'
 
 // Public machine API: keep browser cookie authentication on /api/* separate.
@@ -90,7 +91,7 @@ export async function forwardAutomationAPI(request: Request) {
   const url = new URL(request.url)
   const path = url.pathname.slice('/api/v1/'.length)
   const route = url.pathname.startsWith('/api/v1/')
-    ? routes.find(([pattern]) => pattern.test(path))
+    ? routes.find(([pattern]) => pattern.test(path)) || (() => {const generated=generatedAgentRoute(path);return generated ? [new RegExp('^$'), generated.methods] as [RegExp,string[]] : undefined})()
     : undefined
   if (!route)
     return Response.json(
@@ -124,7 +125,7 @@ export async function forwardAutomationAPI(request: Request) {
       const value = request.headers.get(name)
       if (value !== null) headers.set(name, value)
     }
-    const body = ['POST', 'PUT', 'DELETE'].includes(request.method)
+    const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)
       ? await boundedBytes(request, 1024 * 1024)
       : undefined
     if (body === null)

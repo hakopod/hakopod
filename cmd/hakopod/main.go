@@ -20,6 +20,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/agent"
+	"github.com/hakopod/hakopod/internal/operations"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 )
@@ -87,6 +89,12 @@ func run() error {
 	branch := fs.String("branch", "", "branch/reference label for a preview image")
 	discardPreview := fs.Bool("acknowledge-data-expiry", false, "allow automatic deletion of preview workloads, volumes and native secrets")
 	allowDeploy := fs.Bool("allow-deploy", false, "enable reviewed MCP deployment tool")
+	hostOnly := fs.Bool("host-only", false, "use only your granted host terminal access")
+	installation := fs.Bool("installation", false, "use a separate installation connection")
+	allowAdmin := fs.Bool("allow-admin", false, "enable explicit installation administration")
+	allowCredentials := fs.Bool("allow-credentials", false, "enable explicit credential operations")
+	allowTerminal := fs.Bool("allow-terminal", false, "enable bounded application terminal sessions")
+	allowHostTerminal := fs.Bool("allow-host-terminal", false, "enable bounded host terminal sessions")
 	allowWrite := fs.Bool("allow-write", false, "enable contract operation mutations")
 	allowExec := fs.Bool("allow-exec", false, "enable bounded service pod execution")
 	allowSQL := fs.Bool("allow-sql", false, "enable bounded database SQL queries")
@@ -97,6 +105,7 @@ func run() error {
 	apiFamily := fs.String("family", "", "operation discovery resource family")
 	apiOperation := fs.String("operation", "", "operation schema to inspect")
 	apiLimit := fs.Int("limit", 25, "operation discovery page size, 1 to 100")
+	sqlExecutionMode := fs.String("execution-mode", "", "SQL mode from query-capabilities: transaction or nontransactional")
 	sqlFile := fs.String("sql-file", "", "SQL statement file")
 	sqlParameters := fs.String("parameters-json", "", "SQL parameter JSON array")
 	sqlMaxRows := fs.Int("max-rows", 100, "SQL row cap, at most 1000")
@@ -277,7 +286,26 @@ func run() error {
 			}
 			cfg.Key = strings.TrimSpace(string(raw))
 		} else {
-			if cfg.Project == "" || cfg.Environment == "" {
+			if *hostOnly {
+				if *project != "" || *environment != "" || *installation || *allowAdmin || *allowCredentials {
+					return errors.New("host-only login cannot include project or installation administration")
+				}
+				cfg.Project, cfg.Environment = "", ""
+				*permissions = "nodes:terminal"
+			} else if *installation {
+				if *project != "" || *environment != "" {
+					return errors.New("installation login cannot include project/environment")
+				}
+				cfg.Project = ""
+				cfg.Environment = ""
+				*permissions = "admin,agent:admin"
+				if *allowCredentials {
+					*permissions += ",agent:credentials"
+				}
+				if *allowHostTerminal {
+					*permissions += ",nodes:terminal"
+				}
+			} else if cfg.Project == "" || cfg.Environment == "" {
 				return &exitError{2, "browser login requires --project and --environment for the CLI session scope"}
 			}
 			session, err := deviceLogin(ctx, cfg, *noBrowser, strings.Split(*permissions, ","))
@@ -293,6 +321,11 @@ func run() error {
 		var me store.Principal
 		if err = c.request(ctx, "GET", "/me", nil, "", &me); err != nil {
 			return err
+		}
+		if *installation {
+			if err := operations.RequireInstallation(ctx, operations.RequestFunc(c.request), *allowCredentials); err != nil {
+				return err
+			}
 		}
 		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return err
@@ -352,7 +385,7 @@ func run() error {
 			if fs.NArg() != 2 {
 				return errors.New("usage: hakopod database query ID --sql-file FILE [--parameters-json ARRAY] [--allow-sql-write --revision REVISION]")
 			}
-			return runExecution(ctx, c, cfg, "query", fs.Arg(1), executionFlags{SQLFile: *sqlFile, ParametersJSON: *sqlParameters, AllowSQLWrite: *allowSQLWrite, MaxRows: *sqlMaxRows, MaxBytes: *sqlMaxBytes, ExpectedRevision: *revision})
+			return runExecution(ctx, c, cfg, "query", fs.Arg(1), executionFlags{SQLFile: *sqlFile, ParametersJSON: *sqlParameters, AllowSQLWrite: *allowSQLWrite, MaxRows: *sqlMaxRows, MaxBytes: *sqlMaxBytes, ExpectedRevision: *revision, ExecutionMode: *sqlExecutionMode})
 		}
 		if !explicitFile && (fs.Arg(0) == "resize-retry-plan" || fs.Arg(0) == "resize-retry") {
 			// A retry uses its saved specification, not the default application file.
@@ -364,9 +397,29 @@ func run() error {
 	case "previews", "preview-create", "preview-delete":
 		return previewCommand(ctx, c, cfg, command, arg, *name, *branch, *file, *idem, *ttl, *discardPreview)
 	case "api":
-		return runAPIOperation(ctx, c, cfg, fs.Args(), *apiPathJSON, *apiQueryJSON, *apiBodyFile, *idem, *allowWrite, *apiCursor, *apiFamily, *apiOperation, *apiLimit)
+		if *installation {
+			if *project != "" || *environment != "" {
+				return errors.New("installation connection cannot specify project/environment")
+			}
+			cfg.Project = ""
+			cfg.Environment = ""
+		}
+		return runAPIAccess(ctx, c, cfg, fs.Args(), *apiPathJSON, *apiQueryJSON, *apiBodyFile, *idem, operations.Access{Installation: *installation, AllowAdmin: *allowAdmin, AllowCredentials: *allowCredentials, AllowWrite: *allowWrite, AllowDeploy: *allowDeploy}, *apiCursor, *apiFamily, *apiOperation, *apiLimit)
 	case "mcp":
-		return serveAgentOptions(ctx, c, cfg, *allowDeploy, *allowWrite, *allowExec, *allowSQL, *allowSQLWrite, os.Stdin, os.Stdout)
+		if *hostOnly {
+			if *project != "" || *environment != "" {
+				return errors.New("host-only connection cannot specify project/environment")
+			}
+			cfg.Project, cfg.Environment = "", ""
+		}
+		if *installation {
+			if *project != "" || *environment != "" {
+				return errors.New("installation connection cannot specify project/environment")
+			}
+			cfg.Project = ""
+			cfg.Environment = ""
+		}
+		return serveAgentAccess(ctx, c, cfg, agent.Options{HostOnly: *hostOnly, Installation: *installation, AllowAdmin: *allowAdmin, AllowCredentials: *allowCredentials, AllowDeploy: *allowDeploy, AllowWrite: *allowWrite, AllowExec: *allowExec, AllowTerminal: *allowTerminal, AllowHostTerminal: *allowHostTerminal, AllowSQL: *allowSQL, AllowSQLWrite: *allowSQLWrite}, os.Stdin, os.Stdout)
 	case "projects", "nodes", "keys", "audit":
 		var out any
 		if err = c.request(ctx, "GET", "/"+command, nil, "", &out); err != nil {
@@ -648,6 +701,9 @@ func (c *client) request(ctx context.Context, method, path string, in any, idem 
 	if out == nil {
 		return nil
 	}
+	if export, ok := out.(*agent.AuditExport); ok {
+		return agent.DecodeAuditExport(res, export)
+	}
 	decoder := json.NewDecoder(io.LimitReader(res.Body, 8<<20))
 	decoder.UseNumber()
 	return decoder.Decode(out)
@@ -792,7 +848,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--allow-exec": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {

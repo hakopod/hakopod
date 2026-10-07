@@ -30,6 +30,7 @@ type terminalSession struct {
 	input                        chan []byte
 	sizes                        chan remotecommand.TerminalSize
 	started                      bool
+	poll                         *terminalPollBuffer
 	timer                        *time.Timer
 }
 type terminalReader struct {
@@ -91,6 +92,7 @@ func (s *Server) registerTerminalRoutes(m *http.ServeMux) {
 	s.registerHostRoutes(m)
 	m.HandleFunc("POST /api/v1/applications/{id}/services/{service}/terminal", s.createTerminal)
 	m.HandleFunc("GET /api/v1/applications/{id}/services/{service}/terminal/{session}/output", s.terminalOutput)
+	m.HandleFunc("GET /api/v1/applications/{id}/services/{service}/terminal/{session}/poll", s.terminalPoll)
 	m.HandleFunc("POST /api/v1/applications/{id}/services/{service}/terminal/{session}/input", s.terminalInput)
 	m.HandleFunc("DELETE /api/v1/applications/{id}/services/{service}/terminal/{session}", s.deleteTerminal)
 }
@@ -100,8 +102,8 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := who(r)
-	if p.CredentialType != "browser" && p.CredentialType != "cli" {
-		problem(w, 403, "human_session_required", "Sign in with the dashboard or CLI to open a terminal")
+	if p.CredentialType != "browser" && p.CredentialType != "cli" && (p.CredentialType != "machine" || !p.Allows("pods:exec", a.Project, a.Environment, a.Name)) {
+		problem(w, 403, "terminal_permission_required", "Use a dashboard or CLI session, or a scoped machine credential with pods:exec")
 		return
 	}
 	var o cluster.TerminalOptions
@@ -174,7 +176,7 @@ func (s *Server) terminalFor(w http.ResponseWriter, r *http.Request) (*terminalS
 	x := s.terminals[r.PathValue("session")]
 	s.terminalMu.Unlock()
 	p := who(r)
-	if x == nil || x.app != a.ID || x.service != r.PathValue("service") || x.owner != p.ID || x.key != p.KeyID || x.ctx.Err() != nil {
+	if x == nil || (!x.expires.IsZero() && time.Now().After(x.expires.Add(30*time.Second))) || x.app != a.ID || x.service != r.PathValue("service") || x.owner != p.ID || x.key != p.KeyID || (x.ctx.Err() != nil && x.poll == nil) {
 		problem(w, 404, "terminal_expired", "Terminal is closed or belongs to another session; reconnect")
 		return nil, a, false
 	}
@@ -281,7 +283,7 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	x.mu.Lock()
-	if x.started {
+	if x.started || (x.poll != nil && r.Context().Value(terminalPollContextKey{}) != true) {
 		x.mu.Unlock()
 		<-s.streams
 		problem(w, 409, "already_connected", "A terminal can have only one output reader")
@@ -290,7 +292,18 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 	x.started = true
 	x.mu.Unlock()
 	defer func() {
-		s.closeTerminal(x)
+		x.mu.Lock()
+		poll := x.poll
+		x.mu.Unlock()
+		if poll == nil {
+			s.closeTerminal(x)
+		} else {
+			x.cancel()
+			poll.mu.Lock()
+			poll.done = true
+			poll.mu.Unlock()
+			time.AfterFunc(30*time.Second, func() { s.closeTerminal(x) })
+		}
 		<-s.streams
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -315,7 +328,11 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 	if x.hostNode != "" {
 		go s.guardHostTerminal(x)
 	} else {
-		go s.guardStream(x.ctx, x.cancel, x.key, a, "deployments:write")
+		permission := "deployments:write"
+		if who(r).CredentialType == "machine" {
+			permission = "pods:exec"
+		}
+		go s.guardStream(x.ctx, x.cancel, x.key, a, permission)
 	}
 	writes := guardResponseWrites(x.ctx, w, 10*time.Second)
 	defer writes.stop()

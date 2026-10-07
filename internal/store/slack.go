@@ -112,8 +112,12 @@ func (s *Store) SaveSlackIntegration(ctx context.Context, p Principal, value Sla
 	return value, tx.Commit(ctx)
 }
 
+func connectedSlackAdministrator(p Principal) bool {
+	return p.CredentialType == "browser" && p.IsAdmin() || p.CanUseInstallationAgentAdministration()
+}
+
 func (s *Store) SetSlackChannel(ctx context.Context, p Principal, id, name string, private bool, events []string, revision int64) (SlackIntegration, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() || id == "" || len(id) > 64 || strings.TrimSpace(name) == "" || len(name) > 200 || !validSlackEvents(events) || revision < 1 {
+	if !connectedSlackAdministrator(p) || id == "" || len(id) > 64 || strings.TrimSpace(name) == "" || len(name) > 200 || !validSlackEvents(events) || revision < 1 {
 		return SlackIntegration{}, ErrInput
 	}
 	tx, err := s.Pool.Begin(ctx)
@@ -143,7 +147,7 @@ func (s *Store) SetSlackChannel(ctx context.Context, p Principal, id, name strin
 }
 
 func (s *Store) SetSlackEvents(ctx context.Context, p Principal, events []string, revision int64) (SlackIntegration, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() || !validSlackEvents(events) || revision < 1 {
+	if !connectedSlackAdministrator(p) || !validSlackEvents(events) || revision < 1 {
 		return SlackIntegration{}, ErrInput
 	}
 	tx, err := s.Pool.Begin(ctx)
@@ -173,7 +177,7 @@ func (s *Store) SetSlackEvents(ctx context.Context, p Principal, events []string
 }
 
 func (s *Store) DeleteSlackIntegration(ctx context.Context, p Principal, revision int64) error {
-	if p.CredentialType != "browser" || !p.IsAdmin() || revision < 1 {
+	if !connectedSlackAdministrator(p) || revision < 1 {
 		return ErrForbidden
 	}
 	tx, err := s.Pool.Begin(ctx)
@@ -221,7 +225,7 @@ type SlackDeliveryHistory struct {
 }
 
 func (s *Store) SlackDeliveryHistory(ctx context.Context, p Principal, before int64, limit int) ([]SlackDeliveryHistory, int64, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() || before < 0 || limit < 1 || limit > 100 {
+	if !connectedSlackAdministrator(p) || before < 0 || limit < 1 || limit > 100 {
 		return nil, 0, ErrInput
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT id,event_kind,status,attempts,last_error,created_at,finished_at FROM slack_event_outbox WHERE delivery_target='self_hosted' AND ($1=0 OR id<$1) ORDER BY id DESC LIMIT $2`, before, limit+1)
@@ -248,7 +252,7 @@ func (s *Store) SlackDeliveryHistory(ctx context.Context, p Principal, before in
 }
 
 func (s *Store) QueueSlackTest(ctx context.Context, p Principal, revision int64) (int64, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() || revision < 1 {
+	if !connectedSlackAdministrator(p) || revision < 1 {
 		return 0, ErrForbidden
 	}
 	tx, err := s.Pool.Begin(ctx)

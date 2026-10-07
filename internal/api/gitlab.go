@@ -79,7 +79,7 @@ func (s *Server) gitlabStatus(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]any{"configured": len(data["webhook-secret"]) >= 32, "token_configured": len(data["token"]) > 0, "webhook_path": "/api/v1/webhooks/gitlab", "private_repositories": len(data["token"]) > 0})
 }
 func (s *Server) configureGitLab(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !admin(w, r) || !agentInstallationCredentials(w, r, true) {
 		return
 	}
 	var in struct {

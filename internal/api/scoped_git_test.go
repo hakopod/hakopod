@@ -30,7 +30,7 @@ func TestDelegatedEmailOwnerCapabilityResponse(t *testing.T) {
 	for _, management := range []bool{false, true} {
 		permissions := []string{"deployments:read", "deployments:write"}
 		if management {
-			permissions = append(permissions, "git:manage", "applications:manage")
+			permissions = append(permissions, "git:manage", "applications:manage", "agent:credentials")
 		}
 		_, key, err := db.CreateKey(ctx, admin, store.KeyInput{Name: "workspace", Project: "demo", Environment: "development", Permissions: permissions, ExpiresAt: time.Now().Add(time.Hour)})
 		if err != nil {
@@ -60,7 +60,7 @@ func TestScopedGitManagementPrivateDockerfileAndIsolation(t *testing.T) {
 	}
 	keys := map[string]string{}
 	for _, project := range []string{"demo", "other"} {
-		_, key, e := db.CreateKey(ctx, admin, store.KeyInput{Name: project, Project: project, Environment: "development", Permissions: []string{"deployments:read", "deployments:write", "git:manage", "applications:manage"}, ExpiresAt: time.Now().Add(time.Hour)})
+		_, key, e := db.CreateKey(ctx, admin, store.KeyInput{Name: project, Project: project, Environment: "development", Permissions: []string{"deployments:read", "deployments:write", "git:manage", "applications:manage", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
 		if e != nil {
 			t.Fatal(e)
 		}

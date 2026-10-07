@@ -1,4 +1,4 @@
-"""Bounded workload commands and managed PostgreSQL queries."""
+"""Bounded workload commands and managed SQL queries."""
 
 schemas["PodExecInput"] = obj({
     "pod": S, "container": S,
@@ -25,19 +25,31 @@ schemas["DatabaseQueryInput"] = obj({
     "max_rows": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100},
     "max_bytes": {"type": "integer", "minimum": 1024, "maximum": 1048576, "default": 262144},
     "expected_revision": {"type": "integer", "minimum": 1, "description": "Reviewed database revision. Required when read_only is false."},
+    "execution_mode": {"type": "string", "enum": ["transaction", "nontransactional"], "description": "Use a mode from the database query capabilities. Nontransactional writes can commit before the response arrives."},
 }, ["sql"])
-schemas["DatabaseQueryColumn"] = obj({"name": S, "type_oid": I}, ["name", "type_oid"])
+schemas["DatabaseQueryColumn"] = obj({"name": S, "type_oid": {"type": "integer", "description": "PostgreSQL wire-protocol type OID. Drivers without OIDs return zero."}, "type_name": S}, ["name", "type_oid"])
 schemas["DatabaseQueryResult"] = obj({
     "operation_id": S, "database_id": S, "read_only": B,
     "columns": array(ref("DatabaseQueryColumn")),
     "rows": array(array({"type": ["string", "null"]})),
     "rows_affected": I, "truncated": B,
-    "outcome": {"type": "string", "enum": ["read", "committed", "rolled_back"]},
+    "outcome": {"type": "string", "enum": ["read", "committed", "applied"]},
 }, ["operation_id", "database_id", "read_only", "columns", "rows", "rows_affected", "truncated", "outcome"])
 schemas["DatabaseQueryError"] = obj({
     "error": schemas["Error"]["properties"]["error"], "operation_id": S,
-    "outcome": {"type": "string", "enum": ["not_started", "rolled_back", "unknown", "read", "committed"]},
+    "outcome": {"type": "string", "enum": ["not_started", "rolled_back", "unknown", "read", "committed", "applied"]},
 }, ["error", "operation_id", "outcome"])
 route("/databases/{id}/query", "post", "queryManagedDatabase", ref("DatabaseQueryResult"), ref("DatabaseQueryInput"))
-paths["/databases/{id}/query"]["post"]["description"] = "Run one PostgreSQL statement that supports EXPLAIN. Requires databases:query. Writes also require databases:write-query. Transaction control and COPY are unavailable. Results can contain private data."
+paths["/databases/{id}/query"]["post"]["description"] = "Run one SQL statement using the managed application identity. Read the engine capabilities first. Reads require databases:query. Writes require databases:write-query and a reviewed database revision. Results can contain private data. Check an unknown outcome before retrying."
 paths["/databases/{id}/query"]["post"]["responses"]["default"]["content"]["application/json"]["schema"] = {"anyOf": [ref("Error"), ref("DatabaseQueryError")]}
+
+schemas["DatabaseQueryCapabilities"] = obj({
+    "engine": S,
+    "supported": {"type": "boolean", "description": "The query API can execute statements for this engine. This value does not grant permission."},
+    "read_only_supported": {"type": "boolean", "description": "The engine enforces read-only execution. If false, every SQL request requires explicit write access."},
+    "execution_modes": {"type": "array", "items": {"type": "string", "enum": ["transaction", "nontransactional"]}},
+    "application_identity": S, "parameter_style": S, "read_only_enforcement": S,
+    "transactional_dml": B, "transactional_ddl": B, "ddl_commit": S, "cancellation": S,
+}, ["engine", "supported", "read_only_supported", "execution_modes", "application_identity", "parameter_style", "read_only_enforcement", "transactional_dml", "transactional_ddl", "ddl_commit", "cancellation"])
+route("/databases/{id}/query-capabilities", "get", "getDatabaseQueryCapabilities", ref("DatabaseQueryCapabilities"))
+paths["/databases/{id}/query-capabilities"]["get"]["description"] = "Read SQL execution support, modes, parameter format, and transaction behavior for this database engine. Requires access to read the database."

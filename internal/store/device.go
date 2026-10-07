@@ -22,10 +22,25 @@ type DeviceAuthorization struct {
 	Interval   int    `json:"interval"`
 }
 type DeviceScope struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Project     string `json:"project"`
-	Environment string `json:"environment"`
+	ID          string   `json:"id"`
+	Label       string   `json:"label"`
+	Project     string   `json:"project"`
+	Environment string   `json:"environment"`
+	Permissions []string `json:"permissions,omitempty"`
+}
+
+// External scopes without a permission list retain the legacy deployment grants.
+func deviceScopeAllows(scope DeviceScope, requested []string) bool {
+	allowed := scope.Permissions
+	if allowed == nil {
+		allowed = []string{"deployments:read", "deployments:write", "logs:read"}
+	}
+	for _, permission := range requested {
+		if !contains(allowed, permission) {
+			return false
+		}
+	}
+	return true
 }
 
 type DeviceDetails struct {
@@ -46,6 +61,12 @@ func (s *Store) StartDevice(ctx context.Context, project, environment string, pe
 	permissions, err = devicePermissions(permissions)
 	if err != nil {
 		return DeviceAuthorization{}, err
+	}
+	if contains(permissions, "nodes:terminal") && (project != "" || environment != "" || s.DeviceScopes != nil) {
+		return DeviceAuthorization{}, ErrForbidden
+	}
+	if contains(permissions, "agent:admin") && (project != "" || environment != "" || s.DeviceScopes != nil) {
+		return DeviceAuthorization{}, ErrForbidden
 	}
 	if project != "" && s.DeviceScopes == nil {
 		var exists bool
@@ -101,7 +122,19 @@ func (s *Store) DeviceDetails(ctx context.Context, p Principal, code string) (De
 	var v DeviceDetails
 	err := s.Pool.QueryRow(ctx, "SELECT user_code,project,environment,permissions,expires_at,scope_id FROM device_codes WHERE user_code=$1 AND consumed_at IS NULL AND expires_at>now()", normalizeUserCode(code)).Scan(&v.UserCode, &v.Project, &v.Environment, &v.Permissions, &v.ExpiresAt, &v.ScopeID)
 	if err == nil {
-		v.Scopes, err = s.deviceScopes(ctx, p)
+		if contains(v.Permissions, "agent:admin") {
+			if !p.IsAdmin() || s.DeviceScopes != nil || v.Project != "" || v.Environment != "" {
+				return DeviceDetails{}, ErrForbidden
+			}
+			v.Scopes = []DeviceScope{{ID: "installation", Label: "This installation"}}
+		} else if contains(v.Permissions, "nodes:terminal") {
+			if p.MFARequired || !p.IsHuman() || s.DeviceScopes != nil || len(p.HostPermissions) == 0 {
+				return DeviceDetails{}, ErrForbidden
+			}
+			v.Scopes = []DeviceScope{{ID: "host", Label: "Your granted host access"}}
+		} else {
+			v.Scopes, err = s.deviceScopes(ctx, p)
+		}
 	}
 	return v, err
 }
@@ -111,6 +144,12 @@ func (s *Store) ApproveDevice(ctx context.Context, p Principal, code string, app
 		return err
 	}
 	if approve {
+		if contains(v.Permissions, "agent:admin") && (len(selected) != 1 || selected[0].ID != "installation" || selected[0].Project != "" || selected[0].Environment != "" || !p.IsAdmin()) {
+			return ErrForbidden
+		}
+		if contains(v.Permissions, "nodes:terminal") && !contains(v.Permissions, "agent:admin") && (len(selected) != 1 || selected[0].ID != "host" || selected[0].Project != "" || selected[0].Environment != "") {
+			return ErrForbidden
+		}
 		choice := DeviceScope{Project: v.Project, Environment: v.Environment}
 		if len(selected) > 0 {
 			choice = selected[0]
@@ -121,6 +160,9 @@ func (s *Store) ApproveDevice(ctx context.Context, p Principal, code string, app
 		found := false
 		for _, scope := range v.Scopes {
 			if scope.ID == choice.ID && scope.Project == choice.Project && scope.Environment == choice.Environment {
+				if s.DeviceScopes != nil && !deviceScopeAllows(scope, v.Permissions) {
+					return ErrForbidden
+				}
 				found = true
 				v.ScopeID, v.Project, v.Environment = scope.ID, scope.Project, scope.Environment
 				break
@@ -129,7 +171,7 @@ func (s *Store) ApproveDevice(ctx context.Context, p Principal, code string, app
 		if !found {
 			return ErrForbidden
 		}
-		if s.DeviceScopes == nil {
+		if s.DeviceScopes == nil && v.ScopeID != "host" {
 			for _, permission := range v.Permissions {
 				if !p.Allows(permission, v.Project, v.Environment, "") {
 					return ErrForbidden
@@ -190,11 +232,27 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
+	if contains(permissions, "agent:admin") {
+		if scopeID != "installation" || s.DeviceScopes != nil || !session.User.CanUseInstallationAgentAdministration() {
+			_ = s.RevokeSession(ctx, session.User, session.User.KeyID)
+			return Session{}, ErrForbidden
+		}
+		session.ScopeID = "installation"
+		return session, nil
+	}
+	if contains(permissions, "nodes:terminal") {
+		if scopeID != "host" || !session.User.CanUseHostCredential() || len(session.User.HostPermissions) == 0 {
+			_ = s.RevokeSession(ctx, session.User, session.User.KeyID)
+			return Session{}, ErrForbidden
+		}
+		session.ScopeID = "host"
+		return session, nil
+	}
 	if s.DeviceScopes != nil {
 		scopes, scopeErr := s.deviceScopes(ctx, session.User)
 		found := false
 		for _, scope := range scopes {
-			if scope.ID == scopeID && scope.Project == project && scope.Environment == environment {
+			if scope.ID == scopeID && scope.Project == project && scope.Environment == environment && deviceScopeAllows(scope, permissions) {
 				found = true
 			}
 		}
@@ -251,12 +309,12 @@ func devicePermissions(in []string) ([]string, error) {
 	if len(in) == 0 {
 		return []string{"deployments:read", "deployments:write", "logs:read"}, nil
 	}
-	if len(in) > 6 {
+	if len(in) > 12 {
 		return nil, ErrInput
 	}
 	seen := map[string]bool{}
 	for _, p := range in {
-		if !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query"}, p) {
+		if !contains([]string{"admin", "agent:admin", "agent:credentials", "deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query", "networks:write", "git:manage", "applications:manage", "nodes:terminal"}, p) {
 			return nil, ErrForbidden
 		}
 		if seen[p] {
@@ -264,8 +322,21 @@ func devicePermissions(in []string) ([]string, error) {
 		}
 		seen[p] = true
 	}
+	if seen["nodes:terminal"] && !seen["agent:admin"] && len(in) != 1 {
+		return nil, ErrInput
+	}
 	if seen["databases:write-query"] && !seen["databases:query"] {
 		return nil, ErrInput
+	}
+	if seen["admin"] != seen["agent:admin"] {
+		return nil, ErrInput
+	}
+	if seen["agent:admin"] {
+		for _, permission := range in {
+			if permission != "admin" && permission != "agent:admin" && permission != "agent:credentials" && permission != "nodes:terminal" {
+				return nil, ErrInput
+			}
+		}
 	}
 	return append([]string(nil), in...), nil
 }

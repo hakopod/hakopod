@@ -114,7 +114,7 @@ func (s *Store) recordShowcaseAcceptance(ctx context.Context, tx pgx.Tx, id, app
 }
 
 func (s *Store) RequestShowcaseRemoval(ctx context.Context, p Principal, expected int64, applicationID string, applicationRevision int64) error {
-	if !p.IsAdmin() || p.CredentialType != "browser" {
+	if !p.IsAdmin() || p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration() {
 		return ErrForbidden
 	}
 	tx, err := s.Pool.Begin(ctx)

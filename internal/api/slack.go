@@ -175,7 +175,11 @@ func (s *Server) slackCallbackURL() (string, error) {
 }
 
 func (s *Server) requireSlackAdmin(w http.ResponseWriter, r *http.Request) bool {
-	return human(w, r) && admin(w, r)
+	if !installationAdministrator(who(r)) {
+		failure(w, store.ErrForbidden)
+		return false
+	}
+	return true
 }
 func (s *Server) requireSlackFeature(w http.ResponseWriter, r *http.Request) bool {
 	if err := s.Store.RequireFeatures(r.Context(), store.SlackFeature); err != nil {
@@ -186,7 +190,7 @@ func (s *Server) requireSlackFeature(w http.ResponseWriter, r *http.Request) boo
 }
 
 func (s *Server) slackConnect(w http.ResponseWriter, r *http.Request) {
-	if !s.requireSlackAdmin(w, r) {
+	if !human(w, r) || !s.requireSlackAdmin(w, r) {
 		return
 	}
 	if s.CloudControlPlane {

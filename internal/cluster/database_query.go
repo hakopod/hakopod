@@ -24,9 +24,27 @@ func (c *Client) QueryDatabase(ctx context.Context, d database.Resource, q datab
 	if err := q.Validate(); err != nil {
 		return empty, err
 	}
-	if d.Spec.Engine != "postgresql" {
+	if !database.CapabilitiesForQuery(d.Spec.Engine).Supported {
 		return empty, &database.QueryError{Code: "database_query_engine_unsupported", Outcome: "not_started"}
 	}
+	capabilities := database.CapabilitiesForQuery(d.Spec.Engine)
+	if q.IsReadOnly() && !capabilities.ReadOnlySupported {
+		return empty, &database.QueryError{Code: "database_query_read_only_unsupported", Outcome: "not_started"}
+	}
+	mode := q.ExecutionMode
+	if mode == "" && len(capabilities.ExecutionModes) > 0 {
+		mode = capabilities.ExecutionModes[0]
+	}
+	allowedMode := false
+	for _, supportedMode := range capabilities.ExecutionModes {
+		if mode == supportedMode {
+			allowedMode = true
+		}
+	}
+	if !allowedMode {
+		return empty, &database.QueryError{Code: "database_query_execution_mode_unsupported", Outcome: "not_started"}
+	}
+	q.ExecutionMode = mode
 	if !d.Spec.TLSRequired() {
 		return empty, &database.QueryError{Code: "database_query_tls_required", Outcome: "not_started"}
 	}
@@ -54,6 +72,31 @@ func (c *Client) QueryDatabase(ctx context.Context, d database.Resource, q datab
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	guardDone := make(chan struct{})
+	go func() {
+		defer close(guardDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				step, done := context.WithTimeout(ctx, time.Second)
+				err := check(step)
+				done()
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	defer func() { cancel(); <-guardDone }()
+
+	if d.Spec.Engine != "postgresql" {
+		return c.querySQLEngine(ctx, d, q, check)
+	}
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
 	if err != nil || ns.UID == "" || ns.DeletionTimestamp != nil {
 		return empty, queryUnavailable()
@@ -209,11 +252,11 @@ func runPostgresQuery(ctx context.Context, conn *pgx.Conn, q database.QueryReque
 	explain := conn.PgConn().ExecParams(ctx, "EXPLAIN (FORMAT JSON) "+q.SQL, params, nil, []int16{0}, []int16{0})
 	_, err = explain.Close()
 	if err != nil {
-		return result, &database.QueryError{Code: "database_query_statement_unsupported", Outcome: "rolled_back"}
+		return result, &database.QueryError{Code: "database_query_statement_unsupported", Outcome: pgRollbackOutcome(tx)}
 	}
 	if check != nil {
 		if err = check(ctx); err != nil {
-			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: "rolled_back"}
+			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: pgRollbackOutcome(tx)}
 		}
 	}
 	var readOnly string
@@ -228,7 +271,7 @@ func runPostgresQuery(ctx context.Context, conn *pgx.Conn, q database.QueryReque
 	used := len(encoded) + 256
 	if used > q.MaxBytes {
 		closeQueryConnection(conn)
-		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "rolled_back"}
+		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: pgRollbackOutcome(tx)}
 	}
 	for rr.NextRow() {
 		if len(result.Rows) >= q.MaxRows {
@@ -245,7 +288,7 @@ func runPostgresQuery(ctx context.Context, conn *pgx.Conn, q database.QueryReque
 		encoded, err = json.Marshal(row)
 		if err != nil {
 			closeQueryConnection(conn)
-			return result, &database.QueryError{Code: "database_query_failed", Outcome: "rolled_back"}
+			return result, &database.QueryError{Code: "database_query_failed", Outcome: pgRollbackOutcome(tx)}
 		}
 		if used+len(encoded)+1 > q.MaxBytes {
 			return limitedQueryResult(conn, result)
@@ -255,7 +298,9 @@ func runPostgresQuery(ctx context.Context, conn *pgx.Conn, q database.QueryReque
 	}
 	tag, err := rr.Close()
 	if err != nil {
-		return result, postgresQueryFailure(err, false)
+		failure := postgresQueryFailure(err, false)
+		failure.Outcome = pgRollbackOutcome(tx)
+		return result, failure
 	}
 	result.RowsAffected = tag.RowsAffected()
 	if result.ReadOnly {
@@ -263,7 +308,7 @@ func runPostgresQuery(ctx context.Context, conn *pgx.Conn, q database.QueryReque
 	}
 	if check != nil {
 		if err = check(ctx); err != nil {
-			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: "rolled_back"}
+			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: pgRollbackOutcome(tx)}
 		}
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -275,7 +320,7 @@ func runPostgresQuery(ctx context.Context, conn *pgx.Conn, q database.QueryReque
 func limitedQueryResult(conn *pgx.Conn, result database.QueryResult) (database.QueryResult, error) {
 	closeQueryConnection(conn)
 	if !result.ReadOnly {
-		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "rolled_back"}
+		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "unknown"}
 	}
 	result.Truncated = true
 	return result, nil
@@ -287,11 +332,16 @@ func postgresQueryFailure(err error, commit bool) *database.QueryError {
 		if backend.Code == "25006" {
 			code = "database_query_read_only"
 		}
-		return &database.QueryError{Code: code, Outcome: "rolled_back"}
+		return &database.QueryError{Code: code, Outcome: "unknown"}
 	}
-	outcome := "rolled_back"
-	if commit {
-		outcome = "unknown"
+	return &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
+}
+
+func pgRollbackOutcome(tx pgx.Tx) string {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if tx == nil || tx.Rollback(ctx) != nil {
+		return "unknown"
 	}
-	return &database.QueryError{Code: "database_query_failed", Outcome: outcome}
+	return "rolled_back"
 }

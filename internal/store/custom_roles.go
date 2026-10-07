@@ -20,12 +20,12 @@ type CustomRole struct {
 // Custom roles grant only existing project capabilities, never installation or
 // membership administration. A missing or expired role grants no authority.
 func validRolePermissions(permissions []string) bool {
-	if len(permissions) == 0 || len(permissions) > 6 {
+	if len(permissions) == 0 || len(permissions) > 7 {
 		return false
 	}
 	seen := map[string]bool{}
 	for _, permission := range permissions {
-		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query"}, permission) {
+		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query", "agent:credentials"}, permission) {
 			return false
 		}
 		seen[permission] = true
@@ -41,7 +41,7 @@ func (r ProjectRole) permissions() []string {
 }
 
 func (s *Store) CustomRoles(ctx context.Context, p Principal) ([]CustomRole, error) {
-	if p.CredentialType != "browser" {
+	if p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration() {
 		return nil, ErrForbidden
 	}
 	rows, err := s.Pool.Query(ctx, "SELECT id,name,permissions,revision FROM custom_roles ORDER BY lower(name),id LIMIT 100")
@@ -61,7 +61,7 @@ func (s *Store) CustomRoles(ctx context.Context, p Principal) ([]CustomRole, err
 }
 
 func (s *Store) SaveCustomRole(ctx context.Context, p Principal, id, name string, permissions []string, revision int64) (CustomRole, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.IsAdmin() {
 		return CustomRole{}, ErrForbidden
 	}
 	name = strings.TrimSpace(name)
@@ -124,7 +124,7 @@ func (s *Store) SaveCustomRole(ctx context.Context, p Principal, id, name string
 }
 
 func (s *Store) DeleteCustomRole(ctx context.Context, p Principal, id string, revision int64) error {
-	if p.CredentialType != "browser" || !p.IsAdmin() {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.IsAdmin() {
 		return ErrForbidden
 	}
 	tx, err := s.Pool.Begin(ctx)

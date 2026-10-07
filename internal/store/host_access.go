@@ -21,11 +21,29 @@ type HostGrant struct {
 func (p Principal) IsSuperAdmin() bool {
 	return p.Owner && p.IsAdmin() && p.IsHuman() && p.CredentialType == "browser"
 }
+
+// CanManageHostAccess requires the installation owner's current authority.
+// Delegated credentials also require an explicit installation administration grant.
+func (p Principal) CanManageHostAccess() bool {
+	return p.IsSuperAdmin() || p.Owner && p.CanUseInstallationAgentAdministration()
+}
+func (p Principal) CanUseHostCredential() bool {
+	return !p.MFARequired && p.Email != "" && (p.CredentialType == "machine" || p.CredentialType == "cli") && contains(p.Permissions, "nodes:terminal") && p.Project == "" && p.Environment == "" && p.Application == "" && p.IdentityProject == "" && p.IdentityEnvironment == ""
+}
 func (p Principal) CanHostTerminal(node string) bool {
-	if !p.IsHuman() || p.CredentialType != "browser" || p.Project != "" || p.Environment != "" || p.Application != "" || p.IdentityProject != "" || p.IdentityEnvironment != "" {
+	if p.MFARequired || p.Project != "" || p.Environment != "" || p.Application != "" || p.IdentityProject != "" || p.IdentityEnvironment != "" {
 		return false
 	}
-	if p.IsSuperAdmin() {
+	if p.CredentialType == "machine" || p.CredentialType == "cli" {
+		if !contains(p.Permissions, "nodes:terminal") {
+			return false
+		}
+		if p.Owner && p.CanUseInstallationAgentAdministration() {
+			return true
+		}
+	} else if !p.IsHuman() || p.CredentialType != "browser" {
+		return false
+	} else if p.IsSuperAdmin() {
 		return true
 	}
 	for _, grant := range p.HostPermissions {
@@ -52,10 +70,10 @@ func (s *Store) hostPermissions(ctx context.Context, id string) ([]HostPermissio
 	return out, rows.Err()
 }
 func (s *Store) HostGrants(ctx context.Context, p Principal) ([]HostGrant, error) {
-	if !p.IsHuman() || p.CredentialType != "browser" {
+	if !(p.IsHuman() && p.CredentialType == "browser") && !p.CanManageHostAccess() && !p.CanUseHostCredential() {
 		return nil, ErrForbidden
 	}
-	rows, err := s.Pool.Query(ctx, "SELECT identity_id,node,permission,expires_at FROM host_access WHERE expires_at>now() AND ($1 OR identity_id=$2) ORDER BY identity_id,node LIMIT 500", p.IsSuperAdmin(), p.ID)
+	rows, err := s.Pool.Query(ctx, "SELECT identity_id,node,permission,expires_at FROM host_access WHERE expires_at>now() AND ($1 OR identity_id=$2) ORDER BY identity_id,node LIMIT 500", p.CanManageHostAccess(), p.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +92,7 @@ func validHostNode(node string) bool {
 	return node == "*" || (node != "" && len(validation.IsDNS1123Subdomain(node)) == 0)
 }
 func (s *Store) SetHostGrant(ctx context.Context, p Principal, g HostGrant) (HostGrant, error) {
-	if !p.IsSuperAdmin() {
+	if !p.CanManageHostAccess() {
 		return HostGrant{}, ErrForbidden
 	}
 	if !validHostNode(g.Node) || g.Permission != "nodes:terminal" || !g.ExpiresAt.After(time.Now().Add(time.Minute)) || g.ExpiresAt.After(time.Now().Add(30*24*time.Hour)) {
@@ -121,7 +139,7 @@ func (s *Store) SetHostGrant(ctx context.Context, p Principal, g HostGrant) (Hos
 	return g, tx.Commit(ctx)
 }
 func (s *Store) RevokeHostGrant(ctx context.Context, p Principal, user, node string) error {
-	if !p.IsSuperAdmin() {
+	if !p.CanManageHostAccess() {
 		return ErrForbidden
 	}
 	if !validHostNode(node) {
@@ -132,6 +150,13 @@ func (s *Store) RevokeHostGrant(ctx context.Context, p Principal, user, node str
 		return err
 	}
 	defer tx.Rollback(ctx)
+	var allowed bool
+	if err = tx.QueryRow(ctx, "SELECT owner AND admin AND NOT disabled FROM identities WHERE id=$1 FOR SHARE", p.ID).Scan(&allowed); err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrForbidden
+	}
 	_, err = tx.Exec(ctx, "DELETE FROM host_access WHERE identity_id=$1 AND node=$2", user, node)
 	if err != nil {
 		return err

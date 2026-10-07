@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
 import { client, unwrap } from '../lib/client'
 import { APIError, activeDeployment, message, relative, timestamp } from '../lib/api'
+import { buildRunNeedsObservation } from '../lib/build-runs'
 import { canAccess, useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
 import { Button } from '../components/ui/button'
@@ -557,14 +558,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
         }),
       ),
     gcTime: 0,
-    refetchInterval: (query) => {
-      const value = query.state.data
-      return value &&
-        (['failed', 'cancelled'].includes(value.status) ||
-          (value.status === 'completed' && value.image))
-        ? false
-        : 10000
-    },
+    refetchInterval: (query) => (buildRunNeedsObservation(query.state.data) ? 10000 : false),
     refetchIntervalInBackground: false,
   })
   const release = useQuery({
@@ -646,11 +640,11 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
   ]
   const descriptions: Record<string, string> = {
     source: 'The immutable source commit resolved for this run.',
-    build: `The current status reported by ${current.provider === 'gitlab' ? 'GitLab CI' : 'GitHub Actions'}. Open provider logs for individual build steps.`,
+    build: `This is the ${current.provider === 'gitlab' ? 'GitLab CI' : 'GitHub Actions'} build result. Check the deployment and current runtime health before using the application. Verify its public URL separately.`,
     image:
       'Only verified image digests are eligible for deployment. An earlier configuration revision must be reviewed again.',
     deploy:
-      'Deployment has its own recorded events and readiness result. Open it to inspect service health.',
+      'This is the recorded deployment outcome. Open the deployment to inspect current runtime health. Verify the public URL separately.',
   }
   return (
     <section className="ops-build-run">
@@ -678,7 +672,7 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
           </dd>
         </div>
         <div>
-          <dt>Result</dt>
+          <dt>Build result</dt>
           <dd>{current.conclusion || 'Not completed'}</dd>
         </div>
         <div>
