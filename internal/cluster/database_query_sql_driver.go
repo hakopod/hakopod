@@ -248,7 +248,11 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	}
 	rows.Close()
 	if err = check(ctx); err != nil {
-		return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: "read"}
+		outcome := "read"
+		if !q.IsReadOnly() {
+			outcome = sqlRollbackOutcome(tx)
+		}
+		return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: outcome}
 	}
 	if result.Truncated && !q.IsReadOnly() && !transactional {
 		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "unknown"}
