@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -123,5 +124,19 @@ func TestTerminalWaitsForPollAndCleansFailedInput(t *testing.T) {
 	err = terminal(ctx, &client{url: server.URL, http: server.Client()}, "app", "service", "pod", "container", "")
 	if err == nil || !ready.Load() || !deleted.Load() {
 		t.Fatalf("error=%v ready=%v deleted=%v", err, ready.Load(), deleted.Load())
+	}
+}
+
+func TestTerminalPollingUnknownProcessOutcome(t *testing.T) {
+	for _, code := range []int{-1, 256} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, `{"frames":[{"cursor":1,"data":{"type":"exit","code":%d}}],"next_cursor":"1","done":true}`, code)
+		}))
+		err := pollTerminalOutput(context.Background(), &client{url: server.URL, http: server.Client()}, "/terminal", &bytes.Buffer{})
+		server.Close()
+		var exit *exitError
+		if !errors.As(err, &exit) || exit.code != 1 || !strings.Contains(err.Error(), "process outcome is unknown") {
+			t.Fatalf("remote code=%d error=%v", code, err)
+		}
 	}
 }
