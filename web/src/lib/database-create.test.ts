@@ -109,11 +109,10 @@ test('ClickHouse creation accounts for Keepers and backup staging', () => {
   assert.match(databaseCreateIssue({ ...spec, shards: 1, replicas: 1, placement: { spread: 'nodes', node_names: ['one', 'two'] } }, 1) || '', /3 eligible nodes/)
 })
 
-test('Oracle remains held while its defaults reserve recovery storage', () => {
+test('Oracle Free defaults reserve recovery storage and reject Enterprise', () => {
   const previous = { ...initialDatabaseSpec, name: 'orders', mode: 'cluster' as const, engine: 'redis' as const, replicas: 2, shards: 3, placement: { spread: 'nodes' as const } }
   const oracle = databaseEngineDefaults(previous, 'oracle')
-  assert.match(databaseCreateIssue(oracle, 0) || '', /available/)
-  for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(oracle, step), undefined)
+  for (const step of [0, 1, 2, 3]) assert.equal(databaseCreateIssue(oracle, step), undefined)
   assert.equal(oracle.mode, 'standalone')
   assert.equal(oracle.oracle?.edition, 'free')
   assert.equal(databaseStorageGiB(oracle), 20)
@@ -122,12 +121,12 @@ test('Oracle remains held while its defaults reserve recovery storage', () => {
   assert.equal(databaseRequestedCapacity(oracle)?.cpu, 2.2)
   assert.equal(databaseRequestedCapacity(oracle)?.memoryMiB, 9032)
   assert.match(databaseCreateIssue({ ...oracle, mode: 'cluster', replicas: 1 }, 1) || '', /Free supports standalone/)
-  assert.match(databaseCreateIssue({ ...oracle, oracle: { edition: 'enterprise', image: 'registry.example/oracle:latest' } }, 0) || '', /available/)
+  assert.match(databaseCreateIssue({ ...oracle, oracle: { edition: 'enterprise', image: 'registry.example/oracle:latest' } }, 0) || '', /Choose Oracle Database Free/)
   assert.match(databaseCreateIssue({ ...oracle, memory: '2Gi' }, 2) || '', /4Gi/)
   assert.equal(databaseEngineDefaults(oracle, 'postgresql').oracle, undefined)
 })
 
-test('MyDuck is visible but held until its native runtime is qualified', () => {
+test('MyDuck defaults allow a standalone database with both protocol endpoints', () => {
   const previous = { ...initialDatabaseSpec, name: 'analytics', mode: 'cluster' as const, replicas: 2 }
   const myduck = databaseEngineDefaults(previous, 'duckdb')
   assert.equal(myduck.version, '0.3.1-dev.20260919.3')
@@ -137,8 +136,7 @@ test('MyDuck is visible but held until its native runtime is qualified', () => {
   assert.equal(databaseRequestedCapacity(myduck)?.cpu, 0.5)
   assert.equal(databaseRequestedCapacity(myduck)?.memoryMiB, 1252)
   assert.equal(databaseMemberCapacity(myduck)?.memoryMiB, 512)
-  assert.match(databaseCreateIssue(myduck, 0) || '', /available/)
-  for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(myduck, step), undefined)
+  for (const step of [0, 1, 2, 3]) assert.equal(databaseCreateIssue(myduck, step), undefined)
   assert.match(databaseCreateIssue({ ...myduck, mode: 'cluster', replicas: 1 }, 1) || '', /one standalone instance/)
   assert.equal(endpointName('mysql', 'duckdb'), 'MySQL protocol · port 3306')
   assert.equal(endpointName('postgresql', 'duckdb'), 'PostgreSQL protocol · port 5432')
