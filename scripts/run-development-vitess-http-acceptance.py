@@ -103,7 +103,7 @@ def cpu_milli(value):
 def protected_retained_inventory(path, expected_sha256):
     if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256 or ""):
         raise RuntimeError("exact retained inventory SHA-256 is required")
-    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+    if not path.is_absolute() or any(part.is_symlink() for part in (path, *path.parents)) or not path.is_file():
         raise RuntimeError("protected retained inventory is required")
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
@@ -129,10 +129,11 @@ def protected_retained_inventory(path, expected_sha256):
             raise RuntimeError("retained namespace identity is invalid")
     for name, item in volumes.items():
         if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,252}", name) or not isinstance(item, dict)
-                or set(item) != {"uid", "claim_namespace", "claim_name"}
+                or set(item) != {"uid", "claim_namespace", "claim_name", "claim_uid"}
                 or not isinstance(item["uid"], str) or not item["uid"]
                 or item["claim_namespace"] not in namespaces
-                or not isinstance(item["claim_name"], str) or not item["claim_name"]):
+                or not isinstance(item["claim_name"], str) or not item["claim_name"]
+                or not isinstance(item["claim_uid"], str) or not item["claim_uid"]):
             raise RuntimeError("retained persistent volume identity is invalid")
     return value
 
@@ -157,7 +158,8 @@ def verify_retained_inventory(kube, expected):
             if metadata.get("deletionTimestamp") or item.get("status", {}).get("phase") != "Bound":
                 raise RuntimeError("a retained persistent volume is deleting or unbound")
             volumes[metadata.get("name")] = {"uid": metadata.get("uid"),
-                "claim_namespace": claim.get("namespace"), "claim_name": claim.get("name")}
+                "claim_namespace": claim.get("namespace"), "claim_name": claim.get("name"),
+                "claim_uid": claim.get("uid")}
     if namespaces != expected["namespaces"] or volumes != expected["persistent_volumes"]:
         raise RuntimeError("live retained namespace or persistent volume identity differs")
     return {"status": "verified", "context": "k3d-hakopod-dev",

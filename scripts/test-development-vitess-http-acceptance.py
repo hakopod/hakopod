@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import runpy
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -15,10 +16,10 @@ class RetainedInventoryTests(unittest.TestCase):
         return {"schema_version": 1, "context": "k3d-hakopod-dev",
                 "namespaces": {"hdb-" + "a" * 32: {"uid": "namespace-uid"}},
                 "persistent_volumes": {"pvc-retained": {"uid": "volume-uid",
-                    "claim_namespace": "hdb-" + "a" * 32, "claim_name": "data"}}}
+                    "claim_namespace": "hdb-" + "a" * 32, "claim_name": "data", "claim_uid": "claim-uid"}}}
 
     def live(self, namespace_uid="namespace-uid", volume_uid="volume-uid", claim_name="data",
-             deleting=False, extra=False):
+             deleting=False, extra=False, claim_uid="claim-uid"):
         metadata = {"name": "hdb-" + "a" * 32, "uid": namespace_uid}
         if deleting:
             metadata["deletionTimestamp"] = "2026-10-07T00:00:00Z"
@@ -26,14 +27,14 @@ class RetainedInventoryTests(unittest.TestCase):
         if extra:
             namespace["items"].append({"metadata": {"name": "hdb-" + "b" * 32, "uid": "foreign"}})
         volume = {"items": [{"metadata": {"name": "pvc-retained", "uid": volume_uid},
-            "spec": {"claimRef": {"namespace": "hdb-" + "a" * 32, "name": claim_name}},
+            "spec": {"claimRef": {"namespace": "hdb-" + "a" * 32, "name": claim_name, "uid": claim_uid}},
             "status": {"phase": "Bound"}}]}
         return namespace, volume
 
     def verify(self, namespace_uid="namespace-uid", volume_uid="volume-uid", claim_name="data",
-               deleting=False, extra=False):
+               deleting=False, extra=False, claim_uid="claim-uid"):
         globals_ = RUNNER["verify_retained_inventory"].__globals__
-        live = self.live(namespace_uid, volume_uid, claim_name, deleting, extra)
+        live = self.live(namespace_uid, volume_uid, claim_name, deleting, extra, claim_uid)
         with mock.patch.dict(globals_, {"command_json": mock.Mock(side_effect=live)}):
             return RUNNER["verify_retained_inventory"](["kubectl"], self.expected())
 
@@ -51,6 +52,10 @@ class RetainedInventoryTests(unittest.TestCase):
     def test_matching_names_with_changed_claim_fail(self):
         with self.assertRaisesRegex(RuntimeError, "identity differs"):
             self.verify(claim_name="other")
+
+    def test_replaced_claim_with_same_name_fails(self):
+        with self.assertRaisesRegex(RuntimeError, "identity differs"):
+            self.verify(claim_uid="replacement")
 
     def test_deleting_namespace_fails(self):
         with self.assertRaisesRegex(RuntimeError, "deleting"):
@@ -75,10 +80,18 @@ class RetainedInventoryTests(unittest.TestCase):
             raw = (json.dumps(self.expected()) + "\n").encode()
             path.write_bytes(raw)
             path.chmod(0o600)
-            value = RUNNER["protected_retained_inventory"](path, hashlib.sha256(raw).hexdigest())
-            self.assertEqual(value, self.expected())
-            with self.assertRaisesRegex(RuntimeError, "SHA-256 differs"):
-                RUNNER["protected_retained_inventory"](path, "0" * 64)
+            metadata = path.stat()
+            owned = SimpleNamespace(st_uid=0, st_nlink=metadata.st_nlink,
+                                    st_mode=metadata.st_mode, st_size=metadata.st_size)
+            with mock.patch("os.fstat", return_value=owned):
+                value = RUNNER["protected_retained_inventory"](path, hashlib.sha256(raw).hexdigest())
+                self.assertEqual(value, self.expected())
+                with self.assertRaisesRegex(RuntimeError, "SHA-256 differs"):
+                    RUNNER["protected_retained_inventory"](path, "0" * 64)
+            owned.st_uid = 1000
+            with mock.patch("os.fstat", return_value=owned):
+                with self.assertRaisesRegex(RuntimeError, "custody"):
+                    RUNNER["protected_retained_inventory"](path, hashlib.sha256(raw).hexdigest())
 
 
 if __name__ == "__main__":
