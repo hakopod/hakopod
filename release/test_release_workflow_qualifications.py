@@ -9,8 +9,8 @@ ROOT=Path(__file__).resolve().parent.parent
 class ReleaseWorkflowQualificationTest(unittest.TestCase):
     def test_publish_requires_source_driven_managed_runtime_evidence(self):
         workflow=(ROOT/'.github/workflows/release.yml').read_text()
-        self.assertIn('needs: [build, smoke, hosts, probe-index, vitess, supabase, neon, oracle-free]',workflow)
-        for name in ('vitess','supabase','neon','oracle-free'):
+        self.assertIn('needs: [build, smoke, hosts, probe-index, vitess, supabase, neon, oracle-free, myduck]',workflow)
+        for name in ('vitess','supabase','neon','oracle-free','myduck'):
             with self.subTest(name=name):
                 match=re.search(rf'(?ms)^  {name}:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)',workflow)
                 self.assertIsNotNone(match)
