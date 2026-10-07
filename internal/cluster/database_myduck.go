@@ -289,10 +289,11 @@ func myduckPodMatches(p corev1.Pod, d database.Resource) bool {
 }
 
 func (c *Client) observeMyDuckDatabase(ctx context.Context, d database.Resource, o *database.Observation) error {
-	if len(o.Members) != 1 || !o.Members[0].Ready {
-		return fmt.Errorf("MyDuck requires one ready persistent instance")
+	if len(o.Members) != 1 || !o.Members[0].Ready || o.Members[0].Name == "" || o.Members[0].UID == "" {
+		return fmt.Errorf("MyDuck requires one ready persistent instance with a current identity")
 	}
 	o.Members[0].Role, o.Primary = "primary", o.Members[0].Name
+	o.TopologyFingerprint = fmt.Sprintf("%x", sha256.Sum256([]byte(o.Primary+":"+o.Members[0].UID)))
 	host := "database." + DatabaseNamespace(d.ID) + ".svc"
 	o.Endpoints = []database.Endpoint{{Purpose: "mysql", Host: host, Port: 3306}, {Purpose: "postgresql", Host: host, Port: 5432}}
 	return nil
