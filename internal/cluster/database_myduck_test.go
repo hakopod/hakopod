@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -25,6 +26,38 @@ func myduckFixtureSet(t *testing.T) (database.Resource, *appsv1.StatefulSet) {
 		t.Fatal(err)
 	}
 	return d, set
+}
+
+func TestMyDuckObservationTracksCurrentMemberIdentity(t *testing.T) {
+	client := &Client{}
+	d := myduckFixture()
+	observe := func(uid string) database.Observation {
+		o := database.Observation{Members: []database.Member{{Name: "database-0", UID: uid, Ready: true}}}
+		if err := client.observeMyDuckDatabase(context.Background(), d, &o); err != nil {
+			t.Fatal(err)
+		}
+		if o.TopologyFingerprint == "" || o.Primary != "database-0" || o.Members[0].Role != "primary" {
+			t.Fatal("MyDuck omitted its current primary identity")
+		}
+		return o
+	}
+	before := observe("original-pod")
+	if observe("original-pod").TopologyFingerprint != before.TopologyFingerprint {
+		t.Fatal("an unchanged MyDuck member changed its topology identity")
+	}
+	if observe("replacement-pod").TopologyFingerprint == before.TopologyFingerprint {
+		t.Fatal("MyDuck pod replacement retained the old topology identity")
+	}
+	for _, member := range []database.Member{
+		{Name: "database-0", Ready: true},
+		{UID: "pod", Ready: true},
+		{Name: "database-0", UID: "pod"},
+	} {
+		o := database.Observation{Members: []database.Member{member}}
+		if err := client.observeMyDuckDatabase(context.Background(), d, &o); err == nil || o.TopologyFingerprint != "" {
+			t.Fatal("MyDuck accepted an absent or unready member identity")
+		}
+	}
 }
 
 func TestMyDuckTemplateHasOnePersistentDualProtocolMember(t *testing.T) {
