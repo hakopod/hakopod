@@ -63,7 +63,7 @@ def environment(kube, nodes, images, case, output, docker, name="capacity-before
             raise ValueError("MyDuck image must be cached by digest on each selected node")
         capacity[node_name] = CAPACITY["node_capacity"](node, pods["items"], CAPACITY["container_budget"](docker, node_name))
         identities[node_name] = node["metadata"]["uid"]
-    count = 1 if case == "lifecycle" else 2
+    count = VERIFIER["FIXTURE_COUNTS"][case]
     # Each cluster fixture is 1 CPU / 1GiB. Its stopped-process storage helper
     # uses less. HTTP fixtures are smaller; reserve the same upper bound.
     remaining = {name: [item["available_cpu_milli"], item["available_memory_bytes"]] for name, item in capacity.items()}
@@ -95,7 +95,7 @@ def fixture_names(log):
 
 
 def cleanup(kube, names, case):
-    if len(names) != (1 if case == "lifecycle" else 2):
+    if len(names) != VERIFIER["FIXTURE_COUNTS"][case]:
         raise ValueError("MyDuck fixture inventory is incomplete")
     for name in names:
         if RUNNER["command_output"]([*kube, "get", "namespace", name, "--ignore-not-found", "-o", "json"]).strip():
@@ -153,6 +153,10 @@ def run(args):
     required = {test}
     if args.case == "http-api":
         required.update(test + "/" + phase for phase in VERIFIER["HTTP_PHASES"])
+    if args.case == "recovery":
+        required.update(test + "/" + phase for phase in VERIFIER["RECOVERY_PHASES"])
+    if args.case == "lifecycle":
+        required.add(test + "/alternate_users")
     VERIFIER["accepted_events"](events, required, package)
     after_identity, after_capacity = environment(kube, args.nodes.split(","), images, args.case, args.output, args.docker, "capacity-after.json")
     if after_identity != identity or {name: item["container_id"] for name, item in after_capacity.items()} != {name: item["container_id"] for name, item in capacity.items()}:

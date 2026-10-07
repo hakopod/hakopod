@@ -7,14 +7,19 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"os"
 	"testing"
 	"time"
 
+	mysqlclient "github.com/go-sql-driver/mysql"
 	"github.com/hakopod/hakopod/internal/database"
+	"github.com/jackc/pgx/v5"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -107,6 +112,93 @@ func testMyDuckReads(t *testing.T, ctx context.Context, c *Client, d database.Re
 	}
 }
 
+func testMyDuckAlternateUsersRejected(t *testing.T, ctx context.Context, c *Client, d database.Resource, observed database.Observation, password []byte, identity *tls.Config) {
+	t.Helper()
+	host := "database." + DatabaseNamespace(d.ID) + ".svc"
+	mysqlConfig := mysqlclient.NewConfig()
+	mysqlConfig.User, mysqlConfig.Passwd, mysqlConfig.Net, mysqlConfig.Addr, mysqlConfig.DBName = "attacker", string(password), "tcp", host+":3306", "app"
+	mysqlConfig.TLS = identity
+	mysqlConfig.DialFunc = func(step context.Context, _, _ string) (net.Conn, error) {
+		return c.myduckStream(step, d, observed.Members[0], 3306)
+	}
+	mysqlConnector, err := mysqlclient.NewConnector(mysqlConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mysql := sql.OpenDB(mysqlConnector)
+	step, cancel := context.WithTimeout(ctx, 12*time.Second)
+	err = mysql.PingContext(step)
+	cancel()
+	_ = mysql.Close()
+	if err == nil {
+		t.Fatal("MySQL accepted the managed password for an alternate user")
+	}
+	postgresConfig, err := pgx.ParseConfig("host=" + host + " port=5432 user=attacker dbname=app connect_timeout=5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	postgresConfig.Password, postgresConfig.TLSConfig, postgresConfig.Fallbacks = string(password), identity, nil
+	postgresConfig.DialFunc = func(step context.Context, _, _ string) (net.Conn, error) {
+		return c.myduckStream(step, d, observed.Members[0], 5432)
+	}
+	postgresConfig.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
+	step, cancel = context.WithTimeout(ctx, 12*time.Second)
+	postgres, err := pgx.ConnectConfig(step, postgresConfig)
+	if err == nil {
+		_ = postgres.Close(step)
+		cancel()
+		t.Fatal("PostgreSQL accepted the managed password for an alternate user")
+	}
+	cancel()
+}
+
+func assertMyDuckFailedRestoreIsolated(t *testing.T, ctx context.Context, c *Client, d database.Resource, jobID string, helperExpected bool) {
+	t.Helper()
+	namespace := DatabaseNamespace(d.ID)
+	set, err := c.kube.AppsV1().StatefulSets(namespace).Get(ctx, "database", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Spec.Replicas == nil || *set.Spec.Replicas != 0 {
+		t.Fatal("failed MyDuck restore target resumed")
+	}
+	record, err := myduckReadColdRecord(set, d, jobID)
+	if err != nil || !record.Restore {
+		t.Fatal("failed MyDuck restore lost its durable storage fence", err)
+	}
+	_, err = c.kube.CoreV1().Pods(namespace).Get(ctx, myduckColdName(jobID), metav1.GetOptions{})
+	if helperExpected && err != nil {
+		t.Fatal("failed MyDuck restore lost its fenced storage helper", err)
+	}
+	if !helperExpected && !apierrors.IsNotFound(err) {
+		t.Fatal("failed MyDuck restore helper was not removed", err)
+	}
+}
+
+func assertMyDuckFailedRestoreCleaned(t *testing.T, ctx context.Context, c *Client, d database.Resource, jobID string, before func() error) {
+	t.Helper()
+	assertMyDuckFailedRestoreIsolated(t, ctx, c, d, jobID, true)
+	if err := c.ReconcileMyDuckColdStorage(ctx, d, jobID, false, before); err != nil {
+		t.Fatal("failed MyDuck restore cleanup did not finish", err)
+	}
+	namespace := DatabaseNamespace(d.ID)
+	set, err := c.kube.AppsV1().StatefulSets(namespace).Get(ctx, "database", metav1.GetOptions{})
+	if err != nil || set.Spec.Replicas == nil || *set.Spec.Replicas != 0 || set.Annotations[myduckColdAnnotation] != "" {
+		t.Fatal("failed MyDuck restore cleanup did not preserve the stopped target", err)
+	}
+	if _, err = c.kube.CoreV1().Pods(namespace).Get(ctx, myduckColdName(jobID), metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatal("failed MyDuck restore cleanup left its helper", err)
+	}
+	policy, err := c.kube.NetworkingV1().NetworkPolicies(namespace).Get(ctx, "database", metav1.GetOptions{})
+	if err != nil || len(policy.Spec.Ingress) != 0 {
+		t.Fatal("failed MyDuck restore target retained application ingress", err)
+	}
+	members, err := c.kube.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: myduckMemberLabel + "=true", Limit: 2})
+	if err != nil || members.Continue != "" || len(members.Items) != 0 {
+		t.Fatal("failed MyDuck restore target retained a database process", err)
+	}
+}
+
 func TestManagedMyDuckLive(t *testing.T) {
 	if os.Getenv("HAKOPOD_DATABASE_MYDUCK_TEST") != "1" {
 		t.Skip("set HAKOPOD_DATABASE_MYDUCK_TEST=1 for named development cluster acceptance")
@@ -120,6 +212,9 @@ func TestManagedMyDuckLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("alternate_users", func(t *testing.T) {
+		testMyDuckAlternateUsersRejected(t, ctx, c, d, observed, password, identity)
+	})
 	mysql, err := c.myduckMySQLClient(ctx, d, observed.Members[0], password, identity)
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +227,10 @@ func TestManagedMyDuckLive(t *testing.T) {
 		t.Fatal("MySQL insert failed", err)
 	}
 	testMyDuckReads(t, ctx, c, d, observed, "from mysql")
+	metrics, err := c.myduckEngineMetrics(ctx, d, observed)
+	if err != nil || !metrics.Available || metrics.DataBytes == nil || metrics.SampledAt == nil {
+		t.Fatal("MyDuck did not report real DuckDB storage statistics", err)
+	}
 	pg, err := c.myduckPostgresClient(ctx, d, observed.Members[0], password, identity)
 	if err != nil {
 		t.Fatal(err)
@@ -308,20 +407,67 @@ func TestManagedMyDuckColdRecoveryLive(t *testing.T) {
 	}
 	observed = waitMyDuckFixture(t, ctx, c, source)
 	testMyDuckReads(t, ctx, c, source, observed, "recovered")
+	nonempty, nonemptyPassword, nonemptyHealth := newMyDuckFixture(t, ctx, c)
+	_, nonemptyIdentity, err := c.myduckClientIdentity(ctx, nonempty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonemptyClient, err := c.myduckPostgresClient(ctx, nonempty, nonemptyHealth.Members[0], nonemptyPassword, nonemptyIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = nonemptyClient.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS mysql; CREATE TABLE mysql.restore_guard AS SELECT 1 AS value"); err != nil {
+		_ = nonemptyClient.Close(ctx)
+		t.Fatal("create nonempty MyDuck target", err)
+	}
+	_ = nonemptyClient.Close(ctx)
+	nonemptyID := fmt.Sprintf("%032x", time.Now().UnixNano())
+	nonempty.Status = "restoring"
+	nonempty.Recovery = &database.Recovery{JobID: nonemptyID}
+	t.Run("nonempty_target", func(t *testing.T) {
+		input := bytes.NewReader(archive.Bytes())
+		remaining := input.Len()
+		if err = c.WithMyDuckColdStorage(ctx, nonempty, nonemptyHealth, nonemptyID, true, before, input, nil); err == nil {
+			t.Fatal("MyDuck restore accepted user data in a mysql-named schema")
+		}
+		if input.Len() != remaining {
+			t.Fatal("MyDuck restore consumed archive bytes before rejecting a nonempty target")
+		}
+		assertMyDuckFailedRestoreCleaned(t, ctx, c, nonempty, nonemptyID, before)
+	})
+
+	corrupt, _, corruptHealth := newMyDuckFixture(t, ctx, c)
+	corruptID := fmt.Sprintf("%032x", time.Now().UnixNano())
+	corrupt.Status = "restoring"
+	corrupt.Recovery = &database.Recovery{JobID: corruptID}
+	broken := append([]byte(nil), archive.Bytes()...)
+	if len(broken) == 0 {
+		t.Fatal("MyDuck capture returned an empty archive")
+	}
+	broken[len(broken)-1] ^= 0xff
+	t.Run("corrupt_restore", func(t *testing.T) {
+		if err = c.WithMyDuckColdStorage(ctx, corrupt, corruptHealth, corruptID, true, before, bytes.NewReader(broken), nil); err == nil {
+			t.Fatal("MyDuck restore accepted a corrupt archive")
+		}
+		assertMyDuckFailedRestoreCleaned(t, ctx, c, corrupt, corruptID, before)
+	})
+
 	target, _, targetHealth := newMyDuckFixture(t, ctx, c)
 	restoreID := fmt.Sprintf("%032x", time.Now().UnixNano())
 	target.Status = "restoring"
 	target.Recovery = &database.Recovery{JobID: restoreID}
-	if err = c.WithMyDuckColdStorage(ctx, target, targetHealth, restoreID, true, before, bytes.NewReader(archive.Bytes()), nil); err != nil {
-		t.Fatal(err)
-	}
-	if err = c.ReconcileMyDuckColdStorage(ctx, target, restoreID, true, before); err != nil {
-		t.Fatal(err)
-	}
-	targetHealth = waitMyDuckFixture(t, ctx, c, target)
-	testMyDuckReads(t, ctx, c, target, targetHealth, "recovered")
-	if source.ID == target.ID {
-		t.Fatal("recovery did not use a separate resource")
-	}
-	t.Log("Cold backup resumed its source; separate target restored both protocols with its own credentials")
+	t.Run("successful_restore", func(t *testing.T) {
+		if err = c.WithMyDuckColdStorage(ctx, target, targetHealth, restoreID, true, before, bytes.NewReader(archive.Bytes()), nil); err != nil {
+			t.Fatal(err)
+		}
+		if err = c.ReconcileMyDuckColdStorage(ctx, target, restoreID, true, before); err != nil {
+			t.Fatal(err)
+		}
+		targetHealth = waitMyDuckFixture(t, ctx, c, target)
+		testMyDuckReads(t, ctx, c, target, targetHealth, "recovered")
+		if source.ID == target.ID || source.ID == nonempty.ID || source.ID == corrupt.ID || target.ID == nonempty.ID || target.ID == corrupt.ID || nonempty.ID == corrupt.ID {
+			t.Fatal("recovery fixtures did not use separate resources")
+		}
+	})
+	t.Log("Cold backup resumed its source; failed targets stayed isolated; separate target restored both protocols with its own credentials")
 }

@@ -139,8 +139,11 @@ reported as failed or cancelled. A successful backup includes a verified archive
 a stopped worker does not create a successful backup receipt.
 
 Restore requires a separate empty database of the same MyDuck version. Hakopod
-verifies the entire encrypted archive before changing the target. The helper then
-checks every file and stages the replacement. A durable marker prevents MyDuck
+verifies the entire encrypted archive before changing the target. After the
+target process stops, the isolated helper opens its catalog read-only and checks
+for existing user objects. This prevents a connected writer from adding data
+between the check and replacement. The helper then checks every archive file
+and stages the replacement. A durable marker prevents MyDuck
 from opening files left by an interrupted replacement. A failed restore stays
 stopped and isolated; the original database is unchanged. Inspect a successful
 restore before switching application bindings.
