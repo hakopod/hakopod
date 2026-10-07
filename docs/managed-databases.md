@@ -17,7 +17,7 @@ The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md),
 [DuckDB through MyDuck](managed-myduck.md) and [Oracle Database](managed-oracle.md)
 implementations have separate guides with their contracts and limits. Oracle
-Database Free and MyDuck are enabled in alpha.56 candidate source `058c25c`
+Database Free and MyDuck are enabled in the alpha.56 candidate
 only for qualification; they are not in published OSS alpha.55 or Cloud alpha.34. Their
 native and HTTP qualification must run again against the current candidate.
 Public endpoints, Neon and Supabase remain unavailable. Oracle Enterprise and

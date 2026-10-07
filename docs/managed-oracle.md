@@ -1,6 +1,6 @@
 # Managed Oracle Database
 
-Status: Oracle Database Free is enabled in alpha.56 candidate source `058c25c`
+Status: Oracle Database Free is enabled in the alpha.56 candidate
 so its native qualification can run. It is not available in published OSS alpha.55
 or Cloud alpha.34 releases. Do not offer it until the current candidate passes
 the complete native lifecycle and HTTP acceptance suites and the release is

@@ -2,8 +2,8 @@
 
 Status: published self-hosted alpha.55 includes PostgreSQL, Redis, MySQL,
 MongoDB, private ClickHouse and private Vitess on Linux amd64 workers. Oracle
-Database Free and DuckDB through MyDuck are enabled only in alpha.56 candidate
-source `058c25c` for qualification; neither is published or available in Cloud
+Database Free and DuckDB through MyDuck are enabled only in the alpha.56
+candidate for qualification; neither is published or available in Cloud
 alpha.34. Their complete native and HTTP suites must pass again against the
 current candidate. Public endpoints, Neon and Supabase remain unavailable.
 Cloud availability requires a separate Cloud release, operator rollout and

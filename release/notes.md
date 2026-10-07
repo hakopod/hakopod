@@ -1,9 +1,34 @@
-Hakopod 0.1.0-alpha.56 adds application-specific managed database credentials
-and editable TOML for catalog deployments.
+Hakopod 0.1.0-alpha.56 adds managed DuckDB through MyDuck and Oracle Database
+Free, application-specific database credentials, and editable TOML for catalog
+deployments.
 
-When connecting a service to a managed database, choose its existing username,
-database, password secret and SSL mode. The dashboard can save a new password
-as a scoped secret; reviews and application revisions contain only its reference.
+MyDuck runs one persistent DuckDB database with two private connections: MySQL
+on port 3306 and PostgreSQL on port 5432. Both reach the same data. Connections
+require TLS and the database CA. MyDuck supports parts of both wire protocols;
+test your application's driver, migrations and queries before moving data.
+Backups stop the instance and copy its database and write-ahead log. See the
+[MyDuck guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/docs/managed-myduck.md)
+for compatibility, resource limits and recovery instructions.
+
+Oracle Database Free runs one instance managed by the Oracle Database Operator.
+Applications use the restricted APP schema through private TCPS on port 2484.
+Backups use Data Pump to capture that schema at a selected SCN; restore uses a
+separate target for inspection before applications connect. Oracle Free is
+proprietary software available at no charge, with Oracle's limits of two CPUs,
+2 GB of database memory and 12 GB of user data. See the
+[Oracle guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/docs/managed-oracle.md)
+for the stack, connection settings and backup scope.
+
+Both additions require Linux amd64 workers and supported persistent storage.
+They have one instance, private endpoints and no automatic failover. Restarts
+and certificate renewal interrupt connections, so clients need reconnect
+handling. Oracle Enterprise, Data Guard and public database endpoints remain
+unavailable.
+
+For engines that support custom application accounts, a database binding can
+select an existing username, database, password secret and SSL mode. The
+dashboard can save a new password as a scoped secret; reviews and application
+revisions contain only its reference.
 The same options are available in TOML, the CLI and the TypeScript SDK. Omitted
 options retain the managed defaults. Binding does not create database accounts
 or change their grants.
