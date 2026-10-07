@@ -260,6 +260,10 @@ func TestManagedMyDuckLive(t *testing.T) {
 		"ALTER USER root IDENTIFIED BY 'unsafe'",
 		"RENAME USER root TO attacker",
 		"UPDATE mysql.user SET authentication_string=''",
+		"CREATE TABLE mysql.restore_guard AS SELECT 1 AS value",
+		"SET schema='__sys__'",
+		"SET search_path='__sys__'",
+		"USE __sys__",
 		"SET enable_external_access=true",
 		"SET memory_limit='100TiB'",
 		"PRAGMA enable_external_access=true",
@@ -432,7 +436,7 @@ func TestManagedMyDuckColdRecoveryLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = nonemptyClient.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS mysql; CREATE TABLE mysql.restore_guard AS SELECT 1 AS value"); err != nil {
+	if _, err = nonemptyClient.Exec(ctx, "CREATE TABLE restore_guard AS SELECT 1 AS value"); err != nil {
 		_ = nonemptyClient.Close(ctx)
 		t.Fatal("create nonempty MyDuck target", err)
 	}
@@ -444,7 +448,7 @@ func TestManagedMyDuckColdRecoveryLive(t *testing.T) {
 		input := bytes.NewReader(archive.Bytes())
 		remaining := input.Len()
 		if err = c.WithMyDuckColdStorage(ctx, nonempty, nonemptyHealth, nonemptyID, true, before, input, nil); err == nil {
-			t.Fatal("MyDuck restore accepted user data in a mysql-named schema")
+			t.Fatal("MyDuck restore accepted an existing user table")
 		}
 		if input.Len() != remaining {
 			t.Fatal("MyDuck restore consumed archive bytes before rejecting a nonempty target")
