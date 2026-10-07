@@ -155,7 +155,9 @@ func applyDatabasePolicy(object *unstructured.Unstructured, s database.Spec, p D
 		_ = unstructured.SetNestedSlice(object.Object, tolerations, "spec", "affinity", "tolerations")
 		_ = unstructured.SetNestedField(object.Object, p.StorageClass, "spec", "storage", "storageClass")
 	} else if s.Engine == "oracle" || s.Engine == "duckdb" {
-		if s.Engine == "duckdb" { selector[corev1.LabelArchStable] = "amd64" }
+		if s.Engine == "duckdb" {
+			selector[corev1.LabelArchStable] = "amd64"
+		}
 		_ = unstructured.SetNestedMap(object.Object, selector, "spec", "template", "spec", "nodeSelector")
 		_ = unstructured.SetNestedSlice(object.Object, tolerations, "spec", "template", "spec", "tolerations")
 		_ = unstructured.SetNestedField(object.Object, p.RuntimeClass, "spec", "template", "spec", "runtimeClassName")

@@ -30,7 +30,9 @@ func (c *Client) observeDatabaseEngineMetrics(ctx context.Context, d database.Re
 	step, stop := context.WithTimeout(ctx, 4*time.Second)
 	defer stop()
 	if d.Spec.Engine == "duckdb" {
-		if metric, err := c.myduckEngineMetrics(step, d, *o); err == nil { o.EngineMetrics = &metric }
+		if metric, err := c.myduckEngineMetrics(step, d, *o); err == nil {
+			o.EngineMetrics = &metric
+		}
 		return
 	}
 	if d.Spec.Engine == "oracle" {
