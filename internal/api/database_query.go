@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
@@ -27,23 +28,25 @@ func (s *Server) databaseQueryCapabilities(w http.ResponseWriter, r *http.Reques
 	write(w, http.StatusOK, database.CapabilitiesForQuery(d.Spec.Engine))
 }
 func databaseQueryAllowed(p store.Principal, d database.Resource, readOnly bool) bool {
-	permission := "databases:query"
+	permissions := []string{"databases:query"}
 	if !readOnly {
-		permission = "databases:write-query"
+		permissions = append(permissions, "databases:write-query")
 	}
-	if p.Application != "" || !p.Allows(permission, d.Project, d.Environment, "") {
+	if p.Application != "" {
 		return false
 	}
-	if p.CredentialType == "machine" || p.CredentialType == "cli" {
-		explicit := false
-		for _, grant := range p.Permissions {
-			if grant == permission {
-				explicit = true
-			}
+	for _, permission := range permissions {
+		if !p.Allows(permission, d.Project, d.Environment, "") {
+			return false
 		}
-		return explicit && (p.CredentialType == "cli" || p.Project == d.Project && p.Environment == d.Environment && p.Project != "" && p.Environment != "")
+		if (p.CredentialType == "machine" || p.CredentialType == "cli") && !slices.Contains(p.Permissions, permission) {
+			return false
+		}
 	}
-	return p.CredentialType == "browser"
+	if p.CredentialType == "machine" {
+		return p.Project == d.Project && p.Environment == d.Environment && p.Project != "" && p.Environment != ""
+	}
+	return p.CredentialType == "browser" || p.CredentialType == "cli"
 }
 func (s *Server) databaseQuery(w http.ResponseWriter, r *http.Request) {
 	var q database.QueryRequest

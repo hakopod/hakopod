@@ -15,7 +15,7 @@ schemas["PodExecResult"] = obj({
 }, ["execution_id", "pod", "container", "pod_uid", "outcome", "exit_code", "stdout_base64", "stderr_base64", "stdout_truncated", "stderr_truncated", "audit_recorded"])
 route("/applications/{id}/services/{service}/exec", "post", "executePodCommand", ref("PodExecResult"), ref("PodExecInput"))
 paths["/applications/{id}/services/{service}/exec"]["post"]["parameters"].append({"name": "service", "in": "path", "required": True, "schema": S})
-paths["/applications/{id}/services/{service}/exec"]["post"]["description"] = "Run one command in the specified owned container. Requires pods:exec. A machine key must explicitly grant this permission. An unknown outcome does not establish process termination."
+paths["/applications/{id}/services/{service}/exec"]["post"]["description"] = "Run one command in the specified owned container. Requires pods:exec. CLI and machine credentials require an explicit pods:exec grant. An unknown outcome does not establish process termination."
 
 scalar = {"type": ["string", "number", "boolean", "null"]}
 schemas["DatabaseQueryInput"] = obj({
@@ -40,7 +40,7 @@ schemas["DatabaseQueryError"] = obj({
     "outcome": {"type": "string", "enum": ["not_started", "rolled_back", "unknown", "read", "committed", "applied"]},
 }, ["error", "operation_id", "outcome"])
 route("/databases/{id}/query", "post", "queryManagedDatabase", ref("DatabaseQueryResult"), ref("DatabaseQueryInput"))
-paths["/databases/{id}/query"]["post"]["description"] = "Run one SQL statement using the managed application identity. Read the engine capabilities first. Reads require databases:query. Writes require databases:write-query and a reviewed database revision. Results can contain private data. Check an unknown outcome before retrying."
+paths["/databases/{id}/query"]["post"]["description"] = "Run one SQL statement using the managed application identity. Read the engine capabilities first. All queries require databases:query. Writes also require databases:write-query and a reviewed database revision. CLI and machine credentials require explicit SQL grants. Results can contain private data. Check an unknown outcome before retrying."
 paths["/databases/{id}/query"]["post"]["responses"]["default"]["content"]["application/json"]["schema"] = {"anyOf": [ref("Error"), ref("DatabaseQueryError")]}
 
 schemas["DatabaseQueryCapabilities"] = obj({

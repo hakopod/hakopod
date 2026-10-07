@@ -54,6 +54,10 @@ func TestDatabaseQueryAuthorization(t *testing.T) {
 		t.Fatal("deployment access allowed SQL")
 	}
 	principal.Permissions = []string{"databases:write-query"}
+	if databaseQueryAllowed(principal, d, false) {
+		t.Fatal("SQL write grant replaced the required query grant")
+	}
+	principal.Permissions = []string{"databases:query", "databases:write-query"}
 	if !databaseQueryAllowed(principal, d, false) {
 		t.Fatal("write grant rejected")
 	}
@@ -61,7 +65,7 @@ func TestDatabaseQueryAuthorization(t *testing.T) {
 	if databaseQueryAllowed(principal, d, false) {
 		t.Fatal("wildcard machine grant allowed SQL")
 	}
-	principal.Permissions = []string{"databases:write-query"}
+	principal.Permissions = []string{"databases:query", "databases:write-query"}
 	principal.Environment = "production"
 	if databaseQueryAllowed(principal, d, false) {
 		t.Fatal("environment scope escaped")
@@ -76,13 +80,31 @@ func TestDatabaseQueryAuthorization(t *testing.T) {
 		if databaseQueryAllowed(cli, d, readOnly) {
 			t.Fatal("administrator CLI bypassed explicit SQL consent", readOnly)
 		}
-		permission := "databases:query"
+		cli.Permissions = append(cli.Permissions, "databases:query")
 		if !readOnly {
-			permission = "databases:write-query"
+			cli.Permissions = append(cli.Permissions, "databases:write-query")
 		}
-		cli.Permissions = append(cli.Permissions, permission)
 		if !databaseQueryAllowed(cli, d, readOnly) {
 			t.Fatal("explicit CLI SQL consent was rejected", readOnly)
+		}
+	}
+}
+func TestDatabaseQueryWriteRequiresCurrentQueryGrant(t *testing.T) {
+	d := database.Resource{Project: "project", Environment: "development"}
+	for _, credential := range []string{"machine", "cli", "browser"} {
+		p := store.Principal{CredentialType: credential, Admin: true, Project: d.Project, Environment: d.Environment, Permissions: []string{"databases:query", "databases:write-query"}}
+		if !databaseQueryAllowed(p, d, false) {
+			t.Fatal("complete SQL grants rejected", credential)
+		}
+		p.Permissions = []string{"databases:write-query"}
+		if databaseQueryAllowed(p, d, false) {
+			t.Fatal("SQL write continued after query grant removal", credential)
+		}
+		if credential != "browser" {
+			p.Permissions = append(p.Permissions, "admin")
+			if databaseQueryAllowed(p, d, false) {
+				t.Fatal("administrator wildcard replaced the removed query grant", credential)
+			}
 		}
 	}
 }
