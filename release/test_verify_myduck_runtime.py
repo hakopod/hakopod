@@ -84,7 +84,8 @@ class MyDuckQualificationTest(unittest.TestCase):
             MODULE["gate_hash"](gate)
 
     def test_source_or_build_drift_invalidates_prior_acceptance(self):
-        for name in ("internal/cluster/database_myduck.go", "cmd/hakopod-myduck-storage/main.go"):
+        for name in ("internal/cluster/database_myduck.go", "cmd/hakopod-myduck-storage/main.go",
+                     "scripts/package-managed-myduck.py", "scripts/collect-myduck-licenses.py"):
             path = self.root / name
             old = path.read_text()
             path.write_text(old + "// changed\n")

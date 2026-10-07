@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -19,6 +20,7 @@ import (
 	mysqlclient "github.com/go-sql-driver/mysql"
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -118,8 +120,8 @@ func testMyDuckAlternateUsersRejected(t *testing.T, ctx context.Context, c *Clie
 	mysqlConfig := mysqlclient.NewConfig()
 	mysqlConfig.User, mysqlConfig.Passwd, mysqlConfig.Net, mysqlConfig.Addr, mysqlConfig.DBName = "attacker", string(password), "tcp", host+":3306", "app"
 	mysqlConfig.TLS = identity
-	mysqlConfig.DialFunc = func(step context.Context, _, _ string) (net.Conn, error) {
-		return c.myduckStream(step, d, observed.Members[0], 3306)
+	mysqlConfig.DialFunc = func(_ context.Context, _, _ string) (net.Conn, error) {
+		return c.myduckStream(ctx, d, observed.Members[0], 3306)
 	}
 	mysqlConnector, err := mysqlclient.NewConnector(mysqlConfig)
 	if err != nil {
@@ -130,16 +132,17 @@ func testMyDuckAlternateUsersRejected(t *testing.T, ctx context.Context, c *Clie
 	err = mysql.PingContext(step)
 	cancel()
 	_ = mysql.Close()
-	if err == nil {
-		t.Fatal("MySQL accepted the managed password for an alternate user")
+	var mysqlAuthError *mysqlclient.MySQLError
+	if !errors.As(err, &mysqlAuthError) || mysqlAuthError.Number != 1045 {
+		t.Fatal("MySQL did not return an authentication rejection for an alternate user", err)
 	}
 	postgresConfig, err := pgx.ParseConfig("host=" + host + " port=5432 user=attacker dbname=app connect_timeout=5")
 	if err != nil {
 		t.Fatal(err)
 	}
 	postgresConfig.Password, postgresConfig.TLSConfig, postgresConfig.Fallbacks = string(password), identity, nil
-	postgresConfig.DialFunc = func(step context.Context, _, _ string) (net.Conn, error) {
-		return c.myduckStream(step, d, observed.Members[0], 5432)
+	postgresConfig.DialFunc = func(_ context.Context, _, _ string) (net.Conn, error) {
+		return c.myduckStream(ctx, d, observed.Members[0], 5432)
 	}
 	postgresConfig.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
 	step, cancel = context.WithTimeout(ctx, 12*time.Second)
@@ -150,6 +153,10 @@ func testMyDuckAlternateUsersRejected(t *testing.T, ctx context.Context, c *Clie
 		t.Fatal("PostgreSQL accepted the managed password for an alternate user")
 	}
 	cancel()
+	var postgresAuthError *pgconn.PgError
+	if !errors.As(err, &postgresAuthError) || postgresAuthError.Code != "28P01" {
+		t.Fatal("PostgreSQL did not return an authentication rejection for an alternate user", err)
+	}
 }
 
 func assertMyDuckFailedRestoreIsolated(t *testing.T, ctx context.Context, c *Client, d database.Resource, jobID string, helperExpected bool) {
