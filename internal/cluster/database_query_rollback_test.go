@@ -13,10 +13,11 @@ import (
 type queryRollbackConnector struct {
 	fail     bool
 	execFail bool
+	begins   *int
 }
 
 func (c queryRollbackConnector) Connect(context.Context) (driver.Conn, error) {
-	return queryRollbackConn{fail: c.fail, execFail: c.execFail}, nil
+	return queryRollbackConn{fail: c.fail, execFail: c.execFail, begins: c.begins}, nil
 }
 func (c queryRollbackConnector) Driver() driver.Driver { return queryRollbackDriver{} }
 
@@ -29,13 +30,19 @@ func (queryRollbackDriver) Open(string) (driver.Conn, error) {
 type queryRollbackConn struct {
 	fail     bool
 	execFail bool
+	begins   *int
 }
 
 func (c queryRollbackConn) Prepare(string) (driver.Stmt, error) {
 	return queryRollbackStmt{fail: c.execFail}, nil
 }
-func (c queryRollbackConn) Close() error              { return nil }
-func (c queryRollbackConn) Begin() (driver.Tx, error) { return queryRollbackTx{fail: c.fail}, nil }
+func (c queryRollbackConn) Close() error { return nil }
+func (c queryRollbackConn) Begin() (driver.Tx, error) {
+	if c.begins != nil {
+		*c.begins++
+	}
+	return queryRollbackTx{fail: c.fail}, nil
+}
 
 type queryRollbackTx struct{ fail bool }
 
@@ -163,5 +170,65 @@ func TestSQLDriverStartedWriteRollbackFailuresAreUnknown(t *testing.T) {
 			conn.Close()
 			db.Close()
 		}
+	}
+}
+
+func TestSQLDriverHonorsNontransactionalWrites(t *testing.T) {
+	for _, kind := range []string{"dml", "read"} {
+		for _, revoked := range []bool{false, true} {
+			begins := 0
+			db := sql.OpenDB(queryRollbackConnector{begins: &begins})
+			conn, err := db.Conn(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			write := false
+			q := database.QueryRequest{SQL: "INSERT INTO fixture VALUES(1)", ReadOnly: &write, ExecutionMode: "nontransactional"}
+			if kind == "read" {
+				q.SQL = "WITH mutation AS (INSERT INTO fixture VALUES(1) RETURNING value) SELECT value FROM mutation"
+			}
+			if err = q.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			checks := 0
+			result, err := runSQLDriverQuery(context.Background(), conn, "mysql", q, kind, func(context.Context) error {
+				checks++
+				if revoked && checks == 2 {
+					return context.Canceled
+				}
+				return nil
+			})
+			if begins != 0 {
+				t.Fatal("nontransactional write opened transaction", kind, begins)
+			}
+			if revoked {
+				var failure *database.QueryError
+				if !errors.As(err, &failure) || failure.Code != "database_query_authority_changed" || failure.Outcome != "unknown" {
+					t.Fatalf("kind=%s error=%v", kind, err)
+				}
+			} else if err != nil || result.Outcome != "applied" {
+				t.Fatalf("kind=%s result=%+v error=%v", kind, result, err)
+			}
+			conn.Close()
+			db.Close()
+		}
+	}
+}
+func TestSQLDriverReadOnlyModeStillUsesTransaction(t *testing.T) {
+	begins := 0
+	db := sql.OpenDB(queryRollbackConnector{begins: &begins})
+	defer db.Close()
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	q := database.QueryRequest{SQL: "SELECT 1", ExecutionMode: "nontransactional"}
+	if err = q.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := runSQLDriverQuery(context.Background(), conn, "oracle", q, "read", func(context.Context) error { return nil })
+	if err != nil || result.Outcome != "read" || begins != 1 {
+		t.Fatalf("read-only transaction begins=%d error=%v", begins, err)
 	}
 }

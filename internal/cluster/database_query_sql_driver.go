@@ -127,7 +127,7 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 }
 func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q database.QueryRequest, kind string, check func(context.Context) error) (database.QueryResult, error) {
 	result := database.QueryResult{ReadOnly: q.IsReadOnly(), Columns: []database.QueryColumn{}, Rows: [][]*string{}, Outcome: "read"}
-	transactional := kind != "ddl"
+	transactional := q.IsReadOnly() || kind != "ddl" && q.ExecutionMode != "nontransactional"
 	if kind == "ddl" && q.ExecutionMode != "nontransactional" {
 		return result, &database.QueryError{Code: "database_query_nontransactional_mode_required", Outcome: "not_started"}
 	}
