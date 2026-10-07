@@ -1,0 +1,1045 @@
+diff --git a/backend/handler.go b/backend/handler.go
+index 873583d..68091c9 100644
+--- a/backend/handler.go
++++ b/backend/handler.go
+@@ -19,6 +19,7 @@ import (
+ 	stdsql "database/sql"
+ 	"errors"
+ 	"fmt"
++	"time"
+ 
+ 	"github.com/apecloud/myduckserver/catalog"
+ 	"github.com/apecloud/myduckserver/mycontext"
+@@ -35,10 +36,18 @@ import (
+ 
+ type MyHandler struct {
+ 	*server.Handler
+-	provider   *catalog.DatabaseProvider
+-	engine     *sqle.Engine
+-	newContext func(context.Context, *mysql.Conn, string) (*sql.Context, error)
+-	readOnly   bool
++	provider         *catalog.DatabaseProvider
++	engine           *sqle.Engine
++	newContext       func(context.Context, *mysql.Conn, string) (*sql.Context, error)
++	readOnly         bool
++	statementTimeout time.Duration
++}
++
++func (h *MyHandler) boundedContext(ctx context.Context) (context.Context, context.CancelFunc) {
++	if h.statementTimeout <= 0 {
++		return ctx, func() {}
++	}
++	return context.WithTimeout(ctx, h.statementTimeout)
+ }
+ 
+ func (h *MyHandler) ConnectionClosed(c *mysql.Conn) {
+@@ -112,6 +121,8 @@ func (h *MyHandler) ComMultiQuery(
+ 		return query, err
+ 	}
+ 	ctx = mycontext.WithFrontendQuery(ctx)
++	ctx, cancel := h.boundedContext(ctx)
++	defer cancel()
+ 	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
+ 	defer func() {
+ 		audit.Complete(returnErr)
+@@ -158,6 +169,8 @@ func (h *MyHandler) ComQuery(
+ 		return err
+ 	}
+ 	ctx = mycontext.WithFrontendQuery(ctx)
++	ctx, cancel := h.boundedContext(ctx)
++	defer cancel()
+ 	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
+ 	defer func() {
+ 		audit.Complete(returnErr)
+@@ -201,6 +214,8 @@ func (h *MyHandler) ComStmtExecute(ctx context.Context, c *mysql.Conn, prepare *
+ 		return err
+ 	}
+ 	ctx = mycontext.WithFrontendQuery(ctx)
++	ctx, cancel := h.boundedContext(ctx)
++	defer cancel()
+ 	if returnErr = h.rejectReadOnly(ctx, c, query); returnErr != nil {
+ 		return returnErr
+ 	}
+@@ -266,6 +281,8 @@ func (h *MyHandler) ComExecuteBound(ctx context.Context, c *mysql.Conn, query st
+ 		return err
+ 	}
+ 	ctx = mycontext.WithFrontendQuery(ctx)
++	ctx, cancel := h.boundedContext(ctx)
++	defer cancel()
+ 	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
+ 	defer func() {
+ 		audit.Complete(returnErr)
+@@ -291,6 +308,8 @@ func (h *MyHandler) ComParsedQuery(ctx context.Context, c *mysql.Conn, query str
+ 		return err
+ 	}
+ 	ctx = mycontext.WithFrontendQuery(ctx)
++	ctx, cancel := h.boundedContext(ctx)
++	defer cancel()
+ 	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
+ 	defer func() {
+ 		audit.Complete(returnErr)
+@@ -424,6 +443,7 @@ func WrapHandler(
+ 	engine *sqle.Engine,
+ 	newContext func(context.Context, *mysql.Conn, string) (*sql.Context, error),
+ 	readOnly bool,
++	statementTimeout time.Duration,
+ ) server.HandlerWrapper {
+ 	return func(h mysql.Handler) (mysql.Handler, error) {
+ 		handler, ok := h.(*server.Handler)
+@@ -432,11 +452,12 @@ func WrapHandler(
+ 		}
+ 
+ 		return &MyHandler{
+-			Handler:    handler,
+-			provider:   provider,
+-			engine:     engine,
+-			newContext: newContext,
+-			readOnly:   readOnly,
++			Handler:          handler,
++			provider:         provider,
++			engine:           engine,
++			newContext:       newContext,
++			readOnly:         readOnly,
++			statementTimeout: statementTimeout,
+ 		}, nil
+ 	}
+ }
+diff --git a/catalog/ducklake.go b/catalog/ducklake.go
+index f06136e..bb8d8c2 100644
+--- a/catalog/ducklake.go
++++ b/catalog/ducklake.go
+@@ -190,7 +190,24 @@ func verifyDuckLakeExtensions(extensionDir string, manifest []ExtensionArtifact,
+ type ProviderOption func(*providerOptions) error
+ 
+ type providerOptions struct {
+-	duckLake configuration.DuckLakeConfig
++	duckLake              configuration.DuckLakeConfig
++	allowExtensionInstall bool
++	managed               *ManagedRuntimeConfig
++}
++
++type ManagedRuntimeConfig struct {
++	MemoryLimitBytes int64
++	Threads          int
++	TempDirectory    string
++	TempLimitBytes   int64
++}
++
++func WithExtensionInstall() ProviderOption {
++	return func(options *providerOptions) error { options.allowExtensionInstall = true; return nil }
++}
++
++func WithManagedRuntime(config ManagedRuntimeConfig) ProviderOption {
++	return func(options *providerOptions) error { options.managed = &config; return nil }
+ }
+ 
+ // WithDuckLakeConfig enables the service-managed DuckLake connection layer.
+diff --git a/catalog/provider.go b/catalog/provider.go
+index 99738b5..074d4a8 100644
+--- a/catalog/provider.go
++++ b/catalog/provider.go
+@@ -60,6 +60,8 @@ type DatabaseProvider struct {
+ 	dsn                        string
+ 	externalProcedureRegistry  sql.ExternalStoredProcedureRegistry
+ 	duckLake                   *duckLakeRuntime
++	allowExtensionInstall      bool
++	managed                    *ManagedRuntimeConfig
+ 	ready                      bool
+ }
+ 
+@@ -173,6 +175,8 @@ func NewDBProvider(defaultTimeZone, dataDir, defaultDB string, options ...Provid
+ 		externalProcedureRegistry: sql.NewExternalStoredProcedureRegistry(), // This has no effect, just to satisfy the upper layer interface
+ 		dataDir:                   dataDir,
+ 		duckLake:                  duckLake,
++		allowExtensionInstall:     providerOptions.allowExtensionInstall,
++		managed:                   providerOptions.managed,
+ 	}
+ 
+ 	if defaultDB == "" || defaultDB == "memory" {
+@@ -189,11 +193,9 @@ func NewDBProvider(defaultTimeZone, dataDir, defaultDB string, options ...Provid
+ 		return nil, err
+ 	}
+ 
+-	bootQueries := []string{
+-		"INSTALL icu",
+-		"LOAD icu",
+-		"INSTALL postgres_scanner",
+-		"LOAD postgres_scanner",
++	bootQueries := []string{}
++	if prov.allowExtensionInstall {
++		bootQueries = []string{"INSTALL icu", "LOAD icu"}
+ 	}
+ 
+ 	for _, q := range bootQueries {
+@@ -209,9 +211,11 @@ func NewDBProvider(defaultTimeZone, dataDir, defaultDB string, options ...Provid
+ 		return nil, err
+ 	}
+ 
+-	err = prov.attachCatalogs()
+-	if err != nil {
+-		return nil, err
++	if prov.managed == nil {
++		err = prov.attachCatalogs()
++		if err != nil {
++			return nil, err
++		}
+ 	}
+ 
+ 	prov.ready = true
+@@ -235,7 +239,7 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
+ 	}
+ 	var attached atomic.Bool
+ 	connInitFn := func(execer driver.ExecerContext) error {
+-		if prov.defaultTimeZone != "" {
++		if prov.defaultTimeZone != "" && prov.managed == nil {
+ 			timeZone := strings.ReplaceAll(prov.defaultTimeZone, "'", "''")
+ 			if _, err := execer.ExecContext(context.Background(), "SET TimeZone = '"+timeZone+"'", nil); err != nil {
+ 				return err
+@@ -264,6 +268,26 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
+ 	// only after an explicit origin is available at a pool or direct-storage
+ 	// caller boundary.
+ 	storage := stdsql.OpenDB(connector)
++	if prov.managed != nil {
++		managedQueries := []string{
++			fmt.Sprintf("SET memory_limit = '%dB'", prov.managed.MemoryLimitBytes),
++			fmt.Sprintf("SET threads = %d", prov.managed.Threads),
++			"SET temp_directory = '" + strings.ReplaceAll(prov.managed.TempDirectory, "'", "''") + "'",
++			fmt.Sprintf("SET max_temp_directory_size = '%dB'", prov.managed.TempLimitBytes),
++			"SET autoinstall_known_extensions = false",
++			"SET autoload_known_extensions = false",
++		}
++		if prov.defaultTimeZone != "" {
++			managedQueries = append(managedQueries, "SET TimeZone = '"+strings.ReplaceAll(prov.defaultTimeZone, "'", "''")+"'")
++		}
++		for _, query := range managedQueries {
++			if _, err := storage.ExecContext(context.Background(), query); err != nil {
++				_ = storage.Close()
++				_ = connector.Close()
++				return fmt.Errorf("apply managed DuckDB setting: %w", err)
++			}
++		}
++	}
+ 	if prov.duckLake != nil {
+ 		// Storage initializes one physical connection at its explicit boundary;
+ 		// retaining one idle connection lets direct callers reuse that initialized
+@@ -358,6 +382,13 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
+ 		return err
+ 	}
+ 	attached.Store(true)
++	if prov.managed != nil {
++		if _, err := conn.ExecContext(ctx, "SET enable_external_access = false; SET lock_configuration = true"); err != nil {
++			_ = storage.Close()
++			_ = connector.Close()
++			return fmt.Errorf("lock managed DuckDB configuration: %w", err)
++		}
++	}
+ 	if recovery {
+ 		// Recovery initialization must run on the same physical connection that
+ 		// performed ATTACH and any WAL replay. Constructor/openStorage calls use
+diff --git a/catalog/sensitive_sql.go b/catalog/sensitive_sql.go
+index c0a5eeb..5654ca4 100644
+--- a/catalog/sensitive_sql.go
++++ b/catalog/sensitive_sql.go
+@@ -3,10 +3,15 @@ package catalog
+ import (
+ 	"errors"
+ 	"strings"
++	"sync/atomic"
+ 	"unicode"
+ 	"unicode/utf8"
+ )
+ 
++var managedLockdown atomic.Bool
++
++func EnableManagedLockdown() { managedLockdown.Store(true) }
++
+ // ErrSensitiveSQL is returned for user statements that would bypass the
+ // service-owned DuckLake/S3 credential boundary. It intentionally contains no
+ // statement text or credential-shaped data.
+@@ -298,6 +303,9 @@ func sensitiveStatement(tokens []sqlToken) bool {
+ 	for _, token := range tokens {
+ 		words = append(words, tokenLower(token))
+ 	}
++	if managedLockdown.Load() && managedForbiddenStatement(first, tokens, words) {
++		return true
++	}
+ 	// BACKUP/RESTORE are legacy MyDuck commands. They intentionally keep
+ 	// their ObjectStorage implementation, including the user-supplied
+ 	// endpoint and credentials. Keep the recognized form on that path while
+@@ -343,6 +351,46 @@ func sensitiveStatement(tokens []sqlToken) bool {
+ 	return containsBareRemoteURI(tokens)
+ }
+ 
++func managedForbiddenStatement(first string, tokens []sqlToken, words []string) bool {
++	switch first {
++	case "backup", "restore", "attach", "detach", "install", "grant", "revoke", "call":
++		return true
++	case "load":
++		return true
++	case "create", "alter", "drop":
++		for _, kind := range []string{"database", "user", "account", "role", "subscription", "secret", "plugin", "extension", "function", "macro", "type"} {
++			if containsWord(words, kind) {
++				return true
++			}
++		}
++	case "rename":
++		return containsWord(words, "user") || containsWord(words, "role") || containsWord(words, "account")
++	case "insert", "update", "delete", "replace":
++		return containsWord(words, "mysql")
++	case "set":
++		return containsWord(words, "password") || containsWord(words, "global")
++	case "start", "stop", "reset", "change":
++		return containsWord(words, "replica") || containsWord(words, "replication")
++	case "copy":
++		// Client streaming remains available; server-side file paths do not.
++		for _, token := range tokens {
++			if token.string {
++				return true
++			}
++		}
++	}
++	for i, token := range tokens {
++		if token.quoted || token.string || !isFunctionCall(tokens, i) {
++			continue
++		}
++		switch tokenLower(token) {
++		case "read_csv", "read_csv_auto", "read_json", "read_json_auto", "read_ndjson", "read_parquet", "read_text", "read_blob", "glob", "parquet_scan", "csv_scan", "delta_scan", "iceberg_scan", "postgres_scan", "mysql_scan", "sqlite_scan", "load_extension":
++			return true
++		}
++	}
++	return false
++}
++
+ func tokenLower(token sqlToken) string {
+ 	return strings.ToLower(strings.TrimSpace(token.text))
+ }
+diff --git a/catalog/sensitive_sql_test.go b/catalog/sensitive_sql_test.go
+index 483f960..49ae077 100644
+--- a/catalog/sensitive_sql_test.go
++++ b/catalog/sensitive_sql_test.go
+@@ -64,3 +64,34 @@ func TestSensitiveSQLBoundary(t *testing.T) {
+ 		})
+ 	}
+ }
++
++func TestManagedLockdownBoundary(t *testing.T) {
++	EnableManagedLockdown()
++	tests := []struct {
++		query     string
++		forbidden bool
++	}{
++		{"COPY t FROM STDIN", false},
++		{"COPY t TO STDOUT", false},
++		{"COPY t TO '/tmp/out.csv'", true},
++		{"INSTALL httpfs", true},
++		{"LOAD httpfs", true},
++		{"ATTACH '/tmp/other.duckdb' AS other", true},
++		{"CREATE USER attacker IDENTIFIED BY 'secret'", true},
++		{"CREATE DATABASE other", true},
++		{"RENAME /* bypass */ USER root TO attacker", true},
++		{"INSERT INTO mysql.user VALUES ('attacker')", true},
++		{"UPDATE `mysql`.`user` SET plugin = 'x'", true},
++		{"DELETE FROM mysql.user", true},
++		{"SET GLOBAL max_connections = 99999", true},
++		{"CREATE /* hidden */ PLUGIN attacker SONAME 'x.so'", true},
++		{"ALTER USER root IDENTIFIED BY 'secret'", true},
++		{"SELECT * FROM read_parquet('/tmp/input.parquet')", true},
++		{"SELECT 1", false},
++	}
++	for _, tt := range tests {
++		if got := IsSensitiveSQL(tt.query); got != tt.forbidden {
++			t.Errorf("IsSensitiveSQL(%q) = %t, want %t", tt.query, got, tt.forbidden)
++		}
++	}
++}
+diff --git a/main.go b/main.go
+index 0d75a93..014d883 100644
+--- a/main.go
++++ b/main.go
+@@ -16,6 +16,7 @@ package main
+ 
+ import (
+ 	"context"
++	"crypto/tls"
+ 	"errors"
+ 	"flag"
+ 	"fmt"
+@@ -27,6 +28,7 @@ import (
+ 	"sync"
+ 	"sync/atomic"
+ 	"syscall"
++	"time"
+ 
+ 	"github.com/apache/arrow-go/v18/arrow/flight"
+ 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql"
+@@ -38,7 +40,6 @@ import (
+ 	"github.com/apecloud/myduckserver/pgserver"
+ 	"github.com/apecloud/myduckserver/pgserver/logrepl"
+ 	"github.com/apecloud/myduckserver/pgserver/pgconfig"
+-	"github.com/apecloud/myduckserver/plugin"
+ 	"github.com/apecloud/myduckserver/replica"
+ 	"github.com/apecloud/myduckserver/transpiler"
+ 	"github.com/dolthub/go-mysql-server/memory"
+@@ -54,13 +55,19 @@ var (
+ 	initMode    = false
+ 	versionMode = false
+ 
+-	address       = "0.0.0.0"
+-	port          = 3306
+-	socket        string
+-	defaultDb     = "myduck"
+-	dataDirectory = "."
+-	logLevel      = int(logrus.InfoLevel)
+-	readOnly      = false
++	address           = "0.0.0.0"
++	port              = 3306
++	socket            string
++	defaultDb         = "myduck"
++	dataDirectory     = "."
++	logLevel          = int(logrus.InfoLevel)
++	readOnly          = false
++	managedConfigPath string
++	managedCheckPath  string
++	managedEmptyPath  string
++	managedMode       bool
++	managedTLS        *tls.Config
++	managedRuntime    managedConfig
+ 
+ 	replicaOptions replica.ReplicaOptions
+ 
+@@ -152,6 +159,9 @@ func runServerLifecycle(
+ func init() {
+ 	flag.BoolVar(&initMode, "init", initMode, "Initialize the program and exit. The necessary extensions will be installed.")
+ 	flag.BoolVar(&versionMode, "version", versionMode, "Print version information and exit.")
++	flag.StringVar(&managedConfigPath, "managed-config", "", "Run with a strict Hakopod managed-runtime configuration.")
++	flag.StringVar(&managedCheckPath, "managed-check", "", "Verify both managed TLS endpoints and exit.")
++	flag.StringVar(&managedEmptyPath, "managed-empty", "", "Verify both managed TLS endpoints and require an empty user schema.")
+ 
+ 	flag.StringVar(&address, "address", address, "The address to bind to.")
+ 	flag.IntVar(&port, "port", port, "The port to bind to.")
+@@ -194,6 +204,37 @@ func main() {
+ 		fmt.Println(versionInfo())
+ 		return
+ 	}
++	if managedCheckPath != "" || managedEmptyPath != "" {
++		if managedConfigPath != "" || managedCheckPath != "" && managedEmptyPath != "" {
++			logrus.Fatalln("managed-config, managed-check, and managed-empty are mutually exclusive")
++		}
++		path := managedCheckPath
++		requireEmpty := false
++		if managedEmptyPath != "" {
++			path, requireEmpty = managedEmptyPath, true
++		}
++		if err := managedCheck(path, requireEmpty); err != nil {
++			logrus.WithError(err).Fatalln("Managed check failed")
++		}
++		return
++	}
++	if !initMode {
++		if managedConfigPath == "" {
++			logrus.Fatalln("--managed-config is required")
++		}
++		cfg, password, certificate, err := loadManagedConfig(managedConfigPath)
++		if err != nil {
++			logrus.WithError(err).Fatalln("Managed configuration rejected")
++		}
++		if err := ensureManagedDirectories(cfg); err != nil {
++			logrus.WithError(err).Fatalln("Managed directories rejected")
++		}
++		managedMode = true
++		catalog.EnableManagedLockdown()
++		managedRuntime = cfg
++		managedTLS = managedTLSConfig(certificate)
++		applyManagedConfig(cfg, password)
++	}
+ 	var shutdownSignals chan os.Signal
+ 	if !initMode {
+ 		shutdownSignals = make(chan os.Signal, 1)
+@@ -212,7 +253,7 @@ func main() {
+ 	executeRestoreIfNeeded()
+ 
+ 	if initMode {
+-		provider := catalog.NewInMemoryDBProvider()
++		provider := catalog.NewInMemoryDBProvider(catalog.WithExtensionInstall())
+ 		provider.Close()
+ 		return
+ 	}
+@@ -224,7 +265,16 @@ func main() {
+ 		// values in its error text.
+ 		logrus.Fatalln("Failed to load DuckLake service configuration:", err)
+ 	}
+-	provider, err := catalog.NewDBProvider(defaultTimeZone, dataDirectory, defaultDb, catalog.WithDuckLakeConfig(duckLakeConfig))
++	providerOptions := []catalog.ProviderOption{catalog.WithDuckLakeConfig(duckLakeConfig)}
++	if managedMode {
++		providerOptions = append(providerOptions, catalog.WithManagedRuntime(catalog.ManagedRuntimeConfig{
++			MemoryLimitBytes: managedRuntime.MemoryLimitBytes,
++			Threads:          managedRuntime.Threads,
++			TempDirectory:    managedRuntime.TempDirectory,
++			TempLimitBytes:   managedRuntime.TempLimitBytes,
++		}))
++	}
++	provider, err := catalog.NewDBProvider(defaultTimeZone, dataDirectory, defaultDb, providerOptions...)
+ 	if err != nil {
+ 		logrus.Fatalln("Failed to open the database:", err)
+ 	}
+@@ -256,19 +306,25 @@ func main() {
+ 	})
+ 	defer func() { _ = finalize() }()
+ 	engine.Analyzer.Catalog.RegisterFunction(sql.NewContext(context.Background()), myfunc.ExtraBuiltIns...)
+-	engine.Analyzer.Catalog.MySQLDb.SetPlugins(plugin.AuthPlugins)
+-
+ 	if err := setPersister(provider, engine, "root", superuserPassword); err != nil {
+ 		logrus.Fatalln("Failed to set the persister:", err)
+ 	}
+ 
+-	replica.RegisterReplicaOptions(&replicaOptions)
+-	replica.RegisterReplicaController(provider, engine, builder)
++	if !managedMode {
++		replica.RegisterReplicaOptions(&replicaOptions)
++		replica.RegisterReplicaController(provider, engine, builder)
++	}
+ 
+ 	serverConfig := server.Config{
+-		Protocol: "tcp",
+-		Address:  fmt.Sprintf("%s:%d", address, port),
+-		Socket:   socket,
++		Protocol:               "tcp",
++		Address:                fmt.Sprintf("%s:%d", address, port),
++		Socket:                 socket,
++		TLSConfig:              managedTLS,
++		RequireSecureTransport: managedMode,
++		MaxConnections:         managedRuntime.MaxConnections,
++		ConnReadTimeout:        time.Duration(managedRuntime.StatementTimeoutSeconds) * time.Second,
++		ConnWriteTimeout:       time.Duration(managedRuntime.StatementTimeoutSeconds) * time.Second,
++		MaxLoggedQueryLen:      -1,
+ 	}
+ 	var myServer *server.Server
+ 	myServer, err = server.NewServerWithHandler(
+@@ -279,7 +335,7 @@ func main() {
+ 		nil,
+ 		backend.WrapHandler(provider, engine, func(ctx context.Context, conn *mysql.Conn, query string) (*sql.Context, error) {
+ 			return myServer.SessionManager().NewContextWithQuery(ctx, conn, query)
+-		}, readOnly),
++		}, readOnly, time.Duration(managedRuntime.StatementTimeoutSeconds)*time.Second),
+ 	)
+ 	if err != nil {
+ 		logrus.WithError(err).Fatalln("Failed to create MySQL-protocol server")
+@@ -301,15 +357,21 @@ func main() {
+ 			pgserver.WithSessionManager(myServer.SessionManager()),
+ 			pgserver.WithConnID(&postgresConnID),
+ 			pgserver.WithReadOnly(readOnly),
++			pgserver.WithCertificate(managedTLS.Certificates[0]),
++			pgserver.WithRequireTLS(true),
++			pgserver.WithMaxConnections(managedRuntime.MaxConnections),
++			pgserver.WithConnectionTimeout(time.Duration(managedRuntime.StatementTimeoutSeconds)*time.Second),
+ 		)
+ 		if err != nil {
+ 			logrus.WithError(err).Fatalln("Failed to create Postgres-protocol server")
+ 		}
+ 
+ 		// Check if there is a replication subscription and start replication if there is.
+-		err = logrepl.UpdateSubscriptions(postgresServer.NewInternalCtx())
+-		if err != nil {
+-			logrus.WithError(err).Warnln("Failed to update subscriptions")
++		if !managedMode {
++			err = logrepl.UpdateSubscriptions(postgresServer.NewInternalCtx())
++			if err != nil {
++				logrus.WithError(err).Warnln("Failed to update subscriptions")
++			}
+ 		}
+ 
+ 		// Load the configuration for the Postgres server.
+diff --git a/managed_runtime.go b/managed_runtime.go
+new file mode 100644
+index 0000000..09f306f
+--- /dev/null
++++ b/managed_runtime.go
+@@ -0,0 +1,275 @@
++package main
++
++import (
++	"bytes"
++	"context"
++	"crypto/sha256"
++	"crypto/tls"
++	"crypto/x509"
++	"database/sql"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"net/url"
++	"os"
++	"path/filepath"
++	"strconv"
++	"time"
++
++	mysqlDriver "github.com/go-sql-driver/mysql"
++	"github.com/jackc/pgx/v5"
++)
++
++const managedSchemaVersion = 1
++
++type managedConfig struct {
++	SchemaVersion           int    `json:"schema_version"`
++	Database                string `json:"database"`
++	DataDir                 string `json:"data_dir"`
++	PasswordFile            string `json:"password_file"`
++	TLSCertFile             string `json:"tls_cert_file"`
++	TLSKeyFile              string `json:"tls_key_file"`
++	ServerName              string `json:"server_name"`
++	MySQLPort               int    `json:"mysql_port"`
++	PostgresPort            int    `json:"postgres_port"`
++	MemoryLimitBytes        int64  `json:"memory_limit_bytes"`
++	Threads                 int    `json:"threads"`
++	TempDirectory           string `json:"temp_directory"`
++	TempLimitBytes          int64  `json:"temp_limit_bytes"`
++	MaxConnections          uint64 `json:"max_connections"`
++	StatementTimeoutSeconds int    `json:"statement_timeout_seconds"`
++}
++
++func loadManagedConfig(path string) (managedConfig, string, tls.Certificate, error) {
++	var cfg managedConfig
++	raw, err := readBoundedFile(path, 16<<10)
++	if err != nil {
++		return cfg, "", tls.Certificate{}, fmt.Errorf("read managed config: %w", err)
++	}
++	decoder := json.NewDecoder(bytes.NewReader(raw))
++	decoder.DisallowUnknownFields()
++	if err := decoder.Decode(&cfg); err != nil {
++		return cfg, "", tls.Certificate{}, fmt.Errorf("decode managed config: %w", err)
++	}
++	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
++		return cfg, "", tls.Certificate{}, errors.New("managed config must contain exactly one JSON object")
++	}
++	if cfg.SchemaVersion != managedSchemaVersion || cfg.Database != "app" || cfg.DataDir != "/var/lib/myduck" ||
++		cfg.PasswordFile != "/etc/hakopod-app/password" || cfg.TLSCertFile != "/etc/hakopod-tls/tls.crt" || cfg.TLSKeyFile != "/etc/hakopod-tls/tls.key" || cfg.ServerName == "" ||
++		cfg.MySQLPort != 3306 || cfg.PostgresPort != 5432 || cfg.MemoryLimitBytes < 268435456 || cfg.Threads < 1 || cfg.Threads > 64 ||
++		cfg.TempDirectory != "/var/lib/myduck/tmp" || cfg.TempLimitBytes < 67108864 || cfg.MaxConnections < 1 || cfg.MaxConnections > 1024 ||
++		cfg.StatementTimeoutSeconds < 1 || cfg.StatementTimeoutSeconds > 3600 {
++		return cfg, "", tls.Certificate{}, errors.New("managed config violates the supported schema")
++	}
++	passwordInfo, err := os.Stat(cfg.PasswordFile)
++	if err != nil || !passwordInfo.Mode().IsRegular() || passwordInfo.Mode().Perm()&0027 != 0 {
++		return cfg, "", tls.Certificate{}, errors.New("managed password file must be a private regular file")
++	}
++	keyInfo, err := os.Stat(cfg.TLSKeyFile)
++	if err != nil || !keyInfo.Mode().IsRegular() || keyInfo.Mode().Perm()&0027 != 0 {
++		return cfg, "", tls.Certificate{}, errors.New("managed TLS key must be a private regular file")
++	}
++	passwordBytes, err := readBoundedFile(cfg.PasswordFile, 128)
++	if err != nil {
++		return cfg, "", tls.Certificate{}, fmt.Errorf("read managed password: %w", err)
++	}
++	password := string(passwordBytes)
++	decoded, err := hex.DecodeString(password)
++	if err != nil || len(decoded) != 32 || len(password) != 64 {
++		return cfg, "", tls.Certificate{}, errors.New("managed password must contain exactly 64 hexadecimal characters")
++	}
++	certPEM, err := readBoundedFile(cfg.TLSCertFile, 64<<10)
++	if err != nil {
++		return cfg, "", tls.Certificate{}, fmt.Errorf("read managed TLS certificate: %w", err)
++	}
++	keyPEM, err := readBoundedFile(cfg.TLSKeyFile, 16<<10)
++	if err != nil {
++		return cfg, "", tls.Certificate{}, fmt.Errorf("read managed TLS key: %w", err)
++	}
++	cert, err := tls.X509KeyPair(certPEM, keyPEM)
++	if err != nil {
++		return cfg, "", tls.Certificate{}, fmt.Errorf("load managed TLS identity: %w", err)
++	}
++	if len(cert.Certificate) == 0 {
++		return cfg, "", tls.Certificate{}, errors.New("managed TLS certificate chain is empty")
++	}
++	cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0])
++	if err != nil {
++		return cfg, "", tls.Certificate{}, errors.New("parse managed TLS certificate")
++	}
++	now := time.Now()
++	if now.Before(cert.Leaf.NotBefore) || now.After(cert.Leaf.NotAfter) || len(cert.Leaf.DNSNames) == 0 {
++		return cfg, "", tls.Certificate{}, errors.New("managed TLS certificate is not currently valid for a DNS name")
++	}
++	if err := cert.Leaf.VerifyHostname(cfg.ServerName); err != nil {
++		return cfg, "", tls.Certificate{}, errors.New("managed TLS certificate does not match server_name")
++	}
++	return cfg, password, cert, nil
++}
++
++func managedTLSConfig(cert tls.Certificate) *tls.Config {
++	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
++}
++
++func applyManagedConfig(cfg managedConfig, password string) {
++	address = "0.0.0.0"
++	port = cfg.MySQLPort
++	postgresPort = cfg.PostgresPort
++	defaultDb = cfg.Database
++	dataDirectory = cfg.DataDir
++	superuserPassword = password
++	queryRowLimit = 100000
++	flightsqlPort = -1
++}
++
++func managedCheck(configPath string, requireEmpty bool) error {
++	cfg, password, cert, err := loadManagedConfig(configPath)
++	if err != nil {
++		return err
++	}
++	leafHash := sha256.Sum256(cert.Certificate[0])
++	verify := func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
++		if len(rawCerts) == 0 || sha256.Sum256(rawCerts[0]) != leafHash {
++			return errors.New("server TLS identity does not match managed certificate")
++		}
++		leaf, err := x509.ParseCertificate(rawCerts[0])
++		if err != nil {
++			return errors.New("parse server TLS certificate")
++		}
++		if err := leaf.VerifyHostname(cfg.ServerName); err != nil {
++			return errors.New("server TLS certificate does not match server_name")
++		}
++		return nil
++	}
++	tlsName := "hakopod-managed-check-" + strconv.Itoa(os.Getpid())
++	if err := mysqlDriver.RegisterTLSConfig(tlsName, &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true, VerifyPeerCertificate: verify}); err != nil {
++		return err
++	}
++	defer mysqlDriver.DeregisterTLSConfig(tlsName)
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	mysqlClientConfig := mysqlDriver.NewConfig()
++	mysqlClientConfig.User = "root"
++	mysqlClientConfig.Passwd = password
++	mysqlClientConfig.Net = "tcp"
++	mysqlClientConfig.Addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.MySQLPort))
++	mysqlClientConfig.DBName = cfg.Database
++	mysqlClientConfig.TLSConfig = tlsName
++	mysqlDB, err := sql.Open("mysql", mysqlClientConfig.FormatDSN())
++	if err != nil {
++		return err
++	}
++	defer mysqlDB.Close()
++	var mysqlOID string
++	if err := mysqlDB.QueryRowContext(ctx, "SELECT CAST(database_oid AS VARCHAR) FROM duckdb_databases() WHERE database_name = 'app'").Scan(&mysqlOID); err != nil {
++		return fmt.Errorf("mysql managed check: %w", err)
++	}
++	pgConfig, err := pgx.ParseConfig(fmt.Sprintf("postgresql://postgres:%s@127.0.0.1:%d/app", url.QueryEscape(password), cfg.PostgresPort))
++	if err != nil {
++		return err
++	}
++	pgConfig.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true, VerifyPeerCertificate: verify}
++	pgConfig.Fallbacks = nil
++	pgConn, err := pgx.ConnectConfig(ctx, pgConfig)
++	if err != nil {
++		return fmt.Errorf("postgres managed check: %w", err)
++	}
++	defer pgConn.Close(ctx)
++	var pgOID string
++	if err := pgConn.QueryRow(ctx, "SELECT CAST(database_oid AS VARCHAR) FROM duckdb_databases() WHERE database_name = 'app'").Scan(&pgOID); err != nil {
++		return fmt.Errorf("postgres managed check: %w", err)
++	}
++	if mysqlOID == "" || mysqlOID != pgOID {
++		return errors.New("wire protocols do not expose the same managed database")
++	}
++	if requireEmpty {
++		const emptyQuery = `SELECT
++			(SELECT COUNT(*) FROM information_schema.tables WHERE table_catalog = 'app' AND table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql')) +
++			(SELECT COUNT(*) FROM information_schema.schemata WHERE catalog_name = 'app' AND schema_name NOT IN ('main', 'information_schema', 'pg_catalog', 'mysql')) +
++			(SELECT COUNT(*) FROM duckdb_sequences() WHERE database_name = 'app') +
++			(SELECT COUNT(*) FROM duckdb_functions() WHERE database_name = 'app' AND internal = false) +
++			(SELECT COUNT(*) FROM duckdb_types() WHERE database_name = 'app' AND internal = false)`
++		var mysqlTables, pgTables int64
++		if err := mysqlDB.QueryRowContext(ctx, emptyQuery).Scan(&mysqlTables); err != nil {
++			return fmt.Errorf("mysql managed empty check: %w", err)
++		}
++		if err := pgConn.QueryRow(ctx, emptyQuery).Scan(&pgTables); err != nil {
++			return fmt.Errorf("postgres managed empty check: %w", err)
++		}
++		if mysqlTables != 0 || pgTables != 0 {
++			return errors.New("managed database contains user tables")
++		}
++	}
++	if err := rejectPlaintextMySQL(ctx, cfg, password); err != nil {
++		return err
++	}
++	if err := rejectPlaintextPostgres(ctx, cfg, password); err != nil {
++		return err
++	}
++	return nil
++}
++
++func readBoundedFile(path string, limit int64) ([]byte, error) {
++	f, err := os.Open(path)
++	if err != nil {
++		return nil, err
++	}
++	defer f.Close()
++	data, err := io.ReadAll(io.LimitReader(f, limit+1))
++	if err != nil {
++		return nil, err
++	}
++	if int64(len(data)) > limit {
++		return nil, errors.New("file exceeds managed size limit")
++	}
++	return data, nil
++}
++
++func rejectPlaintextMySQL(ctx context.Context, cfg managedConfig, password string) error {
++	clientConfig := mysqlDriver.NewConfig()
++	clientConfig.User, clientConfig.Passwd, clientConfig.Net = "root", password, "tcp"
++	clientConfig.Addr, clientConfig.DBName = net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.MySQLPort)), cfg.Database
++	db, err := sql.Open("mysql", clientConfig.FormatDSN())
++	if err != nil {
++		return nil
++	}
++	defer db.Close()
++	if err := db.PingContext(ctx); err == nil {
++		return errors.New("mysql accepted a plaintext connection")
++	}
++	return nil
++}
++
++func rejectPlaintextPostgres(ctx context.Context, cfg managedConfig, password string) error {
++	clientConfig, err := pgx.ParseConfig(fmt.Sprintf("postgresql://postgres:%s@127.0.0.1:%d/app?sslmode=disable", url.QueryEscape(password), cfg.PostgresPort))
++	if err != nil {
++		return err
++	}
++	conn, err := pgx.ConnectConfig(ctx, clientConfig)
++	if err == nil {
++		conn.Close(ctx)
++		return errors.New("postgres accepted a plaintext connection")
++	}
++	return nil
++}
++
++func ensureManagedDirectories(cfg managedConfig) error {
++	marker := filepath.Join(cfg.DataDir, ".hakopod-restore-pending")
++	if _, err := os.Lstat(marker); err == nil {
++		return errors.New("managed restore is incomplete")
++	} else if !os.IsNotExist(err) {
++		return fmt.Errorf("inspect managed restore marker: %w", err)
++	}
++	for _, dir := range []string{cfg.DataDir, cfg.TempDirectory} {
++		if !filepath.IsAbs(dir) {
++			return errors.New("managed directory must be absolute")
++		}
++		if err := os.MkdirAll(dir, 0700); err != nil {
++			return fmt.Errorf("prepare managed directory: %w", err)
++		}
++	}
++	return nil
++}
+diff --git a/persist.go b/persist.go
+index a7fc1fc..b72e796 100644
+--- a/persist.go
++++ b/persist.go
+@@ -54,6 +54,11 @@ func setPersister(provider sql.DatabaseProvider, engine *sqle.Engine, superuser,
+ 	// needs to save any changes to any of the "mysql" database's tables. The memory session persists in memory,
+ 	// but can be swapped out with the lines below
+ 	persister := &MySQLPersister{FilePath: path.Join(dataDirectory, persistFile)}
++	if managedMode {
++		if err := os.Remove(persister.FilePath); err != nil && !os.IsNotExist(err) {
++			return err
++		}
++	}
+ 	mysqlDb.SetPersister(persister)
+ 
+ 	if _, err := os.Stat(persister.FilePath); err == nil {
+diff --git a/pgserver/connection_handler.go b/pgserver/connection_handler.go
+index d40fcc1..08d6a06 100644
+--- a/pgserver/connection_handler.go
++++ b/pgserver/connection_handler.go
+@@ -29,6 +29,7 @@ import (
+ 	"slices"
+ 	"strings"
+ 	"sync/atomic"
++	"time"
+ 
+ 	"github.com/apecloud/myduckserver/adapter"
+ 	"github.com/apecloud/myduckserver/backend"
+@@ -94,9 +95,13 @@ type ConnectionHandler struct {
+ 	// transaction is committed. It is idempotent and nil outside that window.
+ 	pendingCopyRelease func()
+ 
+-	server   *Server
+-	readOnly bool
+-	logger   *logrus.Entry
++	server           *Server
++	readOnly         bool
++	logger           *logrus.Entry
++	certificate      tls.Certificate
++	requireTLS       bool
++	tlsActive        bool
++	statementTimeout time.Duration
+ }
+ 
+ // frontendContext explicitly marks ordinary PostgreSQL protocol work. The
+@@ -485,6 +490,9 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
+ 
+ 	switch sm := startupMessage.(type) {
+ 	case *pgproto3.StartupMessage:
++		if h.requireTLS && !h.tlsActive {
++			return false, errors.New("TLS is required")
++		}
+ 		if err = h.handleAuthentication(sm); err != nil {
+ 			return false, err
+ 		}
+@@ -498,7 +506,7 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
+ 			TxStatus: byte(ReadyForQueryTransactionIndicator_Idle),
+ 		})
+ 	case *pgproto3.SSLRequest:
+-		hasCertificate := len(certificate.Certificate) > 0
++		hasCertificate := len(h.certificate.Certificate) > 0
+ 		var performSSL = []byte("N")
+ 		if hasCertificate {
+ 			performSSL = []byte("S")
+@@ -512,8 +520,10 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
+ 		// We can't start in SSL mode, as the client does not attempt the handshake until after our response.
+ 		if hasCertificate {
+ 			h.setConn(tls.Server(h.Conn(), &tls.Config{
+-				Certificates: []tls.Certificate{certificate},
++				Certificates: []tls.Certificate{h.certificate},
++				MinVersion:   tls.VersionTLS12,
+ 			}))
++			h.tlsActive = true
+ 		}
+ 		return h.handleStartup()
+ 	case *pgproto3.GSSEncRequest:
+@@ -1398,7 +1408,9 @@ func (h *ConnectionHandler) handleExecute(message *pgproto3.Execute) (err error)
+ 	rowsAffected := int32(0)
+ 
+ 	callback := h.spoolRowsCallback(query, &rowsAffected, true)
+-	err = h.duckHandler.ComExecuteBound(h.protocolContext(), h.mysqlConn, portalData, callback)
++	queryCtx, cancel := h.protocolQueryContext()
++	defer cancel()
++	err = h.duckHandler.ComExecuteBound(queryCtx, h.mysqlConn, portalData, callback)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -2008,8 +2020,10 @@ func (h *ConnectionHandler) run(statement ConvertedStatement) error {
+ 	}
+ 
+ 	callback := h.spoolRowsCallback(statement, &rowsAffected, false)
++	queryCtx, cancel := h.protocolQueryContext()
++	defer cancel()
+ 	if err := h.duckHandler.ComQuery(
+-		h.protocolContext(),
++		queryCtx,
+ 		h.mysqlConn,
+ 		statement.String,
+ 		statement.QueryForAudit(),
+diff --git a/pgserver/listener.go b/pgserver/listener.go
+index 847e6a1..2e70dbb 100644
+--- a/pgserver/listener.go
++++ b/pgserver/listener.go
+@@ -19,6 +19,7 @@ import (
+ 	"fmt"
+ 	"net"
+ 	"sync/atomic"
++	"time"
+ 
+ 	gms "github.com/dolthub/go-mysql-server"
+ 	"github.com/dolthub/go-mysql-server/server"
+@@ -26,24 +27,42 @@ import (
+ 	"github.com/dolthub/vitess/go/netutil"
+ )
+ 
+-var certificate tls.Certificate //TODO: move this into the mysql.ListenerConfig
+-
+ // Listener listens for connections to process PostgreSQL requests into Dolt requests.
+ type Listener struct {
+ 	listener net.Listener
+ 	cfg      mysql.ListenerConfig
+ 
+-	engine   *gms.Engine
+-	sm       *server.SessionManager
+-	connID   *atomic.Uint32
+-	readOnly bool
++	engine           *gms.Engine
++	sm               *server.SessionManager
++	connID           *atomic.Uint32
++	readOnly         bool
++	certificate      tls.Certificate
++	requireTLS       bool
++	connections      chan struct{}
++	statementTimeout time.Duration
+ }
+ 
+ type ListenerOpt func(*Listener)
+ 
+ func WithCertificate(cert tls.Certificate) ListenerOpt {
+ 	return func(l *Listener) {
+-		certificate = cert
++		l.certificate = cert
++	}
++}
++
++func WithRequireTLS(required bool) ListenerOpt { return func(l *Listener) { l.requireTLS = required } }
++func WithMaxConnections(max uint64) ListenerOpt {
++	return func(l *Listener) {
++		if max > 0 {
++			l.connections = make(chan struct{}, max)
++		}
++	}
++}
++func WithConnectionTimeout(timeout time.Duration) ListenerOpt {
++	return func(l *Listener) {
++		l.cfg.ConnReadTimeout = timeout
++		l.cfg.ConnWriteTimeout = timeout
++		l.statementTimeout = timeout
+ 	}
+ }
+ 
+@@ -100,6 +119,14 @@ func (l *Listener) Accept(server *Server) {
+ 			fmt.Printf("Unable to accept connection:\n%v\n", err)
+ 			continue
+ 		}
++		if l.connections != nil {
++			select {
++			case l.connections <- struct{}{}:
++			default:
++				_ = conn.Close()
++				continue
++			}
++		}
+ 
+ 		// Configure read timeouts on this connection
+ 		// TODO: use timeouts from the live server values
+@@ -108,7 +135,16 @@ func (l *Listener) Accept(server *Server) {
+ 		}
+ 
+ 		connectionHandler := NewConnectionHandler(conn, l.cfg.Handler, l.engine, l.sm, l.connID.Add(1), server, l.readOnly)
+-		go connectionHandler.HandleConnection()
++		connectionHandler.certificate = l.certificate
++		connectionHandler.requireTLS = l.requireTLS
++		connectionHandler.statementTimeout = l.statementTimeout
++		connectionHandler.duckHandler.readTimeout = l.cfg.ConnReadTimeout
++		go func() {
++			if l.connections != nil {
++				defer func() { <-l.connections }()
++			}
++			connectionHandler.HandleConnection()
++		}()
+ 	}
+ }
+ 
+diff --git a/pgserver/transaction.go b/pgserver/transaction.go
+index 7297481..4f66950 100644
+--- a/pgserver/transaction.go
++++ b/pgserver/transaction.go
+@@ -193,6 +193,14 @@ func (h *ConnectionHandler) protocolContext() context.Context {
+ 	return ctx
+ }
+ 
++func (h *ConnectionHandler) protocolQueryContext() (context.Context, context.CancelFunc) {
++	ctx := h.protocolContext()
++	if h == nil || h.statementTimeout <= 0 {
++		return ctx, func() {}
++	}
++	return context.WithTimeout(ctx, h.statementTimeout)
++}
++
+ // protocolCommandTag reports PostgreSQL's command tag for a protocol
+ // transaction control statement. COMMIT in a failed block discards the block,
+ // so the server reports ROLLBACK just as PostgreSQL does.

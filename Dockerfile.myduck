@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1.7
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bash ca-certificates coreutils libstdc++6 python3 python3-pip tar \
+ && python3 -m pip install --break-system-packages --no-cache-dir sqlglot==26.33.0 \
+ && rm -rf /var/lib/apt/lists/* /root/.cache
+COPY --chmod=0555 myduckserver /usr/local/bin/myduckserver
+COPY --chmod=0555 hakopod-myduck-storage /usr/local/bin/hakopod-myduck-storage
+RUN groupadd --gid 1000 myduck && useradd --uid 1000 --gid 1000 --no-create-home --home-dir /var/lib/myduck --shell /usr/sbin/nologin myduck \
+ && install -d -o 1000 -g 1000 -m 0700 /var/lib/myduck
+USER 1000:1000
+EXPOSE 3306 5432
+ENTRYPOINT ["/usr/local/bin/myduckserver"]

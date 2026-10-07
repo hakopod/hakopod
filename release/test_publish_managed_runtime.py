@@ -116,6 +116,21 @@ class PublicationTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest())
 
+    def test_myduck_publication_is_limited_to_the_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, image = self.fixture(root)
+            image["repository"] = "ghcr.io/hakopod/managed-myduck"
+            path = root / "plan.json"
+            path.write_text(json.dumps({"schema_version": 1, "images": [image]}))
+            self.assertEqual(publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest()), [image])
+            for repository in ("ghcr.io/other/managed-myduck", "ghcr.io/hakopod/myduck", "ghcr.io/hakopod/managed-myduck/extra", "ghcr.io/hakopod/managed-myduck:latest"):
+                with self.subTest(repository=repository):
+                    image["repository"] = repository
+                    path.write_text(json.dumps({"schema_version": 1, "images": [image]}))
+                    with self.assertRaises(ValueError):
+                        publisher.plan(path, hashlib.sha256(path.read_bytes()).hexdigest())
+
     def test_refuses_unsafe_or_incomplete_archives(self):
         mutations = [
             lambda e: e.append(("../escape", b"bad")),
