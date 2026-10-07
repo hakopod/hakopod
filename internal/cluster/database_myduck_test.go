@@ -76,6 +76,8 @@ func TestMyDuckStorageHelperHasNoDatabaseIngressOrSecrets(t *testing.T) {
 	defaulted.Spec.ServiceAccountName, defaulted.Spec.DeprecatedServiceAccount = "default", "default"
 	defaulted.Spec.SchedulerName, defaulted.Spec.DNSPolicy = "default-scheduler", corev1.DNSClusterFirst
 	seconds := int64(300)
+	zeroPriority := int32(0)
+	defaulted.Spec.Priority = &zeroPriority
 	defaulted.Spec.Tolerations = append(defaulted.Spec.Tolerations, corev1.Toleration{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute, TolerationSeconds: &seconds})
 	defaulted.Spec.Containers[0].TerminationMessagePath, defaulted.Spec.Containers[0].TerminationMessagePolicy = "/dev/termination-log", corev1.TerminationMessageReadFile
 	if !myduckStoragePodMatches(defaulted, myduckStoragePod(d, set, record), d, record) {
@@ -91,6 +93,7 @@ func TestMyDuckStorageHelperHasNoDatabaseIngressOrSecrets(t *testing.T) {
 		"host network":   func(p *corev1.Pod) { p.Spec.HostNetwork = true },
 		"node":           func(p *corev1.Pod) { p.Spec.NodeName = "other-node" },
 		"image":          func(p *corev1.Pod) { p.Spec.Containers[0].Image = "other:image" },
+		"priority":       func(p *corev1.Pod) { priority := int32(1); p.Spec.Priority = &priority },
 		"member ingress": func(p *corev1.Pod) { p.Labels[myduckMemberLabel] = "true" },
 		"token":          func(p *corev1.Pod) { yes := true; p.Spec.AutomountServiceAccountToken = &yes },
 		"secret": func(p *corev1.Pod) {
