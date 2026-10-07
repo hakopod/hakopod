@@ -348,12 +348,6 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     </p>
                   </FormSection>
                 )}
-                {['clickhouse', 'oracle', 'duckdb'].includes(spec.engine) && (
-                  <Note>
-                    Development preview. Native acceptance is in progress; this is not a production
-                    availability guarantee.
-                  </Note>
-                )}
               </div>
             )}
 
@@ -976,10 +970,10 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
 
             {step === 4 && (
               <div className="grid gap-4">
-                {['clickhouse', 'oracle', 'duckdb'].includes(spec.engine) && (
+                {['oracle', 'duckdb'].includes(spec.engine) && (
                   <Note>
-                    Development preview. Review the current acceptance status before using this
-                    database for production workloads.
+                    This database has one instance. Restarts interrupt connections; applications
+                    must reconnect.
                   </Note>
                 )}
                 <FormSection title="Deployment configuration">
