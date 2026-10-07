@@ -14,9 +14,9 @@ export const databaseEngines = [
   { id: 'mysql', name: 'MySQL', category: 'Relational', description: 'SQL transactions with InnoDB Cluster and explicit read/write routes.', enabled: true },
   { id: 'mongodb', name: 'MongoDB', category: 'Document', description: 'Flexible documents and native replica sets.', enabled: true },
   { id: 'clickhouse', name: 'ClickHouse', category: 'Analytics', description: 'Column-oriented storage for analytics and replicated shards.', enabled: true },
-  { id: 'oracle', name: 'Oracle Database', category: 'Relational', description: 'Creation is unavailable pending native qualification.', enabled: false },
+  { id: 'oracle', name: 'Oracle Database', category: 'Relational', description: 'Oracle Database Free with private TLS connections and schema backups.', enabled: true },
   { id: 'vitess', name: 'Vitess', category: 'Distributed MySQL', description: 'MySQL-compatible routing across managed shards.', enabled: true },
-  { id: 'duckdb', name: 'DuckDB (MyDuck)', category: 'Analytics', description: 'One DuckDB instance with MySQL and PostgreSQL endpoints. Native qualification is still pending; high availability is unavailable.', enabled: false },
+  { id: 'duckdb', name: 'DuckDB (MyDuck)', category: 'Analytics', description: 'One DuckDB instance, accessible through MySQL and PostgreSQL clients.', enabled: true },
 ] as const
 
 export const databaseVersions = (engine: string) => ({ mongodb: ['8.0'], mysql: ['8.4'], redis: ['8'], clickhouse: ['26.3'], oracle: ['23.26'], vitess: ['23'], duckdb: ['0.3.1-dev.20260919.3'], postgresql: ['17', '18'] })[engine] || []

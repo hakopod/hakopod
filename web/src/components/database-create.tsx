@@ -267,17 +267,19 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                           {!engine.enabled ? (
                             <span>In development</span>
                           ) : (
-                            ['clickhouse', 'oracle'].includes(engine.id) && (
-                              <span>Development preview</span>
+                            ['oracle', 'duckdb'].includes(engine.id) && (
+                              <span>Standalone</span>
                             )
                           )}
                         </span>
                       </button>
                     ))}
                   </div>
-                  <p className="field-help mt-3">
-                    Engines marked “In development” cannot be created yet.
-                  </p>
+                  {databaseEngines.some((engine) => !engine.enabled) && (
+                    <p className="field-help mt-3">
+                      Engines marked “In development” cannot be created yet.
+                    </p>
+                  )}
                 </fieldset>
                 <FormSection title="Database identity">
                   <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,180px)]">
