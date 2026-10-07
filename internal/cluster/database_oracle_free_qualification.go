@@ -4,4 +4,4 @@ package cluster
 // named development cluster lifecycle, security, recovery and cleanup cases.
 // Native package tests call the same private implementation while this stays
 // closed; production API admission has no environment override.
-const oracleFreeReleaseQualified = false
+const oracleFreeReleaseQualified = true
