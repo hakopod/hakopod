@@ -249,7 +249,11 @@ func TestManagedMyDuckLive(t *testing.T) {
 	testMyDuckReads(t, ctx, c, d, observed, "from postgres")
 	for _, query := range []string{
 		"SELECT * FROM read_text('/etc/hakopod-app/password')",
+		`SELECT * FROM "read_text"('/etc/hakopod-app/password')`,
+		"SELECT * FROM '/etc/hakopod-app/password'",
 		"COPY acceptance TO '/tmp/export.csv'",
+		"EXPORT DATABASE '/tmp/exported-database'",
+		"IMPORT DATABASE '/tmp/exported-database'",
 		"ATTACH '/tmp/other.db' AS other",
 		"INSTALL httpfs", "LOAD httpfs",
 		"CREATE USER attacker IDENTIFIED BY 'unsafe'",
@@ -258,9 +262,13 @@ func TestManagedMyDuckLive(t *testing.T) {
 		"UPDATE mysql.user SET authentication_string=''",
 		"SET enable_external_access=true",
 		"SET memory_limit='100TiB'",
+		"PRAGMA enable_external_access=true",
+		"PRAGMA memory_limit='100TiB'",
 	} {
-		if _, err = mysql.ExecContext(ctx, query); err == nil {
-			t.Fatalf("MySQL accepted a forbidden statement: %s", query)
+		_, err = mysql.ExecContext(ctx, query)
+		var mysqlRejection *mysqlclient.MySQLError
+		if !errors.As(err, &mysqlRejection) {
+			t.Fatalf("MySQL did not return a SQL rejection for forbidden statement %q: %v", query, err)
 		}
 		pg, err := c.myduckPostgresClient(ctx, d, observed.Members[0], password, identity)
 		if err != nil {
@@ -268,8 +276,9 @@ func TestManagedMyDuckLive(t *testing.T) {
 		}
 		_, queryErr := pg.Exec(ctx, query)
 		_ = pg.Close(ctx)
-		if queryErr == nil {
-			t.Fatalf("PostgreSQL accepted a forbidden statement: %s", query)
+		var postgresRejection *pgconn.PgError
+		if !errors.As(queryErr, &postgresRejection) {
+			t.Fatalf("PostgreSQL did not return a SQL rejection for forbidden statement %q: %v", query, queryErr)
 		}
 	}
 	for _, testcase := range []struct {
@@ -443,6 +452,44 @@ func TestManagedMyDuckColdRecoveryLive(t *testing.T) {
 		assertMyDuckFailedRestoreCleaned(t, ctx, c, nonempty, nonemptyID, before)
 	})
 
+	baseline, baselinePassword, baselineHealth := newMyDuckFixture(t, ctx, c)
+	t.Run("baseline_replacement", func(t *testing.T) {
+		_, identity, err := c.myduckClientIdentity(ctx, baseline)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, err := c.myduckPostgresClient(ctx, baseline, baselineHealth.Members[0], baselinePassword, identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Preserve the catalog object name and count while changing its
+		// definition and storing user data. Either the runtime must reject
+		// this write or the stopped-target check must reject the restore.
+		_, mutationErr := client.Exec(ctx, "CREATE OR REPLACE TABLE app.__sys__.persistent_variable AS SELECT 'restore guard' AS user_payload")
+		_ = client.Close(ctx)
+		if mutationErr != nil {
+			var rejection *pgconn.PgError
+			if !errors.As(mutationErr, &rejection) {
+				t.Fatal("baseline replacement did not return a SQL rejection", mutationErr)
+			}
+			waitMyDuckFixture(t, ctx, c, baseline)
+			t.Log("Managed runtime rejected replacement of a baseline catalog table")
+			return
+		}
+		jobID := fmt.Sprintf("%032x", time.Now().UnixNano())
+		baseline.Status = "restoring"
+		baseline.Recovery = &database.Recovery{JobID: jobID}
+		input := bytes.NewReader(archive.Bytes())
+		remaining := input.Len()
+		if err = c.WithMyDuckColdStorage(ctx, baseline, baselineHealth, jobID, true, before, input, nil); err == nil {
+			t.Fatal("MyDuck restore accepted user data replacing a baseline catalog table")
+		}
+		if input.Len() != remaining {
+			t.Fatal("MyDuck restore consumed archive bytes before rejecting an altered baseline table")
+		}
+		assertMyDuckFailedRestoreCleaned(t, ctx, c, baseline, jobID, before)
+	})
+
 	corrupt, _, corruptHealth := newMyDuckFixture(t, ctx, c)
 	corruptID := fmt.Sprintf("%032x", time.Now().UnixNano())
 	corrupt.Status = "restoring"
@@ -472,8 +519,12 @@ func TestManagedMyDuckColdRecoveryLive(t *testing.T) {
 		}
 		targetHealth = waitMyDuckFixture(t, ctx, c, target)
 		testMyDuckReads(t, ctx, c, target, targetHealth, "recovered")
-		if source.ID == target.ID || source.ID == nonempty.ID || source.ID == corrupt.ID || target.ID == nonempty.ID || target.ID == corrupt.ID || nonempty.ID == corrupt.ID {
-			t.Fatal("recovery fixtures did not use separate resources")
+		identities := make(map[string]bool)
+		for _, fixture := range []database.Resource{source, nonempty, baseline, corrupt, target} {
+			if identities[fixture.ID] {
+				t.Fatal("recovery fixtures did not use separate resources")
+			}
+			identities[fixture.ID] = true
 		}
 	})
 	t.Log("Cold backup resumed its source; failed targets stayed isolated; separate target restored both protocols with its own credentials")

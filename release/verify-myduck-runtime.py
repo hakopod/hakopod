@@ -23,11 +23,12 @@ UUID = re.compile(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
 TESTS = {"lifecycle": "TestManagedMyDuckLive", "recovery": "TestManagedMyDuckColdRecoveryLive",
          "http-api": "TestManagedMyDuckHTTPLive"}
 HTTP_PHASES = ("authorization", "lifecycle", "backup_restore", "worker_loss", "cancellation", "deletion")
-RECOVERY_PHASES = ("nonempty_target", "corrupt_restore", "successful_restore")
-FIXTURE_COUNTS = {"lifecycle": 1, "recovery": 4, "http-api": 2}
+RECOVERY_PHASES = ("nonempty_target", "baseline_replacement", "corrupt_restore", "successful_restore")
+FIXTURE_COUNTS = {"lifecycle": 1, "recovery": 5, "http-api": 2}
 BUILD_INPUTS = {"Dockerfile.myduck", "scripts/apply-managed-myduck-patches.py", "scripts/build-managed-myduck.sh",
                 "scripts/collect-myduck-licenses.py", "scripts/package-managed-myduck.py",
                 "patches/myduck/0001-harden-managed-runtime.patch",
+                "patches/myduck/runtime-overlay-manifest.json",
                 "cmd/hakopod-myduck-storage/main.go"}
 FILES = {"source-build-manifest.json", "packaging-receipt.json", "native-acceptance.json"}
 BINARIES = {"/usr/local/bin/myduckserver", "/usr/local/bin/hakopod-myduck-storage"}
