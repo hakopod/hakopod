@@ -20,7 +20,7 @@ import (
 
 // Release admission requires native qualification and an independent pull of
 // this exact hardened image. An empty pin never falls back to upstream.
-const myduckServerImage = "ghcr.io/hakopod/managed-myduck@sha256:29e6618d70a2f4ac3926eb86293ba015c243984246075eb16049a266cf2ae1cd"
+const myduckServerImage = "ghcr.io/hakopod/managed-myduck@sha256:ad324a97360dea53f9e32cb367666b8fefa6f52377000c084a63c1712ca79873"
 const myduckConfigPath = "/etc/hakopod-config/managed.json"
 const myduckIdentityAnnotation = "hakopod.io/myduck-identity"
 const myduckMemberLabel = "hakopod.io/myduck-member"
