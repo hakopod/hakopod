@@ -131,14 +131,13 @@ func myduckMySQLInitDB(ctx context.Context, c *Client, d database.Resource, obse
 	offset += 2
 	authLength := int(handshake[offset])
 	offset += 1 + 10
-	part := authLength - 8
-	if part > 13 {
-		part = 13
+	// Native-password challenges contain 20 random bytes followed by a NUL.
+	// Preserve random trailing zero bytes rather than trimming the challenge.
+	if authLength != 21 || offset+13 > len(handshake) || handshake[offset+12] != 0 {
+		return fmt.Errorf("invalid MySQL authentication challenge")
 	}
-	if part > 0 && offset+part <= len(handshake) {
-		seed = append(seed, bytes.TrimRight(handshake[offset:offset+part], "\x00")...)
-		offset += part
-	}
+	seed = append(seed, handshake[offset:offset+12]...)
+	offset += 13
 	plugin := "mysql_native_password"
 	if offset < len(handshake) {
 		plugin = string(bytes.TrimRight(handshake[offset:], "\x00"))
@@ -151,6 +150,9 @@ func myduckMySQLInitDB(ctx context.Context, c *Client, d database.Resource, obse
 		caps |= myduckMySQLConnectWithDB
 	}
 	caps &= serverCaps
+	if caps&myduckMySQLSSL == 0 || caps&myduckMySQLProtocol41 == 0 || caps&myduckMySQLPluginAuth == 0 || initialDatabase != "" && caps&myduckMySQLConnectWithDB == 0 {
+		return fmt.Errorf("MySQL server lacks required protocol capabilities")
+	}
 	sslRequest := make([]byte, 32)
 	binary.LittleEndian.PutUint32(sslRequest, caps)
 	binary.LittleEndian.PutUint32(sslRequest[4:], 1<<20)
@@ -202,7 +204,24 @@ func myduckMySQLInitDB(ctx context.Context, c *Client, d database.Resource, obse
 		return err
 	}
 	if rejection := myduckMySQLError(reply); rejection != nil {
+		// A rejected schema change must leave this authenticated connection in
+		// app. The predicate prevents writes even if a regression reaches the
+		// protected table, while a successful statement still fails the test.
+		if err = writeMyDuckMySQLPacket(tlsConn, 0, append([]byte{0x03}, "DELETE FROM persistent_variable WHERE false"...)); err != nil {
+			return fmt.Errorf("MySQL connection failed after rejected schema change: %w", err)
+		}
+		probe, _, probeErr := myduckMySQLPacket(tlsConn)
+		if probeErr != nil {
+			return fmt.Errorf("MySQL scope probe failed: %w", probeErr)
+		}
+		var sqlError *mysqlclient.MySQLError
+		if !errors.As(myduckMySQLError(probe), &sqlError) || sqlError.Number == 1045 {
+			return fmt.Errorf("MySQL rejected schema change did not preserve the application scope")
+		}
 		return rejection
+	}
+	if len(reply) == 0 || reply[0] != 0x00 {
+		return fmt.Errorf("unexpected MySQL schema-change response")
 	}
 	return nil
 }
@@ -343,12 +362,18 @@ func testMyDuckAlternateUsersRejected(t *testing.T, ctx context.Context, c *Clie
 
 func testMyDuckProtocolScope(t *testing.T, ctx context.Context, c *Client, d database.Resource, observed database.Observation, password []byte, identity *tls.Config) {
 	t.Helper()
+	control, stopControl := context.WithTimeout(ctx, 12*time.Second)
+	controlErr := myduckMySQLInitDB(control, c, d, observed, password, identity, "app", "app")
+	stopControl()
+	if controlErr != nil {
+		t.Fatal("MySQL protocol scope control could not authenticate and select app", controlErr)
+	}
 	for _, schema := range []string{"mysql", "__sys__"} {
 		step, cancel := context.WithTimeout(ctx, 12*time.Second)
 		err := myduckMySQLInitDB(step, c, d, observed, password, identity, schema, "")
 		cancel()
 		var rejection *mysqlclient.MySQLError
-		if !errors.As(err, &rejection) {
+		if !errors.As(err, &rejection) || rejection.Number == 1045 {
 			t.Fatalf("MySQL handshake selected protected schema %q: %v", schema, err)
 		}
 	}
@@ -357,7 +382,7 @@ func testMyDuckProtocolScope(t *testing.T, ctx context.Context, c *Client, d dat
 		err := myduckMySQLInitDB(step, c, d, observed, password, identity, "app", schema)
 		cancel()
 		var rejection *mysqlclient.MySQLError
-		if !errors.As(err, &rejection) {
+		if !errors.As(err, &rejection) || rejection.Number == 1045 {
 			t.Fatalf("MySQL COM_INIT_DB selected protected schema %q: %v", schema, err)
 		}
 	}
@@ -380,17 +405,30 @@ func testMyDuckProtocolScope(t *testing.T, ctx context.Context, c *Client, d dat
 		}
 		cancel()
 		var rejection *pgconn.PgError
-		if !errors.As(connectErr, &rejection) {
+		if !errors.As(connectErr, &rejection) || rejection.Code == "28P01" {
 			t.Fatalf("PostgreSQL selected non-app database %q: %v", databaseName, connectErr)
 		}
 	}
 
+	for _, startup := range []map[string]string{
+		{"search_path": "__sys__"},
+		{"options": "-c search_path=__sys__"},
+	} {
+		testMyDuckPostgresStartupScope(t, ctx, c, d, observed, password, identity, startup)
+	}
+}
+
+func testMyDuckPostgresStartupScope(t *testing.T, ctx context.Context, c *Client, d database.Resource, observed database.Observation, password []byte, identity *tls.Config, startup map[string]string) {
+	t.Helper()
+	host := "database." + DatabaseNamespace(d.ID) + ".svc"
 	config, err := pgx.ParseConfig("host=" + host + " port=5432 user=postgres dbname=app connect_timeout=5")
 	if err != nil {
 		t.Fatal(err)
 	}
 	config.Password, config.TLSConfig, config.Fallbacks = string(password), identity, nil
-	config.RuntimeParams["search_path"] = "__sys__"
+	for key, value := range startup {
+		config.RuntimeParams[key] = value
+	}
 	config.DialFunc = func(_ context.Context, _, _ string) (net.Conn, error) {
 		return c.myduckStream(ctx, d, observed.Members[0], 5432)
 	}
@@ -400,7 +438,7 @@ func testMyDuckProtocolScope(t *testing.T, ctx context.Context, c *Client, d dat
 	conn, connectErr := pgx.ConnectConfig(step, config)
 	if connectErr != nil {
 		var rejection *pgconn.PgError
-		if !errors.As(connectErr, &rejection) {
+		if !errors.As(connectErr, &rejection) || rejection.Code == "28P01" {
 			t.Fatal("PostgreSQL startup search_path did not return a SQL rejection", connectErr)
 		}
 		return
