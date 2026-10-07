@@ -113,11 +113,14 @@ class FixtureTests(unittest.TestCase):
             shim = root/"docker"; state = root/"state"; cid = root/"cid"
             shim.write_text(module._shim_source(str(real), "a"*32, str(cid), str(state), str(safe))); os.chmod(shim, 0o700)
             rid = "b"*32
-            args = ["run","-d","--name","hakopod-backup-smoke-"+rid[:10],"--label","com.hakopod.test=backups","--label","com.hakopod.test-run="+rid,"--user",str(os.getuid())+":"+str(os.getgid()),"--entrypoint","/usr/bin/weed","--memory=384m","--cpus=1","--pids-limit=128","-p","127.0.0.1::9000","-e","GODEBUG=fips140=on","-e","GOMEMLIMIT=256MiB","--mount","type=bind,source="+str(config)+",target=/etc/seaweedfs/s3.json,readonly","--mount","type=bind,source="+str(data)+",target=/data",module.S3_IMAGE,"-logtostderr=true","server","-s3","-s3.port=9000","-s3.config=/etc/seaweedfs/s3.json","-dir=/data","-master.volumePreallocate","-master.volumeSizeLimitMB=8","-volume.max=16","-ip=127.0.0.1","-ip.bind=0.0.0.0"]
+            args = ["run","-d","--name","hakopod-backup-smoke-"+rid[:10],"--label","com.hakopod.test=backups","--label","com.hakopod.test-run="+rid,"--user",str(os.getuid())+":"+str(os.getgid()),"--entrypoint","/usr/bin/weed","--memory=384m","--memory-swap=384m","--cpus=1","--pids-limit=128","-p","127.0.0.1::9000","-e","GODEBUG=fips140=on","-e","GOMEMLIMIT=256MiB","--mount","type=bind,source="+str(config)+",target=/etc/seaweedfs/s3.json,readonly","--mount","type=bind,source="+str(data)+",target=/data",module.S3_IMAGE,"-logtostderr=true","server","-s3","-s3.port=9000","-s3.config=/etc/seaweedfs/s3.json","-dir=/data","-master.volumePreallocate","-master.volumeSizeLimitMB=8","-volume.max=16","-ip=127.0.0.1","-ip.bind=0.0.0.0"]
             self.assertEqual(subprocess.run([str(shim), *args]).returncode, 0)
             self.assertTrue(marker.exists()); marker.unlink(); state.unlink()
+            missing_swap = args.copy(); del missing_swap[13]
+            self.assertNotEqual(subprocess.run([str(shim), *missing_swap], capture_output=True).returncode, 0)
+            self.assertFalse(marker.exists())
             outside = root/"outside"; outside.mkdir(mode=0o700)
-            args[22] = "type=bind,source="+str(outside)+",target=/etc/seaweedfs/s3.json,readonly"
+            args[23] = "type=bind,source="+str(outside)+",target=/etc/seaweedfs/s3.json,readonly"
             self.assertNotEqual(subprocess.run([str(shim), *args], capture_output=True).returncode, 0)
             self.assertFalse(marker.exists())
 

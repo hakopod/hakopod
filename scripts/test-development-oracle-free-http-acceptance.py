@@ -68,6 +68,36 @@ class HTTPRunnerTests(unittest.TestCase):
         with a, b, c, d, self.assertRaisesRegex(ValueError, "bounded non-cluster"):
             HTTP.host_capacity([], {"memory_bytes": HTTP.GIB, "cpu_milli": 1000}, Path("docker"))
 
+    def test_go_test_temporary_files_stay_inside_the_owned_fixture_root(self):
+        captured = {}
+        args = SimpleNamespace(output=self.root / "output", cache=self.root / "cache", kubeconfig=Path("config"),
+            kubectl=Path("kubectl"), go=Path("go"), docker=Path("docker"), sidb_crd=Path("sidb"), nodes="node")
+        shim, temporary = args.cache / "fixture" / "docker-shim", args.cache / "fixture"
+        shim.mkdir(parents=True); temporary.mkdir(exist_ok=True)
+        class Fixtures:
+            def __init__(self, *values):
+                pass
+            def prepare(self):
+                return {"PATH": str(shim), "TMPDIR": str(temporary)}
+            def cleanup(self):
+                return {"postgres_container_absent": True, "s3_container_absent": True, "credential_files_absent": True}
+        def capture(command, env, log):
+            captured.update(env)
+            raise InterruptedError("stop after environment capture")
+        original_is_relative_to = Path.is_relative_to
+        def in_test_scratch(path, other):
+            return original_is_relative_to(path, self.root if other == "/srv/hakopod-backup-scratch" else other)
+        with mock.patch.object(HTTP, "runner_limits", return_value={}), mock.patch.object(HTTP, "host_capacity", return_value={}), \
+                mock.patch.object(Path, "is_relative_to", in_test_scratch), \
+                mock.patch.dict(HTTP.NATIVE, environment=mock.Mock(return_value=({}, {}))), \
+                mock.patch.dict(HTTP.VERIFIER, source_files=lambda root: {}, source_images=lambda root: {}), \
+                mock.patch.object(HTTP.runpy, "run_path", return_value={"Fixtures": Fixtures}), \
+                mock.patch.object(HTTP, "run_test", side_effect=capture), \
+                self.assertRaisesRegex(RuntimeError, "inspect retained"):
+            HTTP.run(args)
+        self.assertEqual(captured["GOTMPDIR"], str(temporary))
+        self.assertEqual(captured["TMPDIR"], str(temporary))
+
     def test_normal_process_output_and_exit_are_retained(self):
         log = self.root / "normal.log"
         self.assertEqual(HTTP.run_test([sys.executable, "-c", "print('bounded fixture')"], os.environ.copy(), log), 0)

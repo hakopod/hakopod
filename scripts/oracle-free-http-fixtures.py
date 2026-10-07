@@ -182,14 +182,14 @@ import json, os, resource, subprocess, sys, tempfile
 REAL={docker!r}; NONCE={nonce!r}; CIDFILE={cidfile!r}; STATE={statefile!r}; CACHE={cache!r}; IMAGE={S3_IMAGE!r}
 a=sys.argv[1:]
 if a and a[0] == "run":
-    if len(a) != 37: raise SystemExit("refusing unexpected S3 fixture")
-    fixed={{0:"run",1:"-d",2:"--name",4:"--label",5:"com.hakopod.test=backups",6:"--label",8:"--user",10:"--entrypoint",11:"/usr/bin/weed",12:"--memory=384m",13:"--cpus=1",14:"--pids-limit=128",15:"-p",17:"-e",18:"GODEBUG=fips140=on",19:"-e",20:"GOMEMLIMIT=256MiB",21:"--mount",23:"--mount",25:IMAGE,26:"-logtostderr=true",27:"server",28:"-s3",29:"-s3.port=9000",30:"-s3.config=/etc/seaweedfs/s3.json",31:"-dir=/data",32:"-master.volumePreallocate",33:"-master.volumeSizeLimitMB=8",34:"-volume.max=16",35:"-ip=127.0.0.1",36:"-ip.bind=0.0.0.0"}}
+    if len(a) != 38: raise SystemExit("refusing unexpected S3 fixture")
+    fixed={{0:"run",1:"-d",2:"--name",4:"--label",5:"com.hakopod.test=backups",6:"--label",8:"--user",10:"--entrypoint",11:"/usr/bin/weed",12:"--memory=384m",13:"--memory-swap=384m",14:"--cpus=1",15:"--pids-limit=128",16:"-p",18:"-e",19:"GODEBUG=fips140=on",20:"-e",21:"GOMEMLIMIT=256MiB",22:"--mount",24:"--mount",26:IMAGE,27:"-logtostderr=true",28:"server",29:"-s3",30:"-s3.port=9000",31:"-s3.config=/etc/seaweedfs/s3.json",32:"-dir=/data",33:"-master.volumePreallocate",34:"-master.volumeSizeLimitMB=8",35:"-volume.max=16",36:"-ip=127.0.0.1",37:"-ip.bind=0.0.0.0"}}
     if any(a[index] != value for index,value in fixed.items()): raise SystemExit("refusing unexpected S3 fixture")
-    name, run_id, user, publish = a[3], a[7], a[9], a[16]
+    name, run_id, user, publish = a[3], a[7], a[9], a[17]
     rid=run_id.removeprefix("com.hakopod.test-run=")
     if len(rid) != 32 or any(c not in "0123456789abcdef" for c in rid) or name != "hakopod-backup-smoke-"+rid[:10] or user != str(os.getuid())+":"+str(os.getgid()) or publish != "127.0.0.1::9000": raise SystemExit("refusing malformed S3 fixture")
     mounts=[]
-    for value,target,kind,readonly in ((a[22],"/etc/seaweedfs/s3.json","file",True),(a[24],"/data","dir",False)):
+    for value,target,kind,readonly in ((a[23],"/etc/seaweedfs/s3.json","file",True),(a[25],"/data","dir",False)):
         parts=value.split(",")
         if len(parts) != 3+int(readonly) or parts[0] != "type=bind" or parts[2] != "target="+target or readonly and parts[3] != "readonly": raise SystemExit("refusing malformed S3 mount")
         source=parts[1].removeprefix("source="); real=os.path.realpath(source); root=os.path.realpath(CACHE)
@@ -199,7 +199,7 @@ if a and a[0] == "run":
         mounts.append(real)
     with open(STATE,"x") as f: json.dump({{"schema_version":1,"name":name,"image":IMAGE,"nonce":NONCE,"cidfile":CIDFILE}},f); f.write("\\n")
     os.chmod(STATE,0o600)
-    a[1:1] = ["--cidfile", CIDFILE, "--label", "com.hakopod.oracle-http="+NONCE, "--label", "com.hakopod.component=s3", "--pull=never", "--memory-swap=384m", "--security-opt=no-new-privileges"]
+    a[1:1] = ["--cidfile", CIDFILE, "--label", "com.hakopod.oracle-http="+NONCE, "--label", "com.hakopod.component=s3", "--pull=never", "--security-opt=no-new-privileges"]
 elif a and a[0] in ("inspect", "port", "logs", "rm"):
     try:
         st=os.lstat(CIDFILE)
