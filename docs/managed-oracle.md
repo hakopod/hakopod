@@ -1,9 +1,10 @@
 # Managed Oracle Database
 
-Oracle Database Free support through Oracle's Database Operator is under
-development. Creation remains disabled in the API and dashboard until the
-operator image, installation and complete lifecycle pass native acceptance.
-Earlier tests used a StatefulSet; they do not qualify the new operator path.
+Status: Oracle Database Free is enabled in alpha.56 candidate source `058c25c`
+so its native qualification can run. It is not available in published OSS alpha.55
+or Cloud alpha.34 releases. Do not offer it until the current candidate passes
+the complete native lifecycle and HTTP acceptance suites and the release is
+published. Public endpoints remain unavailable.
 
 Free runs one database instance. Enterprise and Data Guard have separate source
 implementations and acceptance requirements. Passing Free's tests will not enable
@@ -45,6 +46,10 @@ The operator source is pinned to
 API and one database namespace. Its Kubernetes Role is namespaced; applications
 receive neither its service-account token nor cluster credentials. The operator
 uses the UPL 1.0 license. That license covers the operator, not Oracle Database.
+The published operator image is
+`ghcr.io/hakopod/managed-oracle-free-operator@sha256:e728b6283d4f27947af96232b9d74dc31d9adf288a62722c026c2ce3b6fe7660`.
+Publication makes the artifact retrievable; it does not qualify the managed
+service.
 
 ```mermaid
 flowchart LR
@@ -69,8 +74,8 @@ their own allocations. A controller process is not a second database replica.
 
 ## Standalone configuration
 
-This example describes the Free configuration under development. Creation is
-still held by the server's release gate.
+This example describes the Free configuration being qualified. It is not a
+published service contract yet.
 
 ```toml
 schema_version = 1
@@ -194,67 +199,30 @@ runtime must prove this with different source and target quotas, as well as
 corrupted-input refusal, nonempty-target refusal, cancellation, session
 revocation and independent writes after recovery.
 
-## Current evidence and remaining work
+## Qualification required before release
 
-The earlier StatefulSet implementation passed standalone initialization, private
-TCPS, application privilege boundaries, restart persistence, certificate renewal
-and deletion on the named development cluster. Its final September 29 recovery
-run passed in 617.44 seconds, including cleanup. The retained local evidence is
-`work/database-enterprise/oracle-recovery-live-v6.log`. The earlier import failure
-was corrected before that run; it is not the current reason for holding Oracle.
+An earlier Oracle Free lifecycle run passed against the operator path, but it
+used source from before the managed-credential namespace owner-reference defect
+was found during MyDuck qualification. The correction has passed focused VM
+tests and independent source review. All Oracle native qualification must run
+again against the current candidate; the earlier result is useful diagnostic
+evidence, not release evidence.
 
-Those results cover the old controller path on one physical development VM.
-They do not qualify the SIDB operator, a released service, every Oracle schema
-feature or independent failure domains.
+The rerun must cover creation, restart and persistence; private TCPS, hostname
+verification and plaintext refusal; APP privilege boundaries; certificate and
+credential renewal; application binding and revocation; Data Pump backup and
+separate-target recovery; interruption, cancellation and controller loss;
+inspection gating; deletion; and namespace and volume cleanup. The HTTP suite
+must cover scoped authorization and the same PostgreSQL-backed durable-operation
+path used by the dashboard and CLI. Record the exact source, operator image,
+database image, cluster and results.
 
-The SIDB implementation has since passed 161 Oracle-focused Go tests on the
-development VM with PostgreSQL for durable operations. The installer, release
-verifier and operator packaging checks also pass. These cover source behavior
-and artifact boundaries; the three native operator cases have not run yet.
-The scoped operator image has been built and inspected on the development VM. It
-has not been published.
-
-The release gate requires native lifecycle and security, separate-target
-recovery, and controller-loss tests. Each case records the exact source, image
-and cluster identities, and checks namespace and persistent-volume cleanup.
-It also requires a separate HTTP acceptance case covering scoped authorization,
-application access, encrypted backup, recovery inspection and deletion through
-the API with PostgreSQL-backed operations.
-That case keeps an authenticated SQL session open in a bound application while
-the target database is restored. It must prove that the database replacement
-ends the session without restarting the application, that fresh access stays
-closed until inspection, and that an unbound service cannot reach the target.
-The HTTP harness and its host-fixture cleanup passed source review and focused
-checks on the development VM. The complete native HTTP case has not run yet.
-Enabling Oracle Free afterward does not enable Enterprise, Data Guard or public
-endpoints.
-
-The operator release still needs:
-
-- A published, digest-pinned operator image built from the reviewed source and
-  patch, plus a verified installer payload containing only the required API.
-- Native creation, restart, persistence, TLS and privilege tests on k3s.
-- Certificate and credential renewal, application binding and access revocation.
-- Data Pump backup and separate-target recovery, failure and cancellation checks,
-  inspection gating, and verified namespace and volume cleanup.
-- API, CLI and dashboard acceptance, required builds and tests, then separate OSS
-  and Cloud release verification.
-
-The Enterprise adapter includes scoped image-pull credentials, per-member
-storage and placement, primary routing, native transport/apply checks, schema
-recovery and reviewed switchover methods. The source, store and API tests passed
-on the development VM, with an isolated PostgreSQL database for durable-operation
-checks. Synthetic wallet tests passed without exposing credential values.
-The hardened Oracle operator also passed its database-common, single-instance
-controller and Data Guard controller package tests against the pinned source.
-These checks do not establish compatibility with a licensed database image.
-No licensed Enterprise image or Data Guard cluster has passed native acceptance
-in this work. Forced failover, fencing an unreachable primary,
-reinstatement and physical recovery remain separate implementation requirements.
-Free standalone testing cannot validate those Enterprise behaviors. Enterprise
-schema recovery now waits for every unchanged standby to apply the SCN captured
-after import and temporary privilege cleanup. That replay boundary has passed
-source checks and still requires native Enterprise acceptance.
+Oracle Enterprise, Data Guard and public endpoints remain unavailable. Their
+source paths do not establish licensed image compatibility or production safety.
+Enterprise requires a customer-entitled digest-pinned image and separate native
+acceptance. Data Guard additionally requires transport/apply, switchover,
+failover, fencing, reinstatement and physical recovery acceptance. Free
+standalone results cannot qualify those behaviors.
 
 ## How the Enterprise stack fits together
 

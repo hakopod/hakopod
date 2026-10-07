@@ -1,12 +1,14 @@
 # How Hakopod manages a database
 
-Status: self-hosted alpha.55 includes PostgreSQL, Redis, MySQL, MongoDB,
-private ClickHouse and private Vitess on Linux amd64 workers. The Vitess runtime
-passed five native cases and the official HTTP workflow. See the
-[acceptance record](managed-database-release-acceptance.md) for the tested scope.
-Oracle Database Free and DuckDB through MyDuck remain under qualification;
-Neon and Supabase are deferred. Cloud availability requires a
-separate Cloud release, operator rollout and approved capacity.
+Status: published self-hosted alpha.55 includes PostgreSQL, Redis, MySQL,
+MongoDB, private ClickHouse and private Vitess on Linux amd64 workers. Oracle
+Database Free and DuckDB through MyDuck are enabled only in alpha.56 candidate
+source `058c25c` for qualification; neither is published or available in Cloud
+alpha.34. Their complete native and HTTP suites must pass again against the
+current candidate. Public endpoints, Neon and Supabase remain unavailable.
+Cloud availability requires a separate Cloud release, operator rollout and
+approved capacity. See the
+[acceptance record](managed-database-release-acceptance.md) for released scope.
 
 ## Follow one create request
 
@@ -69,11 +71,11 @@ Ownership checks matter during retries and deletion. A matching name is insuffic
 | MySQL 8.4 | Oracle MySQL Operator, InnoDB Cluster members with sidecars, MySQL Router | Router has explicit primary and secondary ports. Voting members determine write availability. |
 | MongoDB 8.0 | MongoDB Kubernetes Controller, replica-set members and agents | The driver discovers members and selects according to read preference and write concern. |
 | ClickHouse 26.3 | Altinity operator, data members, three Keeper members for clusters | Local tables remain local to a shard. Distributed tables or explicit queries combine shards. |
-| Oracle Database Free 26ai | Namespace-scoped Oracle Database Operator 2.2.0, one SingleInstanceDatabase resource, TCPS listener and volumes; native acceptance is in progress | One PDB service. Free does not implement a Data Guard cluster. |
+| Oracle Database Free 26ai | Namespace-scoped Oracle Database Operator 2.2.0, one SingleInstanceDatabase resource, TCPS listener and volumes; current-candidate qualification is pending | One PDB service. Free does not implement a Data Guard cluster. |
 | Vitess 23 | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native and HTTP acceptance passed for the fixed layouts in alpha.55. |
-| DuckDB through MyDuck | One hardened MyDuck process, one StatefulSet and one persistent volume; native acceptance is in progress | MySQL port 3306 and PostgreSQL port 5432 reach the same `app` database. No cluster or replicas. |
+| DuckDB through MyDuck | One hardened MyDuck process, one StatefulSet and one persistent volume; current-candidate qualification is pending | MySQL port 3306 and PostgreSQL port 5432 reach the same `app` database. No cluster or replicas. |
 
-Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md), [MyDuck](managed-myduck.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Its new operator path remains disabled pending complete native acceptance. Enterprise and Data Guard have separate source implementations and remain disabled pending licensed native acceptance of the hardened controller and customer image.
+Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md), [MyDuck](managed-myduck.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Its candidate gate is open only for qualification; publication still requires complete native acceptance. Enterprise and Data Guard have separate source implementations and remain unavailable pending licensed native acceptance of the hardened controller and customer image.
 
 ## Replication, routing and pooling answer different questions
 
