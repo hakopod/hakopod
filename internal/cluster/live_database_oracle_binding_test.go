@@ -14,7 +14,9 @@ import (
 
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/spec"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func testOracleBinding(t *testing.T, ctx context.Context, c *Client, d database.Resource, health database.Observation) {
@@ -43,17 +45,48 @@ func testOracleBinding(t *testing.T, ctx context.Context, c *Client, d database.
 		t.Fatal(err)
 	}
 	target := Target{ApplicationID: "oracle-binding-fixture-" + d.ID, Project: d.Project, Environment: d.Environment, Spec: app, Revision: 1, OperationID: "oracle-binding-create"}
+	var namespaceUID types.UID
 	t.Cleanup(func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), time.Minute)
+		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		ns, err := c.kube.CoreV1().Namespaces().Get(cleanup, Namespace(target.ApplicationID), metav1.GetOptions{})
-		if err == nil && owned(ns, target) == nil {
-			_ = c.kube.CoreV1().Namespaces().Delete(cleanup, ns.Name, deleteOptions(ns))
+		if apierrors.IsNotFound(err) {
+			return
 		}
+		if err != nil || owned(ns, target) != nil || (namespaceUID != "" && ns.UID != namespaceUID) {
+			t.Error("Oracle binding fixture namespace ownership changed; cleanup refused")
+			return
+		}
+		namespaceUID = ns.UID
+		if err = c.kube.CoreV1().Namespaces().Delete(cleanup, ns.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &namespaceUID}}); err != nil && !apierrors.IsNotFound(err) {
+			t.Error("delete Oracle binding fixture namespace", err)
+			return
+		}
+		for cleanup.Err() == nil {
+			current, e := c.kube.CoreV1().Namespaces().Get(cleanup, ns.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(e) {
+				return
+			}
+			if e != nil {
+				t.Error("wait for Oracle binding fixture namespace deletion", e)
+				return
+			}
+			if current.UID != namespaceUID || owned(current, target) != nil {
+				t.Error("Oracle binding fixture namespace was replaced or its ownership changed")
+				return
+			}
+			time.Sleep(time.Second)
+		}
+		t.Error("Oracle binding fixture namespace deletion timed out")
 	})
 	if _, err = c.Deploy(ctx, target, nil); err != nil {
 		t.Fatal(err)
 	}
+	namespace, err := c.kube.CoreV1().Namespaces().Get(ctx, Namespace(target.ApplicationID), metav1.GetOptions{})
+	if err != nil || namespace.UID == "" || owned(namespace, target) != nil {
+		t.Fatal("Oracle binding fixture namespace identity is unavailable", err)
+	}
+	namespaceUID = namespace.UID
 	kubectlCache := t.TempDir()
 	probe := func(service, script, want string) {
 		t.Helper()
