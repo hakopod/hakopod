@@ -34,6 +34,9 @@ func TestTerminalInputAuthorityAndBackpressure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Pool.Exec(ctx, "INSERT INTO personal_workspaces(identity_id,project) VALUES($1,'demo')", owner.ID); err != nil {
+		t.Fatal(err)
+	}
 	session, err := db.NewSession(ctx, owner.ID, "browser", "", "", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +83,43 @@ func TestTerminalInputAuthorityAndBackpressure(t *testing.T) {
 	if status := call(session.Token, base+"/input", map[string]int{"cols": 1000, "rows": 30}); status != 400 {
 		t.Fatal("invalid size accepted", status)
 	}
+	t.Run("current-scoped-grant", func(t *testing.T) {
+		_, token, err := db.CreateKey(ctx, p, store.KeyInput{Name: "terminal-machine", Project: "demo", Environment: "development", Permissions: []string{"deployments:read", "deployments:write", "pods:exec"}, ExpiresAt: time.Now().Add(time.Hour)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		machine, err := db.Authenticate(ctx, token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, credential := range []struct {
+			principal store.Principal
+			token     string
+		}{{machine, token}, {p, session.Token}} {
+			t.Run(credential.principal.CredentialType, func(t *testing.T) {
+				terminalCtx, terminalCancel := context.WithCancel(ctx)
+				defer terminalCancel()
+				terminal := &terminalSession{id: store.NewID(), app: deployment.ApplicationID, service: "web", owner: credential.principal.ID, key: credential.principal.KeyID, ctx: terminalCtx, cancel: terminalCancel, input: make(chan []byte, 1), sizes: make(chan remotecommand.TerminalSize, 1), started: true}
+				s.terminals[terminal.id] = terminal
+				defer s.closeTerminal(terminal)
+				path := "/api/v1/applications/" + deployment.ApplicationID + "/services/web/terminal/" + terminal.id
+				for _, allowed := range []bool{true, false} {
+					permissions := []string{"deployments:read", "deployments:write"}
+					if allowed {
+						permissions = append(permissions, "pods:exec")
+					}
+					r := httptest.NewRequest("POST", path+"/input", bytes.NewReader(store.JSON(input)))
+					r.Header.Set("Authorization", "Bearer "+credential.token)
+					r = WithRuntimeScope(r, RuntimeScope{AllowMachine: true, Identity: credential.principal.ID, Project: "demo", Environment: "development", Permissions: permissions, Authorize: func(context.Context) error { return nil }})
+					w := httptest.NewRecorder()
+					handler.ServeHTTP(w, r)
+					if allowed && w.Code != 204 || !allowed && w.Code != 403 {
+						t.Fatal("terminal did not enforce the current product grant", allowed, w.Code)
+					}
+				}
+			})
+		}
+	})
 	t.Run("initial-flush-failure", func(t *testing.T) {
 		failedCtx, failedCancel := context.WithCancel(ctx)
 		defer failedCancel()

@@ -52,11 +52,15 @@ func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Princi
 }
 
 func (s *Server) freshRuntimePrincipal(r *http.Request) (store.Principal, error) {
-	p, err := s.Store.KeyPrincipal(r.Context(), who(r).KeyID)
+	return s.runtimePrincipalForKey(r.Context(), who(r).KeyID)
+}
+
+func (s *Server) runtimePrincipalForKey(ctx context.Context, key string) (store.Principal, error) {
+	p, err := s.Store.KeyPrincipal(ctx, key)
 	if err == nil {
-		if scope, ok := r.Context().Value(runtimeScopeKey{}).(RuntimeScope); ok {
+		if scope, ok := ctx.Value(runtimeScopeKey{}).(RuntimeScope); ok {
 			if scope.Authorize != nil {
-				if err := scope.Authorize(r.Context()); err != nil {
+				if err := scope.Authorize(ctx); err != nil {
 					return store.Principal{}, err
 				}
 			}
