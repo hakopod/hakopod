@@ -82,7 +82,7 @@ func (c *Client) databasePolicy(ctx context.Context, d database.Resource) (*Data
 	if d.Spec.Engine == "clickhouse" {
 		p.podRuntimeClass = clickhouseRuntimeClass
 	}
-	if d.Spec.Engine == "oracle" {
+	if d.Spec.Engine == "oracle" || d.Spec.Engine == "duckdb" {
 		p.podRuntimeClass = p.RuntimeClass
 	}
 	return &p, nil
@@ -154,7 +154,8 @@ func applyDatabasePolicy(object *unstructured.Unstructured, s database.Spec, p D
 		_ = unstructured.SetNestedMap(object.Object, selector, "spec", "affinity", "nodeSelector")
 		_ = unstructured.SetNestedSlice(object.Object, tolerations, "spec", "affinity", "tolerations")
 		_ = unstructured.SetNestedField(object.Object, p.StorageClass, "spec", "storage", "storageClass")
-	} else if s.Engine == "oracle" {
+	} else if s.Engine == "oracle" || s.Engine == "duckdb" {
+		if s.Engine == "duckdb" { selector[corev1.LabelArchStable] = "amd64" }
 		_ = unstructured.SetNestedMap(object.Object, selector, "spec", "template", "spec", "nodeSelector")
 		_ = unstructured.SetNestedSlice(object.Object, tolerations, "spec", "template", "spec", "tolerations")
 		_ = unstructured.SetNestedField(object.Object, p.RuntimeClass, "spec", "template", "spec", "runtimeClassName")

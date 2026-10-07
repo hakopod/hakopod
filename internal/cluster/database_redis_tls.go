@@ -198,6 +198,10 @@ case "$response" in *"Server closed the connection"*|*"Connection reset by peer"
 // RenewDatabaseIdentity is called under a durable database maintenance claim.
 // Each member is fenced and checked again before applying its projected identity.
 func (c *Client) RenewDatabaseIdentity(ctx context.Context, d database.Resource, before func() error) error {
+	if d.Spec.Engine == "duckdb" && d.Spec.TLSRequired() {
+		if err := c.prepareDatabaseIdentity(ctx, d, before); err != nil { return err }
+		return c.prepareMyDuckSecurity(ctx, d, before)
+	}
 	if d.Spec.Engine == "vitess" && d.Spec.TLSRequired() {
 		return c.renewVitessIdentity(ctx, d, before)
 	}

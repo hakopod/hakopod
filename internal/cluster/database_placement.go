@@ -94,7 +94,7 @@ func applyDatabasePlacement(object *unstructured.Unstructured, s database.Spec, 
 		_ = unstructured.SetNestedMap(object.Object, affinity, "spec", "statefulSet", "spec", "template", "spec", "affinity")
 		return
 	}
-	if s.Engine == "oracle" {
+	if s.Engine == "oracle" || s.Engine == "duckdb" {
 		_ = unstructured.SetNestedMap(object.Object, affinity, "spec", "template", "spec", "affinity")
 		return
 	}
@@ -113,7 +113,7 @@ func (c *Client) validateDatabasePlacementNodes(ctx context.Context, s database.
 		names = policy.nodes()
 	}
 	oracleFree := s.Engine == "oracle" && !oracleEnterprise(s)
-	if len(names) == 0 && s.Placement.Spread == "" && s.Engine != "mysql" && s.Engine != "mongodb" && s.Engine != "vitess" && !oracleFree {
+	if len(names) == 0 && s.Placement.Spread == "" && s.Engine != "mysql" && s.Engine != "mongodb" && s.Engine != "vitess" && s.Engine != "duckdb" && !oracleFree {
 		return nil
 	}
 	nodes, err := c.kube.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 257})
@@ -123,7 +123,7 @@ func (c *Client) validateDatabasePlacementNodes(ctx context.Context, s database.
 	domains := map[string]bool{}
 	found := map[string]bool{}
 	for _, node := range nodes.Items {
-		if (s.Engine == "mysql" || s.Engine == "mongodb" || s.Engine == "vitess" || oracleFree) && node.Labels[corev1.LabelArchStable] != "amd64" {
+		if (s.Engine == "mysql" || s.Engine == "mongodb" || s.Engine == "vitess" || s.Engine == "duckdb" || oracleFree) && node.Labels[corev1.LabelArchStable] != "amd64" {
 			continue
 		}
 		if len(names) > 0 && !slices.Contains(names, node.Name) {
@@ -169,6 +169,9 @@ func (c *Client) validateDatabasePlacementNodes(ctx context.Context, s database.
 	}
 	if oracleFree && len(found) == 0 {
 		return fmt.Errorf("Oracle Free requires an available amd64 worker for its pinned controller")
+	}
+	if s.Engine == "duckdb" && len(found) == 0 {
+		return fmt.Errorf("DuckDB (MyDuck) requires an available amd64 worker for its verified image")
 	}
 	if s.Placement.Spread != "" && len(domains) < s.PlacementDomains() {
 		return fmt.Errorf("this placement requires %d distinct %s with ready nodes; only %d are available", s.PlacementDomains(), s.Placement.Spread, len(domains))

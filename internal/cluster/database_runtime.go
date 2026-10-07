@@ -89,6 +89,21 @@ func (c *Client) databaseNetworkPolicy(ctx context.Context, d database.Resource,
 		policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{{From: peers, Ports: oraclePorts}}
 		policy.Spec.Egress[0].Ports = oraclePorts
 	}
+	if d.Spec.Engine == "duckdb" {
+		mysqlPort, postgresPort := intstr.FromInt(3306), intstr.FromInt(5432)
+		clientPorts := []networkingv1.NetworkPolicyPort{{Port: &mysqlPort, Protocol: &tcp}, {Port: &postgresPort, Protocol: &tcp}}
+		policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{}
+		if allowApplications {
+			policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{From: []networkingv1.NetworkPolicyPeer{apps}, Ports: clientPorts})
+			if d.PublicEndpointAccess {
+				haproxy := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": c.options.ProxyNamespace}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": "kubernetes-ingress", "app.kubernetes.io/instance": c.options.ProxyRelease}}}
+				policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{From: []networkingv1.NetworkPolicyPeer{haproxy}, Ports: clientPorts})
+			}
+		}
+		// Standalone MyDuck has no replication peers or runtime downloads.
+		// Health checks use loopback and verify the service DNS certificate name.
+		policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{}
+	}
 	if d.Spec.Engine == "clickhouse" {
 		clientPorts := []networkingv1.NetworkPolicyPort{}
 		for _, value := range []int{8443, 9440} {
@@ -242,6 +257,12 @@ func (c *Client) databaseExecTarget(ctx context.Context, d database.Resource, me
 	pod, err := c.kube.CoreV1().Pods(ns.Name).Get(ctx, member.Name, metav1.GetOptions{})
 	if err != nil || pod.UID != types.UID(member.UID) || pod.DeletionTimestamp != nil || !c.databasePodOwned(ctx, *pod, object.GetUID()) {
 		return nil, "", fmt.Errorf("database member changed; obtain a new observation")
+	}
+	if d.Spec.Engine == "duckdb" {
+		policy, err := c.databasePolicy(ctx, d)
+		if err != nil || !databasePodMatches(*pod, d) || !databasePodPolicyMatches(*pod, policy) {
+			return nil, "", fmt.Errorf("MyDuck execution target no longer matches its managed runtime")
+		}
 	}
 	container := ""
 	expected := databaseImages[d.Spec.Engine+":"+d.Spec.Version]

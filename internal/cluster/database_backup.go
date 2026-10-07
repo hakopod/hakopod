@@ -84,6 +84,9 @@ cat "$directory/snapshot.rdb"`
 }
 
 func (c *Client) DatabaseEmpty(ctx context.Context, d database.Resource, o database.Observation) error {
+	if d.Spec.Engine == "duckdb" {
+		return c.myduckDatabaseEmpty(ctx, d, o)
+	}
 	if d.Spec.Engine == "vitess" {
 		return c.vitessDatabaseEmpty(ctx, d, o)
 	}

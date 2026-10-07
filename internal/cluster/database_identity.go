@@ -46,7 +46,7 @@ func (c *Client) prepareDatabaseIdentityForTransition(ctx context.Context, d dat
 	if transitionIntent != "" && len(expectedIssuerFingerprint) != 64 {
 		return fmt.Errorf("database identity transition issuer is invalid")
 	}
-	if d.Spec.Engine != "redis" && d.Spec.Engine != "mysql" && d.Spec.Engine != "mongodb" && d.Spec.Engine != "clickhouse" && d.Spec.Engine != "oracle" && d.Spec.Engine != "vitess" {
+	if d.Spec.Engine != "redis" && d.Spec.Engine != "mysql" && d.Spec.Engine != "mongodb" && d.Spec.Engine != "clickhouse" && d.Spec.Engine != "oracle" && d.Spec.Engine != "vitess" && d.Spec.Engine != "duckdb" {
 		return fmt.Errorf("database identity engine is unsupported")
 	}
 	if d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
@@ -249,7 +249,7 @@ func databaseIdentityNames(d database.Resource) []string {
 	if d.Spec.Engine == "vitess" {
 		return vitessIdentityNames(d)
 	}
-	if d.Spec.Engine == "oracle" {
+	if d.Spec.Engine == "oracle" || d.Spec.Engine == "duckdb" {
 		ns := DatabaseNamespace(d.ID)
 		return append([]string{"database", "database." + ns, "database." + ns + ".svc", "database." + ns + ".svc.cluster.local"}, d.PublicEndpointNames...)
 	}
