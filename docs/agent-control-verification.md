@@ -51,6 +51,7 @@ Source edits, source generation, formatting and inspection ran locally. Snapshot
 | `hakopod-agent-interface-final-v2` | Earlier full Go run passed except an obsolete unsupported-MySQL assertion. Corrected cluster tests passed separately. Later rollback changes require a fresh full run. |
 | `hakopod-agent-bcf36b48-full-go` | Full `go test -count=1 -p=1 -timeout=20m ./...` passed on the committed archive and exact templates submodule. Later terminal changes require separate checks. |
 | `hakopod-agent-terminal-runtime-v5` | Focused scope, stream guard, terminal authority, polling and buffer tests passed. A later poll-buffer locking correction is under race and native acceptance. |
+| `hakopod-agent-sql-postrows` | Driver regressions passed for authority loss after write-authorized row queries. Confirmed rollback reports `rolled_back`; failed rollback reports `unknown`. |
 | `agent-cloud-policy-v2` | Shared credential-policy helper, focused server/gateway/state/identity and full Cloud Go suite passed before rebase. |
 | `agent-cloud-rebased-v1` | After rebase onto Cloud main 570504, full Cloud Go, composed production build, typecheck, 2 grant dependency tests, server tests and 238 UI tests passed. Engine source was copied from the platform working tree. |
 
@@ -84,7 +85,7 @@ The [UI review](agent-control-ui-review.md) passed for the documented route fami
 All artificial UI fixtures are labelled DEVELOPMENT ONLY. Full Cloud shell, physical touch, assistive technology and 320px layouts remain unverified.
 
 An independent contract review identified Cloud credential inheritance and stale delegated permission reporting. Both fixes passed re-review on Cloud commit 69980179.
-A later SQL review identified unconfirmed rollback claims. PostgreSQL and MySQL corrections passed the regression and native checks recorded above.
+A later SQL review identified unconfirmed rollback claims. PostgreSQL and MySQL corrections passed the regression and native checks recorded above. A later post-rows authority-loss correction passed independent review and driver regressions; it changes failure reporting without changing successful execution or the Kubernetes transport.
 Terminal review also required current `pods:exec` checks for runtime-scoped browser and CLI sessions. Creation, follow-ups and active streams now apply that ceiling. Scoped fixture tests require actual project membership; global administrator status does not replace that membership.
 
 ## Release limits

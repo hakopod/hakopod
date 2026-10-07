@@ -81,7 +81,57 @@ func (stmt queryRollbackStmt) Exec([]driver.Value) (driver.Result, error) {
 	}
 	return driver.RowsAffected(1), nil
 }
-func (queryRollbackStmt) Query([]driver.Value) (driver.Rows, error) { return nil, io.EOF }
+func (queryRollbackStmt) Query([]driver.Value) (driver.Rows, error) {
+	return &queryRollbackRows{}, nil
+}
+
+type queryRollbackRows struct{ returned bool }
+
+func (*queryRollbackRows) Columns() []string { return []string{"value"} }
+func (*queryRollbackRows) Close() error      { return nil }
+func (r *queryRollbackRows) Next(values []driver.Value) error {
+	if r.returned {
+		return io.EOF
+	}
+	r.returned = true
+	values[0] = "1"
+	return nil
+}
+
+func TestSQLDriverWriteQueryRevocationReportsRollback(t *testing.T) {
+	for _, rollbackFail := range []bool{false, true} {
+		db := sql.OpenDB(queryRollbackConnector{fail: rollbackFail})
+		conn, err := db.Conn(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		write := false
+		q := database.QueryRequest{SQL: "SELECT mutate_fixture()", ReadOnly: &write}
+		if err := q.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		calls := 0
+		check := func(context.Context) error {
+			calls++
+			if calls > 1 {
+				return context.Canceled
+			}
+			return nil
+		}
+		_, err = runSQLDriverQuery(context.Background(), conn, "mysql", q, "read", check)
+		var queryErr *database.QueryError
+		want := "rolled_back"
+		if rollbackFail {
+			want = "unknown"
+		}
+		if !errors.As(err, &queryErr) || queryErr.Code != "database_query_authority_changed" || queryErr.Outcome != want {
+			t.Fatalf("write-query revocation reported incorrect outcome: rollback failure=%v error=%+v", rollbackFail, queryErr)
+		}
+		conn.Close()
+		db.Close()
+	}
+}
+
 func TestSQLDriverStartedWriteRollbackFailuresAreUnknown(t *testing.T) {
 	for _, execFail := range []bool{true, false} {
 		for _, rollbackFail := range []bool{true, false} {
