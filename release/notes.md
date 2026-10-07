@@ -1,65 +1,52 @@
-Hakopod 0.1.0-alpha.55 adds self-hosted Managed Vitess for applications that
-need an explicit MySQL sharding key. It supports standalone Vitess and fixed
-cluster layouts with one, two, four or eight shards and up to five replicas per
-shard. Applications connect privately through vtgate with verified TLS and
-select `app@primary` or `app@replica` explicitly.
+Hakopod 0.1.0-alpha.56 adds application-specific managed database credentials
+and editable TOML for catalog deployments.
 
-The native qualification covers lifecycle, recovery, replica reseeding, backup
-approval revocation and the maximum supported topology. Anonymous image
-verification passed against the recorded binary checksums. The official HTTP
-workflow passed creation, encrypted backup, separate-target restore, inspection,
-verified application access and scoped deletion with complete fixture cleanup.
+When connecting a service to a managed database, choose its existing username,
+database, password secret and SSL mode. The dashboard can save a new password
+as a scoped secret; reviews and application revisions contain only its reference.
+The same options are available in TOML, the CLI and the TypeScript SDK. Omitted
+options retain the managed defaults. Binding does not create database accounts
+or change their grants.
 
-The service runs Vitess 23.0.6 with MySQL 8.4.6, Vitess Operator 2.16.0 and a
-three-member etcd topology. Hakopod owns authorization and durable operations.
-A namespace-scoped operator reconciles each database, and applications never
-receive Kubernetes credentials.
+TLS and endpoint validation follow each database engine's policy. PostgreSQL
+custom users and databases use direct endpoints; pooled endpoints retain the
+managed app login. Clients must trust the mounted database CA when verification
+is enabled. See the
+[connection guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/docs/managed-databases.md#application-connections)
+for supported options and client trust configuration.
 
-Creation requires a dedicated, operator-approved native backup destination.
-Native backups seed replacement tablets. Downloadable logical archives are
-separate and restore into an empty compatible target while application access
-remains closed for inspection. Removing backup approval stops approved backup
-work; revoke the provider key separately when it must become unusable.
+Catalog reviews now include **Edit TOML**. Change or remove services, volumes,
+bindings and other settings, then review the validated configuration before
+deploying. Existing applications show the complete configuration and any
+removals in the diff. Required secrets follow the edited configuration, failed
+requests preserve drafts, and deployment retains scope and revision checks.
+The editor's schema is generated from the API contract.
 
-Vitess requires Linux amd64 workers with the fixed capacity described in the
-Managed Vitess guide. ARM64 is not qualified. Dedicated public endpoints,
-online resharding, in-place capacity changes, automatic SQL read/write
-splitting, cross-shard transactions and arbitrary custom vindexes remain
-outside this release contract.
+This release retains the managed Vitess and Outpost capabilities introduced in
+[alpha.55](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.55) and
+[alpha.54](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.54).
+Their documented platform, capacity and recovery requirements still apply.
 
-The core install or upgrade does not install a missing Vitess controller. After
-upgrading, use the matching extracted release kit and follow the reviewed plan
-and apply procedure in the
-[installer guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.55/installer/README.md#managed-database-controllers).
-Creation remains closed until the installation has approved workers, enough
-capacity and the database's dedicated native backup destination.
-
-Alpha.55 retains the Outpost webhook delivery template and its verified scope
-from [alpha.54](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.54).
-See the [runtime acceptance record](https://github.com/hakopod/hakopod/blob/main/docs/outpost-template-runtime.md)
-for its dependency combinations, limits and evidence.
-
-Install alpha.55 with the published installer:
+Install alpha.56 with the published installer:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.55/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.55
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.56/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.56
 ```
 
 Upgrade an existing installation with:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.55/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.55
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.56/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.56
 ```
 
-Direct upgrades are supported from alpha.53 and alpha.54. Older installations
+Direct upgrades are supported from alpha.54 and alpha.55. Older installations
 need a supported intermediate release. Each upgrade backs up PostgreSQL and
 configuration and restarts the management API and dashboard. Retain backups
 because replacing binaries does not reverse database migrations.
 
-This OSS release does not establish Hakopod Cloud availability. Cloud requires
-a separate package, pinned engine revision, controller rollout, qualified
-workers, capacity approval and production verification.
+Hakopod Cloud requires its own package and rollout. This public release does
+not establish production Cloud availability.
