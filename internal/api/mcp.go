@@ -366,6 +366,8 @@ func mcpRequester(routes http.Handler) agent.RequestFunc {
 		if response.status == http.StatusNoContent || response.body.Len() == 0 {
 			return nil
 		}
-		return json.Unmarshal(response.body.Bytes(), out)
+		decoder := json.NewDecoder(bytes.NewReader(response.body.Bytes()))
+		decoder.UseNumber()
+		return decoder.Decode(out)
 	}
 }

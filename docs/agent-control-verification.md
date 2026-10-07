@@ -33,12 +33,14 @@ Final compilation and substantial tests ran on the VM. Early local checks stoppe
 - Focused cluster tests passed: `Test(PostgresQuery|DatabaseQuery|PodExec)`.
 - The final focused checks used a disposable PostgreSQL 17.11 instance. They included real transactions and HTTP handler authorization.
 - A real `hakopod api operations --limit 1` call succeeded without a configured home or credentials. It returned the contract hash and counts above.
+- A final response-decoder correction passed the full CLI package and focused HTTP MCP tests. New regressions verify exact JSON response integers above 2^53.
 - Dashboard API generation, production build, typecheck, 69 server/library tests and 235 UI checks passed.
 - SDK API generation, build and all 55 tests passed.
 - `git diff --check` passed.
 
 The focused command sequence is recorded in VM service `hakopod-agent-parity-focused-final`.
 The dashboard and SDK sequence is recorded in `hakopod-agent-parity-web-complete`.
+The response-decoder correction is recorded in `hakopod-agent-parity-precision-final`.
 
 ## Native development cluster
 
@@ -69,7 +71,8 @@ All native fixture namespaces, PVCs and associated PV claims were confirmed abse
 The initial full Go run found the numeric precision regression, which was fixed and passed in the final focused run.
 That full run also reached the aggregate ten-minute API package timeout while progressing through existing authentication tests.
 A full rerun with two package workers and a twenty-minute package timeout is pending at this record's initial creation.
-The final focused checks and native SQL run include the later transport correction.
+That rerun started before the transport, configuration-free discovery and response-decoder corrections.
+The final focused checks, precision checks and native SQL run qualify those later changes separately.
 
 No merge, release or production deployment is claimed.
 The public dashboard API proxy forwards a narrower operation set than the canonical API. HTTP MCP uses canonical dispatch.

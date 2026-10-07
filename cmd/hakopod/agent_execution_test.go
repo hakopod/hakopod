@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -86,5 +87,17 @@ func TestSQLCLIWriteRevisionForwarding(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatal(calls)
+	}
+}
+func TestClientResponsePreservesExactNumbers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, `{"revision":9007199254740993}`) }))
+	defer server.Close()
+	c := &client{url: server.URL, http: server.Client()}
+	var out map[string]any
+	if err := c.request(context.Background(), "GET", "/applications/app", nil, "", &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["revision"] != json.Number("9007199254740993") {
+		t.Fatal(out)
 	}
 }

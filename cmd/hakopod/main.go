@@ -648,7 +648,9 @@ func (c *client) request(ctx context.Context, method, path string, in any, idem 
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(out)
+	decoder := json.NewDecoder(io.LimitReader(res.Body, 8<<20))
+	decoder.UseNumber()
+	return decoder.Decode(out)
 }
 func responseError(res *http.Response) error {
 	var body struct {
