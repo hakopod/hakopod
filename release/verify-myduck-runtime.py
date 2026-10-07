@@ -26,7 +26,8 @@ HTTP_PHASES = ("authorization", "lifecycle", "backup_restore", "worker_loss", "c
 RECOVERY_PHASES = ("nonempty_target", "corrupt_restore", "successful_restore")
 FIXTURE_COUNTS = {"lifecycle": 1, "recovery": 4, "http-api": 2}
 BUILD_INPUTS = {"Dockerfile.myduck", "scripts/apply-managed-myduck-patches.py", "scripts/build-managed-myduck.sh",
-                "scripts/collect-myduck-licenses.py", "patches/myduck/0001-harden-managed-runtime.patch",
+                "scripts/collect-myduck-licenses.py", "scripts/package-managed-myduck.py",
+                "patches/myduck/0001-harden-managed-runtime.patch",
                 "cmd/hakopod-myduck-storage/main.go"}
 FILES = {"source-build-manifest.json", "packaging-receipt.json", "native-acceptance.json"}
 BINARIES = {"/usr/local/bin/myduckserver", "/usr/local/bin/hakopod-myduck-storage"}
