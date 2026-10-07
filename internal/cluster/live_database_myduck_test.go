@@ -5,13 +5,16 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"testing"
@@ -24,6 +27,185 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const (
+	myduckMySQLLongPassword     = uint32(1)
+	myduckMySQLConnectWithDB    = uint32(1 << 3)
+	myduckMySQLProtocol41       = uint32(1 << 9)
+	myduckMySQLSSL              = uint32(1 << 11)
+	myduckMySQLTransactions     = uint32(1 << 13)
+	myduckMySQLSecureConnection = uint32(1 << 15)
+	myduckMySQLMultiResults     = uint32(1 << 17)
+	myduckMySQLPluginAuth       = uint32(1 << 19)
+)
+
+func myduckMySQLPacket(conn net.Conn) ([]byte, byte, error) {
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(conn, header); err != nil {
+		return nil, 0, err
+	}
+	size := int(header[0]) | int(header[1])<<8 | int(header[2])<<16
+	if size < 1 || size > 1<<20 {
+		return nil, 0, fmt.Errorf("invalid MySQL packet size")
+	}
+	payload := make([]byte, size)
+	_, err := io.ReadFull(conn, payload)
+	return payload, header[3], err
+}
+
+func writeMyDuckMySQLPacket(conn net.Conn, sequence byte, payload []byte) error {
+	if len(payload) > 1<<20 {
+		return fmt.Errorf("MySQL packet exceeds test bound")
+	}
+	header := []byte{byte(len(payload)), byte(len(payload) >> 8), byte(len(payload) >> 16), sequence}
+	packet := append(header, payload...)
+	for len(packet) > 0 {
+		n, err := conn.Write(packet)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrUnexpectedEOF
+		}
+		packet = packet[n:]
+	}
+	return nil
+}
+
+func myduckMySQLError(payload []byte) error {
+	if len(payload) == 0 || payload[0] != 0xff {
+		return nil
+	}
+	if len(payload) < 3 {
+		return fmt.Errorf("short MySQL error packet")
+	}
+	message := payload[3:]
+	if len(message) >= 6 && message[0] == '#' {
+		message = message[6:]
+	}
+	return &mysqlclient.MySQLError{Number: binary.LittleEndian.Uint16(payload[1:3]), Message: string(message)}
+}
+
+func myduckNativePassword(password []byte, seed []byte) []byte {
+	first := sha1.Sum(password)
+	second := sha1.Sum(first[:])
+	h := sha1.New()
+	h.Write(seed)
+	h.Write(second[:])
+	third := h.Sum(nil)
+	for i := range first {
+		first[i] ^= third[i]
+	}
+	return first[:]
+}
+
+// myduckMySQLInitDB performs the protocol operation which SQL `USE` normally
+// represents but which does not pass through the query-text security filter.
+func myduckMySQLInitDB(ctx context.Context, c *Client, d database.Resource, observed database.Observation, password []byte, identity *tls.Config, initialDatabase, nextDatabase string) error {
+	conn, err := c.myduckStream(ctx, d, observed.Members[0], 3306)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	deadline, ok := ctx.Deadline()
+	if ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	handshake, sequence, err := myduckMySQLPacket(conn)
+	if err != nil || sequence != 0 || len(handshake) < 34 || handshake[0] != 10 {
+		return fmt.Errorf("invalid MySQL handshake")
+	}
+	serverEnd := bytes.IndexByte(handshake[1:], 0)
+	if serverEnd < 0 {
+		return fmt.Errorf("invalid MySQL server identity")
+	}
+	offset := serverEnd + 2 + 4
+	if offset+8+1+2+1+2+2+1+10 > len(handshake) {
+		return fmt.Errorf("short MySQL handshake")
+	}
+	seed := append([]byte(nil), handshake[offset:offset+8]...)
+	offset += 9
+	serverCaps := uint32(binary.LittleEndian.Uint16(handshake[offset : offset+2]))
+	offset += 2 + 1 + 2
+	serverCaps |= uint32(binary.LittleEndian.Uint16(handshake[offset:offset+2])) << 16
+	offset += 2
+	authLength := int(handshake[offset])
+	offset += 1 + 10
+	part := authLength - 8
+	if part > 13 {
+		part = 13
+	}
+	if part > 0 && offset+part <= len(handshake) {
+		seed = append(seed, bytes.TrimRight(handshake[offset:offset+part], "\x00")...)
+		offset += part
+	}
+	plugin := "mysql_native_password"
+	if offset < len(handshake) {
+		plugin = string(bytes.TrimRight(handshake[offset:], "\x00"))
+	}
+	if plugin != "mysql_native_password" {
+		return fmt.Errorf("unsupported MySQL test auth plugin %q", plugin)
+	}
+	caps := myduckMySQLLongPassword | myduckMySQLProtocol41 | myduckMySQLSSL | myduckMySQLTransactions | myduckMySQLSecureConnection | myduckMySQLMultiResults | myduckMySQLPluginAuth
+	if initialDatabase != "" {
+		caps |= myduckMySQLConnectWithDB
+	}
+	caps &= serverCaps
+	sslRequest := make([]byte, 32)
+	binary.LittleEndian.PutUint32(sslRequest, caps)
+	binary.LittleEndian.PutUint32(sslRequest[4:], 1<<20)
+	sslRequest[8] = 45
+	if err = writeMyDuckMySQLPacket(conn, 1, sslRequest); err != nil {
+		return err
+	}
+	tlsConn := tls.Client(conn, identity.Clone())
+	if err = tlsConn.HandshakeContext(ctx); err != nil {
+		return err
+	}
+	auth := myduckNativePassword(password, seed)
+	response := make([]byte, 0, 64+len(initialDatabase))
+	header := make([]byte, 32)
+	binary.LittleEndian.PutUint32(header, caps)
+	binary.LittleEndian.PutUint32(header[4:], 1<<20)
+	header[8] = 45
+	response = append(response, header...)
+	response = append(response, "root"...)
+	response = append(response, 0, byte(len(auth)))
+	response = append(response, auth...)
+	if initialDatabase != "" {
+		response = append(response, initialDatabase...)
+		response = append(response, 0)
+	}
+	response = append(response, plugin...)
+	response = append(response, 0)
+	if err = writeMyDuckMySQLPacket(tlsConn, 2, response); err != nil {
+		return err
+	}
+	reply, _, err := myduckMySQLPacket(tlsConn)
+	if err != nil {
+		return err
+	}
+	if rejection := myduckMySQLError(reply); rejection != nil {
+		return rejection
+	}
+	if len(reply) == 0 || reply[0] != 0x00 {
+		return fmt.Errorf("unexpected MySQL authentication response")
+	}
+	if nextDatabase == "" {
+		return nil
+	}
+	if err = writeMyDuckMySQLPacket(tlsConn, 0, append([]byte{0x02}, nextDatabase...)); err != nil {
+		return err
+	}
+	reply, _, err = myduckMySQLPacket(tlsConn)
+	if err != nil {
+		return err
+	}
+	if rejection := myduckMySQLError(reply); rejection != nil {
+		return rejection
+	}
+	return nil
+}
 
 func newMyDuckFixture(t *testing.T, ctx context.Context, c *Client) (database.Resource, []byte, database.Observation) {
 	t.Helper()
@@ -159,6 +341,85 @@ func testMyDuckAlternateUsersRejected(t *testing.T, ctx context.Context, c *Clie
 	}
 }
 
+func testMyDuckProtocolScope(t *testing.T, ctx context.Context, c *Client, d database.Resource, observed database.Observation, password []byte, identity *tls.Config) {
+	t.Helper()
+	for _, schema := range []string{"mysql", "__sys__"} {
+		step, cancel := context.WithTimeout(ctx, 12*time.Second)
+		err := myduckMySQLInitDB(step, c, d, observed, password, identity, schema, "")
+		cancel()
+		var rejection *mysqlclient.MySQLError
+		if !errors.As(err, &rejection) {
+			t.Fatalf("MySQL handshake selected protected schema %q: %v", schema, err)
+		}
+	}
+	for _, schema := range []string{"mysql", "__sys__"} {
+		step, cancel := context.WithTimeout(ctx, 12*time.Second)
+		err := myduckMySQLInitDB(step, c, d, observed, password, identity, "app", schema)
+		cancel()
+		var rejection *mysqlclient.MySQLError
+		if !errors.As(err, &rejection) {
+			t.Fatalf("MySQL COM_INIT_DB selected protected schema %q: %v", schema, err)
+		}
+	}
+
+	host := "database." + DatabaseNamespace(d.ID) + ".svc"
+	for _, databaseName := range []string{"mysql", "__sys__"} {
+		config, err := pgx.ParseConfig("host=" + host + " port=5432 user=postgres dbname=" + databaseName + " connect_timeout=5")
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.Password, config.TLSConfig, config.Fallbacks = string(password), identity, nil
+		config.DialFunc = func(_ context.Context, _, _ string) (net.Conn, error) {
+			return c.myduckStream(ctx, d, observed.Members[0], 5432)
+		}
+		config.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
+		step, cancel := context.WithTimeout(ctx, 12*time.Second)
+		conn, connectErr := pgx.ConnectConfig(step, config)
+		if connectErr == nil {
+			_ = conn.Close(step)
+		}
+		cancel()
+		var rejection *pgconn.PgError
+		if !errors.As(connectErr, &rejection) {
+			t.Fatalf("PostgreSQL selected non-app database %q: %v", databaseName, connectErr)
+		}
+	}
+
+	config, err := pgx.ParseConfig("host=" + host + " port=5432 user=postgres dbname=app connect_timeout=5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Password, config.TLSConfig, config.Fallbacks = string(password), identity, nil
+	config.RuntimeParams["search_path"] = "__sys__"
+	config.DialFunc = func(_ context.Context, _, _ string) (net.Conn, error) {
+		return c.myduckStream(ctx, d, observed.Members[0], 5432)
+	}
+	config.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
+	step, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	conn, connectErr := pgx.ConnectConfig(step, config)
+	if connectErr != nil {
+		var rejection *pgconn.PgError
+		if !errors.As(connectErr, &rejection) {
+			t.Fatal("PostgreSQL startup search_path did not return a SQL rejection", connectErr)
+		}
+		return
+	}
+	defer conn.Close(step)
+	var schema string
+	if err = conn.QueryRow(step, "SELECT current_schema()").Scan(&schema); err != nil || schema != "app" {
+		t.Fatal("PostgreSQL startup search_path escaped the managed app schema", schema, err)
+	}
+	if _, err = conn.Exec(step, "DELETE FROM persistent_variable WHERE false"); err == nil {
+		t.Fatal("PostgreSQL accepted an unqualified protected-table mutation after startup search_path")
+	} else {
+		var rejection *pgconn.PgError
+		if !errors.As(err, &rejection) {
+			t.Fatal("PostgreSQL unqualified protected-table mutation did not return a SQL rejection", err)
+		}
+	}
+}
+
 func assertMyDuckFailedRestoreIsolated(t *testing.T, ctx context.Context, c *Client, d database.Resource, jobID string, helperExpected bool) {
 	t.Helper()
 	namespace := DatabaseNamespace(d.ID)
@@ -221,6 +482,9 @@ func TestManagedMyDuckLive(t *testing.T) {
 	}
 	t.Run("alternate_users", func(t *testing.T) {
 		testMyDuckAlternateUsersRejected(t, ctx, c, d, observed, password, identity)
+	})
+	t.Run("protocol_scope", func(t *testing.T) {
+		testMyDuckProtocolScope(t, ctx, c, d, observed, password, identity)
 	})
 	mysql, err := c.myduckMySQLClient(ctx, d, observed.Members[0], password, identity)
 	if err != nil {

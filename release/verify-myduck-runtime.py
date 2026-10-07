@@ -23,6 +23,7 @@ UUID = re.compile(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
 TESTS = {"lifecycle": "TestManagedMyDuckLive", "recovery": "TestManagedMyDuckColdRecoveryLive",
          "http-api": "TestManagedMyDuckHTTPLive"}
 HTTP_PHASES = ("authorization", "lifecycle", "backup_restore", "worker_loss", "cancellation", "deletion")
+LIFECYCLE_PHASES = ("alternate_users", "protocol_scope")
 RECOVERY_PHASES = ("nonempty_target", "baseline_replacement", "corrupt_restore", "successful_restore")
 FIXTURE_COUNTS = {"lifecycle": 1, "recovery": 5, "http-api": 2}
 BUILD_INPUTS = {"Dockerfile.myduck", "scripts/apply-managed-myduck-patches.py", "scripts/build-managed-myduck.sh",
@@ -190,7 +191,7 @@ def validate_acceptance(acceptance, sources, images):
         if case == "recovery":
             required.update(TESTS[case] + "/" + phase for phase in RECOVERY_PHASES)
         if case == "lifecycle":
-            required.add(TESTS[case] + "/alternate_users")
+            required.update(TESTS[case] + "/" + phase for phase in LIFECYCLE_PHASES)
         package = "github.com/hakopod/hakopod/internal/" + ("api" if case == "http-api" else "cluster")
         passed = accepted_events(attempt["test_events"], required, package)
         if any(name != TESTS[case] and not name.startswith(TESTS[case] + "/") for name in passed):

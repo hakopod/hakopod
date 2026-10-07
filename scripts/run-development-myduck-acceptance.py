@@ -156,7 +156,7 @@ def run(args):
     if args.case == "recovery":
         required.update(test + "/" + phase for phase in VERIFIER["RECOVERY_PHASES"])
     if args.case == "lifecycle":
-        required.add(test + "/alternate_users")
+        required.update(test + "/" + phase for phase in VERIFIER["LIFECYCLE_PHASES"])
     VERIFIER["accepted_events"](events, required, package)
     after_identity, after_capacity = environment(kube, args.nodes.split(","), images, args.case, args.output, args.docker, "capacity-after.json")
     if after_identity != identity or {name: item["container_id"] for name, item in after_capacity.items()} != {name: item["container_id"] for name, item in capacity.items()}:
