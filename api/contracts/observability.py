@@ -16,3 +16,8 @@ for endpoint in [base,base+"/{session}/output",base+"/{session}/input",base+"/{s
         item["parameters"].append({"name":"service","in":"path","required":True,"schema":S})
         if "{session}" in endpoint: item["parameters"].append({"name":"session","in":"path","required":True,"schema":S})
         if "204" in item["responses"]: item["responses"]["204"].pop("content",None)
+
+schemas['TerminalPollFrame']=obj({'cursor':I,'data':{'type':'object','additionalProperties':True}},['cursor','data'])
+schemas['TerminalPoll']=obj({'frames':array(ref('TerminalPollFrame')),'next_cursor':S,'truncated':B,'done':B},['frames','next_cursor','truncated','done'])
+route(base+'/{session}/poll','get','pollTerminal',ref('TerminalPoll'))
+paths[base+'/{session}/poll']['get']['parameters'].append({'name':'cursor','in':'query','schema':S})

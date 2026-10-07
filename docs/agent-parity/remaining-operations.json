@@ -1,0 +1,1243 @@
+[
+  {
+    "operation": "acceptHumanInvite",
+    "method": "POST",
+    "path": "/auth/invites/accept",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "approveDeviceAuthorization",
+    "method": "POST",
+    "path": "/auth/device/approve",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "beginPasskeyLogin",
+    "method": "POST",
+    "path": "/auth/passkeys/login/start",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "beginPasskeyRegistration",
+    "method": "POST",
+    "path": "/auth/passkeys/register/start",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "beginTOTP",
+    "method": "POST",
+    "path": "/auth/mfa/totp/start",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "cancelDeployment",
+    "method": "POST",
+    "path": "/deployments/{id}/cancel",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write"
+      ],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "closeHostTerminal",
+    "method": "DELETE",
+    "path": "/nodes/{node}/terminal/{session}",
+    "policy": {
+      "boundary": "installation",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "nodes:terminal"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "closeMCPSession",
+    "method": "DELETE",
+    "path": "/mcp",
+    "policy": {
+      "boundary": "identity",
+      "category": "transport",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "completeGitHubAppInstallation",
+    "method": "POST",
+    "path": "/git/github/install/complete",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "completeGitHubAppManifest",
+    "method": "POST",
+    "path": "/git/github/complete",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "completeGitSourceOAuth",
+    "method": "POST",
+    "path": "/git/oauth/complete",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "completeNamedGitSourceOAuth",
+    "method": "POST",
+    "path": "/git/connections/{id}/oauth/complete",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "completeOnboarding",
+    "method": "POST",
+    "path": "/auth/onboarding",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "completeProviderMFA",
+    "method": "POST",
+    "path": "/auth/mfa/complete",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "confirmTOTP",
+    "method": "POST",
+    "path": "/auth/mfa/totp/confirm",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "connectSlack",
+    "method": "POST",
+    "path": "/integrations/slack/connect",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "createDeployment",
+    "method": "POST",
+    "path": "/deployments",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write"
+      ],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "createDeploymentNotification",
+    "method": "POST",
+    "path": "/applications/{id}/notifications",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "createTerminal",
+    "method": "POST",
+    "path": "/applications/{id}/services/{service}/terminal",
+    "policy": {
+      "boundary": "project",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write",
+        "pods:exec"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "deleteDeploymentNotification",
+    "method": "DELETE",
+    "path": "/applications/{id}/notifications/{target}",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "deletePasskey",
+    "method": "DELETE",
+    "path": "/auth/passkeys/{id}",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "deleteTerminal",
+    "method": "DELETE",
+    "path": "/applications/{id}/services/{service}/terminal/{session}",
+    "policy": {
+      "boundary": "project",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write",
+        "pods:exec"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "deploySource",
+    "method": "POST",
+    "path": "/applications/{id}/source/deploy",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "deploySourceBuild",
+    "method": "POST",
+    "path": "/builds/{id}/runs/{run}/deploy",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "deploySourceImport",
+    "method": "POST",
+    "path": "/sources/deploy",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "deployTemplate",
+    "method": "POST",
+    "path": "/templates/{id}/deploy",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "references": {
+        "application_id": "applications"
+      },
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "deploymentNotifications",
+    "method": "GET",
+    "path": "/applications/{id}/notifications",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "disableTOTP",
+    "method": "POST",
+    "path": "/auth/mfa/totp/disable",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "executePodCommand",
+    "method": "POST",
+    "path": "/applications/{id}/services/{service}/exec",
+    "policy": {
+      "boundary": "project",
+      "category": "execution",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "exportUserAuditHistory",
+    "method": "GET",
+    "path": "/audit/export",
+    "policy": {
+      "boundary": "installation",
+      "category": "admin",
+      "exposure": "dedicated",
+      "permissions": [
+        "admin",
+        "agent:admin"
+      ],
+      "prerequisite": "Use audit_export for one bounded CSV page. Use next_cursor to resume the export.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Use audit_export for one bounded CSV page. Use next_cursor to resume the export."
+  },
+  {
+    "operation": "finishPasskeyLogin",
+    "method": "POST",
+    "path": "/auth/passkeys/login/finish",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "finishPasskeyRegistration",
+    "method": "POST",
+    "path": "/auth/passkeys/register/finish",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "finishProviderLogin",
+    "method": "GET",
+    "path": "/auth/oauth/{provider}/callback",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "getAccountSecurity",
+    "method": "GET",
+    "path": "/auth/security",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "getAuthStatus",
+    "method": "GET",
+    "path": "/auth/status",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "getDeployment",
+    "method": "GET",
+    "path": "/deployments/{id}",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:read"
+      ],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "getDeviceConsent",
+    "method": "GET",
+    "path": "/auth/device",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "getIdempotentDeployment",
+    "method": "GET",
+    "path": "/idempotency/{key}",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "getOnboarding",
+    "method": "GET",
+    "path": "/auth/onboarding",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "getProfile",
+    "method": "GET",
+    "path": "/auth/profile",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "gitHubAppWebhook",
+    "method": "POST",
+    "path": "/webhooks/github-app/{app}",
+    "policy": {
+      "boundary": "identity",
+      "category": "transport",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "githubWebhook",
+    "method": "POST",
+    "path": "/webhooks/github",
+    "policy": {
+      "boundary": "identity",
+      "category": "transport",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "gitlabWebhook",
+    "method": "POST",
+    "path": "/webhooks/gitlab",
+    "policy": {
+      "boundary": "identity",
+      "category": "transport",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "inspectInvite",
+    "method": "POST",
+    "path": "/auth/invites/inspect",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "listHumanSessions",
+    "method": "GET",
+    "path": "/auth/sessions",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "loginWithPassword",
+    "method": "POST",
+    "path": "/auth/login",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "logoutHuman",
+    "method": "POST",
+    "path": "/auth/logout",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "mcpMessage",
+    "method": "POST",
+    "path": "/mcp",
+    "policy": {
+      "boundary": "identity",
+      "category": "transport",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "namedGitWebhook",
+    "method": "POST",
+    "path": "/webhooks/git/{connection}",
+    "policy": {
+      "boundary": "identity",
+      "category": "transport",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "openHostTerminal",
+    "method": "POST",
+    "path": "/nodes/{node}/terminal",
+    "policy": {
+      "boundary": "installation",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "nodes:terminal"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "planDeployment",
+    "method": "POST",
+    "path": "/plan",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write"
+      ],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "planSourceBuildDeployment",
+    "method": "POST",
+    "path": "/builds/{id}/runs/{run}/plan",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "pollDeviceAuthorization",
+    "method": "POST",
+    "path": "/auth/device/token",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "pollHostTerminal",
+    "method": "GET",
+    "path": "/nodes/{node}/terminal/{session}/poll",
+    "policy": {
+      "boundary": "installation",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "nodes:terminal"
+      ],
+      "prerequisite": "Use the bounded terminal tools with separate terminal opt-in.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Use the bounded terminal tools with separate terminal opt-in."
+  },
+  {
+    "operation": "pollTerminal",
+    "method": "GET",
+    "path": "/applications/{id}/services/{service}/terminal/{session}/poll",
+    "policy": {
+      "boundary": "project",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write",
+        "pods:exec"
+      ],
+      "prerequisite": "Use the bounded terminal tools with separate terminal opt-in.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Use the bounded terminal tools with separate terminal opt-in."
+  },
+  {
+    "operation": "queryManagedDatabase",
+    "method": "POST",
+    "path": "/databases/{id}/query",
+    "policy": {
+      "boundary": "project",
+      "category": "execution",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "registerAccount",
+    "method": "POST",
+    "path": "/auth/register",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "requestPasswordReset",
+    "method": "POST",
+    "path": "/auth/password/forgot",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "resetPassword",
+    "method": "POST",
+    "path": "/auth/password/reset",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "resumeGitHubAppSetup",
+    "method": "POST",
+    "path": "/git/connections/{id}/github/setup",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "revokeHumanSession",
+    "method": "DELETE",
+    "path": "/auth/sessions/{id}",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "rollbackApplication",
+    "method": "POST",
+    "path": "/applications/{id}/rollback",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write"
+      ],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "setupInstallerOwner",
+    "method": "POST",
+    "path": "/auth/setup",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "startDeviceAuthorization",
+    "method": "POST",
+    "path": "/auth/device/start",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "startGitHubAppManifest",
+    "method": "POST",
+    "path": "/git/github/start",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "startGitSourceOAuth",
+    "method": "POST",
+    "path": "/git/connections/{id}/authorize",
+    "policy": {
+      "boundary": "identity",
+      "category": "protocol",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof."
+  },
+  {
+    "operation": "startProviderLogin",
+    "method": "GET",
+    "path": "/auth/oauth/{provider}/start",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "streamEvents",
+    "method": "GET",
+    "path": "/deployments/{id}/events",
+    "policy": {
+      "boundary": "project",
+      "category": "stream",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "streamHostTerminal",
+    "method": "GET",
+    "path": "/nodes/{node}/terminal/{session}/output",
+    "policy": {
+      "boundary": "installation",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "nodes:terminal"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "streamLogs",
+    "method": "GET",
+    "path": "/applications/{id}/logs",
+    "policy": {
+      "boundary": "project",
+      "category": "stream",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "terminalInput",
+    "method": "POST",
+    "path": "/applications/{id}/services/{service}/terminal/{session}/input",
+    "policy": {
+      "boundary": "project",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write",
+        "pods:exec"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "terminalOutput",
+    "method": "GET",
+    "path": "/applications/{id}/services/{service}/terminal/{session}/output",
+    "policy": {
+      "boundary": "project",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "deployments:write",
+        "pods:exec"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "testDeploymentNotification",
+    "method": "POST",
+    "path": "/applications/{id}/notifications/{target}/test",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "updateDeploymentNotification",
+    "method": "PUT",
+    "path": "/applications/{id}/notifications/{target}",
+    "policy": {
+      "boundary": "project",
+      "category": "deploy",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "canonical",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "updateProfile",
+    "method": "PATCH",
+    "path": "/auth/profile",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "uploadBackendCertificate",
+    "method": "POST",
+    "path": "/applications/{id}/services/{service}/certificates",
+    "policy": {
+      "boundary": "project",
+      "category": "binary",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "uploadDatabaseImport",
+    "method": "PUT",
+    "path": "/backup-imports/{id}/archive",
+    "policy": {
+      "boundary": "project",
+      "category": "binary",
+      "exposure": "dedicated",
+      "permissions": [],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  },
+  {
+    "operation": "verifyRegistration",
+    "method": "POST",
+    "path": "/auth/register/verify",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "verifySessionMFA",
+    "method": "POST",
+    "path": "/auth/mfa/verify",
+    "policy": {
+      "boundary": "identity",
+      "category": "human",
+      "exposure": "prerequisite",
+      "permissions": [],
+      "prerequisite": "Complete the dedicated identity or protocol flow.",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "Complete the dedicated identity or protocol flow."
+  },
+  {
+    "operation": "writeHostTerminal",
+    "method": "POST",
+    "path": "/nodes/{node}/terminal/{session}/input",
+    "policy": {
+      "boundary": "installation",
+      "category": "terminal",
+      "exposure": "dedicated",
+      "permissions": [
+        "nodes:terminal"
+      ],
+      "prerequisite": "",
+      "review": "none",
+      "sensitive_fields": []
+    },
+    "reason": "dedicated workflow"
+  }
+]

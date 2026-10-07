@@ -328,7 +328,7 @@ function Workspace({
     routeProject = projectPath ? decodeURIComponent(projectPath[1]) : ''
   } catch {}
   const scopedListPage = /^\/(?:databases(?:\/(?:new|import))?|platforms(?:\/new(?:\/[^/]+)?)?)$/.test(location.pathname)
-  const routeScope = scopedListPage
+  const routeScope = (scopedListPage || location.pathname === '/settings/keys/new')
     ? resolveProjectRouteScope(
         projects.data?.items,
         typeof location.search.project === 'string' ? location.search.project : '',

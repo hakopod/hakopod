@@ -46,10 +46,10 @@ func TestPostgresQueryFailureOutcome(t *testing.T) {
 		commit        bool
 		code, outcome string
 	}{
-		{errors.New("connection lost SQL secret"), false, "database_query_failed", "rolled_back"},
+		{errors.New("connection lost SQL secret"), false, "database_query_failed", "unknown"},
 		{errors.New("connection lost SQL secret"), true, "database_query_failed", "unknown"},
-		{&pgconn.PgError{Code: "25006", Message: "secret statement"}, false, "database_query_read_only", "rolled_back"},
-		{&pgconn.PgError{Code: "40001", Message: "secret statement"}, true, "database_query_failed", "rolled_back"},
+		{&pgconn.PgError{Code: "25006", Message: "secret statement"}, false, "database_query_read_only", "unknown"},
+		{&pgconn.PgError{Code: "40001", Message: "secret statement"}, true, "database_query_failed", "unknown"},
 	}
 	for _, tt := range tests {
 		got := postgresQueryFailure(tt.err, tt.commit)
@@ -63,7 +63,7 @@ func TestPostgresQueryFailureOutcome(t *testing.T) {
 }
 func TestDatabaseQueryUnsupportedFailsBeforeClusterAccess(t *testing.T) {
 	var c *Client
-	for _, engine := range []string{"mysql", "duckdb", "vitess", "oracle", "mongodb", "redis", "clickhouse"} {
+	for _, engine := range []string{"duckdb", "vitess", "oracle", "mongodb", "redis"} {
 		_, err := c.QueryDatabase(context.Background(), database.Resource{Spec: database.Spec{Engine: engine}}, database.QueryRequest{SQL: "SELECT 1"})
 		var queryErr *database.QueryError
 		if !errors.As(err, &queryErr) || queryErr.Code != "database_query_engine_unsupported" || queryErr.Outcome != "not_started" {
@@ -71,6 +71,17 @@ func TestDatabaseQueryUnsupportedFailsBeforeClusterAccess(t *testing.T) {
 		}
 	}
 }
+func TestSupportedDatabaseQueryRequiresTLSBeforeClusterAccess(t *testing.T) {
+	var c *Client
+	for _, engine := range []string{"postgresql", "mysql", "clickhouse"} {
+		_, err := c.QueryDatabase(context.Background(), database.Resource{Spec: database.Spec{Engine: engine}}, database.QueryRequest{SQL: "SELECT 1"})
+		var queryErr *database.QueryError
+		if !errors.As(err, &queryErr) || queryErr.Code != "database_query_tls_required" || queryErr.Outcome != "not_started" {
+			t.Fatalf("%s: %v", engine, err)
+		}
+	}
+}
+
 func TestDatabaseQueryParametersPreserveNullAndPrecision(t *testing.T) {
 	input := []any{nil, "9007199254740993", true, false, 1.25}
 	got := queryParameters(input)
@@ -117,8 +128,8 @@ func TestPostgresQueryTransaction(t *testing.T) {
 	write.MaxRows = 1
 	_, err = runPostgresQuery(ctx, conn, write, nil)
 	var queryErr *database.QueryError
-	if !errors.As(err, &queryErr) || queryErr.Outcome != "rolled_back" {
-		t.Fatalf("write limit did not rollback: %v", err)
+	if !errors.As(err, &queryErr) || queryErr.Outcome != "unknown" {
+		t.Fatalf("closed connection claimed confirmed rollback: %v", err)
 	}
 	// The bounded result path closes the connection rather than draining rows.
 	conn, err = pgx.Connect(ctx, dsn)
@@ -128,6 +139,23 @@ func TestPostgresQueryTransaction(t *testing.T) {
 	var count int
 	if err = conn.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("limited write persisted: %d %v", count, err)
+	}
+
+	checks := 0
+	revoked := database.QueryRequest{SQL: "INSERT INTO " + table + " VALUES(5)", ReadOnly: &falseValue}
+	_ = revoked.Validate()
+	_, err = runPostgresQuery(ctx, conn, revoked, func(context.Context) error {
+		checks++
+		if checks == 2 {
+			return errors.New("grant revoked after execution")
+		}
+		return nil
+	})
+	if !errors.As(err, &queryErr) || queryErr.Code != "database_query_authority_changed" || queryErr.Outcome != "rolled_back" || checks != 2 {
+		t.Fatalf("post-execution revocation: checks=%d error=%v", checks, err)
+	}
+	if err = conn.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("post-execution revoked write persisted: %d %v", count, err)
 	}
 	for _, sql := range []string{"COMMIT", "SET TRANSACTION READ WRITE", "SELECT 1; SELECT 2", "COPY " + table + " TO STDOUT"} {
 		q := database.QueryRequest{SQL: sql}
@@ -145,5 +173,45 @@ func TestPostgresQueryTransaction(t *testing.T) {
 	}
 	if err = conn.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("revoked write persisted: %d %v", count, err)
+	}
+}
+
+// Embed the unused transaction methods so the test isolates rollback acknowledgement.
+type rollbackOutcomeTx struct {
+	pgx.Tx
+	err    error
+	called bool
+}
+
+func (tx *rollbackOutcomeTx) Rollback(ctx context.Context) error {
+	tx.called = true
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if _, bounded := ctx.Deadline(); !bounded {
+		return errors.New("rollback has no deadline")
+	}
+	return tx.err
+}
+func TestPostgresRollbackRequiresAcknowledgement(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"acknowledged", nil, "rolled_back"},
+		{"connection lost", errors.New("connection lost"), "unknown"},
+		{"cancelled", context.Canceled, "unknown"},
+		{"transaction already closed", pgx.ErrTxClosed, "unknown"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			tx := &rollbackOutcomeTx{err: c.err}
+			if got := pgRollbackOutcome(tx); got != c.want || !tx.called {
+				t.Fatalf("outcome=%s called=%v", got, tx.called)
+			}
+		})
+	}
+	if got := pgRollbackOutcome(nil); got != "unknown" {
+		t.Fatalf("missing transaction outcome=%s", got)
 	}
 }

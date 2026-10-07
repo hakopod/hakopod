@@ -47,6 +47,7 @@ func TestNamedGitConnectionsReferencesAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	raw = explicitCredentialFixture(t, db, raw)
 	principal, err := db.Authenticate(ctx, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +154,7 @@ func TestGitHubAppInstallationAuthentication(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	raw = explicitCredentialFixture(t, db, raw)
 	key, e := rsa.GenerateKey(rand.Reader, 2048)
 	if e != nil {
 		t.Fatal(e)
@@ -291,4 +293,20 @@ func TestGitConnectionAdminBoundary(t *testing.T) {
 	}
 	gitConnectionCall(t, h, developer.Token, "PUT", "/git/connections/github-default", map[string]any{}, 403)
 	gitConnectionCall(t, h, developer.Token, "DELETE", "/git/connections/github-default?expected_revision=1", nil, 403)
+}
+
+// explicitCredentialFixture preserves the installer key boundary while granting
+// the test caller deliberate installation credential authority.
+func explicitCredentialFixture(t *testing.T, db *store.Store, raw string) string {
+	t.Helper()
+	ctx := context.Background()
+	p, err := db.Authenticate(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := db.CreateKey(ctx, p, store.KeyInput{Name: "Explicit credential fixture", Permissions: []string{"admin", "agent:admin", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
 }

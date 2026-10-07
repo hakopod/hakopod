@@ -72,7 +72,7 @@ func (s *Store) InstallationSMTP(ctx context.Context) (SMTPSettings, error) {
 }
 
 func (s *Store) PutInstallationSMTP(ctx context.Context, p Principal, c SMTPSettings, expected int64) (SMTPSettings, error) {
-	if !p.IsAdmin() || !p.IsHuman() || p.CredentialType != "browser" {
+	if !(p.IsAdmin() && p.IsHuman() && p.CredentialType == "browser") && !p.CanUseInstallationAgentAdministration() {
 		return c, ErrForbidden
 	}
 	if err := c.Validate(); err != nil {

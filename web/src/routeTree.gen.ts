@@ -84,6 +84,7 @@ import { Route as SettingsDnsProvidersNewRouteImport } from './routes/settings.d
 import { Route as SettingsGitCallbackRouteImport } from './routes/settings.git.callback'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
 import { Route as SettingsIntegrationsSlackRouteImport } from './routes/settings.integrations.slack'
+import { Route as SettingsKeysNewRouteImport } from './routes/settings.keys.new'
 import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/settings.login-providers.$provider'
 import { Route as SettingsRolesNewRouteImport } from './routes/settings.roles.new'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
@@ -503,6 +504,11 @@ const SettingsIntegrationsSlackRoute =
     path: '/slack',
     getParentRoute: () => SettingsIntegrationsRoute,
   } as any)
+const SettingsKeysNewRoute = SettingsKeysNewRouteImport.update({
+  id: '/keys/new',
+  path: '/keys/new',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsLoginProvidersProviderRoute =
   SettingsLoginProvidersProviderRouteImport.update({
     id: '/login-providers/$provider',
@@ -692,6 +698,7 @@ export interface FileRoutesByFullPath {
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/integrations/slack': typeof SettingsIntegrationsSlackRoute
+  '/settings/keys/new': typeof SettingsKeysNewRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -788,6 +795,7 @@ export interface FileRoutesByTo {
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/integrations/slack': typeof SettingsIntegrationsSlackRoute
+  '/settings/keys/new': typeof SettingsKeysNewRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -885,6 +893,7 @@ export interface FileRoutesById {
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
   '/settings/integrations/slack': typeof SettingsIntegrationsSlackRoute
+  '/settings/keys/new': typeof SettingsKeysNewRoute
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
@@ -983,6 +992,7 @@ export interface FileRouteTypes {
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/integrations/slack'
+    | '/settings/keys/new'
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
@@ -1079,6 +1089,7 @@ export interface FileRouteTypes {
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/integrations/slack'
+    | '/settings/keys/new'
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
@@ -1175,6 +1186,7 @@ export interface FileRouteTypes {
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
     | '/settings/integrations/slack'
+    | '/settings/keys/new'
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
@@ -1751,6 +1763,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIntegrationsSlackRouteImport
       parentRoute: typeof SettingsIntegrationsRoute
     }
+    '/settings/keys/new': {
+      id: '/settings/keys/new'
+      path: '/keys/new'
+      fullPath: '/settings/keys/new'
+      preLoaderRoute: typeof SettingsKeysNewRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/login-providers/$provider': {
       id: '/settings/login-providers/$provider'
       path: '/login-providers/$provider'
@@ -2164,6 +2183,7 @@ interface SettingsRouteChildren {
   SettingsSecretProvidersRoute: typeof SettingsSecretProvidersRouteWithChildren
   SettingsSmtpRoute: typeof SettingsSmtpRoute
   SettingsGitCallbackRoute: typeof SettingsGitCallbackRoute
+  SettingsKeysNewRoute: typeof SettingsKeysNewRoute
   SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
   SettingsRolesNewRoute: typeof SettingsRolesNewRoute
   SettingsGitConnectionsConnectionIdRoute: typeof SettingsGitConnectionsConnectionIdRoute
@@ -2182,6 +2202,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsSecretProvidersRoute: SettingsSecretProvidersRouteWithChildren,
   SettingsSmtpRoute: SettingsSmtpRoute,
   SettingsGitCallbackRoute: SettingsGitCallbackRoute,
+  SettingsKeysNewRoute: SettingsKeysNewRoute,
   SettingsLoginProvidersProviderRoute: SettingsLoginProvidersProviderRoute,
   SettingsRolesNewRoute: SettingsRolesNewRoute,
   SettingsGitConnectionsConnectionIdRoute:

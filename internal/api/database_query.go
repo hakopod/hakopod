@@ -15,7 +15,16 @@ import (
 )
 
 func (s *Server) registerDatabaseQueryRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/databases/{id}/query-capabilities", s.databaseQueryCapabilities)
 	mux.HandleFunc("POST /api/v1/databases/{id}/query", s.databaseQuery)
+}
+func (s *Server) databaseQueryCapabilities(w http.ResponseWriter, r *http.Request) {
+	d, err := s.Store.Database(r.Context(), who(r), r.PathValue("id"), false)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, http.StatusOK, database.CapabilitiesForQuery(d.Spec.Engine))
 }
 func databaseQueryAllowed(p store.Principal, d database.Resource, readOnly bool) bool {
 	permission := "databases:query"
@@ -54,6 +63,10 @@ func (s *Server) databaseQuery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 404, "not_found", "resource not found")
 		return
 	}
+	capabilities := database.CapabilitiesForQuery(d.Spec.Engine)
+	if q.ExecutionMode == "" && len(capabilities.ExecutionModes) > 0 {
+		q.ExecutionMode = capabilities.ExecutionModes[0]
+	}
 	if (!q.IsReadOnly() || q.ExpectedRevision != 0) && q.ExpectedRevision != d.Revision {
 		problem(w, 409, "database_query_revision_conflict", "Supply the reviewed database revision as expected_revision. Read the current database before another review.")
 		return
@@ -71,7 +84,7 @@ func (s *Server) databaseQuery(w http.ResponseWriter, r *http.Request) {
 	audit := func(outcome string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		metadata := map[string]any{"operation_id": operationID, "read_only": q.IsReadOnly(), "statement_sha256": hex.EncodeToString(sum[:]), "outcome": outcome}
+		metadata := map[string]any{"operation_id": operationID, "read_only": q.IsReadOnly(), "execution_mode": q.ExecutionMode, "statement_sha256": hex.EncodeToString(sum[:]), "outcome": outcome}
 		_, e := s.Store.Pool.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'database.query',$3,$4)", who(r).ID, who(r).KeyID, d.ID, store.JSON(metadata))
 		return e
 	}
@@ -84,7 +97,7 @@ func (s *Server) databaseQuery(w http.ResponseWriter, r *http.Request) {
 	check := func(step context.Context) error {
 		bounded, done := context.WithTimeout(step, time.Second)
 		defer done()
-		p, e := s.Store.KeyPrincipal(bounded, who(r).KeyID)
+		p, e := s.freshRuntimePrincipal(r.WithContext(bounded))
 		if e != nil || !databaseQueryAllowed(p, d, q.IsReadOnly()) {
 			return store.ErrForbidden
 		}
@@ -142,9 +155,17 @@ func writeDatabaseQueryError(w http.ResponseWriter, id string, e *database.Query
 	switch e.Code {
 	case "database_query_engine_unsupported":
 		status = 422
-		message = "SQL queries currently support PostgreSQL only."
+		message = "SQL queries are unavailable for this database engine. Read its query capabilities before execution."
 	case "database_query_statement_unsupported":
-		message = "Submit one PostgreSQL plannable statement. Transaction control and COPY statements are unavailable."
+		message = "This SQL statement is unavailable through the query API. Submit one statement supported by this engine."
+	case "database_query_nontransactional_mode_required":
+		message = "This statement cannot run in a transaction. Review the statement with execution_mode set to nontransactional."
+	case "database_query_read_only_mode_unavailable":
+		message = "The database cannot enforce read-only execution for this request."
+	case "database_query_parameter_unsupported":
+		message = "A parameter has an unsupported type. Read the engine's parameter format before execution."
+	case "database_query_execution_mode_unsupported":
+		message = "This execution mode is unavailable. Read the database query capabilities before execution."
 	case "database_query_read_only":
 		status = 403
 		message = "The read-only transaction rejected the write."
@@ -158,14 +179,14 @@ func writeDatabaseQueryError(w http.ResponseWriter, id string, e *database.Query
 		status = 503
 		message = "The database query connection is unavailable."
 	case "database_query_result_limit":
-		message = "The write result exceeded the query limit and the transaction was rolled back."
+		message = "The result exceeded the query limit. Check the reported outcome before retrying."
 	case "database_query_audit_failed":
 		status = 503
 		message = "The query audit could not be saved. Check the reported outcome before retrying."
 	}
 	if e.Outcome == "unknown" {
 		status = 503
-		message = "The connection closed during commit. The write outcome is unknown. Check the database before retrying."
+		message = "The execution outcome is unknown. Check the database before retrying."
 	}
 	write(w, status, map[string]any{"error": map[string]string{"code": e.Code, "message": message}, "operation_id": id, "outcome": e.Outcome})
 }

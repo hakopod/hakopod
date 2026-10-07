@@ -41,7 +41,15 @@ func deviceLogin(ctx context.Context, cfg config, noBrowser bool, permissions []
 	if _, err = anonymousClient(config{URL: origin.String()}); err != nil {
 		return store.Session{}, err
 	}
-	fmt.Printf("Open %s\nVerify the code %s and approve %s/%s.\n", start.URI, start.UserCode, cfg.Project, cfg.Environment)
+	if cfg.Project == "" && cfg.Environment == "" {
+		label := "This installation"
+		if len(permissions) == 1 && permissions[0] == "nodes:terminal" {
+			label = "Your granted host access"
+		}
+		fmt.Printf("Open %s\nVerify the code %s and approve %s.\n", start.URI, start.UserCode, label)
+	} else {
+		fmt.Printf("Open %s\nVerify the code %s and approve %s/%s.\n", start.URI, start.UserCode, cfg.Project, cfg.Environment)
+	}
 	if !noBrowser {
 		var command *exec.Cmd
 		switch runtime.GOOS {
@@ -75,6 +83,13 @@ func deviceLogin(ctx context.Context, cfg config, noBrowser bool, permissions []
 		if err == nil {
 			if !strings.HasPrefix(session.Token, "hs_") || session.User.CredentialType != "cli" {
 				return store.Session{}, errors.New("API returned an invalid human CLI session")
+			}
+			expected := "installation"
+			if len(permissions) == 1 && permissions[0] == "nodes:terminal" {
+				expected = "host"
+			}
+			if cfg.Project == "" && cfg.Environment == "" && session.ScopeID != expected {
+				return store.Session{}, errors.New("installation login requires explicit installation consent")
 			}
 			return session, nil
 		}

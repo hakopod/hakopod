@@ -23,7 +23,8 @@ type auditRecord struct {
 
 // User history and export are separate from the Free recent security log.
 func (s *Server) auditHistory(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
+	if !installationAdministrator(who(r)) {
+		failure(w, store.ErrForbidden)
 		return
 	}
 	if err := s.Store.RequireFeatures(r.Context(), "audit_history"); err != nil {

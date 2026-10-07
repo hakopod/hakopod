@@ -174,6 +174,7 @@ func TestNamedSourceImportBindsConnectionRevision(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	raw = explicitCredentialFixture(t, db, raw)
 	content := "schema_version=1\nname='named-import'\n[services.web]\nimage='python:3.13-alpine'\nport=8080\n"
 	sha := strings.Repeat("a", 40)
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +243,7 @@ func TestSourceImportConnectionRevocationDuringFetch(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	raw = explicitCredentialFixture(t, db, raw)
 	var revoke atomic.Bool
 	connectionID := ""
 	content := "schema_version=1\nname='raced-source'\n[services.web]\nimage='python:3.13-alpine'\nport=8080\n"

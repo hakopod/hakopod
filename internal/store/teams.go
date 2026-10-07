@@ -29,7 +29,7 @@ type TeamMember struct {
 // Deletion remains available to the recovery administrator without Pro. Foreign
 // keys remove memberships, project-team grants and pending team invitations.
 func (s *Store) DeleteTeam(ctx context.Context, p Principal, id string) error {
-	if p.CredentialType != "browser" || !p.IsAdmin() {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.IsAdmin() {
 		return ErrForbidden
 	}
 	tx, err := s.Pool.Begin(ctx)
@@ -51,7 +51,7 @@ func (s *Store) DeleteTeam(ctx context.Context, p Principal, id string) error {
 }
 
 func (s *Store) Teams(ctx context.Context, p Principal) ([]Team, error) {
-	if p.CredentialType != "browser" {
+	if p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration() {
 		return nil, ErrForbidden
 	}
 	if !p.IsAdmin() {
@@ -75,7 +75,7 @@ func (s *Store) Teams(ctx context.Context, p Principal) ([]Team, error) {
 	return out, rows.Err()
 }
 func (s *Store) CreateTeam(ctx context.Context, p Principal, name string) (Team, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.IsAdmin() {
 		return Team{}, ErrForbidden
 	}
 	name = strings.TrimSpace(name)
@@ -115,7 +115,7 @@ func (s *Store) CreateTeam(ctx context.Context, p Principal, name string) (Team,
 	return t, tx.Commit(ctx)
 }
 func (s *Store) CanManageTeam(ctx context.Context, p Principal, id string) bool {
-	if p.CredentialType != "browser" {
+	if p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration() {
 		return false
 	}
 	if p.IsAdmin() {
@@ -129,7 +129,7 @@ func (s *Store) CanManageTeam(ctx context.Context, p Principal, id string) bool 
 	return err == nil && yes
 }
 func (s *Store) TeamMembers(ctx context.Context, p Principal, id string) ([]TeamMember, error) {
-	if p.CredentialType != "browser" {
+	if p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration() {
 		return nil, ErrForbidden
 	}
 	if !p.IsAdmin() {
@@ -144,7 +144,7 @@ func (s *Store) TeamMembers(ctx context.Context, p Principal, id string) ([]Team
 	if !member && !p.IsAdmin() {
 		return nil, ErrForbidden
 	}
-	rows, err := s.Pool.Query(ctx, "SELECT i.id,i.name,i.email,m.role,m.username,i.avatar_style,i.avatar_seed FROM team_members m JOIN identities i ON i.id=m.identity_id WHERE m.team_id=$1 ORDER BY i.name,i.id LIMIT 200", id)
+	rows, err := s.Pool.Query(ctx, "SELECT i.id,i.name,COALESCE(i.email,''),m.role,m.username,i.avatar_style,i.avatar_seed FROM team_members m JOIN identities i ON i.id=m.identity_id WHERE m.team_id=$1 ORDER BY i.name,i.id LIMIT 200", id)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (s *Store) SetTeamMember(ctx context.Context, p Principal, team, id, role s
 	return tx.Commit(ctx)
 }
 func (s *Store) SetProjectMember(ctx context.Context, p Principal, project, id, team, role string) error {
-	if p.CredentialType != "browser" || !p.CanManageProject(project) {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.CanManageProject(project) {
 		return ErrForbidden
 	}
 	if (id == "") == (team == "") {
@@ -260,7 +260,7 @@ type ProjectMember struct {
 }
 
 func (s *Store) ProjectMembers(ctx context.Context, p Principal, project string) ([]ProjectMember, error) {
-	if p.CredentialType != "browser" || !p.CanManageProject(project) {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.CanManageProject(project) {
 		return nil, ErrForbidden
 	}
 	if !p.IsAdmin() {
@@ -294,7 +294,7 @@ type Invite struct {
 }
 
 func (s *Store) CreateInvite(ctx context.Context, p Principal, email, team, project, role string) (Invite, string, error) {
-	if p.CredentialType != "browser" {
+	if p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration() {
 		return Invite{}, "", ErrForbidden
 	}
 	email, err := NormalizeEmail(email)

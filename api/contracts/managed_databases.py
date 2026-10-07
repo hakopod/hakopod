@@ -108,15 +108,6 @@ for action in ['switchover-plan', 'switchover', 'switchover-retry']:
     paths[f'/databases/{{id}}/{action}']['post']['description'] = 'Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable.'
 paths['/databases/{id}/switchover-retry']['post']['description'] += ' Resumes the existing approved operation and target after a worker timeout. The operation ID makes retries idempotent; no new review, target or request token is created.'
 route('/databases/{id}/restore-plan', 'post', 'reviewManagedDatabaseRecovery', ref('BackupRestorePlan'), obj({'artifact_id': S}, ['artifact_id']))
-schemas['BackupSource']['properties']['kind']['enum'].append('managed_database')
-schemas['BackupSource']['properties']['managed_database_id'] = S
-schemas['BackupSource']['properties']['engine']['enum'].append('redis')
-schemas['BackupSource']['properties']['engine']['enum'].append('mongodb')
-schemas['BackupSource']['properties']['engine']['enum'].append('oracle')
-schemas['BackupSource']['properties']['engine']['enum'].append('vitess')
-schemas['BackupSource']['properties']['engine']['enum'].append('duckdb')
-schemas['BackupTarget']['properties'].update({'managed_database_id': S, 'managed_database_name': S, 'runtime_fingerprint': S})
-schemas['BackupArtifact']['properties'].update({'source_revision': I, 'captured_at': T, 'verified_at': T})
 
 binding_ssl_mode = {'type': 'string', 'enum': ['', 'disable', 'require', 'verify-ca', 'verify-full'], 'description': 'Omit to follow the managed database TLS policy. PostgreSQL supports require, verify-ca and verify-full. Other TLS engines support verify-full except MySQL/Vitess, whose driver must configure TLS separately. disable is allowed only for legacy plaintext PostgreSQL or Redis.'}
 schemas['ServiceBinding']['properties'].update({'managed_database': S, 'endpoint': {'type': 'string', 'enum': ['', 'read_write', 'read_only', 'cluster', 'pooled_read_write', 'pooled_read_only', 'mysql', 'postgresql']}, 'cluster_aware': B, 'ssl_mode': binding_ssl_mode})
@@ -128,10 +119,6 @@ route('/databases/{id}/connection-plan', 'post', 'reviewDatabaseConnection', ref
 route('/databases/{id}/connect', 'post', 'replaceDatabaseConnection', ref('Deployment'), obj({'review_id': S, 'confirm_application': S}, ['review_id', 'confirm_application']), '202', idem=True)
 route('/databases/{id}/inspect', 'post', 'attestDatabaseInspection', ref('ManagedDatabase'), obj({'job_id': S, 'confirm_name': S, 'expected_revision': I, 'inspected': B}, ['job_id', 'confirm_name', 'expected_revision', 'inspected']))
 
-schemas['BackupArtifact']['properties']['source_version'] = S
-schemas['BackupTarget']['properties']['source_version'] = S
-schemas['BackupSource']['properties']['kind']['enum'].append('docker_import')
-schemas['BackupSource']['properties']['external_name'] = S
 schemas['DatabaseImportSpec'] = obj({'destination_id': S, 'source_name': S, 'engine': {'type': 'string', 'enum': ['postgresql', 'redis']}, 'source_version': S, 'captured_at': T, 'bytes': {'type': 'integer', 'minimum': 16, 'maximum': 2147483648}, 'sha256': S}, ['destination_id', 'source_name', 'engine', 'source_version', 'captured_at', 'bytes', 'sha256'])
 schemas['DatabaseImport'] = obj({'id': S, 'spec': ref('DatabaseImportSpec'), 'status': S, 'expires_at': T, 'artifact_id': S}, ['id', 'spec', 'status', 'expires_at'])
 route('/backup-imports', 'post', 'reviewDatabaseImport', ref('DatabaseImport'), ref('DatabaseImportSpec'), '201', idem=True)
@@ -139,7 +126,6 @@ route('/backup-imports/{id}', 'get', 'getDatabaseImport', ref('DatabaseImport'))
 route('/backup-imports/{id}/archive', 'put', 'uploadDatabaseImport', ref('BackupArtifact'), S, '201')
 paths['/backup-imports/{id}/archive']['put']['requestBody']['content'] = {'application/octet-stream': {'schema': {'type': 'string', 'format': 'binary'}}}
 
-schemas['BackupDestination']['properties'].update({'project': S, 'environment': S})
 
 # Durable monitoring contains aggregate numeric statistics only.
 schemas['DatabaseEngineMetrics'] = obj({'available': B, 'reason': S, 'sampled_at': T, **{key: I for key in ['connections', 'active_connections', 'max_connections', 'data_bytes', 'transactions', 'commands', 'replication_lag_bytes', 'evicted_keys', 'rejected_connections', 'uptime_seconds']}, 'cache_hit_ratio': {'type': 'number', 'minimum': 0, 'maximum': 1}}, ['available'])

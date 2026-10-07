@@ -24,11 +24,11 @@ func (s *Server) showcase(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	item.Removable = item.Removable && who(r).IsAdmin() && who(r).CredentialType == "browser"
+	item.Removable = item.Removable && installationAdministrator(who(r))
 	write(w, 200, item)
 }
 func (s *Server) removeShowcase(w http.ResponseWriter, r *http.Request) {
-	if !who(r).IsAdmin() || who(r).CredentialType != "browser" {
+	if !installationAdministrator(who(r)) {
 		authFailure(w, store.ErrForbidden)
 		return
 	}

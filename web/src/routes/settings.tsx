@@ -3,11 +3,12 @@ import { AuditHistory } from '../components/audit-history'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
 import { lazy, Suspense, useState } from 'react'
-import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { SettingsLayout } from '@hakopod/hatch-ui/blocks/settings-layout'
 import { message, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
+import { executionGrants, toggleGrant } from '../lib/agent-grants'
 import { keyLifetimeInput, keyLifetimeOptions } from '../lib/key-lifetime'
 import type { APIKey } from '../lib/types'
 import { useScope } from '../lib/scope'
@@ -27,7 +28,9 @@ import {
   RequestError,
 } from '../components/shared'
 const AppearanceSettings = lazy(() =>
-  import('../components/appearance-settings').then((m) => ({ default: m.AppearanceSettings })),
+  import('../components/appearance-settings').then((m) => ({
+    default: m.AppearanceSettings,
+  })),
 )
 const AccountSettings = lazy(() => import('../components/account-settings'))
 const LicenseSettings = lazy(() => import('../components/license-settings'))
@@ -43,17 +46,25 @@ const LoginProviderSettings = lazy(() =>
   })),
 )
 const SMTPSettings = lazy(() =>
-  import('../components/smtp-settings').then((module) => ({ default: module.SMTPSettingsPanel })),
+  import('../components/smtp-settings').then((module) => ({
+    default: module.SMTPSettingsPanel,
+  })),
 )
 const ProxySettings = lazy(() => import('../components/proxy-settings'))
 const SecretProviders = lazy(() =>
-  import('../components/secret-providers').then((module) => ({ default: module.SecretProviders })),
+  import('../components/secret-providers').then((module) => ({
+    default: module.SecretProviders,
+  })),
 )
 const DNSProviders = lazy(() =>
-  import('./settings.dns-providers').then((module) => ({ default: module.DNSProviders })),
+  import('./settings.dns-providers').then((module) => ({
+    default: module.DNSProviders,
+  })),
 )
 const InstallationUsers = lazy(() =>
-  import('../components/team-settings').then((m) => ({ default: m.InstallationUsers })),
+  import('../components/team-settings').then((m) => ({
+    default: m.InstallationUsers,
+  })),
 )
 
 export const Route = createFileRoute('/settings')({
@@ -114,13 +125,25 @@ function Administration() {
     ...(scope.identity.admin
       ? [
           { id: 'users', label: 'People', group: 'Installation' },
-          { id: 'secret-providers', label: 'Secret providers', group: 'Installation' },
-          { id: 'dns-providers', label: 'DNS providers', group: 'Installation' },
+          {
+            id: 'secret-providers',
+            label: 'Secret providers',
+            group: 'Installation',
+          },
+          {
+            id: 'dns-providers',
+            label: 'DNS providers',
+            group: 'Installation',
+          },
           { id: 'keys', label: 'API keys', group: 'Installation' },
           { id: 'audit', label: 'Audit events', group: 'Installation' },
           ...(installation.allowed
             ? [
-                { id: 'login-providers', label: 'Sign-in providers', group: 'Installation' },
+                {
+                  id: 'login-providers',
+                  label: 'Sign-in providers',
+                  group: 'Installation',
+                },
                 { id: 'smtp', label: 'Email delivery', group: 'Installation' },
                 { id: 'edge', label: 'Hakopod Edge', group: 'Installation' },
               ]
@@ -198,15 +221,14 @@ function Keys() {
             </HeadingHelp>
           </div>
         </div>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setRotation(null)
-            setCreateOpen(true)
-          }}
-        >
-          <Icon name="plus" size={15} />
-          Create API key
+        <Button variant="primary" asChild>
+          <Link
+            to="/settings/keys/new"
+            search={{ project: scope.project, environment: scope.environment }}
+          >
+            <Icon name="plus" size={15} />
+            Create API key
+          </Link>
         </Button>
       </div>
       {keys.isPending ? (
@@ -355,7 +377,11 @@ function Keys() {
               setBusy(true)
               setError('')
               try {
-                await unwrap(client.DELETE('/keys/{id}', { params: { path: { id: revoke.id } } }))
+                await unwrap(
+                  client.DELETE('/keys/{id}', {
+                    params: { path: { id: revoke.id } },
+                  }),
+                )
                 setRevoke(null)
                 void queryClient.invalidateQueries({ queryKey: ['keys'] })
               } catch (err) {
@@ -372,18 +398,20 @@ function Keys() {
     </>
   )
 }
-function CreateKey({
+export function CreateKey({
   open,
   onOpenChange,
   project,
   environment,
   rotation,
+  page = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   project: string
   environment: string
   rotation?: APIKey | null
+  page?: boolean
 }) {
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
@@ -391,7 +419,8 @@ function CreateKey({
   const [lifetime, setLifetime] = useState('30')
   const [access, setAccess] = useState('deploy')
   const [reviewing, setReviewing] = useState(false)
-  const permissions =
+  const [extraGrants, setExtraGrants] = useState<string[]>([])
+  const basePermissions =
     access === 'read'
       ? ['deployments:read', 'logs:read']
       : access === 'manage'
@@ -404,6 +433,7 @@ function CreateKey({
             'applications:manage',
           ]
         : ['deployments:read', 'deployments:write', 'logs:read']
+  const permissions = [...new Set([...basePermissions, ...extraGrants])]
   const [created, setCreated] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -419,7 +449,8 @@ function CreateKey({
     }
   }
   return (
-    <Dialog
+    <KeyContainer
+      page={page}
       open={open}
       onOpenChange={close}
       title={
@@ -442,9 +473,16 @@ function CreateKey({
           event.preventDefault()
           if (busy || created) return
           if (!reviewing) {
-            if (!rotation && application && access === 'manage') {
+            if (
+              !rotation &&
+              application &&
+              (access === 'manage' ||
+                extraGrants.some(
+                  (grant) => grant.startsWith('databases:') || grant === 'agent:credentials',
+                ))
+            ) {
               setError(
-                'Manage workloads needs access to the whole environment. Clear the application restriction or choose Deploy.',
+                'The selected grants need the whole environment. Clear the application restriction or remove those grants.',
               )
               return
             }
@@ -465,7 +503,14 @@ function CreateKey({
                 )
               : await unwrap(
                   client.POST('/keys', {
-                    body: { name, project, environment, application, permissions, ...expiry },
+                    body: {
+                      name,
+                      project,
+                      environment,
+                      application,
+                      permissions,
+                      ...expiry,
+                    },
                   }),
                 )
             setCreated(result.key)
@@ -477,7 +522,7 @@ function CreateKey({
           }
         }}
       >
-        <div className="dialog-body field-stack">
+        <div className={page ? 'field-stack py-4' : 'dialog-body field-stack'}>
           {created ? (
             <>
               <div className="created-key">
@@ -515,9 +560,11 @@ function CreateKey({
                 Permissions: {(rotation?.permissions || permissions).join(', ')}
               </p>
               <Note>
-                Deployment access can run code, change databases and reveal database credentials.
-                Keep the key in a secret store. Existing workloads continue if the key expires or is
-                revoked.
+                Deployment access can run code and change workloads. Execution grants permit
+                commands or SQL in the selected scope. Credential access lets the selected agent
+                retrieve authorized credentials. Returned secrets may enter its context. Grant this
+                only to agents and integrations you trust. Keep the key in a secret store. Existing
+                workloads continue if the key expires or is revoked.
                 {lifetime === 'never' &&
                   ' This key has no expiry date. Revoke it when the CI workflow no longer needs it.'}
                 {rotation && ' The previous key expires within 15 minutes of rotation.'}
@@ -558,7 +605,16 @@ function CreateKey({
                     <Input
                       placeholder="All in this environment"
                       value={application}
-                      onChange={(event) => setApplication(event.target.value)}
+                      onChange={(event) => {
+                        setApplication(event.target.value)
+                        if (event.target.value)
+                          setExtraGrants((grants) =>
+                            grants.filter(
+                              (grant) =>
+                                !grant.startsWith('databases:') && grant !== 'agent:credentials',
+                            ),
+                          )
+                      }}
                     />
                   </label>
                 )}
@@ -579,8 +635,14 @@ function CreateKey({
                   value={access}
                   onValueChange={setAccess}
                   options={[
-                    { value: 'read', label: 'Read only — inspect workloads and logs' },
-                    { value: 'deploy', label: 'Deploy — apps, services and databases' },
+                    {
+                      value: 'read',
+                      label: 'Read only — inspect workloads and logs',
+                    },
+                    {
+                      value: 'deploy',
+                      label: 'Deploy — apps, services and databases',
+                    },
                     {
                       value: 'manage',
                       label: 'Manage workloads — includes Git, networks and app deletion',
@@ -588,8 +650,31 @@ function CreateKey({
                   ]}
                 />
               </label>
+              <fieldset className="grid gap-2">
+                <legend className="mb-2 text-sm">Explicit execution and credential access</legend>
+                {executionGrants.map(([grant, label]) => (
+                  <label key={grant} className="flex min-h-11 items-center gap-3 text-sm">
+                    <Input
+                      type="checkbox"
+                      disabled={
+                        Boolean(application) &&
+                        (grant.startsWith('databases:') || grant === 'agent:credentials')
+                      }
+                      checked={extraGrants.includes(grant)}
+                      onChange={(event) =>
+                        setExtraGrants(toggleGrant(extraGrants, grant, event.target.checked))
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </fieldset>
               <Note>
-                Deployment access can run code and reveal database credentials. Manage workloads
+                Execution and credential grants are selected separately. SQL writes require SQL
+                query access. Credential retrieval also requires deployment access.
+              </Note>
+              <Note>
+                Deployment access can run code that reads application credentials. Manage workloads
                 also permits Git setup, private network changes and application deletion; it needs
                 access to the whole environment. These keys cannot administer the installation.
               </Note>
@@ -597,7 +682,7 @@ function CreateKey({
           )}
           {error && <RequestError error={error} />}
         </div>
-        <div className="dialog-footer">
+        <div className={page ? 'flex justify-end gap-3 py-4' : 'dialog-footer'}>
           {created ? (
             <Button type="button" variant="primary" onClick={() => close(false)}>
               Done
@@ -628,7 +713,7 @@ function CreateKey({
           )}
         </div>
       </form>
-    </Dialog>
+    </KeyContainer>
   )
 }
 function AuditLog() {
@@ -698,5 +783,29 @@ function AuditLog() {
         </div>
       )}
     </>
+  )
+}
+
+function KeyContainer({
+  page,
+  children,
+  title,
+  description,
+  ...dialog
+}: import('react').ComponentProps<typeof Dialog> & { page: boolean }) {
+  if (!page)
+    return (
+      <Dialog title={title} description={description} {...dialog}>
+        {children}
+      </Dialog>
+    )
+  return (
+    <div className="page-content hako-form-page">
+      <PageHeader
+        title={title}
+        description={typeof description === 'string' ? description : undefined}
+      />
+      {children}
+    </div>
   )
 }

@@ -19,7 +19,7 @@ schemas["Passkey"] = obj({"id":S,"name":S,"created_at":T,"last_used_at":{"anyOf"
 schemas["AccountSecurity"] = obj({"totp_enabled":B,"password_enabled":B,"recovery_codes_remaining":I,"passkeys":array(ref("Passkey"))},["totp_enabled","password_enabled","recovery_codes_remaining","passkeys"])
 schemas["PasskeyChallenge"] = obj({"challenge":S,"options":obj({"publicKey":mapping({})},["publicKey"])},["challenge","options"])
 schemas["DeviceAuthorization"] = obj({"device_code":S,"user_code":S,"verification_uri":S,"verification_uri_complete":S,"expires_in":I,"interval":I},["device_code","user_code","verification_uri","verification_uri_complete","expires_in","interval"])
-schemas["DeviceScope"] = obj({"id":S,"label":S,"project":S,"environment":S},["id","label","project","environment"])
+schemas["DeviceScope"] = obj({"id":S,"label":S,"project":S,"environment":S,"permissions":array(S)},["id","label","project","environment"])
 schemas["DeviceDetails"] = obj({"user_code":S,"project":S,"environment":S,"permissions":array(S),"expires_at":T,"scope_id":S,"scopes":array(ref("DeviceScope"))},["user_code","project","environment","permissions","expires_at","scope_id","scopes"])
 schemas["DeviceToken"] = obj({"token":S,"access_token":S,"scope_id":S,"token_type":S,"expires_at":T,"expires_in":I,"user":ref("Principal")},["token","access_token","token_type","expires_at","expires_in","user"])
 

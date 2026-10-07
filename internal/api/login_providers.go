@@ -48,7 +48,7 @@ func (s *Server) registerLoginProviderRoutes(m *http.ServeMux) {
 }
 func (s *Server) loginSettingsAllowed(w http.ResponseWriter, r *http.Request) bool {
 	mode, modeErr := cluster.ParseDeploymentMode(s.Auth.DeploymentMode)
-	if who(r).CredentialType != "browser" || !who(r).IsAdmin() || modeErr != nil || mode != cluster.DeploymentSelfHosted && !s.cloudOperator(who(r)) {
+	if !installationAdministrator(who(r)) || modeErr != nil || mode != cluster.DeploymentSelfHosted && !s.cloudOperator(who(r)) {
 		authFailure(w, store.ErrForbidden)
 		return false
 	}
@@ -152,6 +152,9 @@ func (s *Server) putLoginProvider(w http.ResponseWriter, r *http.Request) {
 		ExpectedRevision *int64 `json:"expected_revision"`
 	}
 	if !decodeLoginProvider(w, r, &in) {
+		return
+	}
+	if !agentInstallationCredentials(w, r, in.ClientSecret != "" || in.ClearSecret) {
 		return
 	}
 	if in.ExpectedRevision == nil || (in.ClearSecret && in.ClientSecret != "") {

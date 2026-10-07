@@ -32,12 +32,12 @@ func TestIndependentOperationOptIns(t *testing.T) {
 }
 func TestOperationToolDiscoveryExclusions(t *testing.T) {
 	s := New(nil, Scope{"p", "dev"}, false, 32)
-	out, err := s.Call(context.Background(), "api_operations", json.RawMessage(`{"operation":"revealDatabaseCredentials"}`))
+	out, err := s.Call(context.Background(), "api_operations", json.RawMessage(`{"operation":"mcpMessage"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(out)
-	if !strings.Contains(string(raw), "exclusion") || !strings.Contains(string(raw), "revealDatabaseCredentials") {
+	if !strings.Contains(string(raw), "exclusion") || !strings.Contains(string(raw), "mcpMessage") {
 		t.Fatal("missing explicit contract exclusions")
 	}
 	for _, tool := range s.Tools() {
@@ -160,5 +160,17 @@ func TestSQLWritesRequireAndForwardReviewedRevision(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatal(calls)
+	}
+}
+func TestInstallationAgentDoesNotExposeProjectTools(t *testing.T) {
+	s := NewWithOptions(nil, Scope{}, Options{Installation: true, AllowAdmin: true, AllowDeploy: true, AllowExec: true, AllowSQL: true}, 0)
+	for _, tool := range s.Tools() {
+		name := tool.(map[string]any)["name"]
+		if name != "api_operations" && name != "api_call" && name != "audit_export" {
+			t.Fatal("project tool on installation connection", name)
+		}
+	}
+	if _, err := s.Call(context.Background(), "applications", json.RawMessage(`{}`)); err == nil {
+		t.Fatal("installation connection ran project tool")
 	}
 }

@@ -11,7 +11,7 @@ import (
 // Customer Cloud runtimes deny installation administration. The trusted internal
 // runtime may serve its live, verified installation owner.
 func (s *Server) cloudOperator(p store.Principal) bool {
-	return s.OperatorRuntime && s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && p.IsSuperAdmin()
+	return s.OperatorRuntime && s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && installationOwnerAuthority(p)
 }
 
 func cloudInstallationRequest(method, path string) bool {

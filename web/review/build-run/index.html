@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" class="dark" data-theme="dark" data-edition="self-hosted">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Development build-run review</title>
+    <script>
+      const theme = localStorage.getItem('hakopod-theme') === 'light' ? 'light' : 'dark'
+      document.documentElement.dataset.theme = theme
+      document.documentElement.className = theme
+    </script>
+    <style>
+      #fixture-banner { padding: 8px 16px; border-bottom: 2px solid #b84135; background: #fff5e5; color: #3c2416; font: 12px/1.5 system-ui, sans-serif; }
+      #fixture-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      #fixture-controls a { color: #652a1b; text-decoration: underline; }
+      #fixture-controls button { min-height: 32px; padding: 4px 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="fixture-banner" role="note">
+      <strong>DEVELOPMENT ONLY. Artificial build and runtime observations. No application is deployed.</strong>
+      <div id="fixture-controls">
+        <a href="?fixture=queued">Queued</a>
+        <a href="?fixture=processing">Processing</a>
+        <a href="?fixture=blocked">Blocked</a>
+        <a href="?fixture=deployed">Linked deployment</a>
+        <a href="?fixture=manual">Manual completion</a>
+        <button id="advance-fixture" type="button">Advance automatic step</button>
+        <span id="fixture-state" aria-live="polite"></span>
+      </div>
+    </div>
+    <div id="root"></div>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

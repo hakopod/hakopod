@@ -192,6 +192,9 @@ func (s *Server) databaseCredentials(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	if !agentScopedCredentials(w, r, d.Project, d.Environment) {
+		return
+	}
 	if err = s.Store.AuditDatabaseCredentials(r.Context(), who(r), d); err != nil {
 		failure(w, err)
 		return

@@ -25,7 +25,7 @@ func TestCatalogSafetyAndCompleteness(t *testing.T) {
 			t.Fatalf("inconsistent availability %s", o.ID)
 		}
 	}
-	for _, id := range []string{"revealDatabaseCredentials", "createKey", "mcpMessage", "createTerminal", "createDeployment", "listDNSProviders", "putDNSProvider"} {
+	for _, id := range []string{"createKey", "mcpMessage", "createTerminal", "createDeployment", "listDNSProviders", "putDNSProvider"} {
 		found := false
 		for _, o := range Catalog() {
 			if o.ID == id {
@@ -204,5 +204,84 @@ func TestScopedApplicationNameIsNotResourceID(t *testing.T) {
 	}
 	if len(calls) != 1 || strings.Contains(calls[0], "/applications/") || !strings.Contains(calls[0], "application=named-app") || !strings.Contains(calls[0], "project=p") {
 		t.Fatal(calls)
+	}
+}
+func TestOperationPolicyCompletenessAndFailClosed(t *testing.T) {
+	for _, op := range Catalog() {
+		policy := op.Policy
+		if op.Available && len(policy.Permissions) == 0 {
+			t.Fatalf("missing canonical permissions %s", op.ID)
+		}
+		if policy.Category == "" || policy.Boundary == "" || policy.Category == "unclassified" {
+			t.Fatalf("unclassified contract operation %s", op.ID)
+		}
+	}
+	policy, exclusion := classify(Operation{ID: "futureOperation", Method: "GET", Path: "/applications/{id}"})
+	if exclusion == "" || policy.Category != "unclassified" {
+		t.Fatal("new operation inherits prefix access", policy, exclusion)
+	}
+}
+
+func TestReviewedPlatformExactScopeAndDeploymentGate(t *testing.T) {
+	in := Invocation{Operation: "reviewManagedPlatform", Body: json.RawMessage(`{"project":"p","environment":"dev","id":"platform","expected_revision":1,"kind":"delete","spec":{},"confirm_name":"db"}`)}
+	calls := []string{}
+	if _, err := Invoke(context.Background(), fakeRequest(t, &calls, "p"), Scope{"p", "dev"}, true, in); err == nil || len(calls) != 0 {
+		t.Fatal("deployment gate bypass", err, calls)
+	}
+	// Test references directly so a schema rejection cannot hide a missing scope check.
+	if err := preflight(context.Background(), fakeRequest(t, &calls, "other"), Scope{"p", "dev"}, Operation{ID: "reviewManagedPlatform"}, nil, nil, map[string]any{"id": "platform"}); err == nil {
+		t.Fatal("cross-scope platform accepted")
+	}
+	if len(calls) != 1 || calls[0] != "GET /managed-platforms/platform" {
+		t.Fatal(calls)
+	}
+}
+func TestExplicitReferenceMappings(t *testing.T) {
+	calls := []string{}
+	if err := references(context.Background(), fakeRequest(t, &calls, "p"), Scope{"p", "dev"}, map[string]string{"destination_id": "applications"}, map[string]any{"destination_id": "app"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != "GET /applications/app" {
+		t.Fatal(calls)
+	}
+	calls = nil
+	if err := references(context.Background(), fakeRequest(t, &calls, "other"), Scope{"p", "dev"}, nil, map[string]any{"destination_id": "backup-destination"}); err != nil || len(calls) != 0 {
+		t.Fatal("unmapped backup destination treated as application", err, calls)
+	}
+}
+
+func TestOperationResourceScopeResolution(t *testing.T) {
+	for _, resource := range []string{"database-operations", "database-public-endpoint-operations", "external-database-operations"} {
+		calls := []string{}
+		r := func(_ context.Context, m, p string, _ any, _ string, out any) error {
+			calls = append(calls, m+" "+p)
+			raw := `{"project":"other","environment":"dev"}`
+			if len(calls) == 1 {
+				raw = `{"database_id":"db"}`
+			}
+			return json.Unmarshal([]byte(raw), out)
+		}
+		if err := resourceScope(context.Background(), r, Scope{"p", "dev"}, resource, "operation"); err == nil || len(calls) != 2 {
+			t.Fatal("operation failed to resolve owned database", resource, err, calls)
+		}
+	}
+}
+
+func TestAlarmExactCredentialAndShowcaseFixedScope(t *testing.T) {
+	for _, id := range []string{"readAlarm", "acknowledgeAlarm"} {
+		calls := 0
+		r := func(_ context.Context, m, p string, _ any, _ string, out any) error {
+			calls++
+			if p != "/me" {
+				t.Fatal("alarm sent before exact key fence")
+			}
+			return json.Unmarshal([]byte(`{"project":"other","environment":"dev","credential_type":"machine"}`), out)
+		}
+		if _, err := Invoke(context.Background(), r, Scope{"p", "dev"}, true, Invocation{Operation: id, Path: map[string]string{"id": "incident"}}); err == nil || calls != 1 {
+			t.Fatal("alarm exact credential", id, err)
+		}
+	}
+	if err := preflight(context.Background(), nil, Scope{"p", "dev"}, Operation{Policy: Policy{FixedScope: map[string]string{"project": "demo", "environment": "development"}}}, nil, nil, nil); err == nil {
+		t.Fatal("showcase scope")
 	}
 }

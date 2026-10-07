@@ -14,7 +14,7 @@ type OrganizationSecurity struct {
 }
 
 func (s *Store) OrganizationSecurity(ctx context.Context, p Principal) (OrganizationSecurity, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.IsAdmin() {
 		return OrganizationSecurity{}, ErrForbidden
 	}
 	var out OrganizationSecurity
@@ -27,7 +27,7 @@ func (s *Store) OrganizationSecurity(ctx context.Context, p Principal) (Organiza
 }
 
 func (s *Store) SetOrganizationSecurity(ctx context.Context, p Principal, required bool, revision int64) (OrganizationSecurity, error) {
-	if p.CredentialType != "browser" || !p.IsAdmin() {
+	if (p.CredentialType != "browser" && !p.CanUseInstallationAgentAdministration()) || !p.IsAdmin() {
 		return OrganizationSecurity{}, ErrForbidden
 	}
 	if required && !p.MFAVerified {

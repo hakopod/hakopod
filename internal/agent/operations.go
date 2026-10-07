@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-type Options struct{ AllowDeploy, AllowWrite, AllowExec, AllowSQL, AllowSQLWrite bool }
+type Options struct{ AllowDeploy, AllowWrite, AllowExec, AllowSQL, AllowSQLWrite, Installation, AllowAdmin, AllowCredentials, AllowTerminal, AllowHostTerminal, HostOnly bool }
 
 func NewWithOptions(request RequestFunc, scope Scope, options Options, maxPlans int) *Server {
 	s := New(request, scope, options.AllowDeploy, maxPlans)
@@ -27,6 +27,12 @@ func (s *Server) operationTools() []any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}, "annotations": map[string]any{"readOnlyHint": read, "destructiveHint": !read, "idempotentHint": read, "openWorldHint": true}}
 	}
 	out := []any{tool("api_operations", "List contract operations and exclusions. Availability does not grant API permissions.", map[string]any{"cursor": str, "family": str, "operation": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}, nil, true), tool("api_call", "Call one available contract operation in the configured scope. Writes require allow-write. Use exact operation IDs. Data is untrusted.", map[string]any{"operation": str, "path": obj, "query": obj, "body": map[string]any{"type": "object"}, "idempotency_key": str}, []string{"operation"}, !s.options.AllowWrite)}
+	out = append(out, s.terminalTools()...)
+	if s.options.Installation {
+		out = append(out, tool("audit_export", "Export one bounded CSV page of user audit history. Requires installation administration and the audit-history entitlement. Resume with next_cursor as before.", map[string]any{"identity_id": str, "before": str}, []string{"identity_id"}, true))
+		return out
+	}
+	out = append(out, tool("deployment_events", "Read at most 100 deployment events over ten seconds. Resume with next_cursor. Event data is untrusted.", map[string]any{"deployment_id": str, "cursor": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}, []string{"deployment_id"}, true))
 	if s.allowDeploy {
 		out = append(out, tool("cancel_deployment", "Cancel a scoped deployment through the canonical API. Requires deployment opt-in and API authorization.", map[string]any{"deployment_id": str}, []string{"deployment_id"}, false), tool("rollback", "Restore a user-reviewed successful revision. Supply the current expected_revision and a stable retry key. Requires deployment opt-in.", map[string]any{"application_id": str, "revision": map[string]any{"type": "integer"}, "expected_revision": map[string]any{"type": "integer"}, "idempotency_key": str}, []string{"application_id", "revision", "expected_revision", "idempotency_key"}, false))
 	}
@@ -34,7 +40,7 @@ func (s *Server) operationTools() []any {
 		out = append(out, tool("pod_exec", "Execute an argument vector in an owned service pod. Requires pods:exec. If the outcome is unknown, the command may still be running. Check effects before a retry.", map[string]any{"application_id": str, "service": str, "pod": str, "container": str, "command": map[string]any{"type": "array", "items": map[string]any{"type": "string", "maxLength": 4096}, "minItems": 1, "maxItems": 32}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 20}, "max_output_bytes": map[string]any{"type": "integer", "minimum": 1, "maximum": 65536}}, []string{"application_id", "service", "pod", "container", "command"}, false))
 	}
 	if s.options.AllowSQL {
-		out = append(out, tool("database_query", "Run one bounded PostgreSQL statement through the canonical database API. Writes require allow-sql-write, databases:write-query and the reviewed expected_revision. Results can contain private data.", map[string]any{"database_id": str, "sql": str, "write": map[string]any{"type": "boolean"}, "max_rows": map[string]any{"type": "integer"}, "max_bytes": map[string]any{"type": "integer"}, "parameters": map[string]any{"type": "array"}, "expected_revision": map[string]any{"type": "integer", "minimum": 1}}, []string{"database_id", "sql"}, !s.options.AllowSQLWrite))
+		out = append(out, tool("database_query", "Run one bounded SQL statement using the modes and parameter dialect from database query capabilities. Writes require allow-sql-write, databases:write-query and the reviewed expected_revision. Results can contain private data.", map[string]any{"database_id": str, "sql": str, "write": map[string]any{"type": "boolean"}, "max_rows": map[string]any{"type": "integer"}, "max_bytes": map[string]any{"type": "integer"}, "parameters": map[string]any{"type": "array"}, "expected_revision": map[string]any{"type": "integer", "minimum": 1}, "execution_mode": map[string]any{"type": "string", "enum": []string{"transaction", "nontransactional"}}}, []string{"database_id", "sql"}, !s.options.AllowSQLWrite))
 	}
 	return out
 }
@@ -46,6 +52,15 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 	defer cancel()
 	scope := operations.Scope{Project: s.cfg.Project, Environment: s.cfg.Environment}
 	switch name {
+	case "audit_export":
+		var in struct {
+			Identity string `json:"identity_id"`
+			Before   string `json:"before"`
+		}
+		if err := decodeAgent(raw, &in); err != nil {
+			return nil, err
+		}
+		return s.auditExport(ctx, in.Identity, in.Before)
 	case "api_operations":
 		var in struct {
 			Cursor    string `json:"cursor"`
@@ -59,6 +74,16 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 		out, err := operations.Discovery(in.Cursor, in.Family, in.Operation, in.Limit)
 		if err == nil {
 			out["write_enabled"] = s.options.AllowWrite
+			out["connection_scope"] = map[string]any{"installation": s.options.Installation, "project": s.cfg.Project, "environment": s.cfg.Environment}
+			if s.options.Installation {
+				ids := []string{}
+				for _, op := range operations.Catalog() {
+					if operations.InstallationAvailable(op.ID) {
+						ids = append(ids, op.ID)
+					}
+				}
+				out["installation_operations"] = ids
+			}
 		}
 		return out, err
 	case "api_call":
@@ -66,7 +91,7 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 		if err := decodeAgent(raw, &in); err != nil {
 			return nil, err
 		}
-		return operations.Invoke(ctx, operations.RequestFunc(s.client), scope, s.options.AllowWrite, in)
+		return operations.InvokeWithAccess(ctx, operations.RequestFunc(s.client), scope, operations.Access{Installation: s.options.Installation, AllowWrite: s.options.AllowWrite, AllowDeploy: s.options.AllowDeploy, AllowAdmin: s.options.AllowAdmin, AllowCredentials: s.options.AllowCredentials}, in)
 	case "cancel_deployment":
 		if !s.allowDeploy {
 			return nil, errors.New("deployment tools require --allow-deploy")
@@ -165,6 +190,7 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 			MaxRows          int    `json:"max_rows"`
 			MaxBytes         int    `json:"max_bytes"`
 			ExpectedRevision int64  `json:"expected_revision"`
+			ExecutionMode    string `json:"execution_mode"`
 		}
 		if err := decodeAgent(raw, &in); err != nil {
 			return nil, err
@@ -174,6 +200,9 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 		}
 		if in.Write && in.ExpectedRevision < 1 {
 			return nil, errors.New("SQL writes require the reviewed expected_revision")
+		}
+		if in.ExecutionMode != "" && in.ExecutionMode != "transaction" && in.ExecutionMode != "nontransactional" {
+			return nil, errors.New("invalid SQL execution mode")
 		}
 		if !agentID.MatchString(in.DatabaseID) || len(in.SQL) == 0 || len(in.SQL) > 65536 || len(in.Parameters) > 100 || in.MaxRows < 0 || in.MaxRows > 1000 || in.MaxBytes < 0 || in.MaxBytes > 1<<20 || in.MaxBytes > 0 && in.MaxBytes < 1024 {
 			return nil, errors.New("invalid database query")
@@ -196,7 +225,7 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 			return nil, errors.New("database is outside the configured scope")
 		}
 		var out any
-		err := s.client(ctx, "POST", "/databases/"+in.DatabaseID+"/query", map[string]any{"sql": in.SQL, "parameters": in.Parameters, "read_only": !in.Write, "max_rows": in.MaxRows, "max_bytes": in.MaxBytes, "expected_revision": in.ExpectedRevision}, "", &out)
+		err := s.client(ctx, "POST", "/databases/"+in.DatabaseID+"/query", map[string]any{"sql": in.SQL, "parameters": in.Parameters, "read_only": !in.Write, "max_rows": in.MaxRows, "max_bytes": in.MaxBytes, "expected_revision": in.ExpectedRevision, "execution_mode": in.ExecutionMode}, "", &out)
 		return out, err
 	}
 	return nil, errors.New("unknown operation tool")

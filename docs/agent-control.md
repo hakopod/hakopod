@@ -3,8 +3,9 @@
 The CLI and MCP use the versioned control API. API authorization remains authoritative.
 The operation catalog comes from `api/openapi.json`. Dashboard and SDK types come from the same contract.
 
-This change adds scoped operation discovery, pod commands and managed PostgreSQL queries.
-It does not provide complete dashboard parity. Discovery lists each excluded operation and its reason.
+The contract classifies project operations, installation administration, dedicated execution tools and human consent flows.
+Discovery lists the connection boundary, permissions, review requirements and prerequisites for each operation.
+The [coverage inventory](agent-parity/coverage-matrix.md) records source coverage. It does not establish production availability.
 
 ## Discover and call operations
 
@@ -29,10 +30,13 @@ Use `--idempotency-key KEY` when the contract requires it.
 The canonical endpoint still checks permissions, immutable revisions and resource ownership.
 
 MCP provides `api_operations` and `api_call` with the same catalog and scope checks.
-For broad CLI operation access, configure the canonical API origin. The public dashboard API proxy forwards a smaller operation set.
-HTTP MCP dispatches operations through the runtime API and does not use that per-operation proxy list.
-Generic calls exclude credential access, host administration, streaming responses, binary uploads and dedicated execution paths.
+The dashboard proxy routes come from the same OpenAPI exposure metadata.
+HTTP MCP dispatches operations through the canonical runtime API.
+Installation administration uses a separate connection. Credentials need an additional explicit grant and connection option.
+Streams, terminals and SQL use dedicated tools. Binary uploads and human consent retain their separate workflows.
 Deployments use the existing reviewed plan flow. Deployment opt-in also enables cancellation and rollback tools.
+
+See [contract generation](agent-parity/contract-generation.md) for the generation process and drift checks.
 
 ## Separate permissions and opt-ins
 
@@ -41,8 +45,11 @@ Deployments use the existing reviewed plan flow. Deployment opt-in also enables 
 | Generic mutations | Endpoint-specific permission | `--allow-write` | `allow_write=true` |
 | Deploy, cancel or roll back | `deployments:write` | `--allow-deploy` | `allow_deploy=true` |
 | Run a pod command | `pods:exec` | `--allow-exec` | `allow_exec=true` |
-| Read PostgreSQL data | `databases:query` | `--allow-sql` for MCP | `allow_sql=true` |
-| Change PostgreSQL data | Both SQL permissions | `--allow-sql-write` | `allow_sql_write=true` with `allow_sql=true` |
+| Query managed SQL data | `databases:query` | `--allow-sql` for MCP | `allow_sql=true` |
+| Change managed SQL data | `databases:query` and `databases:write-query` | `--allow-sql-write` | `allow_sql_write=true` with `allow_sql=true` |
+| Open application terminals | `pods:exec` | `--allow-exec --allow-terminal` | `allow_exec=true` and `allow_terminal=true` |
+| Use credentials | `agent:credentials` and the resource permission | `--allow-credentials` | `allow_credentials=true` |
+| Administer the installation | `admin` and `agent:admin` | `--installation --allow-admin` | `installation=true` and `allow_admin=true` |
 
 Each option enables only its action category. An option does not grant an API permission.
 CLI and MCP resource inspection also require `deployments:read`. Include it when creating an execution key for those interfaces.
@@ -50,7 +57,9 @@ Machine keys require explicit execution permissions and a project/environment sc
 An administrator wildcard does not enable machine execution.
 Database query keys cannot have an application restriction.
 SQL write grants require the SQL query grant.
-Device login preserves its existing default permissions. Users must request and consent to additional execution permissions.
+Users must request and consent to execution permissions during device login.
+Credential access can place secrets in an agent's context. Grant it only to trusted agents and integrations.
+The [connection guide](agent-parity/connection-workflows.md) describes host-only access, stored node grants and bounded terminal polling.
 
 ## Pod commands
 
@@ -72,9 +81,20 @@ An `unknown` outcome does not establish process termination. Check the command e
 Permission revocation closes the transport. Kubernetes does not guarantee that closing an exec connection terminates the process.
 Audit records contain the command hash, target identity and outcome. They do not contain command or output bodies.
 
-## PostgreSQL queries
+## Managed SQL queries
 
-Save a query in a file:
+Read `getDatabaseQueryCapabilities` for the target engine before execution:
+
+```sh
+hakopod api call getDatabaseQueryCapabilities --project demo --environment development \
+  --path-json '{"id":"DATABASE_ID"}'
+```
+
+`supported` identifies enabled execution. `read_only_supported` identifies server-enforced read-only execution.
+The response also specifies parameter syntax, execution modes and transaction guarantees.
+An unsupported engine or mode is rejected before connection. The current [verification record](agent-control-verification.md) lists qualified engines.
+
+For PostgreSQL, save a query in a file:
 
 ```sql
 SELECT $1::numeric, current_setting('transaction_read_only');
@@ -89,18 +109,22 @@ The dedicated CLI query defaults to read-only. For a write, add `--allow-sql-wri
 Read the database revision before the write review. The API rejects a missing or changed write revision.
 The dashboard database detail page links to the query page. The page reviews the target and statement before a write.
 
-The endpoint currently supports PostgreSQL. Other managed engines return an explicit unsupported-engine error.
-Queries use the managed application role over verified TLS. The response never exposes database credentials.
+Queries use the managed application identity over verified TLS. The response does not expose database credentials.
 PostgreSQL must accept the statement with `EXPLAIN`. Transaction control, `COPY` and multiple statements are unavailable.
 Some data-definition statements support `EXPLAIN`, including `CREATE TABLE AS`. They require write access.
 
-Read queries use a PostgreSQL read-only transaction. Write queries commit only after a final authority check.
+PostgreSQL read queries use a read-only transaction. Transactional writes commit only after a final authority check.
+Use `--execution-mode nontransactional` only when the capability permits it and the intended statement requires it.
+Some engines commit DDL implicitly. Nontransactional changes can persist after a failure, cancellation or result-limit error.
+An engine without read-only enforcement requires explicit write access, including for a SELECT statement.
+The dashboard never changes a read request into a write request automatically.
+
 The process permits four concurrent queries. Each query has a 20-second deadline, at most 1,000 rows and at most 1 MiB of results.
-The defaults are 100 rows and 256 KiB. A write whose result exceeds the selected bound is rolled back.
-Read results may be truncated. SQL null stays JSON null. Other cells use text to preserve database precision.
+The defaults are 100 rows and 256 KiB. Transactional writes attempt rollback when a result exceeds the bound.
+Read results may be truncated. SQL null stays JSON null. Other cells use text to preserve numeric precision.
 
 Query errors include an operation ID and outcome after execution begins.
-An `unknown` outcome means commit confirmation was lost. Check the database before a retry.
+An `unknown` outcome means the server cannot establish the final write result. Check the database before a retry.
 Queries do not retry automatically. Audit records exclude SQL text, parameters, credentials and result rows.
 
 ## Verification and remaining work
@@ -109,6 +133,6 @@ See [the verification record](agent-control-verification.md) for checks performe
 Native tests require the named `k3d-hakopod-dev` context and disposable fixtures.
 UI fixtures contain artificial data and do not prove database connectivity.
 
-Complete parity remains a tracked product goal. Global administration and other excluded families need explicit scope design and acceptance coverage.
-Support for MySQL, MyDuck, Oracle, Vitess and other engines requires engine-specific execution and cancellation tests.
-Marketing claims about agent control must identify the released capabilities and these limits.
+The contract inventory is complete for this source snapshot. Native and production acceptance remain separate checks.
+Self-hosted terminal acceptance does not establish Cloud terminal support.
+Marketing claims must identify released capabilities and their tested limits.

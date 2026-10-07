@@ -255,7 +255,7 @@ func TestManagedBackupAdmissionUsesDurableState(t *testing.T) {
 	if _, err = db.Pool.Exec(ctx, "INSERT INTO projects(name) VALUES('foreign'); INSERT INTO environments(project,name) VALUES('foreign','production')"); err != nil {
 		t.Fatal(err)
 	}
-	_, token, err := db.CreateKey(ctx, admin, store.KeyInput{Name: "managed-backup-admission", Project: "demo", Environment: "development", Permissions: []string{"deployments:read", "deployments:write"}, ExpiresAt: time.Now().Add(time.Hour)})
+	_, token, err := db.CreateKey(ctx, admin, store.KeyInput{Name: "managed-backup-admission", Project: "demo", Environment: "development", Permissions: []string{"deployments:read", "deployments:write", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,11 @@ func TestBackupDurabilityAuthorizationScheduling(t *testing.T) {
 	management.Backups.Runtime = transactionBackupRuntime{}
 	server := httptest.NewServer(management.Handler())
 	defer server.Close()
-	client := backupRequestClient{t, server, raw}
+	_, credentialToken, err := db.CreateKey(ctx, principal, store.KeyInput{Name: "Backup credential fixture", Permissions: []string{"admin", "agent:admin", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := backupRequestClient{t, server, credentialToken}
 	input := backup.DestinationInput{Name: "transaction-test", Endpoint: "https://storage.invalid", Region: "us-east-1", Bucket: "backup-tests", PathStyle: true, AccessKeyID: "test-access", SecretAccessKey: "test-secret"}
 	var created struct {
 		Destination backup.Destination `json:"destination"`

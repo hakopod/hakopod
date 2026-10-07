@@ -1,3 +1,4 @@
+import { workloadGrants, executionGrants, toggleGrant } from '../lib/agent-grants'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useScope } from '../lib/scope'
@@ -11,10 +12,12 @@ import { PageHeader, HeadingHelp, ErrorState, Loading, Note, RequestError } from
 import { Trash2 } from 'lucide-react'
 
 export const rolePermissions = [
-  { id: 'deployments:read', name: 'Read applications and deployments' },
-  { id: 'deployments:write', name: 'Deploy and operate applications' },
-  { id: 'logs:read', name: 'Read logs and requests' },
-]
+  ...workloadGrants.filter(([grant]) =>
+    ['deployments:read', 'deployments:write', 'logs:read'].includes(grant),
+  ),
+  ...executionGrants,
+].map(([id, name]) => ({ id, name }))
+
 export function useCustomRoles() {
   return useQuery({
     queryKey: ['custom-roles'],
@@ -228,23 +231,24 @@ export function CustomRoleEditor({ id }: { id?: string }) {
                     type="checkbox"
                     checked={currentPermissions.includes(p.id)}
                     onChange={(e) => {
-                      const next = e.target.checked
-                        ? [...currentPermissions, p.id]
-                        : currentPermissions.filter((x) => x !== p.id)
-                      setPermissions(
-                        p.id === 'deployments:write' && e.target.checked
-                          ? [...new Set([...next, 'deployments:read'])]
-                          : p.id === 'deployments:read' && !e.target.checked
-                            ? next.filter((x) => x !== 'deployments:write')
-                            : next,
-                      )
+                      setPermissions(toggleGrant(currentPermissions, p.id, e.target.checked))
                     }}
                   />
                   {p.name}
                 </label>
               ))}
             </fieldset>
+            <Note>
+              Credential access also requires deploy access. SQL writes require SQL query access.
+            </Note>
           </>
+        )}
+        {currentPermissions.includes('agent:credentials') && (
+          <Note>
+            Credential access permits agents to retrieve authorized credentials. Retrieved secrets
+            can enter the agent's context. Grant this permission only to agents and integrations you
+            trust.
+          </Note>
         )}
         {error && <RequestError error={error} />}
         <div className="flex gap-3">

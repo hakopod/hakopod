@@ -12,10 +12,10 @@ import (
 )
 
 type executionFlags struct {
-	Service, Pod, Container, CommandJSON, SQLFile, ParametersJSON string
-	AllowExec, AllowSQLWrite                                      bool
-	MaxRows, MaxBytes, Timeout, MaxOutput                         int
-	ExpectedRevision                                              int64
+	Service, Pod, Container, CommandJSON, SQLFile, ParametersJSON, ExecutionMode string
+	AllowExec, AllowSQLWrite                                                     bool
+	MaxRows, MaxBytes, Timeout, MaxOutput                                        int
+	ExpectedRevision                                                             int64
 }
 
 func boundedFile(path string, max int) ([]byte, error) {
@@ -69,7 +69,7 @@ func runExecution(ctx context.Context, c *client, cfg config, kind, id string, f
 				return err
 			}
 		}
-		arguments = map[string]any{"database_id": id, "sql": string(sql), "parameters": parameters, "write": f.AllowSQLWrite, "max_rows": f.MaxRows, "max_bytes": f.MaxBytes, "expected_revision": f.ExpectedRevision}
+		arguments = map[string]any{"database_id": id, "sql": string(sql), "parameters": parameters, "write": f.AllowSQLWrite, "max_rows": f.MaxRows, "max_bytes": f.MaxBytes, "expected_revision": f.ExpectedRevision, "execution_mode": f.ExecutionMode}
 		opts.AllowSQL = true
 		opts.AllowSQLWrite = f.AllowSQLWrite
 		name = "database_query"

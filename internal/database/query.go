@@ -17,10 +17,14 @@ type QueryRequest struct {
 	MaxRows          int    `json:"max_rows,omitempty"`
 	MaxBytes         int    `json:"max_bytes,omitempty"`
 	ExpectedRevision int64  `json:"expected_revision,omitempty"`
+	ExecutionMode    string `json:"execution_mode,omitempty"`
 }
 
 func (q QueryRequest) IsReadOnly() bool { return q.ReadOnly == nil || *q.ReadOnly }
 func (q *QueryRequest) Validate() error {
+	if q.ExecutionMode != "" && q.ExecutionMode != "transaction" && q.ExecutionMode != "nontransactional" {
+		return fmt.Errorf("execution_mode must be transaction or nontransactional")
+	}
 	if q.ExpectedRevision < 0 {
 		return fmt.Errorf("expected_revision must be positive when supplied")
 	}
@@ -50,8 +54,9 @@ func (q *QueryRequest) Validate() error {
 }
 
 type QueryColumn struct {
-	Name    string `json:"name"`
-	TypeOID uint32 `json:"type_oid"`
+	Name     string `json:"name"`
+	TypeOID  uint32 `json:"type_oid"`
+	TypeName string `json:"type_name,omitempty"`
 }
 
 // Text values preserve PostgreSQL numeric precision. SQL null remains JSON null.
@@ -71,3 +76,69 @@ type QueryError struct {
 }
 
 func (e *QueryError) Error() string { return e.Code }
+
+// QueryCapabilities describes engine guarantees. It does not grant permission.
+type QueryCapabilities struct {
+	Engine              string   `json:"engine"`
+	ReadOnlySupported   bool     `json:"read_only_supported"`
+	Supported           bool     `json:"supported"`
+	ExecutionModes      []string `json:"execution_modes"`
+	ApplicationIdentity string   `json:"application_identity"`
+	ParameterStyle      string   `json:"parameter_style"`
+	ReadOnlyEnforcement string   `json:"read_only_enforcement"`
+	TransactionalDML    bool     `json:"transactional_dml"`
+	TransactionalDDL    bool     `json:"transactional_ddl"`
+	DDLCommit           string   `json:"ddl_commit"`
+	Cancellation        string   `json:"cancellation"`
+}
+
+func SQLQueryEngine(engine string) bool {
+	switch engine {
+	case "postgresql", "mysql", "vitess", "duckdb", "clickhouse", "oracle":
+		return true
+	}
+	return false
+}
+func CapabilitiesForQuery(engine string) QueryCapabilities {
+	c := QueryCapabilities{ExecutionModes: []string{}, ApplicationIdentity: "app", Engine: engine, Cancellation: "The connection closes on cancellation. Check unknown write outcomes before retrying."}
+	switch engine {
+	case "postgresql":
+		c.Supported = true
+		c.ReadOnlySupported = true
+		c.ExecutionModes = []string{"transaction"}
+		c.ParameterStyle = "$1"
+		c.ReadOnlyEnforcement = "server_transaction"
+		c.TransactionalDML = true
+		c.TransactionalDDL = true
+		c.DDLCommit = "transaction"
+	case "mysql", "vitess":
+		if engine == "mysql" {
+			c.Supported = true
+			c.ReadOnlySupported = true
+			c.ExecutionModes = []string{"transaction", "nontransactional"}
+		}
+		c.ParameterStyle = "?"
+		c.ReadOnlyEnforcement = "server_transaction"
+		c.TransactionalDML = true
+		c.DDLCommit = "implicit_commit"
+	case "oracle":
+		c.ApplicationIdentity = "APP"
+		c.ParameterStyle = ":1"
+		c.ReadOnlyEnforcement = "server_transaction"
+		c.TransactionalDML = true
+		c.DDLCommit = "implicit_commit"
+	case "duckdb":
+		c.ApplicationIdentity = "root (managed application owner)"
+		c.ParameterStyle = "?"
+		c.ReadOnlyEnforcement = "runtime_verification_required"
+		c.DDLCommit = "runtime_specific"
+	case "clickhouse":
+		c.Supported = true
+		c.ReadOnlySupported = true
+		c.ExecutionModes = []string{"nontransactional"}
+		c.ParameterStyle = "{p1:Type}"
+		c.ReadOnlyEnforcement = "server_readonly_setting"
+		c.DDLCommit = "nontransactional"
+	}
+	return c
+}

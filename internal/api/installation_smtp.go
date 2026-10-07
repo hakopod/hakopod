@@ -38,7 +38,7 @@ func (s *Server) registerSMTPRoutes(mux *http.ServeMux) {
 
 func (s *Server) smtpAdministrator(w http.ResponseWriter, r *http.Request) bool {
 	p := who(r)
-	if !p.IsAdmin() || !p.IsHuman() || p.CredentialType != "browser" {
+	if !installationAdministrator(p) {
 		failure(w, store.ErrForbidden)
 		return false
 	}
@@ -163,6 +163,9 @@ func (s *Server) putInstallationSMTP(w http.ResponseWriter, r *http.Request) {
 		ClearPassword    bool    `json:"clear_password"`
 	}
 	if !decodeSMTP(w, r, &in) {
+		return
+	}
+	if !agentInstallationCredentials(w, r, in.Password != "" || in.ClearPassword) {
 		return
 	}
 	if in.ExpectedRevision == nil || in.Enabled == nil || in.Host == nil || in.Port == nil || in.Security == nil || in.Username == nil || in.FromEmail == nil {

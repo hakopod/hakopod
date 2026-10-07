@@ -1,6 +1,7 @@
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('.', import.meta.url))
@@ -12,7 +13,7 @@ const server = await createServer({
   root,
   publicDir: `${project}/web/public`,
   plugins: [react(), tailwindcss()],
-  server: { host: '127.0.0.1', port, strictPort: true, hmr: false, fs: { allow: [project] } },
+  server: { host: '127.0.0.1', port, strictPort: true, hmr: false, fs: { allow: [project, realpathSync(`${project}/web/node_modules`)] } },
   cacheDir: `${project}/.local/agent-query-review/vite`,
   clearScreen: false,
 })
