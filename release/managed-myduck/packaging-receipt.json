@@ -1,0 +1,22 @@
+{
+  "archive_sha256": "8cefd613312d0afa3a0bb2bf9e1b9977316b295285a5c536bbd453e715a56c5f",
+  "binaries": {
+    "/usr/local/bin/hakopod-myduck-storage": "32babdbeab26339e270bcd341fe056cfd94fc30e38f9fa97ed833664f8233eda",
+    "/usr/local/bin/myduckserver": "96318a0c924e6801105b7eb3d37cfc660e87a0b404ad8f5efeacec97c761ad59"
+  },
+  "config_user": "1000:1000",
+  "entrypoint": [
+    "/usr/local/bin/myduckserver"
+  ],
+  "image_reference": "ghcr.io/hakopod/managed-myduck@sha256:ad324a97360dea53f9e32cb367666b8fefa6f52377000c084a63c1712ca79873",
+  "labels": {
+    "io.hakopod.myduck.patch-sha256": "85cbfb3bdf2779c655eb9ac4bd041916b88ee22bb6b8b107e9231f8d8d00055e",
+    "io.hakopod.myduck.upstream": "6e3427591fd8895df9585969e7256f958fb639bb",
+    "org.opencontainers.image.source": "https://github.com/hakopod/hakopod",
+    "org.opencontainers.image.title": "Hakopod-managed-MyDuck",
+    "org.opencontainers.image.version": "0.1.0-hakopod.3"
+  },
+  "platform": "linux/amd64",
+  "schema_version": 1,
+  "source_build_manifest_sha256": "a5bfc7d93bc1dfb89daa6e012b1ddd89055575cc5550a95193b3798bfdd8ecaa"
+}
