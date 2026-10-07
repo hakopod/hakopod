@@ -1,6 +1,10 @@
 package backup
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/hakopod/hakopod/internal/database"
+)
 
 // Only supported, authenticated logical archive formats may reach a fresh
 // managed target. A version change is an explicit staged copy, never in-place.
@@ -9,6 +13,10 @@ func ValidateManagedRecovery(a Artifact, engine, version string) error {
 		return fmt.Errorf("%w: choose a verified matching database archive with a captured recovery point", ErrInput)
 	}
 	switch engine {
+	case "duckdb":
+		if a.Format != "age-v1+myduck-cold-v1" || a.SourceVersion != database.MyDuckVersion || version != a.SourceVersion {
+			return fmt.Errorf("%w: MyDuck recovery requires a cold archive from the exact managed runtime version", ErrConflict)
+		}
 	case "vitess":
 		if a.Format != "age-v1+vitess-logical-v1" || a.SourceVersion != "23" || version != "23" {
 			return fmt.Errorf("%w: Vitess recovery requires a verified version 23 logical shard archive", ErrInput)

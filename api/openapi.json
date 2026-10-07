@@ -20135,7 +20135,8 @@
               "redis",
               "mongodb",
               "oracle",
-              "vitess"
+              "vitess",
+              "duckdb"
             ]
           },
           "database": {
@@ -20316,7 +20317,8 @@
               "redis",
               "mongodb",
               "oracle",
-              "vitess"
+              "vitess",
+              "duckdb"
             ]
           },
           "database": {
@@ -22998,7 +23000,17 @@
             "type": "string"
           },
           "endpoint": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "",
+              "read_write",
+              "read_only",
+              "cluster",
+              "pooled_read_write",
+              "pooled_read_only",
+              "mysql",
+              "postgresql"
+            ]
           },
           "cluster_aware": {
             "type": "boolean"
@@ -23277,8 +23289,10 @@
               "mongodb",
               "clickhouse",
               "oracle",
-              "vitess"
-            ]
+              "vitess",
+              "duckdb"
+            ],
+            "description": "Managed engine identifier. duckdb selects DuckDB through MyDuck and remains unavailable until native single-node, dual-protocol TLS qualification passes."
           },
           "version": {
             "type": "string"
@@ -23423,7 +23437,18 @@
         "type": "object",
         "properties": {
           "purpose": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "read_write",
+              "read_only",
+              "pooled_read_write",
+              "pooled_read_only",
+              "native",
+              "https",
+              "cluster",
+              "mysql",
+              "postgresql"
+            ]
           },
           "host": {
             "type": "string"
@@ -23607,7 +23632,9 @@
               "pooled_read_only",
               "native",
               "https",
-              "cluster"
+              "cluster",
+              "mysql",
+              "postgresql"
             ]
           },
           "source_cidrs": {

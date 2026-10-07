@@ -33,6 +33,7 @@ const oracleFreePublicEndpointsQualified = false
 const mongodbPublicEndpointsQualified = false
 const redisPublicEndpointsQualified = false
 const vitessPublicEndpointsQualified = false
+const myduckPublicEndpointsQualified = false
 
 type PublicEndpointRoute struct {
 	Purpose         string `json:"purpose"`
@@ -72,7 +73,7 @@ type PublicEndpointCapabilities struct {
 }
 
 func PublicEndpointAvailability(s Spec) error {
-	if s.Engine != "postgresql" && s.Engine != "mysql" && s.Engine != "clickhouse" && s.Engine != "oracle" && s.Engine != "mongodb" && s.Engine != "redis" && s.Engine != "vitess" {
+	if s.Engine != "postgresql" && s.Engine != "mysql" && s.Engine != "clickhouse" && s.Engine != "oracle" && s.Engine != "mongodb" && s.Engine != "redis" && s.Engine != "vitess" && s.Engine != "duckdb" {
 		return fmt.Errorf("public endpoints are unavailable for this database engine")
 	}
 	if !s.TLSRequired() {
@@ -86,6 +87,9 @@ func PublicEndpointAvailability(s Spec) error {
 	}
 	if s.Engine == "vitess" && !vitessPublicEndpointsQualified {
 		return fmt.Errorf("Vitess public endpoints are unavailable until native vtgate TLS, target routing, failover and revocation qualification is complete")
+	}
+	if s.Engine == "duckdb" && !myduckPublicEndpointsQualified {
+		return fmt.Errorf("DuckDB (MyDuck) public endpoints are unavailable until dual-protocol TLS, identity, DNS, firewall and revocation qualification is complete")
 	}
 	if s.Engine == "mysql" && !mysqlPublicEndpointsQualified {
 		return fmt.Errorf("MySQL public endpoints are unavailable until native Router TLS, routing and revocation qualification is complete")
@@ -132,6 +136,13 @@ func PublicEndpointRoutes(s Spec) []PublicEndpointRoute {
 		add("read_write", "mysql", "vitess_gateway", "database", "mysql", 3306, false, false)
 		routes[len(routes)-1].BackendUser = "app"
 		routes[len(routes)-1].BackendDatabase = "app@primary"
+	case "duckdb":
+		add("mysql", "mysql", "direct", "database", "mysql", 3306, false, false)
+		routes[len(routes)-1].BackendUser = "root"
+		routes[len(routes)-1].BackendDatabase = "app"
+		add("postgresql", "postgresql", "direct", "database", "postgresql", 5432, false, false)
+		routes[len(routes)-1].BackendUser = "postgres"
+		routes[len(routes)-1].BackendDatabase = "app"
 	case "clickhouse":
 		add("native", "clickhouse_native", "direct", "database", "tcp-secure", 9440, false, false)
 		add("https", "https", "direct", "database", "https", 8443, false, false)
@@ -204,7 +215,7 @@ type PublicEndpointSpec struct {
 }
 
 func (s PublicEndpointSpec) Normalize() (PublicEndpointSpec, error) {
-	if !slices.Contains(PostgreSQLPublicEndpointPurposes, s.Purpose) && s.Purpose != "native" && s.Purpose != "https" && s.Purpose != "cluster" {
+	if !slices.Contains(PostgreSQLPublicEndpointPurposes, s.Purpose) && s.Purpose != "native" && s.Purpose != "https" && s.Purpose != "cluster" && s.Purpose != "mysql" && s.Purpose != "postgresql" {
 		return s, fmt.Errorf("purpose must match one of the database's advertised public routes")
 	}
 	if len(s.SourceCIDRs) < 1 || len(s.SourceCIDRs) > 16 {

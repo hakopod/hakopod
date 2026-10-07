@@ -85,6 +85,6 @@ func (c *DatabaseMaintenanceClaim) Release() {
 // The caller holds the database row lock shared with maintenance claiming.
 func databaseMaintenanceIdle(ctx context.Context, tx pgx.Tx, id string) (bool, error) {
 	var idle bool
-	err := tx.QueryRow(ctx, `SELECT maintenance_lease_until IS NULL OR maintenance_lease_until<=clock_timestamp() FROM managed_databases WHERE id=$1`, id).Scan(&idle)
+	err := tx.QueryRow(ctx, `SELECT (maintenance_lease_until IS NULL OR maintenance_lease_until<=clock_timestamp()) AND NOT EXISTS(SELECT 1 FROM managed_database_cold_storage_fences WHERE database_id=$1) FROM managed_databases WHERE id=$1`, id).Scan(&idle)
 	return idle, err
 }

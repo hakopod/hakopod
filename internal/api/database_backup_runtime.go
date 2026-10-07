@@ -9,6 +9,29 @@ import (
 	"time"
 )
 
+func (r *backupRuntime) RecoverColdStorage(ctx context.Context, job backup.Job) (bool, error) {
+	_, found, err := r.server.Store.DatabaseColdStorageFenceForJob(ctx, job.ID)
+	if err != nil || !found {
+		return found, err
+	}
+	fence, err := r.server.Store.ClaimDatabaseColdStorageCleanup(ctx, job.ID, job.Lease)
+	if err != nil {
+		return true, err
+	}
+	d, err := r.server.Store.DatabaseInternal(ctx, fence.DatabaseID)
+	if err != nil || d.Revision != fence.Revision || d.Spec.Engine != "duckdb" {
+		return true, fmt.Errorf("MyDuck cold cleanup database identity changed")
+	}
+	before := func() error { return r.server.Store.CheckDatabaseColdStorageCleanup(ctx, fence) }
+	if err = r.server.Cluster.ReconcileMyDuckColdStorage(ctx, d, job.ID, fence.Kind == "backup", before); err != nil {
+		return true, err
+	}
+	if err = r.server.Store.ReleaseDatabaseColdStorageFence(ctx, fence); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
 func (r *backupRuntime) resolveManagedDatabase(ctx context.Context, source backup.Source) (backup.Target, error) {
 	target := backup.Target{Source: source}
 	if r.server.Cluster == nil {
@@ -55,6 +78,33 @@ func (r *backupRuntime) dumpManagedDatabase(ctx context.Context, target backup.T
 			return fmt.Errorf("database primary changed before backup")
 		}
 	}
+	if d.Spec.Engine == "duckdb" {
+		job, ok := backup.WorkerJobFromContext(ctx)
+		if !ok || job.Kind != "backup" {
+			return fmt.Errorf("MyDuck cold backup requires the active backup worker")
+		}
+		if err = r.server.Store.AcquireDatabaseColdStorageFence(ctx, d.ID, d.Revision, job.ID, job.Lease, job.Kind); err != nil {
+			return fmt.Errorf("MyDuck cold backup fence is unavailable: %w", err)
+		}
+		before := func() error {
+			return r.server.Store.CheckDatabaseColdStorageWorker(ctx, d.ID, d.Revision, job.ID, job.Lease, job.Kind)
+		}
+		operationErr := r.server.Cluster.WithMyDuckColdStorage(ctx, d, observed, job.ID, false, before, nil, out)
+		cleanup, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		fence, claimErr := r.server.Store.ClaimDatabaseColdStorageCleanup(cleanup, job.ID, job.Lease)
+		if claimErr != nil {
+			return fmt.Errorf("MyDuck cold backup cleanup authority is unavailable: %w", claimErr)
+		}
+		cleanupBefore := func() error { return r.server.Store.CheckDatabaseColdStorageCleanup(cleanup, fence) }
+		if reconcileErr := r.server.Cluster.ReconcileMyDuckColdStorage(cleanup, d, job.ID, true, cleanupBefore); reconcileErr != nil {
+			return fmt.Errorf("MyDuck cold backup cleanup is incomplete: %w", reconcileErr)
+		}
+		if releaseErr := r.server.Store.ReleaseDatabaseColdStorageFence(cleanup, fence); releaseErr != nil {
+			return fmt.Errorf("MyDuck cold backup fence could not be cleared: %w", releaseErr)
+		}
+		return operationErr
+	}
 	return r.server.Cluster.DumpDatabase(ctx, d, observed, out)
 }
 func managedBackupTarget(d database.Resource) backup.Target {
@@ -76,6 +126,31 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 	}
 	var restoreErr error
 	switch d.Spec.Engine {
+	case "duckdb":
+		jobContext, ok := backup.WorkerJobFromContext(ctx)
+		if !ok || jobContext.Kind != "restore" || jobContext.ID != job.ID || jobContext.Lease != job.Lease {
+			return fmt.Errorf("MyDuck cold restore requires the active backup worker")
+		}
+		if err = r.server.Store.AcquireDatabaseColdStorageFence(ctx, d.ID, d.Revision, job.ID, job.Lease, job.Kind); err != nil {
+			return fmt.Errorf("MyDuck cold restore fence is unavailable: %w", err)
+		}
+		before := func() error {
+			return r.server.Store.CheckDatabaseColdStorageWorker(ctx, d.ID, d.Revision, job.ID, job.Lease, job.Kind)
+		}
+		restoreErr = r.server.Cluster.WithMyDuckColdStorage(ctx, d, observed, job.ID, true, before, input, nil)
+		cleanup, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		fence, claimErr := r.server.Store.ClaimDatabaseColdStorageCleanup(cleanup, job.ID, job.Lease)
+		if claimErr != nil {
+			return fmt.Errorf("MyDuck cold restore cleanup authority is unavailable: %w", claimErr)
+		}
+		cleanupBefore := func() error { return r.server.Store.CheckDatabaseColdStorageCleanup(cleanup, fence) }
+		if reconcileErr := r.server.Cluster.ReconcileMyDuckColdStorage(cleanup, d, job.ID, restoreErr == nil, cleanupBefore); reconcileErr != nil {
+			return fmt.Errorf("MyDuck cold restore cleanup is incomplete: %w", reconcileErr)
+		}
+		if releaseErr := r.server.Store.ReleaseDatabaseColdStorageFence(cleanup, fence); releaseErr != nil {
+			return fmt.Errorf("MyDuck cold restore fence could not be cleared: %w", releaseErr)
+		}
 	case "postgresql":
 		restoreErr = r.server.Cluster.RestorePostgresDatabase(ctx, d, observed, input)
 	case "mysql":

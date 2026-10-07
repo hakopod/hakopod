@@ -47,8 +47,8 @@ func (s Source) Validate() error {
 		return fmt.Errorf("%w: external_name only belongs to imported archives", ErrInput)
 	}
 	if s.Kind == "managed_database" {
-		if !identifierID.MatchString(s.ManagedDatabaseID) || s.ApplicationID != "" || s.Service != "" || s.Database != "" || (s.Engine != "postgresql" && s.Engine != "redis" && s.Engine != "mysql" && s.Engine != "mongodb" && s.Engine != "clickhouse" && s.Engine != "oracle" && s.Engine != "vitess") {
-			return fmt.Errorf("%w: choose a managed PostgreSQL, Redis, MySQL, MongoDB, ClickHouse, Vitess or Oracle database", ErrInput)
+		if !identifierID.MatchString(s.ManagedDatabaseID) || s.ApplicationID != "" || s.Service != "" || s.Database != "" || (s.Engine != "postgresql" && s.Engine != "redis" && s.Engine != "mysql" && s.Engine != "mongodb" && s.Engine != "clickhouse" && s.Engine != "oracle" && s.Engine != "vitess" && s.Engine != "duckdb") {
+			return fmt.Errorf("%w: choose a supported managed database", ErrInput)
 		}
 		return nil
 	}
@@ -186,6 +186,19 @@ type Job struct {
 	Lease      string     `json:"-"`
 }
 
+type workerJobContextKey struct{}
+
+type WorkerJob struct{ ID, Lease, Kind string }
+
+func WithWorkerJob(ctx context.Context, job Job) context.Context {
+	return context.WithValue(ctx, workerJobContextKey{}, WorkerJob{ID: job.ID, Lease: job.Lease, Kind: job.Kind})
+}
+
+func WorkerJobFromContext(ctx context.Context) (WorkerJob, bool) {
+	job, ok := ctx.Value(workerJobContextKey{}).(WorkerJob)
+	return job, ok && job.ID != "" && job.Lease != "" && (job.Kind == "backup" || job.Kind == "restore")
+}
+
 type Schedule struct {
 	Authority      *Authority `json:"-"`
 	ID             string     `json:"id"`
@@ -275,6 +288,9 @@ type Repository interface {
 }
 
 func Scope(source Source) string {
+	if source.Engine == "duckdb" {
+		return "Encrypted cold backup of one standalone DuckDB (MyDuck) data directory. Capture briefly stops the database, so connections are interrupted, and resumes it after the archive is complete or fails. Restore verifies the complete encrypted archive before replacing files in a separate empty target of the same version. A failed restore remains stopped and isolated until cleanup and recovery are reviewed. Excludes users, server configuration and point-in-time recovery."
+	}
 	if source.Engine == "oracle" {
 		return "Oracle Free Data Pump capture of the APP schema in FREEPDB1 at one SCN. Includes supported schema objects and data; excludes database users, grants, CDB configuration, wallets, archived redo, RMAN and point-in-time recovery. Concurrent DDL can invalidate capture. Restore runs with the APP schema account in a separate empty Free target of the same version after complete archive verification and session revocation. Application ingress stays closed until recovery is inspected."
 	}

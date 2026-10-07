@@ -23,7 +23,7 @@ const maxEngineRef = 256
 
 // A resumable job is one waiting on a backup the database engine is performing
 // itself: hakopod holds only the engine's own identifier for it.
-const resumableBackupJob = "engine_ref IS NOT NULL"
+const resumableBackupJob = "(engine_ref IS NOT NULL OR EXISTS(SELECT 1 FROM managed_database_cold_storage_fences cold WHERE cold.backup_job_id=backup_jobs.id))"
 
 // One durable streaming slot across API processes, for the jobs that actually
 // move bytes through this server. A job that is only polling an engine parks in
@@ -161,6 +161,13 @@ func (s *Store) FinishBackupJob(ctx context.Context, j backup.Job, status, messa
 	}
 	if current != "running" || lease != j.Lease {
 		return backup.ErrConflict
+	}
+	var coldStorageActive bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM managed_database_cold_storage_fences WHERE backup_job_id=$1)", j.ID).Scan(&coldStorageActive); err != nil {
+		return err
+	}
+	if coldStorageActive {
+		return fmt.Errorf("%w: cold database cleanup is incomplete", backup.ErrConflict)
 	}
 	// A completed artifact remains useful even when a cancel arrived during the
 	// final object-store acknowledgement. Its successful commit is truthful.

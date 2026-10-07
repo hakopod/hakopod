@@ -107,6 +107,7 @@ func (s *Service) RunOnce(parent context.Context) error {
 	}
 	ctx, stop := context.WithTimeout(parent, 30*time.Minute)
 	defer stop()
+	ctx = WithWorkerJob(ctx, j)
 	check, cancel := context.WithTimeout(ctx, 2*time.Second)
 	revoked, err := s.Repo.HeartbeatBackupJob(check, j.ID, j.Lease)
 	cancel()
@@ -118,6 +119,21 @@ func (s *Service) RunOnce(parent context.Context) error {
 	// goroutine could only cancel the work it has left to do.
 	stopping := j.EngineRef != "" && j.CancelRequested
 	if err != nil || (revoked && !stopping) {
+		if cleanup, ok := s.Runtime.(interface {
+			RecoverColdStorage(context.Context, Job) (bool, error)
+		}); ok {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 25*time.Second)
+			handled, cleanupErr := cleanup.RecoverColdStorage(cleanupCtx, j)
+			cleanupCancel()
+			if handled && cleanupErr != nil {
+				return cleanupErr
+			}
+			if handled {
+				finish, c := context.WithTimeout(context.Background(), 5*time.Second)
+				defer c()
+				return s.Repo.FinishBackupJob(finish, j, "cancelled", "Operation authority ended during cold database transfer; cleanup completed without replaying the transfer.", nil)
+			}
+		}
 		finish, c := context.WithTimeout(context.Background(), 5*time.Second)
 		defer c()
 		return s.Repo.FinishBackupJob(finish, j, "cancelled", "Operation authority is no longer valid or its lease could not be renewed.", nil)
@@ -146,7 +162,20 @@ func (s *Service) RunOnce(parent context.Context) error {
 		}()
 	}
 	var artifact *Artifact
-	if j.Kind == "backup" {
+	if cleanup, ok := s.Runtime.(interface {
+		RecoverColdStorage(context.Context, Job) (bool, error)
+	}); ok {
+		handled, cleanupErr := cleanup.RecoverColdStorage(ctx, j)
+		if handled {
+			err = cleanupErr
+			if err == nil {
+				err = fmt.Errorf("worker stopped during cold database transfer; cleanup completed and a new backup or restore review is required")
+			}
+		}
+	}
+	if err != nil {
+		// Preserve the cleanup result selected above.
+	} else if j.Kind == "backup" {
 		artifact, err = s.create(ctx, j)
 	} else if j.Kind == "restore" {
 		err = s.restore(ctx, j)
@@ -234,6 +263,9 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 			if target.Engine == "vitess" {
 				prefix = "HAKOPOD_VITESS_LOGICAL_V1\n"
 			}
+			if target.Engine == "duckdb" {
+				prefix = "HAKOPOD_MYDUCK_COLD_V1\n"
+			}
 			verified := &dumpFormatWriter{target: encrypted, prefix: []byte(prefix)}
 			e = s.Runtime.Dump(ctx, target, verified)
 			if e == nil && !verified.valid {
@@ -277,6 +309,9 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 		}
 		if target.Engine == "vitess" {
 			return "vitess-logical-v1"
+		}
+		if target.Engine == "duckdb" {
+			return "myduck-cold-v1"
 		}
 		return "postgresql-custom"
 	}(), Scope: Scope(j.Source), ScheduleID: j.ScheduleID, CreatedAt: time.Now().UTC()}
