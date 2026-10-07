@@ -44,7 +44,7 @@ class MyDuckQualificationTest(unittest.TestCase):
                 "node_uids": {"k3d-hakopod-dev-server-0": "22222222-2222-2222-2222-222222222222"},
                 "preserved_resources": {"before_sha256": "d" * 64, "after_sha256": "d" * 64,
                     "namespace_count": 4, "persistent_volume_count": 0, "s3_container_count": 0},
-                "cleanup": {"namespaces": ["hdb-" + letter * 32 for letter in "abcd"[:MODULE["FIXTURE_COUNTS"][case]]],
+                "cleanup": {"namespaces": ["hdb-" + letter * 32 for letter in "abcde"[:MODULE["FIXTURE_COUNTS"][case]]],
                             "namespaces_absent": True, "persistent_volumes_absent": True}})
         self.acceptance = {"schema_version": 1, "context": "k3d-hakopod-dev", "execution": "native", "platform": "linux/amd64",
                            "source_files": self.sources, "images": self.images, "attempts": attempts}
@@ -85,7 +85,8 @@ class MyDuckQualificationTest(unittest.TestCase):
 
     def test_source_or_build_drift_invalidates_prior_acceptance(self):
         for name in ("internal/cluster/database_myduck.go", "cmd/hakopod-myduck-storage/main.go",
-                     "scripts/package-managed-myduck.py", "scripts/collect-myduck-licenses.py"):
+                     "scripts/package-managed-myduck.py", "scripts/collect-myduck-licenses.py",
+                     "patches/myduck/runtime-overlay-manifest.json"):
             path = self.root / name
             old = path.read_text()
             path.write_text(old + "// changed\n")
