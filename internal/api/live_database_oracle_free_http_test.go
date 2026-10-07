@@ -189,8 +189,8 @@ func oracleHTTPBinding(t *testing.T, ctx context.Context, client backupRequestCl
 			t.Fatal("application plan", status)
 		}
 		var deployment store.Deployment
-		if status := client.request("POST", "/deployments", map[string]any{"project": d.Project, "environment": d.Environment, "spec": next, "expected_revision": revision}, &deployment, idem); status != http.StatusAccepted {
-			t.Fatal("application deployment", status)
+		if status, code := client.requestCode("POST", "/deployments", map[string]any{"project": d.Project, "environment": d.Environment, "spec": next, "expected_revision": revision}, &deployment, idem); status != http.StatusAccepted {
+			t.Fatal("application deployment", status, code)
 		}
 		return oracleHTTPWaitDeployment(t, ctx, client, deployment)
 	}
@@ -246,6 +246,75 @@ EOF
 	return deployment.ApplicationID, namespace, revoked.Revision
 }
 
+func TestManagedOracleFreeHTTPApplicationDeploymentAdmission(t *testing.T) {
+	if os.Getenv("HAKOPOD_ORACLE_FREE_HTTP_ADMISSION_TEST") != "1" {
+		t.Skip("set HAKOPOD_ORACLE_FREE_HTTP_ADMISSION_TEST=1 for the development admission check")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	path := os.Getenv("HAKOPOD_TEST_KUBECONFIG")
+	configuration, err := clientcmd.LoadFromFile(path)
+	if err != nil || configuration.CurrentContext != "k3d-hakopod-dev" {
+		t.Fatal("Oracle Free application admission requires k3d-hakopod-dev")
+	}
+	restConfig, err := clientcmd.BuildConfigFromFlags("", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kube, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inventory := func() []byte {
+		namespaces, listErr := kube.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if listErr != nil {
+			t.Fatal(listErr)
+		}
+		volumes, listErr := kube.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+		if listErr != nil {
+			t.Fatal(listErr)
+		}
+		result := map[string]map[string]string{"namespaces": {}, "persistent_volumes": {}}
+		for _, namespace := range namespaces.Items {
+			result["namespaces"][namespace.Name] = string(namespace.UID)
+		}
+		for _, volume := range volumes.Items {
+			result["persistent_volumes"][volume.Name] = string(volume.UID)
+		}
+		return store.JSON(result)
+	}
+	before := inventory()
+	runtime, err := cluster.New(path, cluster.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, _ := database(t)
+	token, err := db.Bootstrap(ctx, "oracle-free-http-admission")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.ValidateDeployment = func(ctx context.Context, application store.Application, next spec.Application) error {
+		return runtime.ValidateDelivery(ctx, cluster.Target{ApplicationID: application.ID, Project: application.Project, Environment: application.Environment, Revision: application.Revision, Spec: next})
+	}
+	server := httptest.NewServer((&api.Server{Store: db, Cluster: runtime}).Handler())
+	defer server.Close()
+	server.Client().Timeout = 30 * time.Second
+	client := backupRequestClient{t: t, server: server, token: token}
+	input := map[string]any{"project": "demo", "environment": "development", "spec": oracleHTTPApplication()}
+	var plan map[string]any
+	if status, code := client.requestCode("POST", "/plan", input, &plan, ""); status != http.StatusOK {
+		t.Fatal("application plan", status, code)
+	}
+	input["expected_revision"] = int64(0)
+	var deployment store.Deployment
+	if status, code := client.requestCode("POST", "/deployments", input, &deployment, "oracle-http-admission"); status != http.StatusAccepted || deployment.ID == "" || deployment.ApplicationID == "" {
+		t.Fatal("application deployment admission", status, code)
+	}
+	if after := inventory(); !bytes.Equal(after, before) {
+		t.Fatal("application admission mutated the development cluster")
+	}
+}
+
 func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	if os.Getenv("HAKOPOD_ORACLE_FREE_HTTP_TEST") != "1" {
 		t.Skip("set HAKOPOD_ORACLE_FREE_HTTP_TEST=1 for the owned development acceptance environment")
@@ -294,6 +363,9 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	}
 	endpoint, access, secret, objectClient := liveBackupObjectStore(t, ctx)
 	server := &api.Server{Store: db, Cluster: runtime, Auth: api.AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{23}, 32))}}
+	db.ValidateDeployment = func(ctx context.Context, application store.Application, next spec.Application) error {
+		return runtime.ValidateDelivery(ctx, cluster.Target{ApplicationID: application.ID, Project: application.Project, Environment: application.Environment, Revision: application.Revision, Spec: next})
+	}
 	state := t.TempDir()
 	if err = os.Chmod(state, 0700); err != nil {
 		t.Fatal(err)

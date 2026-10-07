@@ -1,6 +1,6 @@
 Hakopod 0.1.0-alpha.56 adds managed DuckDB through MyDuck and Oracle Database
-Free, application-specific database credentials, and editable TOML for catalog
-deployments.
+Free, database bindings for existing application accounts, and editable TOML
+for catalog deployments.
 
 MyDuck runs one persistent DuckDB database with two private connections: MySQL
 on port 3306 and PostgreSQL on port 5432. Both reach the same data. Connections
