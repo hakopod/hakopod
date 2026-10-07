@@ -1,5 +1,5 @@
 diff --git a/backend/handler.go b/backend/handler.go
-index 873583d..68091c9 100644
+index 873583d..af997f2 100644
 --- a/backend/handler.go
 +++ b/backend/handler.go
 @@ -19,6 +19,7 @@ import (
@@ -10,7 +10,7 @@ index 873583d..68091c9 100644
  
  	"github.com/apecloud/myduckserver/catalog"
  	"github.com/apecloud/myduckserver/mycontext"
-@@ -35,10 +36,18 @@ import (
+@@ -35,10 +36,28 @@ import (
  
  type MyHandler struct {
  	*server.Handler
@@ -30,10 +30,30 @@ index 873583d..68091c9 100644
 +		return ctx, func() {}
 +	}
 +	return context.WithTimeout(ctx, h.statementTimeout)
++}
++
++func (h *MyHandler) ConnectionAuthenticated(c *mysql.Conn) error {
++	if err := h.Handler.ConnectionAuthenticated(c); err != nil {
++		return err
++	}
++	if catalog.ManagedLockdownEnabled() {
++		return h.Handler.ComInitDB(c, "app")
++	}
++	return nil
  }
  
  func (h *MyHandler) ConnectionClosed(c *mysql.Conn) {
-@@ -112,6 +121,8 @@ func (h *MyHandler) ComMultiQuery(
+@@ -73,6 +92,9 @@ func (h *MyHandler) ConnectionClosed(c *mysql.Conn) {
+ }
+ 
+ func (h *MyHandler) ComInitDB(c *mysql.Conn, schemaName string) error {
++	if catalog.ManagedLockdownEnabled() && schemaName != "app" {
++		return catalog.ErrSensitiveSQL
++	}
+ 	ctx := mycontext.WithFrontendQuery(context.Background())
+ 	_, err := h.provider.Pool().GetConnForSchema(ctx, c.ConnectionID, schemaName)
+ 	if err != nil {
+@@ -112,6 +134,8 @@ func (h *MyHandler) ComMultiQuery(
  		return query, err
  	}
  	ctx = mycontext.WithFrontendQuery(ctx)
@@ -42,7 +62,7 @@ index 873583d..68091c9 100644
  	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
  	defer func() {
  		audit.Complete(returnErr)
-@@ -158,6 +169,8 @@ func (h *MyHandler) ComQuery(
+@@ -158,6 +182,8 @@ func (h *MyHandler) ComQuery(
  		return err
  	}
  	ctx = mycontext.WithFrontendQuery(ctx)
@@ -51,7 +71,7 @@ index 873583d..68091c9 100644
  	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
  	defer func() {
  		audit.Complete(returnErr)
-@@ -201,6 +214,8 @@ func (h *MyHandler) ComStmtExecute(ctx context.Context, c *mysql.Conn, prepare *
+@@ -201,6 +227,8 @@ func (h *MyHandler) ComStmtExecute(ctx context.Context, c *mysql.Conn, prepare *
  		return err
  	}
  	ctx = mycontext.WithFrontendQuery(ctx)
@@ -60,7 +80,7 @@ index 873583d..68091c9 100644
  	if returnErr = h.rejectReadOnly(ctx, c, query); returnErr != nil {
  		return returnErr
  	}
-@@ -266,6 +281,8 @@ func (h *MyHandler) ComExecuteBound(ctx context.Context, c *mysql.Conn, query st
+@@ -266,6 +294,8 @@ func (h *MyHandler) ComExecuteBound(ctx context.Context, c *mysql.Conn, query st
  		return err
  	}
  	ctx = mycontext.WithFrontendQuery(ctx)
@@ -69,7 +89,7 @@ index 873583d..68091c9 100644
  	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
  	defer func() {
  		audit.Complete(returnErr)
-@@ -291,6 +308,8 @@ func (h *MyHandler) ComParsedQuery(ctx context.Context, c *mysql.Conn, query str
+@@ -291,6 +321,8 @@ func (h *MyHandler) ComParsedQuery(ctx context.Context, c *mysql.Conn, query str
  		return err
  	}
  	ctx = mycontext.WithFrontendQuery(ctx)
@@ -78,7 +98,7 @@ index 873583d..68091c9 100644
  	audit := NewQueryAudit(c, "mysql", catalog.RedactSensitiveSQL(query))
  	defer func() {
  		audit.Complete(returnErr)
-@@ -424,6 +443,7 @@ func WrapHandler(
+@@ -424,6 +456,7 @@ func WrapHandler(
  	engine *sqle.Engine,
  	newContext func(context.Context, *mysql.Conn, string) (*sql.Context, error),
  	readOnly bool,
@@ -86,7 +106,7 @@ index 873583d..68091c9 100644
  ) server.HandlerWrapper {
  	return func(h mysql.Handler) (mysql.Handler, error) {
  		handler, ok := h.(*server.Handler)
-@@ -432,11 +452,12 @@ func WrapHandler(
+@@ -432,11 +465,12 @@ func WrapHandler(
  		}
  
  		return &MyHandler{
@@ -104,6 +124,19 @@ index 873583d..68091c9 100644
  		}, nil
  	}
  }
+diff --git a/backend/mysql_handler_lifecycle_test.go b/backend/mysql_handler_lifecycle_test.go
+index 5ea0fa9..5ec0426 100644
+--- a/backend/mysql_handler_lifecycle_test.go
++++ b/backend/mysql_handler_lifecycle_test.go
+@@ -83,7 +83,7 @@ func TestMyHandlerConnectionClosedPreservesReplacementConnection(t *testing.T) {
+ 		builder,
+ 		nil,
+ 		func(h mysql.Handler) (mysql.Handler, error) {
+-			wrapped, wrapErr := WrapHandler(provider, engine, nil, false)(h)
++			wrapped, wrapErr := WrapHandler(provider, engine, nil, false, 0)(h)
+ 			if wrapErr == nil {
+ 				handler = wrapped.(*MyHandler)
+ 			}
 diff --git a/catalog/ducklake.go b/catalog/ducklake.go
 index f06136e..bb8d8c2 100644
 --- a/catalog/ducklake.go
@@ -246,10 +279,10 @@ index 99738b5..980aa7a 100644
  		_ = connector.Close()
  		return err
 diff --git a/catalog/sensitive_sql.go b/catalog/sensitive_sql.go
-index c0a5eeb..64e98b3 100644
+index c0a5eeb..1279abb 100644
 --- a/catalog/sensitive_sql.go
 +++ b/catalog/sensitive_sql.go
-@@ -3,10 +3,15 @@ package catalog
+@@ -3,10 +3,17 @@ package catalog
  import (
  	"errors"
  	"strings"
@@ -262,10 +295,12 @@ index c0a5eeb..64e98b3 100644
 +
 +func EnableManagedLockdown() { managedLockdown.Store(true) }
 +
++func ManagedLockdownEnabled() bool { return managedLockdown.Load() }
++
  // ErrSensitiveSQL is returned for user statements that would bypass the
  // service-owned DuckLake/S3 credential boundary. It intentionally contains no
  // statement text or credential-shaped data.
-@@ -298,6 +303,9 @@ func sensitiveStatement(tokens []sqlToken) bool {
+@@ -298,6 +305,9 @@ func sensitiveStatement(tokens []sqlToken) bool {
  	for _, token := range tokens {
  		words = append(words, tokenLower(token))
  	}
@@ -275,7 +310,7 @@ index c0a5eeb..64e98b3 100644
  	// BACKUP/RESTORE are legacy MyDuck commands. They intentionally keep
  	// their ObjectStorage implementation, including the user-supplied
  	// endpoint and credentials. Keep the recognized form on that path while
-@@ -343,6 +351,55 @@ func sensitiveStatement(tokens []sqlToken) bool {
+@@ -343,6 +353,55 @@ func sensitiveStatement(tokens []sqlToken) bool {
  	return containsBareRemoteURI(tokens)
  }
  
@@ -945,7 +980,7 @@ index a7fc1fc..b72e796 100644
  
  	if _, err := os.Stat(persister.FilePath); err == nil {
 diff --git a/pgserver/connection_handler.go b/pgserver/connection_handler.go
-index d40fcc1..15527ce 100644
+index d40fcc1..b51012f 100644
 --- a/pgserver/connection_handler.go
 +++ b/pgserver/connection_handler.go
 @@ -29,6 +29,7 @@ import (
@@ -973,17 +1008,28 @@ index d40fcc1..15527ce 100644
  }
  
  // frontendContext explicitly marks ordinary PostgreSQL protocol work. The
-@@ -485,6 +490,9 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
+@@ -485,6 +490,20 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
  
  	switch sm := startupMessage.(type) {
  	case *pgproto3.StartupMessage:
 +		if h.requireTLS && !h.tlsActive {
 +			return false, errors.New("TLS is required")
 +		}
++		if h.requireTLS {
++			if sm.Parameters["database"] != "app" {
++				return false, errors.New("managed PostgreSQL connections require database app")
++			}
++			if _, ok := sm.Parameters["options"]; ok {
++				return false, errors.New("managed PostgreSQL startup options are forbidden")
++			}
++			if _, ok := sm.Parameters["search_path"]; ok {
++				return false, errors.New("managed PostgreSQL startup search_path is forbidden")
++			}
++		}
  		if err = h.handleAuthentication(sm); err != nil {
  			return false, err
  		}
-@@ -498,7 +506,7 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
+@@ -498,7 +517,7 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
  			TxStatus: byte(ReadyForQueryTransactionIndicator_Idle),
  		})
  	case *pgproto3.SSLRequest:
@@ -992,7 +1038,7 @@ index d40fcc1..15527ce 100644
  		var performSSL = []byte("N")
  		if hasCertificate {
  			performSSL = []byte("S")
-@@ -512,8 +520,10 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
+@@ -512,8 +531,10 @@ func (h *ConnectionHandler) handleStartup() (bool, error) {
  		// We can't start in SSL mode, as the client does not attempt the handshake until after our response.
  		if hasCertificate {
  			h.setConn(tls.Server(h.Conn(), &tls.Config{
@@ -1004,7 +1050,7 @@ index d40fcc1..15527ce 100644
  		}
  		return h.handleStartup()
  	case *pgproto3.GSSEncRequest:
-@@ -604,7 +614,11 @@ func (h *ConnectionHandler) chooseInitialDatabase(startupMessage *pgproto3.Start
+@@ -604,7 +625,11 @@ func (h *ConnectionHandler) chooseInitialDatabase(startupMessage *pgproto3.Start
  		}
  	}
  
@@ -1017,7 +1063,7 @@ index d40fcc1..15527ce 100644
  	setStmt := fmt.Sprintf("SET database TO %s;", db)
  	parsed, err := parser.ParseOne(setStmt)
  	if err != nil {
-@@ -1398,7 +1412,9 @@ func (h *ConnectionHandler) handleExecute(message *pgproto3.Execute) (err error)
+@@ -1398,7 +1423,9 @@ func (h *ConnectionHandler) handleExecute(message *pgproto3.Execute) (err error)
  	rowsAffected := int32(0)
  
  	callback := h.spoolRowsCallback(query, &rowsAffected, true)
@@ -1028,7 +1074,7 @@ index d40fcc1..15527ce 100644
  	if err != nil {
  		return err
  	}
-@@ -2008,8 +2024,10 @@ func (h *ConnectionHandler) run(statement ConvertedStatement) error {
+@@ -2008,8 +2035,10 @@ func (h *ConnectionHandler) run(statement ConvertedStatement) error {
  	}
  
  	callback := h.spoolRowsCallback(statement, &rowsAffected, false)
