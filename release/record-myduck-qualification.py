@@ -26,6 +26,11 @@ def assemble(source, build_manifest, receipt, reports, output):
         events, valid = runner["structural_events"](log)
         if not valid or events != report["attempt"].get("test_events"):
             raise ValueError("MyDuck structural events differ from the native test log")
+        preserved = report["attempt"].get("preserved_resources", {})
+        before = path.parent / "inventory-before.json"
+        after = path.parent / "inventory-after.json"
+        if VERIFIER["file_hash"](before) != preserved.get("before_sha256") or VERIFIER["file_hash"](after) != preserved.get("after_sha256") or VERIFIER["read_json"](before) != VERIFIER["read_json"](after):
+            raise ValueError("MyDuck unrelated-resource inventory changed after its report")
         attempts.append(report["attempt"])
     acceptance = {"schema_version": 1, "context": "k3d-hakopod-dev", "execution": "native", "platform": "linux/amd64",
                   "source_files": sources, "images": images, "attempts": attempts}

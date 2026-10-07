@@ -89,7 +89,7 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
-          bash -n scripts/local-tools.sh scripts/local-up.sh scripts/local-down.sh scripts/install.sh scripts/build-managed-oracle-free.sh release/install-syft.sh deploy/cert-manager/install.sh
+          bash -n scripts/local-tools.sh scripts/local-up.sh scripts/local-down.sh scripts/install.sh scripts/build-managed-oracle-free.sh scripts/build-managed-myduck.sh release/install-syft.sh deploy/cert-manager/install.sh
           python3 -m py_compile scripts/*.py api/generate.py api/contracts/*.py examples/shop/variants.py tests/restart.py release/*.py
           python3 -m unittest discover -s tests -p 'test_*.py'
           python3 -m unittest discover -s installer -p 'test_*.py'

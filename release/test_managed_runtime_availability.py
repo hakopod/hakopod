@@ -190,7 +190,7 @@ class ManagedRuntimeAvailabilityTest(unittest.TestCase):
                           'deployment_qualified': False, 'images': {}}
                 if runtime == 'supabase':
                     report['image_config_identities_verified'] = True
-                elif runtime in ('vitess', 'oracle-free'):
+                elif runtime in ('vitess', 'oracle-free', 'myduck'):
                     report.update(schema_version=1, image_binary_hashes_verified=True)
                     del report['release_runtime_qualified'], report['deployment_qualified']
                 (directory / 'manifest.json').write_text(json.dumps(manifest))

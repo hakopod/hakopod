@@ -86,6 +86,20 @@ class ControllerPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'files differ'):
                 controllers.load_bundle(root,['vitess'])
 
+    def test_schema4_retains_myduck_availability_without_inventing_a_controller(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            manifest=self.release_bundle(root)
+            manifest['schema_version']=4
+            manifest['managed_runtimes'].update({'oracle-free':False,'myduck':True})
+            (root/'manifest.json').write_text(json.dumps(manifest))
+            controllers.load_bundle(root,['postgresql'])
+            self.assertFalse((root/'myduck.json').exists())
+            manifest['managed_runtimes']['myduck']=1
+            (root/'manifest.json').write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError,'availability and source revision'):
+                controllers.load_bundle(root,['postgresql'])
+
     def test_schema2_checks_unselected_files_and_duplicate_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

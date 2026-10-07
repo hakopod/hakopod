@@ -15,6 +15,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 GATES = {
+    'myduck': ('internal/database/myduck_qualification.go', 'MyDuckRuntimeQualified', 'const'),
     'oracle-free': ('internal/cluster/database_oracle_free_qualification.go', 'oracleFreeReleaseQualified', 'const'),
     'vitess': ('internal/cluster/database_vitess.go', 'vitessReleaseQualified', 'const'),
     'supabase': ('internal/managedplatform/supabase_qualification.go', 'SupabaseReleaseQualified', 'func'),
@@ -239,7 +240,7 @@ def _verify_archive(runtime, path, root):
                     'deployment_qualified': False, 'images': manifest['images']}
         if runtime == 'supabase':
             expected['image_config_identities_verified'] = True
-        elif runtime in ('vitess', 'oracle-free'):
+        elif runtime in ('vitess', 'oracle-free', 'myduck'):
             expected['schema_version'] = 1
             expected['image_binary_hashes_verified'] = True
             expected['images'] = {kind: item['reference'] for kind, item in manifest['images'].items()}
