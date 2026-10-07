@@ -45,6 +45,7 @@ def source_fingerprint():
     for name in ('LICENSE', 'NOTICE'):
         h.update((name + '\0' + host.digest(ROOT / name)).encode())
     for name in ('release/managed-runtime-availability.py', 'internal/cluster/database_vitess.go',
+                 'internal/database/myduck_qualification.go',
                  'internal/cluster/database_oracle_free_qualification.go',
                  'internal/managedplatform/supabase_qualification.go', 'internal/managedplatform/neon_qualification.go'):
         path = ROOT / name

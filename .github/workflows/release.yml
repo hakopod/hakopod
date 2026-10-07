@@ -98,6 +98,22 @@ jobs:
     with:
       version: ${{ needs.build.outputs.version }}
       artifact_name: release-assets
+  myduck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore the pinned template source
+        run: git submodule update --init templates
+      - name: Retain MyDuck qualification or its compiled release hold
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py prepare myduck --output .local/managed-myduck-release-evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: managed-myduck-release-evidence
+          path: .local/managed-myduck-release-evidence/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
   oracle-free:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -275,7 +291,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   publish:
-    needs: [build, smoke, hosts, probe-index, vitess, supabase, neon, oracle-free]
+    needs: [build, smoke, hosts, probe-index, vitess, supabase, neon, oracle-free, myduck]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -342,6 +358,10 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: managed-oracle-free-release-evidence
+          path: .local/publication/${{ needs.build.outputs.version }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: managed-myduck-release-evidence
           path: .local/publication/${{ needs.build.outputs.version }}
       - name: Verify managed runtime evidence against the compiled release gates
         env:

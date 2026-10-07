@@ -22,6 +22,23 @@ def metadata(kube, args):
     return RUNNER["command_json"]([*kube, *args, "-o", "json"])
 
 
+def inventory(kube, docker):
+    namespaces = metadata(kube, ["get", "namespaces", "--chunk-size=0"])
+    volumes = metadata(kube, ["get", "persistentvolumes", "--chunk-size=0"])
+    for value in (namespaces, volumes):
+        if not isinstance(value.get("items"), list) or len(value["items"]) > 1024 or value.get("metadata", {}).get("continue"):
+            raise ValueError("MyDuck preserved-resource inventory exceeds its bound")
+    containers = RUNNER["command_output"]([str(docker), "ps", "--all", "--no-trunc", "--filter", "label=com.hakopod.test=backups", "--format", "{{.ID}}"])
+    ids = containers.decode().splitlines()
+    if len(ids) > 128 or any(not re.fullmatch(r"[a-f0-9]{64}", value) for value in ids):
+        raise ValueError("MyDuck S3 fixture inventory exceeds its bound")
+    return {
+        "namespaces": {item["metadata"]["name"]: {"uid": item["metadata"]["uid"], "deletion_timestamp": item["metadata"].get("deletionTimestamp")} for item in namespaces["items"]},
+        "persistent_volumes": {item["metadata"]["name"]: {"uid": item["metadata"]["uid"], "claim": item.get("spec", {}).get("claimRef"), "reclaim_policy": item.get("spec", {}).get("persistentVolumeReclaimPolicy"), "storage_class": item.get("spec", {}).get("storageClassName"), "deletion_timestamp": item["metadata"].get("deletionTimestamp")} for item in volumes["items"]},
+        "s3_containers": sorted(ids),
+    }
+
+
 def environment(kube, nodes, images, case, output, docker, name="capacity-before.json"):
     if not nodes or len(nodes) != len(set(nodes)) or not set(nodes) <= NODES:
         raise ValueError("MyDuck requires distinct named development nodes")
@@ -110,6 +127,8 @@ def run(args):
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     sources, images = VERIFIER["source_files"](ROOT), VERIFIER["source_images"](ROOT)
     identity, capacity = environment(kube, args.nodes.split(","), images, args.case, args.output, args.docker)
+    before_inventory = inventory(kube, args.docker)
+    (args.output / "inventory-before.json").write_text(json.dumps(before_inventory, sort_keys=True, indent=2) + "\n")
     env = {key: value for key, value in os.environ.items() if not key.startswith(("GO", "CGO_", "HAKOPOD_", "AWS_"))}
     env.update(PATH=str(args.go.parent) + ":" + str(args.kubectl.parent) + ":" + str(args.docker.parent) + ":/usr/local/bin:/usr/bin:/bin",
                GOMAXPROCS="2", GOENV="off", GOWORK="off", GOFLAGS="-mod=readonly -p=1", GOTOOLCHAIN="local",
@@ -137,9 +156,19 @@ def run(args):
     after_identity, after_capacity = environment(kube, args.nodes.split(","), images, args.case, args.output, args.docker, "capacity-after.json")
     if after_identity != identity or {name: item["container_id"] for name, item in after_capacity.items()} != {name: item["container_id"] for name, item in capacity.items()}:
         raise ValueError("MyDuck development cluster identity changed during acceptance")
+    cleaned = cleanup(kube, fixture_names(log), args.case)
+    after_inventory = inventory(kube, args.docker)
+    (args.output / "inventory-after.json").write_text(json.dumps(after_inventory, sort_keys=True, indent=2) + "\n")
+    if before_inventory != after_inventory:
+        raise ValueError("MyDuck acceptance changed unrelated resources or left a host S3 fixture")
+    preserved = {"before_sha256": VERIFIER["file_hash"](args.output / "inventory-before.json"),
+                 "after_sha256": VERIFIER["file_hash"](args.output / "inventory-after.json"),
+                 "namespace_count": len(before_inventory["namespaces"]),
+                 "persistent_volume_count": len(before_inventory["persistent_volumes"]),
+                 "s3_container_count": len(before_inventory["s3_containers"])}
     attempt = {"case": args.case, "exit_code": code, "source_manifest_sha256": VERIFIER["source_hash"](sources),
                "source_manifest_after_sha256": VERIFIER["source_hash"](after), "log_sha256": VERIFIER["file_hash"](log),
-               "test_events": events, **identity, "cleanup": cleanup(kube, fixture_names(log), args.case)}
+               "test_events": events, **identity, "cleanup": cleaned, "preserved_resources": preserved}
     report = {"schema_version": 1, "context": "k3d-hakopod-dev", "execution": "native", "platform": "linux/amd64",
               "source_files": sources, "images": images, "attempt": attempt}
     (args.output / "report.json").write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")

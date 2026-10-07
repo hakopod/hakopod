@@ -41,6 +41,8 @@ class MyDuckQualificationTest(unittest.TestCase):
                 "source_manifest_sha256": MODULE["source_hash"](self.sources), "source_manifest_after_sha256": MODULE["source_hash"](self.sources),
                 "log_sha256": "b" * 64, "test_events": events, "cluster_uid": "11111111-1111-1111-1111-111111111111",
                 "node_uids": {"k3d-hakopod-dev-server-0": "22222222-2222-2222-2222-222222222222"},
+                "preserved_resources": {"before_sha256": "d" * 64, "after_sha256": "d" * 64,
+                    "namespace_count": 4, "persistent_volume_count": 0, "s3_container_count": 0},
                 "cleanup": {"namespaces": ["hdb-" + "a" * 32] + (["hdb-" + "b" * 32] if case != "lifecycle" else []),
                             "namespaces_absent": True, "persistent_volumes_absent": True}})
         self.acceptance = {"schema_version": 1, "context": "k3d-hakopod-dev", "execution": "native", "platform": "linux/amd64",
@@ -95,6 +97,7 @@ class MyDuckQualificationTest(unittest.TestCase):
             lambda value: value["attempts"][0]["test_events"][-1].update(Action="skip"),
             lambda value: value["attempts"][0]["test_events"].pop(),
             lambda value: value["attempts"][0]["cleanup"].update(persistent_volumes_absent=False),
+            lambda value: value["attempts"][0]["preserved_resources"].update(after_sha256="f" * 64),
             lambda value: value["attempts"][0].update(source_manifest_after_sha256="f" * 64),
             lambda value: value.update(context="customer-cluster"),
             lambda value: value["attempts"][2]["test_events"].__delitem__(slice(1, 3))]

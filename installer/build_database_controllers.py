@@ -27,6 +27,11 @@ NAMESPACES = {'postgresql': 'cnpg-system', 'redis': 'redis-operator', 'mysql': '
 RELEASE_ENGINES = ('postgresql', 'redis', 'mysql', 'mongodb', 'clickhouse')
 
 
+def qualify_myduck(source):
+    # MyDuck uses native StatefulSets, so its availability adds no controller.
+    runpy.run_path(str(source/'release/verify-myduck-runtime.py'))['validate_metadata'](source/'release/managed-myduck',source)
+
+
 def fetch(url, expected, path, limit=8 * 1024 * 1024):
     with urlopen(url, timeout=30) as response:
         data = response.read(limit + 1)
@@ -155,6 +160,7 @@ def build(destination, redis_image, include_vitess=None):
     if destination.exists():raise ValueError('Use a fresh controller bundle directory')
     if include_vitess:qualify_vitess(HERE.parent)
     if managed_runtimes['oracle-free']:qualify_oracle_free(HERE.parent)
+    if managed_runtimes.get('myduck'):qualify_myduck(HERE.parent)
     with tempfile.TemporaryDirectory(prefix='hakopod-controller-build-') as tmp:
         files={}
         helm=helm_binary(Path(tmp))
@@ -172,7 +178,7 @@ def build(destination, redis_image, include_vitess=None):
             files['oracle-free.json']=(json.dumps({'apiVersion':'v1','kind':'List','items':objects},sort_keys=True)+'\n').encode()
         if (availability['release_availability'](HERE.parent)!=managed_runtimes or availability['source_gate_hashes'](HERE.parent)!=source_gates or availability['source_revision'](HERE.parent)!=source_revision):
             raise ValueError('Release source changed while building database controllers')
-        manifest={'schema_version':3,'source_revision':source_revision,'managed_runtimes':managed_runtimes,'sources':pins,'helm':json.loads((HERE/'pins.json').read_text())['helm'],'redis_controller_image':redis_image,'files':{name:hashlib.sha256(data).hexdigest() for name,data in files.items()}}
+        manifest={'schema_version':4,'source_revision':source_revision,'managed_runtimes':managed_runtimes,'sources':pins,'helm':json.loads((HERE/'pins.json').read_text())['helm'],'redis_controller_image':redis_image,'files':{name:hashlib.sha256(data).hexdigest() for name,data in files.items()}}
         destination.mkdir(parents=True)
         for name,data in files.items():(destination/name).write_bytes(data)
         (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

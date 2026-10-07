@@ -103,7 +103,7 @@ def manifest_object(pairs):
 def validate_release_availability(bundle,manifest):
     """Validate the packaged record without a source checkout on the target host."""
     availability=manifest.get('managed_runtimes')
-    gates={'vitess','supabase','neon'}|({'oracle-free'} if manifest['schema_version']==3 else set())
+    gates={'vitess','supabase','neon'}|({'oracle-free'} if manifest['schema_version']>=3 else set())|({'myduck'} if manifest['schema_version']>=4 else set())
     if (not isinstance(availability,dict) or set(availability)!=gates or
             any(type(value) is not bool for value in availability.values()) or
             not isinstance(manifest.get('source_revision'),str) or not re.fullmatch(r'[0-9a-f]{40}',manifest['source_revision'])):
@@ -126,13 +126,13 @@ def validate_release_availability(bundle,manifest):
 def load_bundle(bundle,engines):
     raw=bundle_file(bundle/'manifest.json',256*1024)
     manifest=json.loads(raw,object_pairs_hook=manifest_object)
-    if not isinstance(manifest,dict) or type(manifest.get('schema_version')) is not int or manifest['schema_version'] not in (1,2,3) or not isinstance(manifest.get('files'),dict):
-        raise ValueError('Controller manifest requires schema 1, 2 or 3 and a file checksum inventory')
-    if manifest['schema_version'] in (2,3):
+    if not isinstance(manifest,dict) or type(manifest.get('schema_version')) is not int or manifest['schema_version'] not in (1,2,3,4) or not isinstance(manifest.get('files'),dict):
+        raise ValueError('Controller manifest requires schema 1, 2, 3 or 4 and a file checksum inventory')
+    if manifest['schema_version'] in (2,3,4):
         validate_release_availability(bundle,manifest)
     elif 'vitess.json' in manifest['files'] or (bundle/'vitess.json').exists() or (bundle/'vitess.json').is_symlink():
         raise ValueError('Vitess requires a release availability record in schema 2')
-    if manifest['schema_version']!=3 and ('oracle-free.json' in manifest['files'] or (bundle/'oracle-free.json').exists() or (bundle/'oracle-free.json').is_symlink()):
+    if manifest['schema_version']<3 and ('oracle-free.json' in manifest['files'] or (bundle/'oracle-free.json').exists() or (bundle/'oracle-free.json').is_symlink()):
         raise ValueError('Oracle Free requires a release availability record in schema 3')
     if not engines or len(set(engines))!=len(engines) or any(e not in ENGINES for e in engines):
         raise ValueError('Select supported, distinct database controllers')

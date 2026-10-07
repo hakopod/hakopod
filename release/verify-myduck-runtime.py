@@ -144,7 +144,7 @@ def validate_acceptance(acceptance, sources, images):
     seen = set()
     for attempt in attempts:
         fields = {"case", "exit_code", "source_manifest_sha256", "source_manifest_after_sha256", "log_sha256",
-                  "test_events", "cluster_uid", "node_uids", "cleanup"}
+                  "test_events", "cluster_uid", "node_uids", "cleanup", "preserved_resources"}
         if not isinstance(attempt, dict) or set(attempt) != fields:
             raise ValueError("MyDuck attempt schema is invalid")
         case = attempt["case"]
@@ -159,6 +159,10 @@ def validate_acceptance(acceptance, sources, images):
         allowed = {"k3d-hakopod-dev-server-0", "k3d-hakopod-database-worker-0", "k3d-hakopod-database-worker-1"}
         if not isinstance(nodes, dict) or not 1 <= len(nodes) <= 3 or not set(nodes) <= allowed or any(not isinstance(uid, str) or not UUID.fullmatch(uid) for uid in nodes.values()):
             raise ValueError("MyDuck native node identity is missing or foreign")
+        preserved = attempt["preserved_resources"]
+        counts = {"namespace_count", "persistent_volume_count", "s3_container_count"}
+        if not isinstance(preserved, dict) or set(preserved) != {"before_sha256", "after_sha256", *counts} or not isinstance(preserved["before_sha256"], str) or not SHA.fullmatch(preserved["before_sha256"]) or preserved["after_sha256"] != preserved["before_sha256"] or any(type(preserved[key]) is not int or not 0 <= preserved[key] <= 1024 for key in counts):
+            raise ValueError("MyDuck unrelated-resource preservation is unverified")
         cleanup = attempt["cleanup"]
         if not isinstance(cleanup, dict) or set(cleanup) != {"namespaces", "namespaces_absent", "persistent_volumes_absent"} or cleanup["namespaces_absent"] is not True or cleanup["persistent_volumes_absent"] is not True:
             raise ValueError("MyDuck native fixture cleanup is unverified")
