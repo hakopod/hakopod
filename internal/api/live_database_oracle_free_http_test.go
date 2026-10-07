@@ -59,6 +59,25 @@ SQLNET.RECV_TIMEOUT=20
 EOF
 { printf 'whenever sqlerror exit failure\nwhenever oserror exit failure\nset echo off verify off feedback off heading off pagesize 0 trimspool on\n'; printf 'connect APP/"%s"@"(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=%s)(PORT=2484))(CONNECT_DATA=(SERVICE_NAME=FREEPDB1)))"\n' "$password" "$1"; cat; printf '\nexit\n'; } | sqlplus -s /nolog 2>/dev/null`
 
+const oracleHTTPHeldSession = `set -eu
+umask 077
+IFS= read -r password
+[[ "$password" =~ ^[a-f0-9]{64}$ ]]
+export TNS_ADMIN=$(mktemp -d)
+trap 'rm -rf "$TNS_ADMIN"' EXIT
+mkdir "$TNS_ADMIN/wallet"
+printf '%s\n%s\n' "$password" "$password" | orapki wallet create -wallet "$TNS_ADMIN/wallet" -auto_login >/dev/null 2>&1
+printf '%s\n' "$password" | orapki wallet add -wallet "$TNS_ADMIN/wallet" -trusted_cert -cert /etc/hakopod-tls/ca.crt >/dev/null 2>&1
+cat > "$TNS_ADMIN/sqlnet.ora" <<EOF
+WALLET_LOCATION=(SOURCE=(METHOD=FILE)(METHOD_DATA=(DIRECTORY=$TNS_ADMIN/wallet)))
+SSL_SERVER_DN_MATCH=YES
+SSL_CLIENT_AUTHENTICATION=FALSE
+SSL_VERSION=1.2
+SQLNET.OUTBOUND_CONNECT_TIMEOUT=5
+SQLNET.RECV_TIMEOUT=7200
+EOF
+{ printf 'whenever sqlerror exit failure\nwhenever oserror exit failure\nset echo off verify off feedback off heading off pagesize 0 trimspool on\n'; printf 'connect APP/"%s"@"(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=%s)(PORT=2484))(CONNECT_DATA=(SERVICE_NAME=FREEPDB1)))"\n' "$password" "$1"; printf "BEGIN DBMS_SESSION.SLEEP(1); END;\n/\nSELECT 'SESSION_READY' FROM dual;\nBEGIN DBMS_SESSION.SLEEP(5400); END;\n/\nexit\n"; } | sqlplus -s /nolog 2>/dev/null`
+
 type oracleHTTPSessionOutput struct {
 	buffer bytes.Buffer
 	ready  chan struct{}
@@ -349,7 +368,7 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	t.Cleanup(cleanup)
 
 	create := func(name, idem string) (managed.Resource, managed.Operation) {
-		spec := managed.Spec{SchemaVersion: 1, Name: name, Engine: "oracle", Version: "23.26", Mode: "standalone", Shards: 1, CPU: "500m", Memory: "4Gi", StorageGiB: 10, Placement: managed.Placement{NodeNames: append([]string(nil), nodes...)}, TLS: &managed.TLSConfig{Mode: "required"}, Oracle: &managed.OracleConfig{Edition: "free"}}
+		spec := managed.Spec{SchemaVersion: 1, Name: name, Engine: "oracle", Version: "23.26", Mode: "standalone", Shards: 1, CPU: "1", Memory: "4Gi", StorageGiB: 10, Placement: managed.Placement{NodeNames: append([]string(nil), nodes...)}, TLS: &managed.TLSConfig{Mode: "required"}, Oracle: &managed.OracleConfig{Edition: "free"}}
 		var operation managed.Operation
 		if status := client.request("POST", "/databases", map[string]any{"project": "demo", "environment": "development", "spec": spec}, &operation, idem); status != 202 {
 			t.Fatal("create database", status)
@@ -424,6 +443,12 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 		t.Fatal("Oracle credentials unavailable", status)
 	}
 	appID, appNamespace, appRevision := oracleHTTPBinding(t, ctx, client, runtime, source, path)
+	appNamespaceObject, err := kube.CoreV1().Namespaces().Get(ctx, appNamespace, metav1.GetOptions{})
+	if err != nil || appNamespaceObject.UID == "" || appNamespaceObject.Labels["app.kubernetes.io/managed-by"] != "hakopod" || appNamespaceObject.Labels["hakopod.io/application-id"] == "" {
+		t.Fatal("Oracle HTTP application namespace identity is unavailable", err)
+	}
+	appNamespaceUID := appNamespaceObject.UID
+	appNamespaceApplicationLabel := appNamespaceObject.Labels["hakopod.io/application-id"]
 
 	query := func(d managed.Resource, stage, sql string) string {
 		var credentials map[string]string
@@ -526,36 +551,37 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	}
 	preRestoreDeployment = oracleHTTPWaitDeployment(t, ctx, client, preRestoreDeployment)
 	appRevision = preRestoreDeployment.Revision
+	if status, code := client.requestCode("POST", "/backup-artifacts/"+artifact.ID+"/restore", map[string]string{"plan_id": plan.ID, "confirmation": target.Spec.Name}, nil, "oracle-free-http-bound-restore-refusal"); status != http.StatusConflict || code != "backup_conflict" {
+		t.Fatal("restore into bound Oracle target was not refused", status, code)
+	}
+	var revoked store.Deployment
+	if status := client.request("POST", "/deployments", map[string]any{"project": target.Project, "environment": target.Environment, "spec": oracleHTTPApplication(), "expected_revision": appRevision}, &revoked, "oracle-http-target-revoke"); status != http.StatusAccepted {
+		t.Fatal("target binding revocation", status)
+	}
+	revoked = oracleHTTPWaitDeployment(t, ctx, client, revoked)
+	appRevision = revoked.Revision
 	pods, err := kube.CoreV1().Pods(appNamespace).List(ctx, metav1.ListOptions{LabelSelector: "hakopod.io/service=allowed", Limit: 2})
-	if err != nil || len(pods.Items) != 1 || pods.Items[0].UID == "" {
-		t.Fatal("bound application pod identity is unavailable", err)
+	if err != nil || len(pods.Items) != 1 || pods.Items[0].UID == "" || len(pods.Items[0].Status.ContainerStatuses) != 1 || pods.Items[0].Status.ContainerStatuses[0].ContainerID == "" {
+		t.Fatal("unbound application pod identity is unavailable", err)
 	}
 	applicationPodUID := pods.Items[0].UID
-	if len(pods.Items[0].Status.ContainerStatuses) != 1 || pods.Items[0].Status.ContainerStatuses[0].ContainerID == "" {
-		t.Fatal("bound application container identity is unavailable")
-	}
 	applicationContainerID := pods.Items[0].Status.ContainerStatuses[0].ContainerID
 	applicationRestartCount := pods.Items[0].Status.ContainerStatuses[0].RestartCount
+	if status := client.request("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, ""); status != http.StatusOK {
+		t.Fatal("fresh restore plan after target binding revocation", status)
+	}
 	sessionCtx, cancelSession := context.WithCancel(ctx)
 	defer cancelSession()
 	sessionOutput := &oracleHTTPSessionOutput{ready: make(chan struct{})}
 	sessionDone := make(chan error, 1)
-	heldSession := `set -eu
-uri=${DATABASE_URL#oracle://APP:}; password=${uri%%@*}; address=${uri#*@}; host=${address%%:*}
-export TNS_ADMIN=$(mktemp -d); trap 'rm -rf "$TNS_ADMIN"' EXIT; mkdir "$TNS_ADMIN/wallet"
-printf '%s\n%s\n' "$password" "$password" | orapki wallet create -wallet "$TNS_ADMIN/wallet" -auto_login >/dev/null 2>&1
-printf '%s\n' "$password" | orapki wallet add -wallet "$TNS_ADMIN/wallet" -trusted_cert -cert ` + cluster.DatabaseTrustPath(target.ID) + ` >/dev/null 2>&1
-cat > "$TNS_ADMIN/sqlnet.ora" <<EOF
-WALLET_LOCATION=(SOURCE=(METHOD=FILE)(METHOD_DATA=(DIRECTORY=$TNS_ADMIN/wallet)))
-SSL_SERVER_DN_MATCH=YES
-SSL_CLIENT_AUTHENTICATION=FALSE
-SSL_VERSION=1.2
-SQLNET.OUTBOUND_CONNECT_TIMEOUT=5
-SQLNET.RECV_TIMEOUT=7200
-EOF
-{ printf 'whenever sqlerror exit failure\nset heading off feedback off pagesize 0\n'; printf 'connect APP/"%s"@"(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=%s)(PORT=2484))(CONNECT_DATA=(SERVICE_NAME=FREEPDB1)))"\n' "$password" "$host"; printf "BEGIN DBMS_SESSION.SLEEP(1); END;\n/\nSELECT 'SESSION_READY' FROM dual;\nBEGIN DBMS_SESSION.SLEEP(5400); END;\n/\nexit\n"; } | sqlplus -s /nolog 2>/dev/null`
+	var sessionCredentials map[string]string
+	if status := client.request("POST", "/databases/"+target.ID+"/credentials", map[string]any{}, &sessionCredentials, ""); status != http.StatusOK {
+		t.Fatal("target credentials for held recovery session", status)
+	}
+	sessionInput := bytes.NewBufferString(sessionCredentials["password"] + "\n")
+	sessionHost := "database." + cluster.DatabaseNamespace(target.ID) + ".svc.cluster.local"
 	go func() {
-		sessionDone <- oracleHTTPApplicationExec(sessionCtx, path, appNamespace, "allowed", heldSession, sessionOutput)
+		sessionDone <- runtime.DatabaseExec(sessionCtx, target, target.Observation.Members[0], []string{"bash", "-c", oracleHTTPHeldSession, "oracle-free-http-held-session", sessionHost}, sessionInput, sessionOutput)
 	}()
 	select {
 	case <-sessionOutput.ready:
@@ -634,7 +660,11 @@ EOF
 	blocked := fmt.Sprintf(`if timeout 4 bash -c 'exec 3<>/dev/tcp/%s/2484' >/dev/null 2>&1; then echo reachable; else echo blocked; fi`, target.Observation.Endpoints[0].Host)
 	var blockedOutput oracleHTTPOutput
 	if err := oracleHTTPApplicationExec(ctx, path, appNamespace, "allowed", blocked, &blockedOutput); err != nil || strings.TrimSpace(blockedOutput.String()) != "blocked" {
-		t.Fatal("bound application reached uninspected recovery target")
+		t.Fatal("unbound application reached uninspected recovery target")
+	}
+	var refusedConnectionPlan store.DatabaseConnectionPlan
+	if status, code := client.requestCode("POST", "/databases/"+target.ID+"/connection-plan", map[string]any{"application_id": appID, "service": "allowed", "variable": "DATABASE_URL", "endpoint": "read_write", "cluster_aware": false}, &refusedConnectionPlan, ""); status != http.StatusConflict || code != "conflict" {
+		t.Fatal("uninspected Oracle recovery accepted a connection review", status, code)
 	}
 	if query(target, "target_verify_restore", "SELECT id||CHR(9)||RAWTOHEX(value) FROM api_recovery ORDER BY id;") != "1\t0080FF0D0A" || query(source, "source_verify_preserved", "SELECT id||CHR(9)||RAWTOHEX(value) FROM api_recovery ORDER BY id;") != "1\t0080FF0D0A\n2\t01027F" {
 		t.Fatal("Oracle Free recovery point or source preservation changed")
@@ -643,6 +673,16 @@ EOF
 	if status := client.request("POST", "/databases/"+target.ID+"/inspect", map[string]any{"job_id": recovery.ID, "expected_revision": target.Revision, "confirm_name": target.Spec.Name, "inspected": true}, &inspected, ""); status != 200 || inspected.Recovery == nil || inspected.Recovery.InspectedAt == nil {
 		t.Fatal("recovery inspection", status)
 	}
+	var inspectedConnectionPlan store.DatabaseConnectionPlan
+	if status := client.request("POST", "/databases/"+target.ID+"/connection-plan", map[string]any{"application_id": appID, "service": "allowed", "variable": "DATABASE_URL", "endpoint": "read_write", "cluster_aware": false}, &inspectedConnectionPlan, ""); status != http.StatusOK {
+		t.Fatal("inspected Oracle recovery connection plan", status)
+	}
+	var rebound store.Deployment
+	if status := client.request("POST", "/databases/"+target.ID+"/connect", map[string]string{"review_id": inspectedConnectionPlan.ID, "confirm_application": "oracle-http-binding"}, &rebound, "oracle-http-inspected-target-connect"); status != http.StatusAccepted {
+		t.Fatal("inspected Oracle recovery connection", status)
+	}
+	rebound = oracleHTTPWaitDeployment(t, ctx, client, rebound)
+	appRevision = rebound.Revision
 	oracleHTTPWaitIngress(t, ctx, kube, target.ID, true)
 	boundQuery := `set -eu
 uri=${DATABASE_URL#oracle://APP:}; password=${uri%%@*}; address=${uri#*@}; host=${address%%:*}
@@ -666,13 +706,12 @@ EOF
 	if err := oracleHTTPApplicationExec(ctx, path, appNamespace, "unbound", blocked, &unboundOutput); err != nil || strings.TrimSpace(unboundOutput.String()) != "blocked" {
 		t.Fatal("unbound application reached inspected Oracle recovery")
 	}
-	var revoked store.Deployment
-	if status := client.request("POST", "/deployments", map[string]any{"project": target.Project, "environment": target.Environment, "spec": oracleHTTPApplication(), "expected_revision": appRevision}, &revoked, "oracle-http-target-revoke"); status != http.StatusAccepted {
-		t.Fatal("target binding revocation", status)
+	var finalRevocation store.Deployment
+	if status := client.request("POST", "/deployments", map[string]any{"project": target.Project, "environment": target.Environment, "spec": oracleHTTPApplication(), "expected_revision": appRevision}, &finalRevocation, "oracle-http-inspected-target-revoke"); status != http.StatusAccepted {
+		t.Fatal("inspected target binding revocation", status)
 	}
-	revoked = oracleHTTPWaitDeployment(t, ctx, client, revoked)
-	appRevision = revoked.Revision
-
+	finalRevocation = oracleHTTPWaitDeployment(t, ctx, client, finalRevocation)
+	appRevision = finalRevocation.Revision
 	type ownedVolume struct {
 		name string
 		uid  types.UID
@@ -732,8 +771,36 @@ EOF
 	}
 	deleteHTTP(target)
 	deleteHTTP(source)
+	empty, err := spec.Normalize(spec.Application{Name: "oracle-http-binding", Services: map[string]spec.Service{}})
+	if err != nil {
+		t.Fatal("normalize empty Oracle HTTP application", err)
+	}
+	var emptied store.Deployment
+	if status := client.request("POST", "/deployments", map[string]any{"project": source.Project, "environment": source.Environment, "spec": empty, "expected_revision": appRevision}, &emptied, "oracle-http-empty-application"); status != http.StatusAccepted {
+		t.Fatal("empty Oracle HTTP application deployment", status)
+	}
+	emptied = oracleHTTPWaitDeployment(t, ctx, client, emptied)
+	appRevision = emptied.Revision
 	if status := client.request("DELETE", "/applications/"+appID, map[string]any{"expected_revision": appRevision, "confirm_name": "oracle-http-binding", "delete_data": true}, nil, ""); status != http.StatusOK {
 		t.Fatal("application deletion", status)
+	}
+	applicationDelete, cancelApplicationDelete := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancelApplicationDelete()
+	for applicationDelete.Err() == nil {
+		current, e := kube.CoreV1().Namespaces().Get(applicationDelete, appNamespace, metav1.GetOptions{})
+		if apierrors.IsNotFound(e) {
+			break
+		}
+		if e != nil {
+			t.Fatal("wait for Oracle HTTP application namespace deletion", e)
+		}
+		if current.UID != appNamespaceUID || current.Labels["app.kubernetes.io/managed-by"] != "hakopod" || current.Labels["hakopod.io/application-id"] != appNamespaceApplicationLabel {
+			t.Fatal("Oracle HTTP application namespace was replaced or its ownership changed")
+		}
+		time.Sleep(time.Second)
+	}
+	if applicationDelete.Err() != nil {
+		t.Fatal("Oracle HTTP application namespace deletion timed out")
 	}
 	created = nil
 	t.Run("lifecycle", func(t *testing.T) {
