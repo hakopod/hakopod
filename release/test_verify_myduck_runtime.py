@@ -51,8 +51,11 @@ class MyDuckQualificationTest(unittest.TestCase):
         self.json("source-build-manifest.json", {"schema_version": 1, "upstream_repository": "https://github.com/apecloud/myduckserver",
             "upstream_commit": MODULE["UPSTREAM"], "files": {name: self.sources[name] for name in MODULE["BUILD_INPUTS"]}})
         self.binaries = {name: "c" * 64 for name in MODULE["BINARIES"]}
-        self.json("packaging-receipt.json", {"image": self.reference, "binaries": self.binaries, "platform": "linux/amd64",
-            "source_manifest_sha256": MODULE["file_hash"](self.output / "source-build-manifest.json")})
+        self.receipt = {"schema_version": 1, "image_reference": self.reference, "binaries": self.binaries,
+            "platform": "linux/amd64", "archive_sha256": "e" * 64, "config_user": "1000:1000",
+            "entrypoint": ["/usr/local/bin/myduckserver"], "labels": MODULE["image_labels"](self.sources),
+            "source_build_manifest_sha256": MODULE["file_hash"](self.output / "source-build-manifest.json")}
+        self.json("packaging-receipt.json", self.receipt)
         self.manifest = {"schema_version": 1, "platform": "linux/amd64",
             "source": {"repository": "https://github.com/apecloud/myduckserver", "revision": MODULE["UPSTREAM"]},
             "source_files": self.sources, "images": {"runtime": {"reference": self.reference, "binaries": self.binaries}},
@@ -116,6 +119,26 @@ class MyDuckQualificationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate"):
             MODULE["read_json"](path)
 
+    def test_packaging_provenance_requires_actual_schema_and_build_identity(self):
+        mutations = [lambda value: value.update(schema_version=True),
+            lambda value: value.update(config_user="0:0"),
+            lambda value: value.update(entrypoint=["python3"]),
+            lambda value: value.update(image_reference=MODULE["PACKAGE"] + "@sha256:" + "f" * 64),
+            lambda value: value.update(source_build_manifest_sha256="f" * 64),
+            lambda value: value.update(archive_sha256="unverified"),
+            lambda value: value.update(image=self.reference),
+            lambda value: value["labels"].update({"io.hakopod.myduck.patch-sha256": "f" * 64}),
+            lambda value: value["labels"].update({"io.hakopod.myduck.upstream": "f" * 40}),
+            lambda value: value["labels"].pop("org.opencontainers.image.version")]
+        for mutate in mutations:
+            receipt = copy.deepcopy(self.receipt)
+            mutate(receipt)
+            self.json("packaging-receipt.json", receipt)
+            self.manifest["files"]["packaging-receipt.json"] = MODULE["file_hash"](self.output / "packaging-receipt.json")
+            self.json("manifest.json", self.manifest)
+            with self.assertRaisesRegex(ValueError, "packaging provenance"):
+                MODULE["validate_metadata"](self.output, self.root)
+
     def test_anonymous_image_binary_and_execution_verification(self):
         manifest = copy.deepcopy(self.manifest)
         manifest["images"]["runtime"]["binaries"] = {name: hashlib.sha256(b"fixture binary").hexdigest() for name in MODULE["BINARIES"]}
@@ -124,7 +147,8 @@ class MyDuckQualificationTest(unittest.TestCase):
             calls.append(args)
             if args[0:2] == ["image", "inspect"]:
                 return json.dumps([{"Os": "linux", "Architecture": "amd64", "RepoDigests": [self.reference],
-                    "Config": {"User": "1000:1000", "Entrypoint": ["/usr/local/bin/myduckserver"]}}])
+                    "Config": {"User": "1000:1000", "Entrypoint": ["/usr/local/bin/myduckserver"],
+                               "Labels": MODULE["image_labels"](manifest["source_files"])}}])
             if args[0] == "create":
                 return "e" * 64
             if args[0] == "cp":
@@ -136,6 +160,19 @@ class MyDuckQualificationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "binary differs"):
             MODULE["verify_images"](manifest, runner)
         self.assertEqual(calls[-1], ["rm", "-v", "e" * 64])
+
+    def test_pulled_image_labels_and_inherited_command_are_checked(self):
+        expected = {"User": "1000:1000", "Entrypoint": ["/usr/local/bin/myduckserver"],
+                    "Labels": MODULE["image_labels"](self.sources)}
+        for field, replacement in (("User", "root"), ("Cmd", ["python3"]), ("Labels", {})):
+            settings = {**expected, field: replacement}
+            def runner(args, config):
+                if args[0:2] == ["image", "inspect"]:
+                    return json.dumps([{"Os": "linux", "Architecture": "amd64", "RepoDigests": [self.reference],
+                                        "Config": settings}])
+                return ""
+            with self.assertRaisesRegex(ValueError, "execution configuration"):
+                MODULE["verify_images"](self.manifest, runner)
 
 
 if __name__ == "__main__":

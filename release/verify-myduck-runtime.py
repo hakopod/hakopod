@@ -17,6 +17,7 @@ GATES = runpy.run_path(str(ROOT / "release/managed-runtime-availability.py"))
 GATE_PATH = "internal/database/myduck_qualification.go"
 UPSTREAM = "6e3427591fd8895df9585969e7256f958fb639bb"
 PACKAGE = "ghcr.io/hakopod/managed-myduck"
+RUNTIME_VERSION = "0.1.0-hakopod.2"
 SHA = re.compile(r"[a-f0-9]{64}")
 UUID = re.compile(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
 TESTS = {"lifecycle": "TestManagedMyDuckLive", "recovery": "TestManagedMyDuckColdRecoveryLive",
@@ -26,6 +27,14 @@ BUILD_INPUTS = {"Dockerfile.myduck", "scripts/apply-managed-myduck-patches.py", 
                 "patches/myduck/0001-harden-managed-runtime.patch", "cmd/hakopod-myduck-storage/main.go"}
 FILES = {"source-build-manifest.json", "packaging-receipt.json", "native-acceptance.json"}
 BINARIES = {"/usr/local/bin/myduckserver", "/usr/local/bin/hakopod-myduck-storage"}
+
+
+def image_labels(sources):
+    return {"io.hakopod.myduck.patch-sha256": sources["patches/myduck/0001-harden-managed-runtime.patch"],
+            "io.hakopod.myduck.upstream": UPSTREAM,
+            "org.opencontainers.image.source": "https://github.com/hakopod/hakopod",
+            "org.opencontainers.image.title": "Hakopod-managed-MyDuck",
+            "org.opencontainers.image.version": RUNTIME_VERSION}
 
 
 def file_hash(path, limit=64 * 1024 * 1024, *, allow_empty=False):
@@ -200,7 +209,16 @@ def validate_metadata(directory, root=ROOT):
     if not isinstance(build, dict) or set(build) != {"schema_version", "upstream_repository", "upstream_commit", "files"} or type(build["schema_version"]) is not int or build["schema_version"] != 1 or build["upstream_repository"] != "https://github.com/apecloud/myduckserver" or build["upstream_commit"] != UPSTREAM or not isinstance(build["files"], dict) or not BUILD_INPUTS <= set(build["files"]) or any(build["files"][name] != sources[name] for name in BUILD_INPUTS):
         raise ValueError("MyDuck image build source changed")
     receipt = read_json(directory / "packaging-receipt.json")
-    if not isinstance(receipt, dict) or receipt.get("image") != images["runtime"] or receipt.get("binaries") != binaries or receipt.get("source_manifest_sha256") != file_hash(directory / "source-build-manifest.json") or receipt.get("platform") != "linux/amd64":
+    receipt_fields = {"schema_version", "image_reference", "archive_sha256", "platform", "config_user",
+                      "entrypoint", "labels", "binaries", "source_build_manifest_sha256"}
+    if (not isinstance(receipt, dict) or set(receipt) != receipt_fields
+            or type(receipt["schema_version"]) is not int or receipt["schema_version"] != 1
+            or receipt["image_reference"] != images["runtime"] or receipt["binaries"] != binaries
+            or receipt["source_build_manifest_sha256"] != file_hash(directory / "source-build-manifest.json")
+            or receipt["platform"] != "linux/amd64" or receipt["config_user"] != "1000:1000"
+            or receipt["entrypoint"] != ["/usr/local/bin/myduckserver"]
+            or receipt["labels"] != image_labels(sources)
+            or not isinstance(receipt["archive_sha256"], str) or not SHA.fullmatch(receipt["archive_sha256"])):
         raise ValueError("MyDuck packaging provenance differs from qualification")
     validate_acceptance(read_json(directory / "native-acceptance.json"), sources, images)
     return manifest
@@ -225,7 +243,8 @@ def verify_images(manifest, runner=docker):
         if not isinstance(values, list) or len(values) != 1 or values[0].get("Os") != "linux" or values[0].get("Architecture") != "amd64" or reference not in values[0].get("RepoDigests", []):
             raise ValueError("MyDuck pulled image platform or digest changed")
         settings = values[0].get("Config", {})
-        if settings.get("User") != "1000:1000" or settings.get("Entrypoint") != ["/usr/local/bin/myduckserver"]:
+        if (settings.get("User") != "1000:1000" or settings.get("Entrypoint") != ["/usr/local/bin/myduckserver"]
+                or settings.get("Cmd") not in (None, []) or settings.get("Labels") != image_labels(manifest["source_files"])):
             raise ValueError("MyDuck execution configuration changed")
         container = runner(["create", "--network", "none", "--entrypoint", "/usr/local/bin/myduckserver", reference], config).strip()
         if not re.fullmatch(r"[a-f0-9]{64}", container):
