@@ -100,7 +100,99 @@ def cpu_milli(value):
             amount if suffix == "m" else amount * 1000)
 
 
-def preflight(kube, receipt_path, receipt_sha256, fixture, root):
+def protected_retained_inventory(path, expected_sha256):
+    if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256 or ""):
+        raise RuntimeError("exact retained inventory SHA-256 is required")
+    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+        raise RuntimeError("protected retained inventory is required")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(descriptor)
+        if (info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o077
+                or not 0 < info.st_size <= 256 * 1024):
+            raise RuntimeError("retained inventory custody or bound differs")
+        with os.fdopen(descriptor, "rb", closefd=False) as source:
+            raw = source.read((256 * 1024) + 1)
+    finally:
+        os.close(descriptor)
+    if len(raw) != info.st_size or hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise RuntimeError("retained inventory SHA-256 differs")
+    value = json.loads(raw)
+    namespaces, volumes = value.get("namespaces"), value.get("persistent_volumes")
+    if (value.get("schema_version") != 1 or value.get("context") != "k3d-hakopod-dev"
+            or not isinstance(namespaces, dict) or not isinstance(volumes, dict)
+            or not 1 <= len(namespaces) <= 32 or len(volumes) > 128):
+        raise RuntimeError("retained inventory schema or bounds differ")
+    for name, item in namespaces.items():
+        if (not re.fullmatch(r"hdb-[a-f0-9]{32}", name) or not isinstance(item, dict)
+                or set(item) != {"uid"} or not isinstance(item["uid"], str) or not item["uid"]):
+            raise RuntimeError("retained namespace identity is invalid")
+    for name, item in volumes.items():
+        if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,252}", name) or not isinstance(item, dict)
+                or set(item) != {"uid", "claim_namespace", "claim_name"}
+                or not isinstance(item["uid"], str) or not item["uid"]
+                or item["claim_namespace"] not in namespaces
+                or not isinstance(item["claim_name"], str) or not item["claim_name"]):
+            raise RuntimeError("retained persistent volume identity is invalid")
+    return value
+
+
+def verify_retained_inventory(kube, expected):
+    namespace_items = command_json(kube + ["get", "namespaces", "-o", "json"]).get("items", [])
+    volume_items = command_json(kube + ["get", "persistentvolumes", "-o", "json"]).get("items", [])
+    if not isinstance(namespace_items, list) or len(namespace_items) > 256 or not isinstance(volume_items, list) or len(volume_items) > 256:
+        raise RuntimeError("managed database inventory exceeded its bound")
+    namespaces = {}
+    for item in namespace_items:
+        metadata = item.get("metadata", {})
+        name = metadata.get("name", "")
+        if name.startswith("hdb-"):
+            if metadata.get("deletionTimestamp"):
+                raise RuntimeError("a retained namespace is deleting")
+            namespaces[name] = {"uid": metadata.get("uid")}
+    volumes = {}
+    for item in volume_items:
+        metadata, claim = item.get("metadata", {}), item.get("spec", {}).get("claimRef", {})
+        if claim.get("namespace", "").startswith("hdb-"):
+            if metadata.get("deletionTimestamp") or item.get("status", {}).get("phase") != "Bound":
+                raise RuntimeError("a retained persistent volume is deleting or unbound")
+            volumes[metadata.get("name")] = {"uid": metadata.get("uid"),
+                "claim_namespace": claim.get("namespace"), "claim_name": claim.get("name")}
+    if namespaces != expected["namespaces"] or volumes != expected["persistent_volumes"]:
+        raise RuntimeError("live retained namespace or persistent volume identity differs")
+    return {"status": "verified", "context": "k3d-hakopod-dev",
+            "namespace_count": len(namespaces), "persistent_volume_count": len(volumes),
+            "inventory_sha256": hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()}
+
+
+def fixture_database_ids(fixture):
+    value = json.loads(fixture.read_bytes())
+    fixtures = value.get("fixtures", {})
+    if not isinstance(fixtures, dict) or len(fixtures) > 16:
+        raise RuntimeError("Vitess fixture inventory exceeded its bound")
+    result = {item.get("database_id") for item in fixtures.values() if isinstance(item, dict)}
+    if len(result) != len(fixtures) or any(not isinstance(item, str) for item in result):
+        raise RuntimeError("Vitess fixture database identities are invalid")
+    return result
+
+
+def retained_preflight(kube, databases, fixture, retained_path=None, retained_sha256=None):
+    if retained_path is None and retained_sha256 is None:
+        if any(item.get("metadata", {}).get("name", "").startswith("hdb-") for item in databases):
+            raise RuntimeError("an existing managed database fixture owns the acceptance lane")
+        return None
+    if retained_path is None or retained_sha256 is None:
+        raise RuntimeError("retained inventory path and SHA-256 must be supplied together")
+    retained_value = protected_retained_inventory(retained_path, retained_sha256)
+    retained = verify_retained_inventory(kube, retained_value)
+    retained["receipt_sha256"] = retained_sha256
+    retained_ids = {name.removeprefix("hdb-") for name in retained_value["namespaces"]}
+    if fixture_database_ids(fixture) & retained_ids:
+        raise RuntimeError("a Vitess fixture database identity overlaps retained state")
+    return retained
+
+
+def preflight(kube, receipt_path, receipt_sha256, fixture, root, retained_path=None, retained_sha256=None):
     if not re.fullmatch(r"[a-f0-9]{64}", receipt_sha256 or ""):
         raise RuntimeError("exact development cluster receipt SHA-256 is required")
     if receipt_path.is_symlink() or not receipt_path.is_file() or receipt_path.stat().st_size > 256 * 1024:
@@ -108,6 +200,9 @@ def preflight(kube, receipt_path, receipt_sha256, fixture, root):
     raw = receipt_path.read_bytes()
     if hashlib.sha256(raw).hexdigest() != receipt_sha256:
         raise RuntimeError("development cluster receipt SHA-256 differs")
+    if (not fixture.is_absolute() or fixture.is_symlink() or not fixture.is_file()
+            or fixture.stat().st_mode & 0o077 or not 0 < fixture.stat().st_size <= 64 * 1024):
+        raise RuntimeError("protected bounded Vitess fixture configuration is required")
     receipt = json.loads(raw)
     if receipt.get("context") != "k3d-hakopod-dev" or set(receipt.get("node_uids", {})) != set(NODES):
         raise RuntimeError("development cluster receipt does not bind the dedicated Vitess nodes")
@@ -134,8 +229,7 @@ def preflight(kube, receipt_path, receipt_sha256, fixture, root):
             or storage.get("provisioner") != STORAGE_PROVISIONER):
         raise RuntimeError("trusted Vitess runtime or storage class is unavailable")
     databases = command_json(kube + ["get", "namespaces", "-o", "json"]).get("items", [])
-    if any(item.get("metadata", {}).get("name", "").startswith("hdb-") for item in databases):
-        raise RuntimeError("an existing managed database fixture owns the acceptance lane")
+    retained = retained_preflight(kube, databases, fixture, retained_path, retained_sha256)
     pods = command_json(kube + ["get", "pods", "--all-namespaces", "-o", "json"]).get("items", [])
     requested = 0
     for pod in pods:
@@ -153,12 +247,10 @@ def preflight(kube, receipt_path, receipt_sha256, fixture, root):
     available = stats.f_bavail * stats.f_frsize
     if available < 12 * GIB:
         raise RuntimeError("acceptance scratch has less than the required 12 GiB reserve")
-    if fixture.is_symlink() or not fixture.is_file() or fixture.stat().st_mode & 0o077 or fixture.stat().st_size > 64 * 1024:
-        raise RuntimeError("protected bounded Vitess fixture configuration is required")
     return {"context": "k3d-hakopod-dev", "cluster_uid": receipt["cluster_uid"],
             "node_uids": observed, "receipt_sha256": receipt_sha256,
             "available_cpu_milli": allocatable - requested,
-            "scratch_available_bytes": available}
+            "scratch_available_bytes": available, "retained_inventory": retained}
 
 
 def run_bounded(command, source, env, log):
@@ -238,6 +330,8 @@ def main():
     parser.add_argument("--operator-image", required=True)
     parser.add_argument("--fixture-budget-gib", type=int, required=True)
     parser.add_argument("--attempt", type=int, required=True)
+    parser.add_argument("--retained-inventory", type=Path)
+    parser.add_argument("--retained-inventory-sha256")
     args = parser.parse_args()
     root, source = args.root.resolve(), args.source.resolve()
     fixture, kubeconfig = args.fixture.resolve(), args.kubeconfig.resolve()
@@ -264,7 +358,9 @@ def main():
         raise RuntimeError("Vitess HTTP acceptance requires k3d-hakopod-dev")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     cache.mkdir(mode=0o700, parents=True, exist_ok=True)
-    environment = preflight(kube, args.cluster_receipt.resolve(), args.cluster_receipt_sha256, fixture, root)
+    retained_path = args.retained_inventory.resolve() if args.retained_inventory else None
+    environment = preflight(kube, args.cluster_receipt.resolve(), args.cluster_receipt_sha256, fixture, root,
+                            retained_path, args.retained_inventory_sha256)
     verifier = runpy.run_path(str(source / "release/verify-vitess-runtime.py"))
     native = runpy.run_path(str(source / "scripts/run-development-vitess-acceptance.py"))
     inventory = command_json(kube + ["get", "nodes", *NODES, "-o", "json"]).get("items", [])
@@ -301,15 +397,20 @@ def main():
         "-run", "^TestVitessHTTPVerticalSlice$", "-count=1", "-timeout=55m", "-json"], source, env, log)
     runtime_after = verifier["source_files"](source)
     harness_after = harness_inventory(source)
+    retained_after = None
+    if retained_path is not None:
+        retained_value = protected_retained_inventory(retained_path, args.retained_inventory_sha256)
+        retained_after = verify_retained_inventory(kube, retained_value)
+        retained_after["receipt_sha256"] = args.retained_inventory_sha256
     events = test_events(log)
     actions = [event["Action"] for event in events]
-    passed = code == 0 and not limit_error and runtime_before == runtime_after and harness_before == harness_after and "pass" in actions and "fail" not in actions and "skip" not in actions
+    passed = code == 0 and not limit_error and runtime_before == runtime_after and harness_before == harness_after and environment["retained_inventory"] == retained_after and "pass" in actions and "fail" not in actions and "skip" not in actions
     report = {"schema_version": 1, "test": "TestVitessHTTPVerticalSlice", "execution": "http_vertical",
               "environment": environment, "runtime_source_files": runtime_before,
               "runtime_source_files_after": runtime_after, "http_harness_source_files": harness_before,
               "http_harness_source_files_after": harness_after, "log_sha256": file_hash(log),
               "exit_code": code, "limit_error": limit_error, "elapsed_seconds": round(time.time() - started, 3),
-              "test_events": events, "passed": passed}
+              "test_events": events, "retained_inventory_after": retained_after, "passed": passed}
     descriptor = os.open(evidence, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     with os.fdopen(descriptor, "w") as output:
         json.dump(report, output, indent=2)
