@@ -1,0 +1,164 @@
+# Managed DuckDB with MyDuck
+
+This implementation is under qualification. Database creation and public endpoints
+remain disabled until the pinned runtime passes the required acceptance tests.
+Oracle Free and MyDuck are being prepared for the same release; neither is part
+of the already published `v0.1.0-alpha.55` release.
+
+MyDuck lets applications use MySQL and PostgreSQL clients with a DuckDB database.
+Both connections reach the same data on one persistent instance. A table written
+through the MySQL connection can be read through the PostgreSQL connection.
+
+Wire compatibility does not make DuckDB a replacement for every MySQL or
+PostgreSQL feature. Test your driver, migrations, data types and queries against
+MyDuck before moving an existing application. PostgreSQL extensions, MySQL
+replication and the native server administration commands are not provided.
+
+## What runs in your cluster
+
+Hakopod runs one hardened MyDuck container in a Kubernetes StatefulSet. The
+container uses one ReadWriteOnce volume for `app.db` and its write-ahead log.
+MyDuck translates the two wire protocols and executes queries in DuckDB.
+
+```mermaid
+flowchart LR
+    A[Applications using MySQL] -->|TLS on port 3306| S[Private database Service]
+    B[Applications using PostgreSQL] -->|TLS on port 5432| S
+    S --> M[One MyDuck instance]
+    M --> D[DuckDB app database]
+    D --> V[Persistent volume]
+    H[Hakopod API and reconciler] -->|Owned Kubernetes resources| M
+```
+
+The API and reconciler run in the same Hakopod process. PostgreSQL records
+database revisions, operation ownership and backup jobs. Kubernetes runs the
+database and stores its volume. Applications receive database connection details
+and public certificate authority material. They receive no Kubernetes credentials.
+
+MyDuck has no managed cluster mode, read replica, election or automatic failover.
+Kubernetes can replace a failed process and mount its existing volume. That
+recovery requires an available node and accessible storage; it is not high
+availability. Multiple nodes or zone labels do not replicate this database.
+
+The runtime is built from
+[`apecloud/myduckserver` commit `6e3427591fd8895df9585969e7256f958fb639bb`](https://github.com/apecloud/myduckserver/tree/6e3427591fd8895df9585969e7256f958fb639bb)
+with the changes in [the managed runtime patch](../patches/myduck/README.md).
+The managed image is pinned by digest after publication and verification.
+
+## Configuration
+
+```toml
+schema_version = 1
+name = "analytics"
+engine = "duckdb"
+version = "0.3.1-dev.20260919.3"
+mode = "standalone"
+replicas = 0
+shards = 1
+cpu = "1"
+memory = "1Gi"
+storage_gib = 10
+
+[tls]
+mode = "required"
+```
+
+The first managed image targets amd64 nodes. Each instance needs at least 512Mi
+of container memory. DuckDB receives 70% of the configured memory budget, leaving
+space for the protocol servers and process overhead. Its temporary-file budget
+is one quarter of the configured data-volume size. Temporary files and database
+files share that volume, so monitor available storage when queries spill to disk.
+
+The managed runtime limits each wire protocol to 64 connections and applies a
+60-second statement deadline. These are runtime limits, not throughput promises.
+Choose capacity using your query sizes and concurrency. The Cloud reservation
+also includes the existing platform replacement and recovery allowance.
+
+Capacity, placement and engine version are fixed at creation. This first release
+does not resize MyDuck in place. Restore to a separate matching target or migrate
+your data when a change is needed. Managed connection pooling is not supported.
+
+## Connecting an application
+
+Choose the connection that matches the application's driver:
+
+| Connection | Port | Account | Database | Managed binding protocol |
+| --- | --- | --- | --- | --- |
+| MySQL | 3306 | `root` | `app` | `mysql` |
+| PostgreSQL | 5432 | `postgres` | `app` | `postgres` |
+
+Both accounts use the generated password for that database resource. They are
+administrative accounts within an isolated instance. This version does not offer
+separate application roles, read-only users or per-application database grants.
+
+Use the hostname and certificate authority from the Connections page or managed
+binding. Require certificate and hostname verification in the driver. TLS 1.2 or
+newer is required on both ports; plaintext connections are refused. Certificate
+renewal replaces the single instance, so applications should reconnect after a
+brief interruption.
+
+Dedicated public routes have their own qualification gate. Their implementation
+uses a separate reviewed hostname and port for each protocol, source CIDR rules,
+connection limits and the database's TLS certificate. They must not be described
+as available until public DNS, firewall, certificate rotation and revocation tests
+pass. A public connection still uses the same instance and account privileges.
+
+## How the managed runtime is restricted
+
+The container runs as a non-root user with a read-only root filesystem, no Linux
+capabilities and no service-account token. It reads its password and TLS key from
+owned Secret mounts. SQL cannot change these files or restore other accounts.
+
+The database pod has no outbound network access. Runtime extension installation,
+external file and network access, replication configuration and account changes
+are disabled. Client `COPY FROM STDIN` and `COPY TO STDOUT` remain the supported
+path for transferring data. Queries that depend on reading arbitrary files,
+object stores or remote databases need a separate ingestion step.
+
+On startup, MyDuck rebuilds its MySQL account store from the current managed
+Secret. A restored database cannot bring back an old password or additional
+accounts. PostgreSQL authentication is also rebuilt from that Secret.
+
+## Backup and recovery
+
+A MyDuck backup briefly stops the instance. Existing connections close and new
+connections fail until it restarts. Schedule backups for a suitable maintenance
+window and make sure applications handle reconnection.
+
+Hakopod records a durable operation fence, verifies the current database and
+storage identities, and stops the StatefulSet. It waits for the database pod to
+disappear before mounting the same volume in an isolated helper. The helper has
+no database credentials, network access or listener. It copies only `app.db` and
+an existing `app.db.wal`, with a size bound and checksum for each file. The normal
+backup pipeline encrypts and uploads that archive.
+
+After the copy, Hakopod removes the helper and waits for its processes to stop
+before restarting the database. If the worker disappears, the next worker
+performs cleanup without replaying the transfer. The unfinished backup is
+reported as failed or cancelled. A successful backup includes a verified archive;
+a stopped worker does not create a successful backup receipt.
+
+Restore requires a separate empty database of the same MyDuck version. Hakopod
+verifies the entire encrypted archive before changing the target. The helper then
+checks every file and stages the replacement. A durable marker prevents MyDuck
+from opening files left by an interrupted replacement. A failed restore stays
+stopped and isolated; the original database is unchanged. Inspect a successful
+restore before switching application bindings.
+
+These backups exclude credentials, server configuration, temporary files and
+point-in-time recovery. Preserve the backup encryption key separately from the
+cluster. Losing that key makes the archive unreadable.
+
+## Monitoring and support boundaries
+
+The detail page shows the observed instance, connected applications, ports,
+placement, health, certificate state and available Kubernetes CPU and memory
+samples. DuckDB storage statistics report allocated persistent blocks. Missing
+samples are shown as unavailable; the UI does not invent replication, query or
+connection counters.
+
+The source tests and native acceptance tests are separate. Before release, the
+native tests must cover both protocols, rejected credentials and plaintext,
+restricted SQL, persistent pod replacement, certificate changes, encrypted
+backup and restore, worker loss, deletion and public-route behavior. A passing
+unit test does not establish those runtime results.

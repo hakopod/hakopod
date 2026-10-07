@@ -30,6 +30,7 @@ var redisDatabaseResource = schema.GroupVersionResource{Group: "redis.redis.opst
 var redisClusterResource = schema.GroupVersionResource{Group: "redis.redis.opstreelabs.in", Version: "v1beta2", Resource: "redisclusters"}
 var mysqlDatabaseResource = schema.GroupVersionResource{Group: "mysql.oracle.com", Version: "v2", Resource: "innodbclusters"}
 var databaseImages = map[string]string{
+	"duckdb:" + database.MyDuckVersion: myduckServerImage,
 	"postgresql:17":   "ghcr.io/cloudnative-pg/postgresql:17.11@sha256:70664ebcfa1100361b5bdc28bbf06fdbe08db2dc4ad7bd14de33c5e05fe8ea8e",
 	"postgresql:18":   "ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533",
 	"redis:8":         "ghcr.io/hakopod/hakopod-redis-runtime:8.2.10-opstree@sha256:caa42ea6bb728692da6045aca364f2ae3a33e15242a2e874dfbfa75ecceb5657",
@@ -41,6 +42,9 @@ var databaseImages = map[string]string{
 
 func DatabaseNamespace(id string) string { return "hdb-" + id }
 func databaseGVR(s database.Spec) (schema.GroupVersionResource, string) {
+	if s.Engine == "duckdb" {
+		return myduckDatabaseResource, "StatefulSet"
+	}
 	if s.Engine == "vitess" {
 		return vitessDatabaseResource, "VitessCluster"
 	}
@@ -71,6 +75,12 @@ func databaseLabels(d database.Resource) map[string]string {
 	return map[string]string{managedBy: "hakopod", databaseOwner: d.ID, "hakopod.io/project": d.Project, "hakopod.io/environment": d.Environment}
 }
 func (c *Client) DatabaseControllerAvailable(ctx context.Context, s database.Spec) error {
+	if s.Engine == "duckdb" {
+		if c == nil || c.dynamic == nil || c.kube == nil {
+			return fmt.Errorf("database controller is unavailable")
+		}
+		return myduckRuntimeSupported(s)
+	}
 	if s.Engine == "oracle" && !oracleFreeReleaseQualified {
 		return fmt.Errorf("Oracle Database is unavailable in this release pending native qualification")
 	}
@@ -218,7 +228,7 @@ func DatabaseObject(d database.Resource) (*unstructured.Unstructured, error) {
 	if d.Spec.Engine == "vitess" {
 		image, ok = vitessServerImage, true
 	}
-	if !ok {
+	if !ok || image == "" {
 		return nil, fmt.Errorf("no verified database image for this version")
 	}
 	resources := map[string]any{"requests": map[string]any{"cpu": d.Spec.CPU, "memory": d.Spec.Memory}, "limits": map[string]any{"cpu": d.Spec.CPU, "memory": d.Spec.Memory}}
@@ -233,6 +243,8 @@ func DatabaseObject(d database.Resource) (*unstructured.Unstructured, error) {
 		}
 	} else if d.Spec.Engine == "vitess" {
 		spec = vitessDatabaseSpec(d, resources)
+	} else if d.Spec.Engine == "duckdb" {
+		spec = myduckDatabaseSpec(d, resources)
 	} else if d.Spec.Engine == "mysql" {
 		spec = mysqlDatabaseSpec(d, resources)
 	} else if d.Spec.Engine == "mongodb" {
@@ -371,6 +383,9 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 	if err = c.prepareOracleSecurity(ctx, d, before); err != nil {
 		return err
 	}
+	if err = c.prepareMyDuckSecurity(ctx, d, before); err != nil {
+		return err
+	}
 	if d.Spec.Engine == "vitess" {
 		if err = c.prepareVitessSecurity(ctx, d, password, before); err != nil {
 			return err
@@ -388,6 +403,12 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 		if err = c.applyVitessIdentity(ctx, d, object); err != nil {
 			return err
 		}
+	}
+	if d.Spec.Engine == "duckdb" {
+		identity, e := c.kube.CoreV1().Secrets(ns).Get(ctx, "database-tls", metav1.GetOptions{})
+		if e != nil { return e }
+		if e = databaseIdentityOwned(identity, d, existing.UID); e != nil { return e }
+		_ = unstructured.SetNestedField(object.Object, myduckIdentityFingerprint(identity), "spec", "template", "metadata", "annotations", myduckIdentityAnnotation)
 	}
 	gvr, _ := databaseGVR(d.Spec)
 	api := c.dynamic.Resource(gvr).Namespace(ns)
@@ -722,6 +743,10 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 		if err = c.observeMongoDBDatabase(ctx, d, object, &o); err != nil {
 			return o, err
 		}
+	} else if d.Spec.Engine == "duckdb" {
+		if err = c.observeMyDuckDatabase(ctx, d, &o); err != nil {
+			return o, err
+		}
 	} else if d.Spec.Engine == "clickhouse" {
 		if err = c.observeClickHouseDatabase(ctx, d, object, &o); err != nil {
 			return o, err
@@ -804,6 +829,9 @@ func overlayDatabaseFields(current, desired map[string]any) {
 func databasePodMatches(p corev1.Pod, d database.Resource) bool {
 	if d.Spec.Engine == "oracle" && !oracleEnterprise(d.Spec) {
 		return oracleFreePodMatches(p, d)
+	}
+	if d.Spec.Engine == "duckdb" && !myduckPodMatches(p, d) {
+		return false
 	}
 	if d.Spec.Engine == "vitess" {
 		return vitessPodMatches(p, d)

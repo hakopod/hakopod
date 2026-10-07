@@ -44,7 +44,7 @@ func (c *Client) databaseCertificatesFromIdentity(ctx context.Context, d databas
 	if err != nil || object.GetUID() == "" || object.GetLabels()[databaseOwner] != d.ID || object.GetLabels()[managedBy] != "hakopod" {
 		return empty, nil, fmt.Errorf("database certificate controller ownership changed")
 	}
-	if d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess" {
+	if d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess" || d.Spec.Engine == "duckdb" {
 		secret, err := c.kube.CoreV1().Secrets(ns.Name).Get(ctx, secretName, metav1.GetOptions{})
 		if err != nil {
 			return empty, nil, fmt.Errorf("database certificate is unavailable")
@@ -152,6 +152,15 @@ func (c *Client) observeDatabaseTLS(ctx context.Context, d database.Resource, o 
 	}
 	if len(o.Members) == 0 {
 		return fmt.Errorf("database TLS probe has no owned member")
+	}
+	if d.Spec.Engine == "duckdb" {
+		if err = c.verifyMyDuckTLS(step, d, o); err != nil {
+			status.Message = "MyDuck did not pass both authenticated TLS protocol checks."
+			return err
+		}
+		stamp := time.Now().UTC()
+		status.Verified, status.PlaintextRejected, status.CheckedAt = true, true, &stamp
+		return nil
 	}
 	if d.Spec.Engine == "vitess" {
 		if err = c.verifyVitessTLS(step, d, o, trust, &status, vitessInventory); err != nil {
