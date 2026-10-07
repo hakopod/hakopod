@@ -16,13 +16,13 @@ a separate operator rollout. This OSS release does not enable hosted provisionin
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md),
 [DuckDB through MyDuck](managed-myduck.md) and [Oracle Database](managed-oracle.md)
-implementations have separate guides with their contracts and limits. Oracle
-Database Free and MyDuck are enabled in the alpha.56 candidate
-only for qualification; they are not in published OSS alpha.55 or Cloud alpha.34. Their
-native and HTTP qualification must run again against the current candidate.
-Public endpoints, Neon and Supabase remain unavailable. Oracle Enterprise and
-Data Guard also remain unavailable and require separate licensed acceptance.
-See the
+implementations have separate guides with their contracts and limits. Private,
+single-instance MyDuck and Oracle Database Free are included in OSS alpha.56 on
+Linux amd64. Public endpoints, Neon and Supabase remain unavailable. Oracle
+Enterprise and Data Guard also remain unavailable and require separate licensed
+acceptance. Cloud alpha.35 is a separate package and deployment. Its shared
+production pool cannot fit Oracle or Vitess, and MyDuck requires its own capacity
+and placement acceptance before a Cloud rollout. See the
 [release acceptance record](managed-database-release-acceptance.md) for tested
 source revisions and immutable runtime references.
 
@@ -342,10 +342,11 @@ approval for the destination revision, project, environment and database name.
 Vitess acceptance records bind the exact tested source and image digests. The
 alpha.55 runtime passed all five native cases and the official HTTP workflow
 after rebasing. Packaging verifies those records against the source and images.
-Oracle Database Free and MyDuck appear in the candidate UI so qualification can
-exercise the real workflow. That does not make them published services. Their
-engine guides state the remaining release checks. Oracle Enterprise, Data Guard
-and all public routes remain unavailable.
+Alpha.56 adds guided creation for private, single-instance Oracle Database Free
+and MyDuck. Their native and HTTP results are recorded in the
+[release acceptance record](managed-database-release-acceptance.md). Oracle
+Enterprise, Data Guard and all public routes remain unavailable. Cloud alpha.35
+needs separate packaging, deployment, capacity and placement acceptance.
 
 ## Monitoring history
 

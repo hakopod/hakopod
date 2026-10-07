@@ -1,5 +1,111 @@
 # Managed database release acceptance
 
+## MyDuck and Oracle Database Free — alpha.56
+
+### MyDuck
+
+The lifecycle, recovery and HTTP cases passed on `2026-10-07 UTC`
+against exact source `b253812df8236905ab4db2015380dae5da2ed7f1`, tree
+`e63730e88b3ad76993a293ed2641af3e53ac77d5`, in the named `k3d-hakopod-dev` development
+cluster. Acceptance used three Linux amd64 k3d nodes: a server limited to 2
+vCPUs and 16 GiB, and two workers each limited to 5 vCPUs and 40 GiB. This does
+not establish independent-host, zone or provider durability.
+
+The immutable public runtime is
+`ghcr.io/hakopod/managed-myduck@sha256:ad324a97360dea53f9e32cb367666b8fefa6f52377000c084a63c1712ca79873`, version
+`0.1.0-hakopod.3`. It is built from upstream MyDuck revision
+`6e3427591fd8895df9585969e7256f958fb639bb`.
+
+| Case | Protected log SHA-256 | Cleanup |
+| --- | --- | --- |
+| Lifecycle | `553daaaee9f1f063629d2c95cf877a1cbb118f321d803e41717866ea6339e1e9` | one namespace and its persistent volumes absent; retained 7 namespaces and 5 volumes |
+| Recovery | `7d9371a1a2f68974f70c988eaa0985b86793f2f4b25a3e16cc31b327b43d9223` | five namespaces and their persistent volumes absent; retained 7 namespaces and 5 volumes |
+| HTTP/API | `612c932de3c6dec2faa0eb04d90c1e00b71507035378936c53c8aaae646d500b` | two namespaces and their persistent volumes absent; retained 7 namespaces and 5 volumes |
+
+All cases used source manifest `4eb8943af87ce5b925b1cd6e1a95dee10e1a7f7ae1106eb0aff99c8faa91f316` before
+and after execution.
+
+The recovery case passed `nonempty_target`, `baseline_replacement`,
+`corrupt_restore` and `successful_restore`, followed by five fixture-cleanup
+checks. The HTTP workflow passed all six required phases and its cleanup. Every
+case preserved its source and cluster baselines and left no helper process
+running. The canonical qualification record and release manifest bind these
+results to the shipped source and image:
+
+- [MyDuck native acceptance record](../release/managed-myduck/native-acceptance.json),
+  SHA-256 `a0b6a0b88ceb2909ff351e7dfa30cb0cd41ea8332a9af9ffd69d60960f207107`
+- [MyDuck release manifest](../release/managed-myduck/manifest.json),
+  SHA-256 `0fb4844daeb313f4e540e90676aeb92107a3f375136078552bf1b181c4c66930`
+
+The release contract is one persistent instance with no replica, failover,
+managed pool or in-place resize. It exposes private TLS 1.2-or-newer connections
+on MySQL port 3306 as `root`/`app` and PostgreSQL port 5432 as
+`postgres`/`app`. Public endpoints remain unavailable.
+
+### Oracle Database Free
+
+Oracle Free passed its native and HTTP qualification on
+`2026-10-07 UTC` against exact source `b253812df8236905ab4db2015380dae5da2ed7f1`,
+tree `e63730e88b3ad76993a293ed2641af3e53ac77d5`, in the named `k3d-hakopod-dev` development cluster.
+Acceptance used three Linux amd64 k3d nodes: a server limited to 2 vCPUs and 16
+GiB, and two workers each limited to 5 vCPUs and 40 GiB. This does not establish
+independent-host, zone or provider durability.
+
+The immutable database image is `container-registry.oracle.com/database/free:23.26.3.0@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba`. The
+namespace-scoped operator image is
+`ghcr.io/hakopod/managed-oracle-free-operator@sha256:e728b6283d4f27947af96232b9d74dc31d9adf288a62722c026c2ce3b6fe7660`.
+The operator has access only to its database namespace. Applications receive no
+operator or cluster credentials.
+
+| Case | Protected log SHA-256 | Cleanup |
+| --- | --- | --- |
+| Lifecycle | `b425665692b7df29e5fc38b609167a0f366cc7444b5c86a99cee6065763110f5` | one namespace and its persistent volumes absent; retained-resource baseline preserved; helper processes stopped |
+| Recovery | `d658e5ec3e39c613600c0599ef604812b6c6c5527b3c782dc010abf0fdcc8c58` | two namespaces and their persistent volumes absent; retained-resource baseline preserved; helper processes stopped |
+| Controller loss | `67cd658ae95625821e1dfe4084240e3d64a17e27c7a59d13b2e83e60862cfa15` | one namespace and its persistent volumes absent; retained-resource baseline preserved; helper processes stopped |
+| HTTP/API | `bef33f25727ce3872c6f0510c360892a749348817a7df45cb815059b42f47c33` | three namespaces and their persistent volumes absent; credential files and PostgreSQL and S3 fixture containers absent; retained-resource baseline preserved; helper processes stopped; host receipt `c146c98a4b39e1c3b43148b3790c7a10c327772df461f806124fe9b5a0372fb7` |
+
+All cases used source manifest `7d896c98d285ffec45609bbb9feb0cbb50f925b5d47f755b758002e76df9a56b` before
+and after execution. The lifecycle, recovery and controller-loss native cases
+passed. The HTTP/API authorization, lifecycle, backup/restore,
+binding/revocation and deletion phases passed.
+
+- [Oracle qualification record](../release/managed-oracle-free/native-acceptance.json),
+  SHA-256 `7db0aa74e096f6c90078a949838a1d67dc2f298c790a9f9876bfbd209ce50eb1`
+- [Oracle release manifest](../release/managed-oracle-free/manifest.json),
+  SHA-256 `b15ba8f99e9f046e8ec63bde1413f800632433de69e747140ed98d6d8f6302fb`
+
+Oracle Database Free is proprietary, no-cost software. The release provides one
+private standalone instance, a namespace-scoped operator, TCPS on port 2484 for
+the `APP` account and `FREEPDB1` service, and equal-size data and Data Pump
+staging volumes. Oracle Free limits the database to two CPUs, 2 GB of database
+memory and 12 GB of user data. Enterprise, Data Guard and public endpoints remain
+unavailable. Backup exports the APP schema with Data Pump. Restore imports that
+archive into a separate empty target; this does not provide RMAN or point-in-time
+recovery.
+
+Independent dashboard review covered 232 captures from the current web source,
+which matches reviewed source `058c25c`. The database-create critical source had
+SHA-256 `5e3fbe953a65898e2daacf4c23fa88c75b9d1b3b6c112e2dcd71f77812f39e40`.
+This UI evidence is separate from live cluster and release acceptance. Cloud
+alpha.35 is a separate package and deployment. The current production shared
+pool cannot fit Oracle or Vitess, so a Cloud rollout needs its own capacity and
+placement acceptance.
+
+### Existing Vitess qualification
+
+Alpha.56 retains the Vitess runtime and operator from alpha.55, including their
+image digests, build inputs and installer. The original native and HTTP evidence
+is preserved byte for byte. The
+[source compatibility review](../release/managed-vitess/source-compatibility.json)
+records every reviewed source change with its before and after hashes.
+Packaging rejects an unrecorded change or a change to Vitess's runtime,
+dependency versions, build inputs or controller.
+
+Shared binding options and password handling passed the
+[control-plane CI checks](https://github.com/hakopod/hakopod/actions/runs/37656577625).
+These are regression results for the shared Go code. The Vitess native and HTTP
+results below remain the alpha.55 results.
+
 ## Vitess 23 — alpha.55
 
 Five native cases passed on October 6, 2026, in the named development cluster

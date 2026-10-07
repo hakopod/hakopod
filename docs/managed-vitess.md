@@ -2,6 +2,8 @@
 
 Status: included in Hakopod 0.1.0-alpha.55 on Linux amd64 workers.
 Five native cases and the official HTTP workflow passed on the qualified source.
+Alpha.56 retains those runtime and operator images and their original evidence
+under an [exact source compatibility review](../release/managed-vitess/source-compatibility.json).
 Development acceptance does not establish independent
 multi-zone or multi-provider availability. See the
 [acceptance record](managed-database-release-acceptance.md) for exact evidence.

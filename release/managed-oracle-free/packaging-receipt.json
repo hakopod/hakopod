@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "packaged_not_published",
+  "source_manifest_sha256": "5cc446b4637f69997fac80fa1c0bc467ad0cba371fc038928b6ae229a08725cc",
+  "build_artifacts_sha256": "b17fae19625af49ad337e3b18eee355661416e7a6c95bb741948b8d6b48b51b4",
+  "publication_plan_sha256": "be2d34fc60a373222e36a803c6590cd6305d5103dbcd91e74a4e3e90b22af4b4",
+  "image": {
+    "archive": "managed-oracle-free-operator.oci.tar",
+    "archive_sha256": "a4d4b8d28e15a90e6c147ab7500775e1ab46324a3502708bf22843f1d5f7155e",
+    "image_digest": "sha256:e728b6283d4f27947af96232b9d74dc31d9adf288a62722c026c2ce3b6fe7660",
+    "repository": "ghcr.io/hakopod/managed-oracle-free-operator",
+    "platform": "linux/amd64",
+    "config_user": "65532:65532",
+    "labels": {
+      "org.opencontainers.image.source": "https://github.com/hakopod/hakopod",
+      "io.hakopod.oracle.operator-upstream": "ff6f9178c1650df30afbf203ebdb633e9b80760a",
+      "io.hakopod.oracle.patch": "hakopod-oracle-free-tcps-v1",
+      "io.hakopod.oracle.source-sha256": "5cc446b4637f69997fac80fa1c0bc467ad0cba371fc038928b6ae229a08725cc"
+    }
+  }
+}

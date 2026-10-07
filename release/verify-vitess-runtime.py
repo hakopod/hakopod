@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
@@ -106,6 +106,134 @@ def source_files(root):
             raise ValueError('Qualification source inventory exceeded its byte limit')
         result[path.relative_to(root).as_posix()] = digest
     return result
+
+
+def canonical_hash(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def _compatibility_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate Vitess compatibility review field')
+        result[key] = value
+    return result
+
+
+def load_source_compatibility(root):
+    path = Path(root) / 'release/managed-vitess/source-compatibility.json'
+    if not path.exists():
+        raise ValueError('Vitess source changed without an exact compatibility review')
+    file_hash(path, 512 * 1024)
+    try:
+        record = json.loads(path.read_text(), object_pairs_hook=_compatibility_object)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError('Invalid Vitess compatibility review') from error
+    fields = {'schema_version', 'qualified_release', 'reviewed_release', 'control_plane_commit',
+              'regression_evidence', 'scopes'}
+    if (not isinstance(record, dict) or set(record) != fields
+            or type(record['schema_version']) is not int or record['schema_version'] != 1):
+        raise ValueError('Invalid Vitess compatibility review schema')
+    baseline = record['qualified_release']
+    if (not isinstance(baseline, dict) or set(baseline) != {
+            'tag', 'commit', 'native_manifest_sha256', 'http_evidence_sha256', 'http_report_sha256'}
+            or not isinstance(baseline['tag'], str)
+            or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', baseline['tag'])
+            or not isinstance(baseline['commit'], str) or not re.fullmatch(r'[0-9a-f]{40}', baseline['commit'])
+            or any(not isinstance(baseline.get(key), str) or not DIGEST.fullmatch(baseline[key])
+                   for key in ('native_manifest_sha256', 'http_evidence_sha256', 'http_report_sha256'))
+            or not isinstance(record['reviewed_release'], str)
+            or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', record['reviewed_release'])
+            or not isinstance(record['control_plane_commit'], str)
+            or not re.fullmatch(r'[0-9a-f]{40}', record['control_plane_commit'])):
+        raise ValueError('Vitess compatibility review lacks its release and evidence identities')
+    regression = record['regression_evidence']
+    if (not isinstance(regression, dict) or set(regression) != {'url', 'tests'}
+            or not isinstance(regression['url'], str)
+            or not re.fullmatch(r'https://github\.com/hakopod/hakopod/actions/runs/[0-9]+', regression['url'])
+            or not isinstance(regression['tests'], list) or not 1 <= len(regression['tests']) <= 32
+            or any(not isinstance(name, str) or not re.fullmatch(r'Test[A-Za-z0-9_/.-]{1,200}', name)
+                   for name in regression['tests'])
+            or len(set(regression['tests'])) != len(regression['tests'])):
+        raise ValueError('Vitess compatibility review lacks its control-plane regression evidence')
+    if not isinstance(record['scopes'], dict) or set(record['scopes']) != {'runtime', 'http_harness'}:
+        raise ValueError('Vitess compatibility review requires both source scopes')
+    for delta in record['scopes'].values():
+        if (not isinstance(delta, dict) or set(delta) != {'baseline_sha256', 'current_sha256', 'changes'}
+                or any(not isinstance(delta[key], str) or not DIGEST.fullmatch(delta[key])
+                       for key in ('baseline_sha256', 'current_sha256'))
+                or not isinstance(delta['changes'], list) or len(delta['changes']) > 1024):
+            raise ValueError('Invalid Vitess compatibility source scope')
+        for change in delta['changes']:
+            if (not isinstance(change, dict) or set(change) != {'path', 'before', 'after', 'reason'}
+                    or not isinstance(change['reason'], str) or not 20 <= len(change['reason'].strip()) <= 500):
+                raise ValueError('Vitess compatibility changes require individual review reasons')
+    return record
+
+
+def _protected_vitess_source(path):
+    return (path in {'go.mod', 'go.sum', 'Dockerfile.vitess-runtime', 'Dockerfile.vitess-operator',
+                     'scripts/apply-managed-vitess-patches.py', 'scripts/build-managed-vitess.sh',
+                     'installer/vitess_controller.py'}
+            or path.startswith('auth/') or path.startswith('patches/vitess')
+            or path.startswith('internal/') and 'vitess' in path.lower() and not path.endswith('_test.go'))
+
+
+def validate_source_compatibility(root, scope, recorded, current, artifact_sha256=None):
+    """Reuse historical evidence only for an explicitly reviewed, exact source delta."""
+    if recorded == current:
+        return False
+    review = load_source_compatibility(root)
+    if scope not in ('runtime', 'http_harness'):
+        raise ValueError('Unknown Vitess compatibility source scope')
+    if artifact_sha256 is not None and artifact_sha256 != review['qualified_release']['native_manifest_sha256']:
+        raise ValueError('Vitess compatibility review belongs to another native manifest')
+    for inventory in (recorded, current):
+        if (not isinstance(inventory, dict) or not 1 <= len(inventory) <= MAX_SOURCE_FILES
+                or any(not isinstance(path, str) or not isinstance(digest, str) or not DIGEST.fullmatch(digest)
+                       for path, digest in inventory.items())):
+            raise ValueError('Invalid Vitess compatibility source inventory')
+    delta = review['scopes'][scope]
+    if (not isinstance(delta, dict) or set(delta) != {'baseline_sha256', 'current_sha256', 'changes'}
+            or delta['baseline_sha256'] != canonical_hash(recorded)
+            or delta['current_sha256'] != canonical_hash(current)
+            or not isinstance(delta['changes'], list) or not 1 <= len(delta['changes']) <= 1024):
+        raise ValueError('Vitess source changed outside the reviewed source delta')
+    expected, seen = dict(recorded), set()
+    for change in delta['changes']:
+        if not isinstance(change, dict) or set(change) != {'path', 'before', 'after', 'reason'}:
+            raise ValueError('Invalid Vitess compatibility source change')
+        path, before, after, reason = (change[key] for key in ('path', 'before', 'after', 'reason'))
+        if (not isinstance(path, str) or not path or path == '.' or len(path) > 512
+                or any(ord(character) < 32 for character in path)
+                or PurePosixPath(path).is_absolute() or '..' in PurePosixPath(path).parts
+                or str(PurePosixPath(path)) != path or '\\' in path or path in seen
+                or any(value is not None and (not isinstance(value, str) or not DIGEST.fullmatch(value))
+                       for value in (before, after)) or before == after
+                or not isinstance(reason, str) or not 20 <= len(reason.strip()) <= 500):
+            raise ValueError('Invalid, duplicate or unsafe Vitess compatibility source change')
+        if _protected_vitess_source(path):
+            raise ValueError('Vitess runtime, dependency or controller changes require new qualification')
+        if expected.get(path) != before:
+            raise ValueError('Vitess compatibility change differs from its qualified baseline')
+        seen.add(path)
+        if after is None:
+            del expected[path]
+        else:
+            expected[path] = after
+    if expected != current:
+        raise ValueError('Vitess source changed outside the reviewed source delta')
+    return True
+
+
+def validate_http_compatibility(root, report, runtime_sources, harness_sources):
+    review = load_source_compatibility(root)
+    if canonical_hash(report) != review['qualified_release']['http_report_sha256']:
+        raise ValueError('Vitess compatibility review belongs to another historical HTTP report')
+    validate_source_compatibility(root, 'runtime', report['runtime_source_files'], runtime_sources)
+    validate_source_compatibility(root, 'http_harness', report['http_harness_source_files'], harness_sources)
+    return True
 
 
 def source_constant(root, name):
@@ -260,8 +388,8 @@ def validate_metadata(directory, root=ROOT):
     manifest = read_json(directory / 'manifest.json')
     if not isinstance(manifest, dict) or type(manifest.get('schema_version')) is not int or manifest['schema_version'] != 1 or manifest.get('platform') != 'linux/amd64':
         raise ValueError('Vitess qualification requires schema 1 and native linux/amd64')
-    if manifest.get('source_files') != source_files(root):
-        raise ValueError('Vitess source changed after native qualification')
+    validate_source_compatibility(root, 'runtime', manifest.get('source_files'), source_files(root),
+                                  artifact_sha256=file_hash(directory / 'manifest.json'))
     if not source_boolean(root, 'vitessReleaseQualified'):
         raise ValueError('Vitess shipping admission remains closed')
     expected_files = {'runtime-upstream.patch', 'operator-upstream.patch', 'native-acceptance.json', 'binary-sha256.txt'}

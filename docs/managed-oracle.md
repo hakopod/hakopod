@@ -1,15 +1,14 @@
 # Managed Oracle Database
 
-Status: Oracle Database Free is enabled in the alpha.56 candidate
-so its native qualification can run. It is not available in published OSS alpha.55
-or Cloud alpha.34 releases. Do not offer it until the current candidate passes
-the complete native lifecycle and HTTP acceptance suites and the release is
-published. Public endpoints remain unavailable.
+Status: Oracle Database Free is available in OSS alpha.56 as one private
+standalone instance on Linux amd64. It uses TCPS on port 2484. Public endpoints,
+Enterprise, Data Guard, replicas and automatic failover are not available. Cloud
+alpha.35 has separate packaging, deployment and capacity checks and is not
+qualified by the OSS release.
 
 Free runs one database instance. Enterprise and Data Guard have separate source
 implementations and acceptance requirements. Passing Free's tests will not enable
-them. This page describes the implementation being qualified, not an available
-managed service.
+them.
 
 ## Editions and images
 
@@ -199,23 +198,22 @@ runtime must prove this with different source and target quotas, as well as
 corrupted-input refusal, nonempty-target refusal, cancellation, session
 revocation and independent writes after recovery.
 
-## Qualification required before release
+## Alpha.56 qualification
 
-An earlier Oracle Free lifecycle run passed against the operator path, but it
-used source from before the managed-credential namespace owner-reference defect
-was found during MyDuck qualification. The correction has passed focused VM
-tests and independent source review. All Oracle native qualification must run
-again against the current candidate; the earlier result is useful diagnostic
-evidence, not release evidence.
+Oracle Free passed its alpha.56 native and HTTP qualification against exact
+source `b253812df8236905ab4db2015380dae5da2ed7f1` in the named `k3d-hakopod-dev`
+development cluster. The native cases covered creation, restart and persistence;
+private TCPS, hostname verification and plaintext refusal; APP privilege
+boundaries; certificate and credential renewal; application binding and
+revocation; Data Pump backup and separate-target recovery; interruption,
+cancellation and controller loss; inspection gating; deletion; and namespace
+and volume cleanup.
 
-The rerun must cover creation, restart and persistence; private TCPS, hostname
-verification and plaintext refusal; APP privilege boundaries; certificate and
-credential renewal; application binding and revocation; Data Pump backup and
-separate-target recovery; interruption, cancellation and controller loss;
-inspection gating; deletion; and namespace and volume cleanup. The HTTP suite
-must cover scoped authorization and the same PostgreSQL-backed durable-operation
-path used by the dashboard and CLI. Record the exact source, operator image,
-database image, cluster and results.
+The HTTP case covered scoped authorization and the PostgreSQL-backed durable
+operation path shared by the dashboard and CLI. Its source and cluster baselines
+were unchanged, and all fixture processes, namespaces and volumes were removed.
+The exact image digests, evidence hashes and cleanup results are in
+[managed database release acceptance](managed-database-release-acceptance.md).
 
 Oracle Enterprise, Data Guard and public endpoints remain unavailable. Their
 source paths do not establish licensed image compatibility or production safety.

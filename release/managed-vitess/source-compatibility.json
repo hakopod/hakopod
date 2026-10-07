@@ -1,0 +1,600 @@
+{
+  "control_plane_commit": "b253812df8236905ab4db2015380dae5da2ed7f1",
+  "qualified_release": {
+    "commit": "4c998c777c6514dc4a7bb736d6ce0645cfb2455d",
+    "http_evidence_sha256": "f702587ade68b3a2d7c7c511c45d8e68fd6bcef455379ff42ccc6f952fc22f6b",
+    "http_report_sha256": "43725f4a2e9dbeebb37b9dc4afd11923d2fc7977e2a728f35e861bc25e494ccc",
+    "native_manifest_sha256": "5c32ebfd3490cd30442a3314a11ec3a5e39aab9a474ba863d628c72811533412",
+    "tag": "v0.1.0-alpha.55"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestManagedPostgresSSLSelectionAndVitessRouting",
+      "TestManagedDatabaseConnectionAPIKeepsReviewedOptionsAndRequiresScopedPassword",
+      "TestManagedBindingPasswordSnapshotIsScopedAndEscaped",
+      "TestManagedBindingMissingPasswordCannotUseManagedCredentials",
+      "TestManagedBindingPasswordSnapshotNeverLeaksValuesOnFailure"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/37656577625"
+  },
+  "reviewed_release": "v0.1.0-alpha.56",
+  "schema_version": 1,
+  "scopes": {
+    "http_harness": {
+      "baseline_sha256": "b8e90610a7b89a0b225e880719d3fbdd1f3dc1027085a892d01f78f3cc6b054b",
+      "changes": [
+        {
+          "after": "28cdd25cc098871f016fc588df24cf9c8ceb80fb1a18484c23e6c04604c7331d",
+          "before": "9a27568647764042729d6364f69c0a7c535ec682b87b3a98636b2e1c4096bed4",
+          "path": "scripts/run-development-vitess-http-acceptance.py",
+          "reason": "The HTTP acceptance harness now binds retained fixture identities more strictly; this changes evidence collection only and makes no runtime or operator claim."
+        }
+      ],
+      "current_sha256": "a0518cc364944cc8a858ec316ff48902c0f813cadeafb338e7c98b856f0d9074"
+    },
+    "runtime": {
+      "baseline_sha256": "04e8aa71e231beafc73ea2850b8b3af7d6a62d4749759c1d97c98e634f3fb855",
+      "changes": [
+        {
+          "after": "f9d347780cf9d14bfa3e45f349044bf7c1a4fbde7b46b4bee33c041470073349",
+          "before": "38d2efb51b5670b9d3ffdddbacfaff24c0d5f237b9e9e8eed21afc3fcdba91d3",
+          "path": "internal/api/api.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "57685c10715a3480465d35d7f1147ba11d21854972c25be9d94c10c86b658483",
+          "before": "f08dd8ad30853579c8fd15522de6c4de3f0064c093251d092e8ff103b476b17b",
+          "path": "internal/api/backup_integration_test.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "5330f9d23a3b01a1e5c709e4183ad3815c6c281f4c640e496d9a6bf51385feb3",
+          "before": "3a6737533ff8fb8adf4e3f83fac88627637a7027137bb96134746c4d8f7a6436",
+          "path": "internal/api/backup_live_test.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "36ccbd3dd3231ff3c2b472e448acdc63c4fbb39d17e67933e2459e86c649e4f8",
+          "before": "fa3de7b8e3b39d3753f8612a8d2a3915a963535110637f8180c1b2c8cd1ce600",
+          "path": "internal/api/database_backup_runtime.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "c05d1d23d4f5955c63ff2a05359cad37f9c6475fbd616e3f2a22c1edda98cfa2",
+          "before": null,
+          "path": "internal/api/database_backup_runtime_readiness_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "5cf85207f38b6f8577ad57df8158681a550078255d915eb405844073c20d4482",
+          "before": null,
+          "path": "internal/api/database_binding_options_test.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "27758a6ba1e46058cad74b411b30ee425f1a62da943d86ce03d22887b539f3ee",
+          "before": "49cf6e0f2470d61c80c1cd3c7cae6a12e7c8e58aa10821409221f802a3556158",
+          "path": "internal/api/database_bindings.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "7ab468d26be144fe417252fdf4d41b0d410ba9bdefa75d5948ba6ac4965d8459",
+          "before": "ac4c95c5e7ece622275852704e6de01e1da6249f38f33634f8b29867d16d23d1",
+          "path": "internal/api/databases.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "5edb33de44fde54449db42ad755ed7693bc94e920b952951b2d49ed06fb5360d",
+          "before": "6e0e33f8e712359cad80de60a282e15044ffeef6eb101caa3057b41ec34b3e66",
+          "path": "internal/api/integration_test.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "e4f5aae3d0f5ce9846980d0bb8ee444d48907a0b39b1b208b5e52e659720a208",
+          "before": null,
+          "path": "internal/api/live_database_oracle_free_cache_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "a969dd76b96cc4647b8893c0eead164b7234bd920230ad120c3b2d8341ed2ed9",
+          "before": null,
+          "path": "internal/api/live_database_oracle_free_http_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "3b30d8c23e5ec71225bc5f194ee2d2410813396de36179bfc9a0f47df6ac14da",
+          "before": null,
+          "path": "internal/api/managed_myduck_live_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "eac27c0d1a90f6f17021edc1fa4eeb883d950022affb2502e42708111c057c27",
+          "before": "f658b4b8245da29a51d4530974ac0ac9c96491020fb39a71f29a325451a1e75b",
+          "path": "internal/api/template_credentials.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "7ea55d9ede3ab7ecd7577d2a49d8fa6a14132ab903efd8933f3366a63d15b971",
+          "before": null,
+          "path": "internal/api/template_edits_test.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "d54193f441160434e72d58a49a493d144615670dfbf8a2a27cc5a3df36efce15",
+          "before": "6388ffab86500349a88f2a97bb89a54725e4ce0174ddb773dce59f583500cf19",
+          "path": "internal/api/templates.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "c026eccecaa954eda1b6d778f43254a8d4532b87fda07439a6ece0a4d8d0e323",
+          "before": null,
+          "path": "internal/backup/managed_myduck_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "696d55d2c937140faadd53a5dace8a15a4114212f6af53c07c438f2c9de3f9e6",
+          "before": "ff31b13bf9f0c1b03f186b8df8443c2141278f26c6304b5305bb1b6141d13485",
+          "path": "internal/backup/managed_recovery.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "e551b61aa43dffaf3063b993538e3374b5823cb7cae9db4890442de518d0a473",
+          "before": "ebb99bea2f680a083614c5541cf7d3db68168428f0ae294d2c5244751287b45d",
+          "path": "internal/backup/model.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "410042f504092fef429c02b71b5aa7b2ceba02b79a967bbc49650ee25a104e74",
+          "before": "ec08e72fb096bbcd9d4b5884d00d96a18a1dcd2c09ce2c42491122101b3c0ae1",
+          "path": "internal/backup/service.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "0f62f824b7f550fff1ca5c3cc5a0a8e90a01c9031a20b65f0dd87bac8b910b26",
+          "before": "20291e8e04249233de9a454f1dae106ac07f319cf154f70ab149b317b0e32efa",
+          "path": "internal/cluster/database_backup.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "f49613ed1212222733894b223e5323f5e8f4adc478d912119b2dfdc61ec527ab",
+          "before": null,
+          "path": "internal/cluster/database_binding_password_test.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "daf219d8409b997a9ac971b8d66c6b35cb0b02267e417544afa4971eb44015b6",
+          "before": "ef0669f84437f42d5ee00504ceaa84e48a93e0cfa99a398f7928f5be1ce61163",
+          "path": "internal/cluster/database_bindings.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "d75126374d4a66ecedaedad474fc118b9b1782187fce4249a14165e8ed0da8ca",
+          "before": "129a1a4c8887c460ff7c7c91d7f793413422f8ba98f8495347d348d700219f7a",
+          "path": "internal/cluster/database_engine_metrics.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "f349f941e1c54ca424bdbe8dff60a9c89a96ec19750f762f5feb4fe84a1a33d6",
+          "before": "989707fd858f5c823435d090c0fa2f9e54d612d3361ebcfbcb922652fa34c13e",
+          "path": "internal/cluster/database_identity.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "01eedc189cfc461222da5c94936d9de401fe781b6b7e6bc40c8a33216fca9e71",
+          "before": null,
+          "path": "internal/cluster/database_myduck.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "c59a2c84676639e54a62cc358f1098939e9135e4c973f7296eb5642257c11dac",
+          "before": null,
+          "path": "internal/cluster/database_myduck_cold_conflict_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "f5d30a8c01a4dac59cb0223c05daa1a50c67c3faabc7aaf68a4ddf9df65baef5",
+          "before": null,
+          "path": "internal/cluster/database_myduck_credentials_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "90c3a5fe28e9aee1f26d9a560c6b5c5b58616fa6be94acc019fbe0202fe747da",
+          "before": null,
+          "path": "internal/cluster/database_myduck_recovery.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "446f87838580ed9776347da9e151fb90e0511ab0c9aef2f95b79b14d1322d81d",
+          "before": null,
+          "path": "internal/cluster/database_myduck_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "d776e3dbbf7807900926d0af7527a0f41c20b0b65832a8b96bc8fb7712f4eec1",
+          "before": null,
+          "path": "internal/cluster/database_myduck_transport.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "b4d9764d7eea5306e1330a9027b20169112b068c90df9e568aed30ec67075309",
+          "before": "fc6b46ee083dd26d57f10aba795530bb91e72debbac0de9d554f8127719c593c",
+          "path": "internal/cluster/database_oracle.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "fc43887787c5d4efb1aab4a835e038cd5778fc4c7861c26bdc59315b03cd73c4",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "fba8781053bec3f1122bb73b9530c0a76c311fc2208efe978fe058eb46dbe6e2",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_controller.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "9bf1e4dd8a944f93022fed39c7771a2b07b84a2dfb5a5bd285841c550fdeaf77",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_deletion.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "980e07fe00c90740c619743161462686e7778a77f17301f7f55d00858cedc321",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_deletion_progress_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "fe5346e4559ce70609bef852fa2bcc90dce36c8f5cb4cb1f9c1274dad034889f",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_lifecycle_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "4a906d0aa687124c087963f7d23696b1ef59ded675916caef27c3fe6bc4d3e04",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_qualification.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "a99059789eaacd93ddf152c8f68c757c6a644634fdffa846fa745650102c0669",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_spec_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "f4a037f779aa740cfad1c4021d180e77729df931560ee68b85bd10bf0e7c40f5",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_storage.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "d9ab4519810c15e277d1d49b6de9e363dca212fb37871266128879df2a16cf06",
+          "before": null,
+          "path": "internal/cluster/database_oracle_free_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "0cae91a0df73296b36b52b83ab6bdcf4178bba1322b94be3084997aa1c9be54a",
+          "before": "80260bdad8caa960d317c40f91b7935543b715d26a4275e49054f6c61f1c9cd6",
+          "path": "internal/cluster/database_oracle_health.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "c942a9be4cacb06eb72187982f12e750b83314448097d9dc5b20c8c069cd027e",
+          "before": "351e328b2c1a39af77e6cce7cdbc38b82ecaab697a52a787e01a894df80577c5",
+          "path": "internal/cluster/database_oracle_recovery.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "1828a68bfa0e7fe4cba2ae14fbaf92011536e4a726bfed3b7e3135c296dfe571",
+          "before": "cbcd26385d691886b10cd8c47e4d06062e82dafaa77ec1f8fd9c7c89b9f5e530",
+          "path": "internal/cluster/database_oracle_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "3b0d1da9dd6570ba228e4f4592ed46a91b996a8f584b41b3cbf6cfad80f70dd6",
+          "before": "fafce17eb39b496f0b86cba70f81825fe6e4628446d8567248241c85060d7e6e",
+          "path": "internal/cluster/database_placement.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "12724ca8e790c2a958faddcdf0db22cf996e6da90d5e1aea7a50b6a78511fbad",
+          "before": "cb8423602aeea81be8f42b80fbc78d6a4d68bb09c1c3b4a8c486e6c1f1db6531",
+          "path": "internal/cluster/database_policy.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "b7a0ca9d4c18252cb4fcf6669d950bb357e0f9f6bc461d28522be171974475cf",
+          "before": "cb500b5abcd5d317552704546177eb8a9e0562ebc890d3fb52ea98694b9af10d",
+          "path": "internal/cluster/database_public_endpoint_identity.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "084a6ef43d59876de994018c788bd787b6549057e93d0dd6e41012a46bdab4b4",
+          "before": null,
+          "path": "internal/cluster/database_public_endpoint_myduck.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "9a915075d2b8f23c94a7e2981169ed32365be23c30344fa13d2439eb07185852",
+          "before": "2203d25ce99fdfca01766814f5e4ae254780f5833f45769a2d72731c0713342f",
+          "path": "internal/cluster/database_public_endpoint_oracle_test.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "2dc616a4d9b94ee6c71488c36a25a34474f5b57b7d2cc8945bb85b694f0ca1fe",
+          "before": "5efd00d2325a6960ece5d3f40cb4affc5bb1bfb058f2fb74a4707433d558e420",
+          "path": "internal/cluster/database_redis_tls.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "3c4791f4718608d7bee6cc0ccc3df9f05d3421e98cf83f5117228b4e1d9f11a8",
+          "before": "aa13180739489de35942ad78058e0c3c21176abba5474b727ee389dd85db8808",
+          "path": "internal/cluster/database_runtime.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "4a1b390d31034556e299d3c3d489e6a884dfaea333d4ef598d3385640931aa06",
+          "before": "52df6612321b73368d7f04d635d5fd60ceca218a150fccc70d235ff2a80da45c",
+          "path": "internal/cluster/database_tls.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "1320cd8f09845b401e3b78acfac6267ae56f41e8e5b2fb5285b819a3a523e2e4",
+          "before": null,
+          "path": "internal/cluster/database_tls_errors_test.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "d9710b6dcea9ed51024486cd34db93602fb4df2b7c56ed8608e0fcaaa298b48e",
+          "before": "599c15a17786ee6d5ea9a5a68a741a29d5b9db8fcec28b046d9ea71882889c06",
+          "path": "internal/cluster/databases.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "1d8fbbb0b29185ebe207676fd09d0d684d88e28bb82fd286e8f6fa754e7094c5",
+          "before": "38de0c55299fa712bafc0502bb879fb4733a815de001d1847c1a19fdeef3f8b2",
+          "path": "internal/cluster/databases_test.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "57a0879fb3cb15eb32b6dc63d5eba4142a012a06dceaf8e936f652568aac0191",
+          "before": "cad6fae6045df322fea6586378a01c3b70cdc469eb3259dca14b74e2edae3942",
+          "path": "internal/cluster/deploy.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "47baccaddbe3671a4033631e9f18301b72f4593cea884540ba54dd99c50be0ef",
+          "before": "bb158d69c1533e66dbf251558b7bc2b1318d11dbea5950c69be5b22f0ab99d79",
+          "path": "internal/cluster/live_database_bindings_test.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "01d1dfb631386cccefdb23f58cc3a72b446cfdd5cd57677ccc8da42f92230823",
+          "before": null,
+          "path": "internal/cluster/live_database_myduck_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "4ce2e99072b46c4d7da0f405ccbf2d84aebb330a07f6b755432a5f262acedd6c",
+          "before": "9ed86ebd06b3ff1c9fb43720b0eccbb61c92c630c89e29b5d6fe58df6eb85003",
+          "path": "internal/cluster/live_database_oracle_binding_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "dbb943ed66b5d70f13163b7fb02530a02749103001c674650a6fefb6cd487ddd",
+          "before": "be0e180e44e82c4821aa99ca03290f79492edf106b59d76456380795a085660c",
+          "path": "internal/cluster/live_database_oracle_diagnostic_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "342081ac40d92760b44f50b4152b173f74c4f286a5a82d0eda56e686f69514e2",
+          "before": null,
+          "path": "internal/cluster/live_database_oracle_free_controller_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "4753bf17fcd443d6f98972db587307ab6b27ff97fcb81bd7bce6d2a30e3e6ece",
+          "before": "71720a3ca437fc812c6eb27a689443fac8600b41f215eb227224699bd9dac4e9",
+          "path": "internal/cluster/live_database_oracle_recovery_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "405d3c957f73dd6842777eb239bd3c6ac9950d076a565eb184883e01e26d962a",
+          "before": "84f6f843bec54b29b27dd72f78265fe86e8709a2120f2e61f91affcf1421c4b5",
+          "path": "internal/cluster/live_database_oracle_security_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "68a4bf157513cc6c1bb5c20ce655ddc1b8916398fd1fe5893d0a09a7c855277c",
+          "before": "36ec777e94347067f317226496beefb3b96d67f2e4e8331f07a2b6f9c098b32a",
+          "path": "internal/cluster/live_database_oracle_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "a2a3f5fea569aa1419fefa2d73a87d16345d30d1e51211764b269e20281150f1",
+          "before": "51d0fa5aade4c2a750d03a96ae8eda188d65d8676eca16a2ab8e5306823e2ff5",
+          "path": "internal/cluster/live_database_recovery_test.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": null,
+          "before": "14336ecac26cf6ee519dabd22643079dfe1344ecaf58340d2fddf03394b9ca91",
+          "path": "internal/cluster/live_mathesar_test.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": null,
+          "before": "7cc1ed23c02a429e50b27b54bfc50ba811cb582a52c93654c3e7f1f905f73f38",
+          "path": "internal/cluster/live_outpost_template_test.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "e5fb292ad401f1184fedfce672427b32ab85825de7974ed0c3ea1b0aea4daf34",
+          "before": null,
+          "path": "internal/cluster/live_template_capacity_test.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "3525ba6ad29236624fe5b20ff353be4125922a08690ed8d475f43c4fdd03bf8d",
+          "before": "3656fb145b5a31c9ea8dbe67d2330a718eee2e1498354c4bc41423e1c4d8a270",
+          "path": "internal/cluster/live_xem_test.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "8bf715d53d23d8ae2b8ac0e219279854da6fe627e5042a48566467d922a9f95b",
+          "before": "b35fe5f0df413fe3e5b612ade08048176ee13cef2634b95628e610ba794ce2f5",
+          "path": "internal/database/allocation.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "3f1938d6d820246c01308e7c96515aa6c6c73468c5995b3c066cb2db74f10437",
+          "before": "873fba638c2f18ce4e1afcac59d914e2a73823eaad35f715527e01a0c88beb02",
+          "path": "internal/database/model.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "7c12e684efe8d1eba5f745511a1b30e60f98d9e3ed2fdc0ddf17a0620cc7f0e0",
+          "before": null,
+          "path": "internal/database/myduck.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "f700797a71ceeb01e3384458329b1a10fff42c755ea3fd0ba3d917534d6e5541",
+          "before": null,
+          "path": "internal/database/myduck_qualification.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "486e24281fbdd000824ddd955ca99cd4f3549d408ed66dc08f52b358ac4f9330",
+          "before": null,
+          "path": "internal/database/myduck_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "7bd680d2dff12bf7dae6e82ddbc615bf57be849915b1856a0835e831a448e6dd",
+          "before": "ec70b66b706e22025554e01c26043955bc64ddcca069eebe11b224dc15ffca32",
+          "path": "internal/database/public_endpoint.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "f01c3cfdf658f9588c0dd202ff1d253350bfa632d11ca15513953104f2066bfc",
+          "before": null,
+          "path": "internal/database/public_endpoint_myduck_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "2cfc28aba79e4c32bb991850e970fa4628995e64963d073b11e7b6fc90d6f339",
+          "before": "3a8941150c00e87ce1508d26de2d7b721775ab3c5af3dc16f6329214de319566",
+          "path": "internal/spec/bindings.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "e3aecba353c941d1148ff02eedd2da64e0d95b61be8cfe1a8cae5cac2b9830bc",
+          "before": "49aea0f4c9098ac13d78547bcd3302a82e7d9513691a36804dff0e6dfc380f62",
+          "path": "internal/spec/external_database_bindings.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "ae30bddbd0999481038c69d074ee98b953b22f390914f534680b3b53a2f4abd3",
+          "before": null,
+          "path": "internal/spec/managed_database_options.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "d4059205d45716c7ce60e6bc39c5413ec7b804eabc2da55c93fcfd9015dbd3df",
+          "before": null,
+          "path": "internal/spec/managed_database_options_test.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "69a698b9c98aa7482fbeef33df2d9f56c26e18e5f3b66f0165a644f26c893db7",
+          "before": null,
+          "path": "internal/spec/template_edits_test.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "28209e4bb55bd11f90503f7cf233b275db31c41c6489994898813d06cac64014",
+          "before": "d10642c4d9610038bf9690ae4ff01b47b11f3fecf03212db1baba93ca62b48c6",
+          "path": "internal/spec/template_requirements.go",
+          "reason": "This exact template or test-fixture delta does not alter the Vitess runtime, operator, image pins, manifests, backup logic or reconciliation behavior."
+        },
+        {
+          "after": "8ec2b80ec877fee0f245f5c13ccd4e7505bf5c7a6991fb3354a2c48fc2eab519",
+          "before": null,
+          "path": "internal/store/085_database_cold_storage_fences.sql",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "80efc2aacbe497bf3ce3415b9b9648a86df151b15f7017da83589459af0ea75e",
+          "before": "4fa3a17433e246306035ec498da34950cf06faefb33f9c002e6da9f0308478af",
+          "path": "internal/store/backup_worker.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "e7f62a9187078144085e934ac9a0b09d43c6a56368d40695153a049e499381f5",
+          "before": "82c0834f4e36b1d0b8be46401fdbb6401fef23de35ff6065ba40d9ec0f5b74c4",
+          "path": "internal/store/database_allocations.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "b0a23d47bfd601933bf9c416a9a9b6b146c5f77e57620cc67103bfa3c362ff9e",
+          "before": null,
+          "path": "internal/store/database_binding_options_test.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "2e31a1781f5942e2a74fb0437331e5c239d2720fdf6b8b436747b26f018d5659",
+          "before": "be6ce5601cf540ba613161d17a827c68850bcbf24ef86dbaa6e2788584c8fe0b",
+          "path": "internal/store/database_bindings.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "da8b5a8fec7816b0bb555e051b8a779a7eb8938be0e561e6f29c79c799957fbb",
+          "before": null,
+          "path": "internal/store/database_cold_storage.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "d37a180d13052c11834f3e32951576e807a1243fd36ac454c6fb2fd518c7cbe3",
+          "before": null,
+          "path": "internal/store/database_cold_storage_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "547a57a09dc940a5b590a854130a7a0c702a10dc59be6e657c806d2c61dbc8a0",
+          "before": "c5d2b64e71b20ed9e71da95b3dad014d998a358d4405fd278beb2fb02d894689",
+          "path": "internal/store/database_connections.go",
+          "reason": "This exact shared binding delta adds reviewed connection options or secret snapshot checks; the existing Vitess default route is unchanged and the listed CI regressions cover it."
+        },
+        {
+          "after": "313d93bb81d7bf163c16a226a35b8a968d9c504085a013dfbe70a1a42526892d",
+          "before": "5dc66cce925df00b989bf02f9041ea5bbffad89ed3ece1d0afc32701d03b55a1",
+          "path": "internal/store/database_maintenance.go",
+          "reason": "This exact shared backup delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "7c07e5a208e02eaeadd3e46e9bbecb43b9c5555dfa95b6e7170c5cf9a591f727",
+          "before": null,
+          "path": "internal/store/database_myduck_test.go",
+          "reason": "This exact source delta adds or tests Oracle Free or MyDuck behavior; Vitess runtime, operator, image pins and engine-specific orchestration remain unchanged."
+        },
+        {
+          "after": "e6ceb78b203f65db0225663a0afb644528b2ab595fc11880cf66ee4ccd435da4",
+          "before": "170741cb4be80100dc61f2da1ae21e99aa0d0dada24a433b1cacb05011030f10",
+          "path": "internal/store/database_oracle_allocation_test.go",
+          "reason": "This exact shared control-plane delta was reviewed against the unchanged Vitess-specific implementation and passing control-plane CI; native Vitess evidence remains the alpha.55 run."
+        },
+        {
+          "after": "8a0299b42411f8f13e06308393cf42a5cd087aba33b46db5402e246b7b7ab08c",
+          "before": "7af01369c885bd50d039799f858125296ac7daf18be18bb978e22bac9e35e4dc",
+          "path": "release/verify-vitess-runtime.py",
+          "reason": "This verifier-only delta enforces exact source compatibility provenance and does not change the historical evidence, Vitess runtime, operator or production orchestration."
+        }
+      ],
+      "current_sha256": "11e009dcb56a31b27cc6c69bbe121e895c049f11b8ddfd8c325e9fd094615018"
+    }
+  }
+}

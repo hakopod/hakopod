@@ -76,7 +76,9 @@ def validate_report(report, root=ROOT):
                      "runtime_source_files_after", "http_harness_source_files",
                      "http_harness_source_files_after", "log_sha256", "exit_code", "limit_error",
                      "elapsed_seconds", "test_events", "retained_inventory_after", "passed"}
-    if set(report) != expected_keys or type(report.get("schema_version")) is not int or report["schema_version"] != 1:
+    historical_schema = set(report) == expected_keys - {"retained_inventory_after"}
+    if (set(report) != expected_keys and not historical_schema
+            or type(report.get("schema_version")) is not int or report["schema_version"] != 1):
         raise ValueError("Vitess HTTP acceptance evidence schema is invalid")
     if (report.get("test") != "TestVitessHTTPVerticalSlice" or report.get("execution") != "http_vertical"
             or type(report.get("passed")) is not bool or report["passed"] is not True
@@ -98,19 +100,27 @@ def validate_report(report, root=ROOT):
         raise ValueError("Vitess HTTP acceptance run and pass events are incomplete")
     runtime_sources = NATIVE["source_files"](root)
     harness_sources = harness_inventory(root)
-    if report.get("runtime_source_files") != runtime_sources or report.get("runtime_source_files_after") != runtime_sources:
+    if report.get("runtime_source_files") != report.get("runtime_source_files_after"):
         raise ValueError("Vitess runtime source changed before or after HTTP acceptance")
-    if report.get("http_harness_source_files") != harness_sources or report.get("http_harness_source_files_after") != harness_sources:
+    if report.get("http_harness_source_files") != report.get("http_harness_source_files_after"):
         raise ValueError("Vitess HTTP harness source changed before or after acceptance")
+    # Older evidence has no retained-resource inventory. Accept its original
+    # schema only when the review pins that exact report and both source maps.
+    if (historical_schema or report["runtime_source_files"] != runtime_sources
+            or report["http_harness_source_files"] != harness_sources):
+        NATIVE["validate_http_compatibility"](root, report, runtime_sources, harness_sources)
     environment = report.get("environment")
     outer_keys = {"context", "cluster_uid", "node_uids", "receipt_sha256", "available_cpu_milli",
                   "scratch_available_bytes", "retained_inventory", "qualified_native_preflight"}
+    if historical_schema:
+        outer_keys.remove("retained_inventory")
     if (not isinstance(environment, dict) or set(environment) != outer_keys
             or environment.get("context") != "k3d-hakopod-dev"
             or not isinstance(environment.get("node_uids"), dict)
             or set(environment["node_uids"]) != NODES):
         raise ValueError("Vitess HTTP evidence belongs to another cluster")
-    retained_before, retained_after = environment["retained_inventory"], report["retained_inventory_after"]
+    retained_before = environment.get("retained_inventory")
+    retained_after = report.get("retained_inventory_after")
     if retained_before is None:
         if retained_after is not None:
             raise ValueError("Vitess HTTP retained inventory changed across acceptance")
@@ -144,6 +154,12 @@ def verify(evidence=REPORT, output=None, root=ROOT):
     if not NATIVE["source_boolean"](root, "vitessReleaseQualified"):
         return False
     report = validate_report(read_report(evidence), root)
+    compatibility = root / "release/managed-vitess/source-compatibility.json"
+    if compatibility.exists():
+        historical = NATIVE["load_source_compatibility"](root)["qualified_release"]
+        if (NATIVE["canonical_hash"](report) == historical["http_report_sha256"]
+                and _file_hash(evidence) != historical["http_evidence_sha256"]):
+            raise ValueError("Historical Vitess HTTP evidence bytes changed")
     if output is None:
         return report
     output = Path(output)

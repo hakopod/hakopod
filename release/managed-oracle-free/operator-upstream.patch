@@ -1,0 +1,2451 @@
+diff --git a/commons/database/constants.go b/commons/database/constants.go
+index 9d7727f..34fa01c 100644
+--- a/commons/database/constants.go
++++ b/commons/database/constants.go
+@@ -442,7 +442,7 @@ const NoExternalIP string = "Node ExternalIP unavailable"
+ 
+ const WalletPwdCMD string = "export WALLET_PWD=\"`openssl rand -base64 8`1\""
+ 
+-const WalletExistsCMD string = "if [ -f ${WALLET_DIR}/ewallet.p12 ]; then echo present; fi"
++const WalletExistsCMD string = "if [ \"${HAKOPOD_ORACLE_POLICY:-}\" = \"hakopod-oracle-tcps-v1\" ]; then if [ -f ${WALLET_DIR}/.hakopod-ready ]; then echo present; fi; elif [ -f ${WALLET_DIR}/ewallet.p12 ]; then echo present; fi"
+ 
+ const WalletCreateCMD string = "if [[ ! -f ${WALLET_DIR}/ewallet.p12 ]]; then mkdir -p ${WALLET_DIR}/.wallet && (umask 177\ncat > wallet.passwd <<EOF\n${WALLET_PWD}\n${WALLET_PWD}\nEOF\nmkstore -wrl ${WALLET_DIR} -create < wallet.passwd\nrm -f wallet.passwd\numask 022;) fi"
+ 
+@@ -553,13 +553,13 @@ const GetSidPdbEditionCMD string = "echo $ORACLE_SID,$ORACLE_PDB,$ORACLE_EDITION
+ const CheckDBLockStatusCMD string = "if [ -x \"${EXTENSION_SCRIPT_DIR:-/opt/oracle/scripts/extensions/k8s}/checkDBLockStatus.sh\" ]; then \"${EXTENSION_SCRIPT_DIR:-/opt/oracle/scripts/extensions/k8s}/checkDBLockStatus.sh\"; elif [ -x \"$ORACLE_BASE/checkDBLockStatus.sh\" ]; then \"$ORACLE_BASE/checkDBLockStatus.sh\"; else \"$ORACLE_BASE/checkDBStatus.sh\"; fi"
+ 
+ // Command to enable TCPS as a formatted string. The parameter would be the port at which TCPS is enabled.
+-const EnableTcpsCMD string = "if [ -x \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\" ]; then \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\"; else \"$ORACLE_BASE/${CONFIG_TCPS_FILE:-configTcps.sh}\"; fi"
++const EnableTcpsCMD string = "if [ \"${HAKOPOD_ORACLE_POLICY:-}\" = \"hakopod-oracle-tcps-v1\" ]; then bash /etc/hakopod-oracle/config-tcps.sh; elif [ -x \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\" ]; then \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\"; else \"$ORACLE_BASE/${CONFIG_TCPS_FILE:-configTcps.sh}\"; fi"
+ 
+ // Command for TCPS certs renewal to prevent their expiry. It is same as the EnableTcpsCMD
+ const RenewCertsCMD string = EnableTcpsCMD
+ 
+ // Command to disable TCPS
+-const DisableTcpsCMD string = "if [ -x \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\" ]; then \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\" disable; else \"$ORACLE_BASE/${CONFIG_TCPS_FILE:-configTcps.sh}\" disable; fi"
++const DisableTcpsCMD string = "if [ \"${HAKOPOD_ORACLE_POLICY:-}\" = \"hakopod-oracle-tcps-v1\" ]; then exit 1; elif [ -x \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\" ]; then \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_TCPS_FILE:-configTcps.sh}\" disable; else \"$ORACLE_BASE/${CONFIG_TCPS_FILE:-configTcps.sh}\" disable; fi"
+ 
+ // Command to configure Data Guard broker prerequisites from the database image helper.
+ const ConfigureDataguardPrereqsCMD string = "if [ -x \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_DG_PREREQS_FILE:-configDataguardPrereqs.sh}\" ]; then \"${SCRIPT_BASE_DIR:-/opt/oracle/scripts/base}/${CONFIG_DG_PREREQS_FILE:-configDataguardPrereqs.sh}\" configure; else \"$ORACLE_BASE/${CONFIG_DG_PREREQS_FILE:-configDataguardPrereqs.sh}\" configure; fi"
+diff --git a/commons/database/hakopod_free_policy.go b/commons/database/hakopod_free_policy.go
+new file mode 100644
+index 0000000..e8ce210
+--- /dev/null
++++ b/commons/database/hakopod_free_policy.go
+@@ -0,0 +1,278 @@
++package commons
++
++import (
++	"encoding/hex"
++	"encoding/json"
++	"fmt"
++	"io"
++	"reflect"
++	"slices"
++	"strings"
++
++	corev1 "k8s.io/api/core/v1"
++	"k8s.io/apimachinery/pkg/api/equality"
++	"k8s.io/apimachinery/pkg/api/resource"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++)
++
++const HakopodOracleFreeProfile = "hakopod-oracle-free-tcps-v1"
++const HakopodOracleFreeStorageFinalizer = "hakopod.io/oracle-free-storage"
++const hakopodFreeImage = "container-registry.oracle.com/database/free:23.26.3.0@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba"
++
++// ApplyHakopodFreePodPolicy accepts only the fixed Free startup contract emitted
++// by Hakopod. No application identity has permission to write this annotation.
++func ApplyHakopodFreePodPolicy(pod *corev1.Pod, owner metav1.ObjectMeta) error {
++	raw := owner.Annotations["hakopod.io/oracle-free-pod-policy"]
++	var envelope struct {
++		Profile string         `json:"profile"`
++		PodSpec corev1.PodSpec `json:"podSpec"`
++	}
++	decoder := json.NewDecoder(strings.NewReader(raw))
++	decoder.DisallowUnknownFields()
++	id := owner.Labels["hakopod.io/database-id"]
++	decodedID, err := hex.DecodeString(id)
++	identity, identityErr := hex.DecodeString(owner.Annotations["hakopod.io/oracle-identity"])
++	if len(raw) > 32<<10 || decoder.Decode(&envelope) != nil || decoder.Decode(new(any)) != io.EOF || envelope.Profile != HakopodOracleFreeProfile || err != nil || len(decodedID) != 16 || identityErr != nil || len(identity) != 32 || owner.Name != "database" || owner.Namespace != "hdb-"+id || owner.Labels["app.kubernetes.io/managed-by"] != "hakopod" || owner.Labels["hakopod.io/project"] == "" || owner.Labels["hakopod.io/environment"] == "" || owner.Annotations["hakopod.io/database-revision"] == "" {
++		return fmt.Errorf("managed Oracle Free identity or policy is invalid")
++	}
++	spec := envelope.PodSpec
++	if spec.NodeSelector[corev1.LabelArchStable] != "amd64" {
++		return fmt.Errorf("managed Oracle Free requires amd64 placement")
++	}
++	allowedSpec := corev1.PodSpec{Containers: spec.Containers, Volumes: spec.Volumes, AutomountServiceAccountToken: spec.AutomountServiceAccountToken, SecurityContext: spec.SecurityContext, TerminationGracePeriodSeconds: spec.TerminationGracePeriodSeconds, NodeSelector: spec.NodeSelector, Tolerations: spec.Tolerations, Affinity: spec.Affinity, RuntimeClassName: spec.RuntimeClassName}
++	if !reflect.DeepEqual(spec, allowedSpec) || spec.TerminationGracePeriodSeconds == nil || *spec.TerminationGracePeriodSeconds != 120 || spec.RuntimeClassName != nil && *spec.RuntimeClassName != "runsc" {
++		return fmt.Errorf("managed Oracle Free contains unsupported pod settings")
++	}
++	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Image != hakopodFreeImage || len(spec.Containers) != 1 || len(spec.InitContainers) != 0 || len(spec.EphemeralContainers) != 0 || spec.HostNetwork || spec.HostPID || spec.HostIPC || spec.NodeName != "" || spec.ServiceAccountName != "" || spec.AutomountServiceAccountToken == nil || *spec.AutomountServiceAccountToken || len(spec.ImagePullSecrets) != 0 || len(spec.HostAliases) != 0 {
++		return fmt.Errorf("managed Oracle Free workload boundary is invalid")
++	}
++	security := &corev1.PodSecurityContext{RunAsNonRoot: freePtr(true), RunAsUser: freePtr(int64(54321)), RunAsGroup: freePtr(int64(54321)), FSGroup: freePtr(int64(54321)), SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
++	if !reflect.DeepEqual(spec.SecurityContext, security) {
++		return fmt.Errorf("managed Oracle Free pod security is invalid")
++	}
++	container := spec.Containers[0]
++	allowedContainer := corev1.Container{Name: container.Name, Image: container.Image, ImagePullPolicy: container.ImagePullPolicy, Command: container.Command, Resources: container.Resources, SecurityContext: container.SecurityContext, Ports: container.Ports, VolumeMounts: container.VolumeMounts, ReadinessProbe: container.ReadinessProbe, StartupProbe: container.StartupProbe}
++	if !reflect.DeepEqual(container, allowedContainer) {
++		return fmt.Errorf("managed Oracle Free contains unsupported container settings")
++	}
++	cs := &corev1.SecurityContext{RunAsNonRoot: freePtr(true), RunAsUser: freePtr(int64(54321)), RunAsGroup: freePtr(int64(54321)), AllowPrivilegeEscalation: freePtr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}}
++	if container.Name != "database" || container.Image != hakopodFreeImage || container.ImagePullPolicy != corev1.PullIfNotPresent || !reflect.DeepEqual(container.Command, []string{"bash", "/etc/hakopod-config/start.sh"}) || !reflect.DeepEqual(container.SecurityContext, cs) {
++		return fmt.Errorf("managed Oracle Free container security is invalid")
++	}
++	for _, key := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, corev1.ResourceEphemeralStorage} {
++		request, limit := container.Resources.Requests[key], container.Resources.Limits[key]
++		if request.Sign() <= 0 || limit.Sign() <= 0 || request.Cmp(limit) > 0 {
++			return fmt.Errorf("managed Oracle Free resources must be bounded")
++		}
++	}
++	if len(container.Ports) != 1 || container.Ports[0].ContainerPort != 2484 || container.Ports[0].HostPort != 0 || container.ReadinessProbe == nil || container.StartupProbe == nil {
++		return fmt.Errorf("managed Oracle Free listener or readiness is invalid")
++	}
++	if container.ReadinessProbe.Exec == nil || !reflect.DeepEqual(container.ReadinessProbe.Exec.Command, []string{"bash", "-c", "test -f /tmp/hakopod/ready && /opt/oracle/checkDBStatus.sh >/dev/null 2>&1"}) || container.StartupProbe.Exec == nil || !reflect.DeepEqual(container.StartupProbe.Exec.Command, []string{"test", "-f", "/tmp/hakopod/ready"}) {
++		return fmt.Errorf("managed Oracle Free readiness command changed")
++	}
++	wantedMounts := map[string]corev1.VolumeMount{}
++	for _, mount := range []corev1.VolumeMount{
++		{Name: "data", MountPath: "/opt/oracle/oradata"}, {Name: "additional-pvc-0", MountPath: "/opt/oracle/hakopod-backup"},
++		{Name: "database-tls", MountPath: "/etc/hakopod-tls", ReadOnly: true}, {Name: "database-access", MountPath: "/etc/hakopod-oracle", ReadOnly: true},
++		{Name: "database-app", MountPath: "/etc/hakopod-app", ReadOnly: true}, {Name: "database-config", MountPath: "/etc/hakopod-config", ReadOnly: true},
++		{Name: "database-config", MountPath: "/opt/oracle/scripts/startup/99-hakopod-ready.sh", SubPath: "ready.sh", ReadOnly: true},
++		{Name: "diagnostics", MountPath: "/opt/oracle/diag"}, {Name: "temporary", MountPath: "/tmp"}, {Name: "shm", MountPath: "/dev/shm"},
++	} {
++		wantedMounts[mount.MountPath] = mount
++	}
++	if len(container.VolumeMounts) != len(wantedMounts) {
++		return fmt.Errorf("managed Oracle Free mounts are incomplete")
++	}
++	for _, mount := range container.VolumeMounts {
++		expected, ok := wantedMounts[mount.MountPath]
++		if !ok || !reflect.DeepEqual(mount, expected) {
++			return fmt.Errorf("managed Oracle Free mount changed")
++		}
++		delete(wantedMounts, mount.MountPath)
++	}
++	wantedVolumes := map[string]corev1.VolumeSource{
++		"data":             {PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "database"}},
++		"additional-pvc-0": {PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "database-additional-0"}},
++		"database-tls":     {Secret: &corev1.SecretVolumeSource{SecretName: "database-tls", DefaultMode: freePtr(int32(0440))}},
++		"database-access":  {Secret: &corev1.SecretVolumeSource{SecretName: "database-oracle-access", DefaultMode: freePtr(int32(0440))}},
++		"database-app":     {Secret: &corev1.SecretVolumeSource{SecretName: "database-credentials", DefaultMode: freePtr(int32(0440))}},
++		"database-config":  {ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "database-oracle-config"}, DefaultMode: freePtr(int32(0550))}},
++		"diagnostics":      {EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: freePtr(resource.MustParse("512Mi"))}},
++		"temporary":        {EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: freePtr(resource.MustParse("256Mi"))}},
++		"shm":              {EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory, SizeLimit: freePtr(resource.MustParse("1Gi"))}},
++	}
++	if len(spec.Volumes) != len(wantedVolumes) {
++		return fmt.Errorf("managed Oracle Free volume contract is incomplete")
++	}
++	for _, volume := range spec.Volumes {
++		expected, ok := wantedVolumes[volume.Name]
++		if !ok || !equality.Semantic.DeepEqual(volume.VolumeSource, expected) {
++			return fmt.Errorf("managed Oracle Free volume source changed")
++		}
++		delete(wantedVolumes, volume.Name)
++	}
++	// The guarded full-image entrypoint performs initialization itself. Reusing
++	// the upstream prebuilt copier would place its completion marker before the
++	// data copy, making an interrupted copy appear initialized on the next run.
++	pod.Spec = spec
++	if pod.Labels == nil {
++		pod.Labels = map[string]string{}
++	}
++	for _, key := range []string{"hakopod.io/database-id", "app.kubernetes.io/managed-by", "hakopod.io/project", "hakopod.io/environment"} {
++		pod.Labels[key] = owner.Labels[key]
++	}
++	pod.Labels["hakopod.io/oracle-member"] = "true"
++	if pod.Annotations == nil {
++		pod.Annotations = map[string]string{}
++	}
++	for _, key := range []string{"hakopod.io/database-revision", "hakopod.io/oracle-identity", "hakopod.io/oracle-free-pod-policy"} {
++		pod.Annotations[key] = owner.Annotations[key]
++	}
++	return nil
++}
++
++// Storage is immutable for this profile. In particular, the upstream replace
++// path must never delete an initialized data claim after a drifted setting.
++func ValidateHakopodFreePVC(pvc *corev1.PersistentVolumeClaim, owner metav1.ObjectMeta, name, storage, size string) error {
++	controller := metav1.GetControllerOf(pvc)
++	quantity, err := resource.ParseQuantity(size)
++	if err != nil || quantity.Sign() <= 0 || storage == "" || pvc.Name != name || pvc.Namespace != owner.Namespace || pvc.DeletionTimestamp != nil || !slices.Contains(pvc.Finalizers, HakopodOracleFreeStorageFinalizer) || len(pvc.OwnerReferences) != 1 || controller == nil || controller.APIVersion != "database.oracle.com/v4" || controller.Kind != "SingleInstanceDatabase" || controller.Name != owner.Name || controller.UID != owner.UID || controller.BlockOwnerDeletion == nil || !*controller.BlockOwnerDeletion {
++		return fmt.Errorf("managed Oracle Free storage identity changed")
++	}
++	current := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
++	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != storage || len(pvc.Spec.AccessModes) != 1 || pvc.Spec.AccessModes[0] != corev1.ReadWriteOnce || current.Cmp(quantity) != 0 || pvc.Spec.VolumeMode != nil && *pvc.Spec.VolumeMode != corev1.PersistentVolumeFilesystem || pvc.Spec.DataSource != nil || pvc.Spec.DataSourceRef != nil || pvc.Spec.Selector != nil {
++		return fmt.Errorf("managed Oracle Free storage is immutable; use a separate restore target")
++	}
++	return nil
++}
++
++func ValidateHakopodFreeService(service *corev1.Service, owner metav1.ObjectMeta) error {
++	controller := metav1.GetControllerOf(service)
++	if service.Name != "database" || service.Namespace != owner.Namespace || service.DeletionTimestamp != nil || len(service.OwnerReferences) != 1 || controller == nil || controller.APIVersion != "database.oracle.com/v4" || controller.Kind != "SingleInstanceDatabase" || controller.Name != owner.Name || controller.UID != owner.UID {
++		return fmt.Errorf("managed Oracle Free service ownership changed")
++	}
++	expected := map[string]string{"app": owner.Name, "hakopod.io/database-id": owner.Labels["hakopod.io/database-id"], "hakopod.io/oracle-member": "true"}
++	if !reflect.DeepEqual(service.Spec.Selector, expected) || service.Spec.Type != corev1.ServiceTypeClusterIP || service.Spec.ExternalName != "" || len(service.Spec.ExternalIPs) != 0 || service.Spec.PublishNotReadyAddresses || len(service.Spec.Ports) != 1 {
++		return fmt.Errorf("managed Oracle Free service route changed")
++	}
++	port := service.Spec.Ports[0]
++	if port.Name != "tcps" || port.Protocol != corev1.ProtocolTCP || port.Port != 2484 || port.TargetPort.IntVal != 2484 || port.TargetPort.Type != 0 || port.NodePort != 0 {
++		return fmt.Errorf("managed Oracle Free requires only private TCPS")
++	}
++	return nil
++}
++
++func ValidateHakopodFreeObservedMember(pod *corev1.Pod, owner metav1.ObjectMeta) error {
++	controller := metav1.GetControllerOf(pod)
++	if pod.UID == "" || pod.Namespace != owner.Namespace || len(pod.OwnerReferences) != 1 || controller == nil || controller.APIVersion != "database.oracle.com/v4" || controller.Kind != "SingleInstanceDatabase" || controller.Name != owner.Name || controller.UID != owner.UID || pod.Labels["hakopod.io/database-id"] != owner.Labels["hakopod.io/database-id"] || pod.Labels["app.kubernetes.io/managed-by"] != "hakopod" || pod.Labels["hakopod.io/oracle-member"] != "true" {
++		return fmt.Errorf("managed Oracle Free member ownership changed")
++	}
++	expected := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: hakopodFreeImage}}}}
++	if err := ApplyHakopodFreePodPolicy(expected, owner); err != nil {
++		return err
++	}
++	for _, key := range []string{"hakopod.io/database-revision", "hakopod.io/oracle-identity", "hakopod.io/oracle-free-pod-policy"} {
++		if pod.Annotations[key] != owner.Annotations[key] {
++			return fmt.Errorf("managed Oracle Free member identity changed")
++		}
++	}
++	if !hakopodFreePodSpecsEqual(pod.Spec, expected.Spec) {
++		return fmt.Errorf("managed Oracle Free member execution policy changed")
++	}
++	return nil
++}
++func freePtr[T any](value T) *T { return &value }
++func freeSandboxOverheadValid(resources corev1.ResourceList) bool {
++	limits := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("50Mi")}
++	for name, quantity := range resources {
++		limit, ok := limits[name]
++		if !ok || quantity.Sign() < 0 || quantity.Cmp(limit) > 0 {
++			return false
++		}
++	}
++	return true
++}
++
++func hakopodFreePodSpecsEqual(actual, expected corev1.PodSpec) bool {
++	normalize := func(spec *corev1.PodSpec) {
++		spec.NodeName = ""
++		if spec.RuntimeClassName != nil && *spec.RuntimeClassName == "runsc" {
++			if freeSandboxOverheadValid(spec.Overhead) {
++				spec.Overhead = nil
++			}
++		}
++		if spec.ServiceAccountName == "default" {
++			spec.ServiceAccountName = ""
++		}
++		if spec.DeprecatedServiceAccount == "default" {
++			spec.DeprecatedServiceAccount = ""
++		}
++		if spec.RestartPolicy == "" {
++			spec.RestartPolicy = corev1.RestartPolicyAlways
++		}
++		if spec.DNSPolicy == "" {
++			spec.DNSPolicy = corev1.DNSClusterFirst
++		}
++		if spec.SchedulerName == "" {
++			spec.SchedulerName = "default-scheduler"
++		}
++		if spec.EnableServiceLinks == nil {
++			spec.EnableServiceLinks = freePtr(true)
++		}
++		if spec.Priority == nil {
++			spec.Priority = freePtr(int32(0))
++		}
++		if spec.PreemptionPolicy == nil {
++			value := corev1.PreemptLowerPriority
++			spec.PreemptionPolicy = &value
++		}
++		if spec.TerminationGracePeriodSeconds == nil {
++			spec.TerminationGracePeriodSeconds = freePtr(int64(30))
++		}
++		spec.Tolerations = slices.DeleteFunc(spec.Tolerations, func(value corev1.Toleration) bool {
++			return (value.Key == "node.kubernetes.io/not-ready" || value.Key == "node.kubernetes.io/unreachable") && value.Operator == corev1.TolerationOpExists && value.Effect == corev1.TaintEffectNoExecute && value.Value == "" && value.TolerationSeconds != nil && *value.TolerationSeconds == 300
++		})
++		if len(spec.Tolerations) == 0 {
++			spec.Tolerations = nil
++		}
++		for i := range spec.Containers {
++			container := &spec.Containers[i]
++			if container.ImagePullPolicy == "" {
++				container.ImagePullPolicy = corev1.PullIfNotPresent
++			}
++			if container.TerminationMessagePath == "" {
++				container.TerminationMessagePath = "/dev/termination-log"
++			}
++			if container.TerminationMessagePolicy == "" {
++				container.TerminationMessagePolicy = corev1.TerminationMessageReadFile
++			}
++			for j := range container.Ports {
++				if container.Ports[j].Protocol == "" {
++					container.Ports[j].Protocol = corev1.ProtocolTCP
++				}
++			}
++			for _, probe := range []*corev1.Probe{container.StartupProbe, container.ReadinessProbe, container.LivenessProbe} {
++				if probe == nil {
++					continue
++				}
++				if probe.TimeoutSeconds == 0 {
++					probe.TimeoutSeconds = 1
++				}
++				if probe.PeriodSeconds == 0 {
++					probe.PeriodSeconds = 10
++				}
++				if probe.SuccessThreshold == 0 {
++					probe.SuccessThreshold = 1
++				}
++				if probe.FailureThreshold == 0 {
++					probe.FailureThreshold = 3
++				}
++			}
++		}
++	}
++	left, right := actual.DeepCopy(), expected.DeepCopy()
++	normalize(left)
++	normalize(right)
++	return reflect.DeepEqual(left, right)
++}
+diff --git a/commons/database/hakopod_free_policy_test.go b/commons/database/hakopod_free_policy_test.go
+new file mode 100644
+index 0000000..adb7f2d
+--- /dev/null
++++ b/commons/database/hakopod_free_policy_test.go
+@@ -0,0 +1,207 @@
++package commons
++
++import (
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	corev1 "k8s.io/api/core/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++)
++
++func freePolicyFixture(t *testing.T) (metav1.ObjectMeta, corev1.PodSpec) {
++	t.Helper()
++	root := os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR")
++	if root == "" {
++		t.Fatal("Oracle Free policy regression requires the exported Hakopod candidate")
++	}
++	raw, err := os.ReadFile(filepath.Join(root, "database.json"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	var object struct {
++		Metadata metav1.ObjectMeta `json:"metadata"`
++	}
++	if err = json.Unmarshal(raw, &object); err != nil {
++		t.Fatal(err)
++	}
++	var policy struct {
++		PodSpec corev1.PodSpec `json:"podSpec"`
++	}
++	if err = json.Unmarshal([]byte(object.Metadata.Annotations["hakopod.io/oracle-free-pod-policy"]), &policy); err != nil {
++		t.Fatal(err)
++	}
++	return object.Metadata, policy.PodSpec
++}
++
++func TestHakopodOracleFreePolicyRejectsBoundaryChanges(t *testing.T) {
++	owner, expected := freePolicyFixture(t)
++	newPod := func() *corev1.Pod {
++		return &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "database", Image: hakopodFreeImage}}}}
++	}
++	valid := newPod()
++	if err := ApplyHakopodFreePodPolicy(valid, owner); err != nil {
++		t.Fatal(err)
++	}
++	if len(valid.Spec.InitContainers) != 0 || valid.Spec.Containers[0].Image != hakopodFreeImage || valid.Labels["hakopod.io/oracle-member"] != "true" || valid.Annotations["hakopod.io/oracle-identity"] != owner.Annotations["hakopod.io/oracle-identity"] {
++		t.Fatal("Free bootstrap or identity propagation changed")
++	}
++	for name, change := range map[string]func(*corev1.PodSpec){
++		"host networking":     func(p *corev1.PodSpec) { p.HostNetwork = true },
++		"operator identity":   func(p *corev1.PodSpec) { p.ServiceAccountName = "database-oracle-free-operator" },
++		"token":               func(p *corev1.PodSpec) { yes := true; p.AutomountServiceAccountToken = &yes },
++		"mutable image":       func(p *corev1.PodSpec) { p.Containers[0].Image = "oracle:latest" },
++		"secret environment":  func(p *corev1.PodSpec) { p.Containers[0].Env = []corev1.EnvVar{{Name: "PASSWORD", Value: "private"}} },
++		"extra command":       func(p *corev1.PodSpec) { p.Containers[0].Args = []string{"unexpected"} },
++		"foreign backup":      func(p *corev1.PodSpec) { p.Volumes[len(p.Volumes)-1].PersistentVolumeClaim.ClaimName = "foreign" },
++		"foreign secret":      func(p *corev1.PodSpec) { p.Volumes[0].Secret.SecretName = "foreign" },
++		"supplemental groups": func(p *corev1.PodSpec) { p.SecurityContext.SupplementalGroups = []int64{0} },
++		"pod SELinux": func(p *corev1.PodSpec) {
++			p.SecurityContext.SELinuxOptions = &corev1.SELinuxOptions{Type: "unconfined_t"}
++		},
++		"unmasked proc": func(p *corev1.PodSpec) {
++			value := corev1.UnmaskedProcMount
++			p.Containers[0].SecurityContext.ProcMount = &value
++		},
++		"container seccomp": func(p *corev1.PodSpec) {
++			p.Containers[0].SecurityContext.SeccompProfile = &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeUnconfined}
++		},
++		"secret item paths": func(p *corev1.PodSpec) {
++			p.Volumes[0].Secret.Items = []corev1.KeyToPath{{Key: "tls.crt", Path: "different"}}
++		},
++		"optional secret": func(p *corev1.PodSpec) { p.Volumes[0].Secret.Optional = freePtr(true) },
++		"config item paths": func(p *corev1.PodSpec) {
++			for i := range p.Volumes {
++				if p.Volumes[i].ConfigMap != nil {
++					p.Volumes[i].ConfigMap.Items = []corev1.KeyToPath{{Key: "start.sh", Path: "different"}}
++					break
++				}
++			}
++		},
++		"optional config": func(p *corev1.PodSpec) {
++			for i := range p.Volumes {
++				if p.Volumes[i].ConfigMap != nil {
++					p.Volumes[i].ConfigMap.Optional = freePtr(true)
++					break
++				}
++			}
++		},
++		"temporary memory": func(p *corev1.PodSpec) {
++			for i := range p.Volumes {
++				if p.Volumes[i].Name == "temporary" {
++					p.Volumes[i].EmptyDir.Medium = corev1.StorageMediumMemory
++					break
++				}
++			}
++		},
++		"oversized temporary": func(p *corev1.PodSpec) {
++			for i := range p.Volumes {
++				if p.Volumes[i].Name == "temporary" {
++					p.Volumes[i].EmptyDir.SizeLimit = freePtr(resource.MustParse("1Ti"))
++					break
++				}
++			}
++		},
++		"additional volume source": func(p *corev1.PodSpec) { p.Volumes[0].HostPath = &corev1.HostPathVolumeSource{Path: "/"} },
++		"unbounded temporary": func(p *corev1.PodSpec) {
++			for i := range p.Volumes {
++				if p.Volumes[i].EmptyDir != nil {
++					p.Volumes[i].EmptyDir.SizeLimit = nil
++					break
++				}
++			}
++		},
++	} {
++		t.Run(name, func(t *testing.T) {
++			changed := expected.DeepCopy()
++			change(changed)
++			metadata := owner.DeepCopy()
++			raw, _ := json.Marshal(map[string]any{"profile": HakopodOracleFreeProfile, "podSpec": changed})
++			metadata.Annotations["hakopod.io/oracle-free-pod-policy"] = string(raw)
++			if ApplyHakopodFreePodPolicy(newPod(), *metadata) == nil {
++				t.Fatal("accepted changed workload boundary")
++			}
++		})
++	}
++	for _, raw := range []string{"{}", strings.Repeat("x", 33<<10), owner.Annotations["hakopod.io/oracle-free-pod-policy"] + "{}"} {
++		metadata := owner.DeepCopy()
++		metadata.Annotations["hakopod.io/oracle-free-pod-policy"] = raw
++		if ApplyHakopodFreePodPolicy(newPod(), *metadata) == nil {
++			t.Fatal("accepted malformed pod policy")
++		}
++	}
++	foreign := owner.DeepCopy()
++	foreign.Namespace = "another-namespace"
++	if ApplyHakopodFreePodPolicy(newPod(), *foreign) == nil {
++		t.Fatal("accepted foreign namespace")
++	}
++}
++
++func TestHakopodOracleFreeStorageNeverAdoptsOrReplacesClaims(t *testing.T) {
++	owner, _ := freePolicyFixture(t)
++	owner.UID = "root-uid"
++	yes := true
++	class := "local-path"
++	claim := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "database", Namespace: owner.Namespace, Finalizers: []string{HakopodOracleFreeStorageFinalizer}, OwnerReferences: []metav1.OwnerReference{{APIVersion: "database.oracle.com/v4", Kind: "SingleInstanceDatabase", Name: owner.Name, UID: owner.UID, Controller: &yes, BlockOwnerDeletion: &yes}}}, Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &class, AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")}}}}
++	if err := ValidateHakopodFreePVC(claim, owner, "database", class, "10Gi"); err != nil {
++		t.Fatal(err)
++	}
++	for name, change := range map[string]func(*corev1.PersistentVolumeClaim){
++		"foreign owner":        func(p *corev1.PersistentVolumeClaim) { p.OwnerReferences[0].UID = "foreign" },
++		"no owner":             func(p *corev1.PersistentVolumeClaim) { p.OwnerReferences = nil },
++		"no storage finalizer": func(p *corev1.PersistentVolumeClaim) { p.Finalizers = nil },
++		"nonblocking owner":    func(p *corev1.PersistentVolumeClaim) { p.OwnerReferences[0].BlockOwnerDeletion = nil },
++		"empty modes":          func(p *corev1.PersistentVolumeClaim) { p.Spec.AccessModes = nil },
++		"size drift": func(p *corev1.PersistentVolumeClaim) {
++			p.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("11Gi")
++		},
++		"class drift": func(p *corev1.PersistentVolumeClaim) { value := "different"; p.Spec.StorageClassName = &value },
++		"clone source": func(p *corev1.PersistentVolumeClaim) {
++			p.Spec.DataSource = &corev1.TypedLocalObjectReference{Kind: "PersistentVolumeClaim", Name: "foreign"}
++		},
++	} {
++		t.Run(name, func(t *testing.T) {
++			changed := claim.DeepCopy()
++			change(changed)
++			if ValidateHakopodFreePVC(changed, owner, "database", class, "10Gi") == nil {
++				t.Fatal("accepted changed data claim")
++			}
++		})
++	}
++}
++
++func TestHakopodOracleFreeObservedMemberRequiresCurrentOwner(t *testing.T) {
++	owner, _ := freePolicyFixture(t)
++	owner.UID = "root-uid"
++	pod := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: hakopodFreeImage}}}}
++	if err := ApplyHakopodFreePodPolicy(pod, owner); err != nil {
++		t.Fatal(err)
++	}
++	pod.Name = "database-member"
++	pod.Namespace = owner.Namespace
++	pod.UID = "pod-uid"
++	yes := true
++	pod.OwnerReferences = []metav1.OwnerReference{{APIVersion: "database.oracle.com/v4", Kind: "SingleInstanceDatabase", Name: owner.Name, UID: owner.UID, Controller: &yes}}
++	if err := ValidateHakopodFreeObservedMember(pod, owner); err != nil {
++		t.Fatal(err)
++	}
++	for name, change := range map[string]func(*corev1.Pod){
++		"foreign owner":       func(p *corev1.Pod) { p.OwnerReferences[0].UID = "foreign" },
++		"no owner":            func(p *corev1.Pod) { p.OwnerReferences = nil },
++		"wrong image":         func(p *corev1.Pod) { p.Spec.Containers[0].Image = "foreign:image" },
++		"extra exec argument": func(p *corev1.Pod) { p.Spec.Containers[0].Args = []string{"extra"} },
++		"token":               func(p *corev1.Pod) { p.Spec.AutomountServiceAccountToken = &yes },
++		"old identity":        func(p *corev1.Pod) { p.Annotations["hakopod.io/oracle-identity"] = "old" },
++	} {
++		t.Run(name, func(t *testing.T) {
++			changed := pod.DeepCopy()
++			change(changed)
++			if ValidateHakopodFreeObservedMember(changed, owner) == nil {
++				t.Fatal("operator accepted an unsafe exec target")
++			}
++		})
++	}
++}
+diff --git a/commons/database/hakopod_policy.go b/commons/database/hakopod_policy.go
+new file mode 100644
+index 0000000..e613dda
+--- /dev/null
++++ b/commons/database/hakopod_policy.go
+@@ -0,0 +1,190 @@
++package commons
++
++import (
++	"bytes"
++	"encoding/json"
++	"fmt"
++	"regexp"
++	"strings"
++
++	corev1 "k8s.io/api/core/v1"
++	"k8s.io/apimachinery/pkg/api/resource"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++)
++
++const hakopodOracleProfile = "hakopod-oracle-tcps-v1"
++
++// Callers request three items so a third result proves the two-item bound was
++// exceeded. controller-runtime v0.24.1 marks every cached list, including an
++// empty one, with this sentinel; it is not an API pagination token.
++func HakopodOracleListExceedsBound(continuation string, count int) bool {
++	return count < 0 || count > 2 || continuation != "" && continuation != "continue-not-supported"
++}
++
++// ApplyHakopodPodPolicy is used by the two database controllers. The
++// managed platform supplies this bounded envelope on its owned CR, rather than
++// accepting arbitrary user-supplied pod templates.
++func ApplyHakopodPodPolicy(pod *corev1.Pod, owner metav1.ObjectMeta) error {
++	raw := owner.Annotations["hakopod.io/oracle-pod-policy"]
++	if raw == "" {
++		return nil
++	}
++	var policy struct {
++		Profile          string                      `json:"profile"`
++		Labels           map[string]string           `json:"labels"`
++		Resources        corev1.ResourceRequirements `json:"resources"`
++		NodeSelector     map[string]string           `json:"nodeSelector"`
++		Tolerations      []corev1.Toleration         `json:"tolerations"`
++		Affinity         *corev1.Affinity            `json:"affinity"`
++		RuntimeClassName string                      `json:"runtimeClassName"`
++	}
++	if len(raw) > 32<<10 {
++		return fmt.Errorf("managed Oracle pod policy exceeds its size limit")
++	}
++	decoder := json.NewDecoder(strings.NewReader(raw))
++	decoder.DisallowUnknownFields()
++	if decoder.Decode(&policy) != nil || policy.Profile != hakopodOracleProfile || len(policy.Labels) > 16 || owner.Labels["app.kubernetes.io/managed-by"] != "hakopod" || owner.Namespace != "hdb-"+owner.Labels["hakopod.io/database-id"] || policy.Labels["hakopod.io/database-id"] != owner.Labels["hakopod.io/database-id"] || policy.Labels["app.kubernetes.io/managed-by"] != "hakopod" {
++		return fmt.Errorf("managed Oracle pod policy identity is invalid")
++	}
++	for _, key := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, corev1.ResourceEphemeralStorage} {
++		request, limit := policy.Resources.Requests[key], policy.Resources.Limits[key]
++		if request.Sign() <= 0 || limit.Sign() <= 0 || request.Cmp(limit) > 0 {
++			return fmt.Errorf("managed Oracle pod resources must have bounded requests and limits")
++		}
++	}
++	if pod.Labels == nil {
++		pod.Labels = map[string]string{}
++	}
++	for key, value := range policy.Labels {
++		pod.Labels[key] = value
++	}
++	pod.Labels["hakopod.io/oracle-pod"] = pod.Name
++	no, yes := false, true
++	uid := int64(54321)
++	pod.Spec.AutomountServiceAccountToken = &no
++	pod.Spec.HostNetwork, pod.Spec.HostPID, pod.Spec.HostIPC = false, false, false
++	pod.Spec.SecurityContext = &corev1.PodSecurityContext{RunAsNonRoot: &yes, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
++	pod.Spec.NodeSelector = policy.NodeSelector
++	pod.Spec.Tolerations = policy.Tolerations
++	if policy.Affinity != nil {
++		pod.Spec.Affinity = policy.Affinity
++	}
++	if policy.RuntimeClassName != "" {
++		pod.Spec.RuntimeClassName = &policy.RuntimeClassName
++	}
++	apply := func(container *corev1.Container) error {
++		if !strings.Contains(container.Image, "@sha256:") {
++			return fmt.Errorf("managed Oracle images must use immutable digests")
++		}
++		container.Resources = *policy.Resources.DeepCopy()
++		container.SecurityContext = &corev1.SecurityContext{RunAsNonRoot: &yes, RunAsUser: &uid, RunAsGroup: &uid, AllowPrivilegeEscalation: &no, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
++		return nil
++	}
++	for i := range pod.Spec.Containers {
++		if err := apply(&pod.Spec.Containers[i]); err != nil {
++			return err
++		}
++	}
++	for i := range pod.Spec.InitContainers {
++		if err := apply(&pod.Spec.InitContainers[i]); err != nil {
++			return err
++		}
++	}
++	for i := range pod.Spec.Volumes {
++		volume := &pod.Spec.Volumes[i]
++		if volume.HostPath != nil {
++			return fmt.Errorf("managed Oracle cannot mount a host path")
++		}
++		if volume.EmptyDir != nil && volume.EmptyDir.SizeLimit == nil {
++			limit := resource.MustParse("256Mi")
++			volume.EmptyDir.SizeLimit = &limit
++		}
++	}
++	mode := int32(0440)
++	// Only the managed platform can select these fixed, namespace-owned inputs.
++	// All runner pods need the prompt helper; only members mount server secrets.
++	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{Name: "hakopod-oracle-bootstrap", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "database-oracle-bootstrap"}, DefaultMode: &mode}}})
++	for i := range pod.Spec.Containers {
++		container := &pod.Spec.Containers[i]
++		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "hakopod-oracle-bootstrap", MountPath: "/etc/hakopod-oracle", ReadOnly: true})
++		container.Env = append(container.Env, corev1.EnvVar{Name: "HAKOPOD_ORACLE_POLICY", Value: hakopodOracleProfile})
++	}
++	for i := range pod.Spec.InitContainers {
++		container := &pod.Spec.InitContainers[i]
++		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "hakopod-oracle-bootstrap", MountPath: "/etc/hakopod-oracle", ReadOnly: true})
++		container.Env = append(container.Env, corev1.EnvVar{Name: "HAKOPOD_ORACLE_POLICY", Value: hakopodOracleProfile})
++	}
++	if policy.Labels["hakopod.io/oracle-member"] == "true" {
++		for _, input := range []struct{ name, secret, path string }{{"hakopod-oracle-tls", "database-tls", "/etc/hakopod-oracle-tls"}, {"hakopod-oracle-access", "database-oracle-access", "/etc/hakopod-oracle-access"}} {
++			pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{Name: input.name, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: input.secret, DefaultMode: &mode}}})
++			for i := range pod.Spec.Containers {
++				pod.Spec.Containers[i].VolumeMounts = append(pod.Spec.Containers[i].VolumeMounts, corev1.VolumeMount{Name: input.name, MountPath: input.path, ReadOnly: true})
++			}
++			for i := range pod.Spec.InitContainers {
++				pod.Spec.InitContainers[i].VolumeMounts = append(pod.Spec.InitContainers[i].VolumeMounts, corev1.VolumeMount{Name: input.name, MountPath: input.path, ReadOnly: true})
++			}
++		}
++	}
++	return nil
++}
++
++// ManagedOracleAdminWalletCommand runs in the image's waiting init container.
++// Atomic installation prevents the entrypoint seeing a half-populated wallet.
++const ManagedOracleAdminWalletCommand = `python3 - <<'HAKOPOD_WALLET_BOOTSTRAP'
++import json, os, pathlib, shutil, subprocess, tempfile
++target = pathlib.Path(os.environ['WALLET_DIR'])
++if not str(target).startswith('/opt/oracle/') or '..' in target.parts:
++    raise SystemExit(1)
++password = pathlib.Path('/etc/hakopod-oracle-access/wallet').read_text().strip()
++admin = pathlib.Path('/etc/hakopod-oracle-access/admin').read_text().strip()
++target.parent.mkdir(parents=True, exist_ok=True)
++stage = pathlib.Path(tempfile.mkdtemp(prefix='.hakopod-admin-', dir=target.parent))
++try:
++    def run(operation, value, arguments):
++        request = dict(operation=operation, wallet=str(stage), password=password, value=value, arguments=arguments)
++        subprocess.run(['python3', '/etc/hakopod-oracle/wallet.py'], input=json.dumps(request).encode(), check=True, timeout=50, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++    run('create', '', [])
++    for entry in ('sysPassword', 'systemPassword', 'pdbAdminPassword', 'dbsnmpPassword'):
++        run('entry', admin, ['oracle.dbsecurity.' + entry])
++    (stage / '.hakopod-ready').write_text('ready\n')
++    if target.exists():
++        # Refuse existing partial state for explicit inspection, not replacement.
++        if any(target.iterdir()):
++            raise SystemExit(1)
++        target.rmdir()
++    os.replace(stage, target)
++finally:
++    if stage.exists():
++        shutil.rmtree(stage)
++HAKOPOD_WALLET_BOOTSTRAP`
++
++// Native tools may return large data or echo input on failure. Keep buffers
++// bounded and never embed their contents in error messages or container logs.
++type oracleCommandBuffer struct{ bytes.Buffer }
++
++func (b *oracleCommandBuffer) Write(value []byte) (int, error) {
++	if b.Len()+len(value) > 256<<10 {
++		return 0, fmt.Errorf("Oracle command output exceeds 256 KiB")
++	}
++	return b.Buffer.Write(value)
++}
++
++var oracleCommandCode = regexp.MustCompile(`\b(?:ORA|PLS|SP2)-[0-9]{4,5}\b`)
++
++func oracleCommandFailure(stdout, stderr string) (string, error) {
++	codes := []string{}
++	seen := map[string]bool{}
++	for _, code := range oracleCommandCode.FindAllString(stdout+"\n"+stderr, -1) {
++		if !seen[code] {
++			codes = append(codes, code)
++			seen[code] = true
++		}
++		if len(codes) == 8 {
++			break
++		}
++	}
++	// Preserve Oracle's stable error identifiers for bootstrap/retry decisions,
++	// without preserving SQL, credentials, schema names or native diagnostics.
++	safe := strings.Join(codes, " ")
++	return safe, fmt.Errorf("Oracle command failed (%s); diagnostic output is withheld", safe)
++}
+diff --git a/commons/database/utils.go b/commons/database/utils.go
+index 1c1526b..a943095 100644
+--- a/commons/database/utils.go
++++ b/commons/database/utils.go
+@@ -40,7 +40,6 @@ package commons
+ 
+ import (
+ 	"bufio"
+-	"bytes"
+ 	"context"
+ 	"errors"
+ 	"fmt"
+@@ -53,6 +52,7 @@ import (
+ 
+ 	corev1 "k8s.io/api/core/v1"
+ 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+ 
+ 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+ 	"k8s.io/apimachinery/pkg/types"
+@@ -343,6 +343,11 @@ func IsStatusChanged(r client.Reader, objName string, namespace string,
+ func ExecCommand(r client.Reader, config *rest.Config, podName string, namespace string, containerName string,
+ 	ctx context.Context, req ctrl.Request, nologCommand bool, command ...string) (string, error) {
+ 
++	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
++	defer cancel()
++	if len(command) == 3 && (command[0] == "bash" || command[0] == "/bin/bash" || command[0] == "sh" || command[0] == "/bin/sh") && command[1] == "-c" {
++		return ExecCommandWithInput(r, config, podName, namespace, containerName, ctx, req, true, command[2], command[0], "-s")
++	}
+ 	log := ctrllog.FromContext(ctx).WithValues("ExecCommand", req.NamespacedName)
+ 	if !nologCommand {
+ 		fields := []interface{}{"pod", podName, "container", containerName, "argc", len(command)}
+@@ -356,8 +361,8 @@ func ExecCommand(r client.Reader, config *rest.Config, podName string, namespace
+ 		return "Error", nil
+ 	}
+ 	var (
+-		execOut bytes.Buffer
+-		execErr bytes.Buffer
++		execOut oracleCommandBuffer
++		execErr oracleCommandBuffer
+ 	)
+ 	pod := &corev1.Pod{}
+ 	err := r.Get(ctx, types.NamespacedName{Name: podName, Namespace: namespace}, pod)
+@@ -388,18 +393,8 @@ func ExecCommand(r client.Reader, config *rest.Config, podName string, namespace
+ 		Stderr: &execErr,
+ 		Tty:    false,
+ 	})
+-	if err != nil {
+-		stdout := strings.TrimSpace(execOut.String())
+-		stderr := strings.TrimSpace(execErr.String())
+-		if stdout != "" || stderr != "" {
+-			return stdout, fmt.Errorf("exec failed: %w; stdout: %s; stderr: %s", err, stdout, stderr)
+-		}
+-		return stdout, err
+-	}
+-	if execErr.Len() > 0 {
+-		stdout := strings.TrimSpace(execOut.String())
+-		stderr := strings.TrimSpace(execErr.String())
+-		return stdout, fmt.Errorf("stderr: %s", stderr)
++	if err != nil || execErr.Len() > 0 {
++		return oracleCommandFailure(execOut.String(), execErr.String())
+ 	}
+ 	return execOut.String(), nil
+ }
+@@ -408,6 +403,8 @@ func ExecCommand(r client.Reader, config *rest.Config, podName string, namespace
+ func ExecCommandWithInput(r client.Reader, config *rest.Config, podName string, namespace string, containerName string,
+ 	ctx context.Context, req ctrl.Request, nologCommand bool, input string, command ...string) (string, error) {
+ 
++	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
++	defer cancel()
+ 	log := ctrllog.FromContext(ctx).WithValues("ExecCommandWithInput", req.NamespacedName)
+ 	if !nologCommand {
+ 		fields := []interface{}{"pod", podName, "container", containerName, "argc", len(command)}
+@@ -421,8 +418,8 @@ func ExecCommandWithInput(r client.Reader, config *rest.Config, podName string,
+ 		return "Error", nil
+ 	}
+ 	var (
+-		execOut bytes.Buffer
+-		execErr bytes.Buffer
++		execOut oracleCommandBuffer
++		execErr oracleCommandBuffer
+ 	)
+ 	pod := &corev1.Pod{}
+ 	err := r.Get(ctx, types.NamespacedName{Name: podName, Namespace: namespace}, pod)
+@@ -455,18 +452,8 @@ func ExecCommandWithInput(r client.Reader, config *rest.Config, podName string,
+ 		Stderr: &execErr,
+ 		Tty:    false,
+ 	})
+-	if err != nil {
+-		stdout := strings.TrimSpace(execOut.String())
+-		stderr := strings.TrimSpace(execErr.String())
+-		if stdout != "" || stderr != "" {
+-			return stdout, fmt.Errorf("exec failed: %w; stdout: %s; stderr: %s", err, stdout, stderr)
+-		}
+-		return stdout, err
+-	}
+-	if execErr.Len() > 0 {
+-		stdout := strings.TrimSpace(execOut.String())
+-		stderr := strings.TrimSpace(execErr.String())
+-		return stdout, fmt.Errorf("stderr: %s", stderr)
++	if err != nil || execErr.Len() > 0 {
++		return oracleCommandFailure(execOut.String(), execErr.String())
+ 	}
+ 	return execOut.String(), nil
+ }
+@@ -495,7 +482,7 @@ func FindPods(r client.Reader, version string, image string, name string, namesp
+ 	var readyPod corev1.Pod // To Store the Ready Pod ( Pod that Passed Readiness Probe . Will be shown as 1/1 Running )
+ 
+ 	podList := &corev1.PodList{}
+-	listOpts := []client.ListOption{client.InNamespace(namespace), client.MatchingLabels(GetLabelsForController(version, name))}
++	listOpts := []client.ListOption{client.InNamespace(namespace), client.MatchingLabels(GetLabelsForController(version, name)), client.Limit(3)}
+ 
+ 	// List retrieves list of objects for a given namespace and list options.
+ 	if err := r.List(ctx, podList, listOpts...); err != nil {
+@@ -503,6 +490,21 @@ func FindPods(r client.Reader, version string, image string, name string, namesp
+ 		return readyPod, 0, available, podsMarkedToBeDeleted, err
+ 	}
+ 
++	if HakopodOracleListExceedsBound(podList.Continue, len(podList.Items)) {
++		return readyPod, 0, nil, nil, fmt.Errorf("managed Oracle pod inventory exceeds its bound")
++	}
++	root := &unstructured.Unstructured{}
++	root.SetAPIVersion("database.oracle.com/v4")
++	root.SetKind("SingleInstanceDatabase")
++	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, root); err != nil {
++		return readyPod, 0, nil, nil, err
++	}
++	owner := metav1.ObjectMeta{Name: root.GetName(), Namespace: root.GetNamespace(), UID: root.GetUID(), Labels: root.GetLabels(), Annotations: root.GetAnnotations()}
++	for i := range podList.Items {
++		if err := ValidateHakopodFreeObservedMember(&podList.Items[i], owner); err != nil {
++			return readyPod, 0, nil, nil, err
++		}
++	}
+ 	// r.List() lists all the pods in running, pending,terminating stage matching listOpts . so filter them
+ 	// Fetch the Running and Pending Pods
+ 
+diff --git a/controllers/database/hakopod_free_resource.go b/controllers/database/hakopod_free_resource.go
+new file mode 100644
+index 0000000..a72a69c
+--- /dev/null
++++ b/controllers/database/hakopod_free_resource.go
+@@ -0,0 +1,90 @@
++package controllers
++
++import (
++	"context"
++	"fmt"
++	"reflect"
++
++	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
++	dbcommons "github.com/oracle/oracle-database-operator/commons/database"
++	corev1 "k8s.io/api/core/v1"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++// Validate before reconciliation can create storage or enter an upstream
++// lifecycle path. The Free build has no generic Oracle resource-template API.
++func validateHakopodFreeResource(m *dbapi.SingleInstanceDatabase) error {
++	if m == nil || m.Spec.Persistence.Oradata == nil || len(m.Spec.Persistence.AdditionalPVCs) != 1 {
++		return fmt.Errorf("managed Oracle Free storage is incomplete")
++	}
++	no, yes := false, true
++	pull := corev1.PullIfNotPresent
++	wanted := dbapi.SingleInstanceDatabaseSpec{
++		Edition: "free", Sid: "FREE", Pdbname: "FREEPDB1", Charset: "AL32UTF8", CreateAs: "primary", Replicas: 1,
++		Image:                        dbapi.SingleInstanceDatabaseImage{PullFrom: "container-registry.oracle.com/database/free:23.26.3.0@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba", PrebuiltDB: true, ImagePullPolicy: &pull},
++		AutomountServiceAccountToken: &no, ShmSize: "1Gi", DisableDefaultDiagVolumeClaim: true, Resources: m.Spec.Resources,
++		FlashBack: &no, ArchiveLog: &no, ForceLogging: &no,
++		Security:    &dbapi.SingleInstanceDatabaseSecurity{TCPS: &dbapi.SingleInstanceDatabaseSecurityTCPS{Enabled: true, TlsSecret: "database-tls"}, Secrets: &dbapi.SingleInstanceDatabaseSecrets{Admin: &dbapi.SingleInstanceDatabaseAdminPassword{SecretName: "database-oracle-access", SecretKey: "admin", KeepSecret: &yes}}},
++		Services:    &dbapi.SingleInstanceDatabaseServices{Endpoints: []dbapi.SingleInstanceDatabaseServiceEndpoint{{Name: "cluster", Type: "ClusterIP", TCP: &dbapi.SingleInstanceDatabaseServiceEndpointPort{Enabled: false}, TCPS: &dbapi.SingleInstanceDatabaseServiceEndpointPort{Enabled: true, Port: 2484}}}},
++		Dataguard:   &dbapi.DataguardProducerSpec{Mode: "Disabled", Prereqs: &dbapi.DataguardPrereqsSpec{Enabled: false}},
++		Persistence: dbapi.SingleInstanceDatabasePersistence{Oradata: m.Spec.Persistence.Oradata, AdditionalPVCs: m.Spec.Persistence.AdditionalPVCs, SetWritePermissions: &no},
++	}
++	actual := m.Spec
++	// A typed controller update serializes the unused legacy secret object.
++	// CRD admission then supplies its default key even though no secret is named.
++	if reflect.DeepEqual(actual.AdminPassword, dbapi.SingleInstanceDatabaseAdminPassword{SecretKey: "oracle_pwd"}) {
++		actual.AdminPassword = dbapi.SingleInstanceDatabaseAdminPassword{}
++	}
++	if !reflect.DeepEqual(actual, wanted) {
++		return fmt.Errorf("managed Oracle Free contains unsupported lifecycle settings")
++	}
++	data, backup := m.Spec.Persistence.Oradata, m.Spec.Persistence.AdditionalPVCs[0]
++	if data.PvcName != "" || data.StorageClass == "" || data.AccessMode != "ReadWriteOnce" || backup.PvcName != "" || backup.StorageClass != data.StorageClass || backup.StorageSizeInGb < 10 || data.Size != fmt.Sprintf("%dGi", backup.StorageSizeInGb) || backup.MountPath != "/opt/oracle/hakopod-backup" {
++		return fmt.Errorf("managed Oracle Free requires matching operator-owned data and backup claims")
++	}
++	pod := &corev1.Pod{Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: m.Spec.Image.PullFrom}}}}
++	if err := dbcommons.ApplyHakopodFreePodPolicy(pod, m.ObjectMeta); err != nil {
++		return err
++	}
++	if m.Spec.Resources == nil || !reflect.DeepEqual(*m.Spec.Resources, pod.Spec.Containers[0].Resources) {
++		return fmt.Errorf("managed Oracle Free resource reservation differs from its member")
++	}
++	return nil
++}
++
++func (r *SingleInstanceDatabaseReconciler) cleanupHakopodFreeClaims(ctx context.Context, m *dbapi.SingleInstanceDatabase) (bool, error) {
++	if err := validateHakopodFreeResource(m); err != nil {
++		return false, err
++	}
++	claims := &corev1.PersistentVolumeClaimList{}
++	if err := r.List(ctx, claims, client.InNamespace(m.Namespace), client.Limit(3)); err != nil {
++		return false, err
++	}
++	if dbcommons.HakopodOracleListExceedsBound(claims.Continue, len(claims.Items)) {
++		return false, fmt.Errorf("managed Oracle Free claim inventory exceeds its bound")
++	}
++	for i := range claims.Items {
++		claim := &claims.Items[i]
++		owner := metav1.GetControllerOf(claim)
++		if claim.Name != "database" && claim.Name != "database-additional-0" || claim.UID == "" || claim.ResourceVersion == "" || len(claim.OwnerReferences) != 1 || owner == nil || owner.APIVersion != "database.oracle.com/v4" || owner.Kind != "SingleInstanceDatabase" || owner.Name != m.Name || owner.UID != m.UID || owner.BlockOwnerDeletion == nil || !*owner.BlockOwnerDeletion {
++			return false, fmt.Errorf("managed Oracle Free refuses to delete a foreign claim")
++		}
++		if claim.DeletionTimestamp != nil {
++			continue
++		}
++		if err := dbcommons.ValidateHakopodFreePVC(claim, m.ObjectMeta, claim.Name, m.Spec.Persistence.Oradata.StorageClass, m.Spec.Persistence.Oradata.Size); err != nil {
++			return false, err
++		}
++	}
++	for i := range claims.Items {
++		claim := &claims.Items[i]
++		if claim.DeletionTimestamp != nil {
++			continue
++		}
++		if err := r.Delete(ctx, claim, client.Preconditions{UID: &claim.UID, ResourceVersion: &claim.ResourceVersion}); err != nil {
++			return false, err
++		}
++	}
++	return len(claims.Items) != 0, nil
++}
+diff --git a/controllers/database/hakopod_free_resource_test.go b/controllers/database/hakopod_free_resource_test.go
+new file mode 100644
+index 0000000..67ff4cc
+--- /dev/null
++++ b/controllers/database/hakopod_free_resource_test.go
+@@ -0,0 +1,504 @@
++package controllers
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"github.com/go-logr/logr"
++	corev1 "k8s.io/api/core/v1"
++	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
++	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
++	structuralschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
++	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/defaulting"
++	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/pruning"
++	"k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"k8s.io/apimachinery/pkg/runtime"
++	"k8s.io/apimachinery/pkg/types"
++	"k8s.io/apimachinery/pkg/util/validation/field"
++	"os"
++	"path/filepath"
++	"reflect"
++	ctrl "sigs.k8s.io/controller-runtime"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++	"sigs.k8s.io/controller-runtime/pkg/client/fake"
++	"sigs.k8s.io/yaml"
++	"slices"
++	"testing"
++
++	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
++	dbcommons "github.com/oracle/oracle-database-operator/commons/database"
++)
++
++func TestHakopodOracleFreeResourceRejectsOtherLifecyclePaths(t *testing.T) {
++	root := os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR")
++	if root == "" {
++		t.Fatal("requires the exported Hakopod Free candidate")
++	}
++	raw, err := os.ReadFile(filepath.Join(root, "database.json"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	var object dbapi.SingleInstanceDatabase
++	decoder := json.NewDecoder(bytes.NewReader(raw))
++	decoder.DisallowUnknownFields()
++	if err = decoder.Decode(&object); err != nil {
++		t.Fatal("candidate is not a valid v4 SIDB", err)
++	}
++	if err = validateHakopodFreeResource(&object); err != nil {
++		t.Fatal("candidate failed its fixed resource contract", err)
++	}
++	defaulted := object.DeepCopy()
++	defaulted.Spec.AdminPassword = dbapi.SingleInstanceDatabaseAdminPassword{SecretKey: "oracle_pwd"}
++	before := defaulted.DeepCopy()
++	if err = validateHakopodFreeResource(defaulted); err != nil {
++		t.Fatal("unused legacy secret default rejected", err)
++	}
++	if !reflect.DeepEqual(defaulted, before) {
++		t.Fatal("validation changed the resource")
++	}
++	for name, change := range map[string]func(*dbapi.SingleInstanceDatabase){
++		"legacy secret name":   func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.SecretName = "another-secret" },
++		"legacy secret key":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.SecretKey = "admin" },
++		"legacy secret keep":   func(m *dbapi.SingleInstanceDatabase) { no := false; m.Spec.AdminPassword.KeepSecret = &no },
++		"legacy secret mount":  func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.MountPath = "/another-path" },
++		"legacy wallet bypass": func(m *dbapi.SingleInstanceDatabase) { m.Spec.AdminPassword.SkipInitWallet = true },
++		"restore":              func(m *dbapi.SingleInstanceDatabase) { m.Spec.Restore = &dbapi.SingleInstanceDatabaseRestoreSpec{} },
++		"custom scripts":       func(m *dbapi.SingleInstanceDatabase) { m.Spec.Scripts = &dbapi.SingleInstanceDatabaseScriptsSpec{} },
++		"truecache":            func(m *dbapi.SingleInstanceDatabase) { m.Spec.TrueCache = &dbapi.SingleInstanceDatabaseTrueCacheSpec{} },
++		"archive logging":      func(m *dbapi.SingleInstanceDatabase) { yes := true; m.Spec.ArchiveLog = &yes },
++		"external endpoint":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.Services.Endpoints[0].Type = "LoadBalancer" },
++		"foreign admin":        func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.Secrets.Admin.SecretName = "foreign" },
++		"data guard wallet":    func(m *dbapi.SingleInstanceDatabase) { m.Spec.Security.TCPS.ClientWalletSecret = "foreign" },
++		"existing data":        func(m *dbapi.SingleInstanceDatabase) { m.Spec.Persistence.Oradata.PvcName = "foreign" },
++		"extra backup": func(m *dbapi.SingleInstanceDatabase) {
++			m.Spec.Persistence.AdditionalPVCs = append(m.Spec.Persistence.AdditionalPVCs, m.Spec.Persistence.AdditionalPVCs[0])
++		},
++		"partial image": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Image.PrebuiltDB = false },
++	} {
++		t.Run(name, func(t *testing.T) {
++			changed := object.DeepCopy()
++			change(changed)
++			if validateHakopodFreeResource(changed) == nil {
++				t.Fatal("accepted unsupported lifecycle settings")
++			}
++		})
++	}
++}
++
++func TestHakopodOracleFreeCreatesProtectedClaims(t *testing.T) {
++	raw, err := os.ReadFile(filepath.Join(os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR"), "database.json"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	var object dbapi.SingleInstanceDatabase
++	if err = json.Unmarshal(raw, &object); err != nil {
++		t.Fatal(err)
++	}
++	object.UID = "database-uid"
++	scheme := runtime.NewScheme()
++	if err = corev1.AddToScheme(scheme); err != nil {
++		t.Fatal(err)
++	}
++	if err = dbapi.AddToScheme(scheme); err != nil {
++		t.Fatal(err)
++	}
++	reconciler := &SingleInstanceDatabaseReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build(), Scheme: scheme, Log: logr.Discard()}
++	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: object.Namespace, Name: object.Name}}
++	if _, err = reconciler.createOrReplacePVCforDatafilesVol(context.Background(), request, &object); err != nil {
++		t.Fatal(err)
++	}
++	if _, err = reconciler.createOrReplacePVCsForAdditionalPVCs(context.Background(), request, &object); err != nil {
++		t.Fatal(err)
++	}
++	for _, name := range []string{"database", "database-additional-0"} {
++		var claim corev1.PersistentVolumeClaim
++		if err = reconciler.Get(context.Background(), types.NamespacedName{Namespace: object.Namespace, Name: name}, &claim); err != nil {
++			t.Fatal(err)
++		}
++		owner := metav1.GetControllerOf(&claim)
++		if !slices.Contains(claim.Finalizers, dbcommons.HakopodOracleFreeStorageFinalizer) || owner == nil || owner.UID != object.UID || owner.BlockOwnerDeletion == nil || !*owner.BlockOwnerDeletion {
++			t.Fatal("claim can disappear before Hakopod finishes reclamation")
++		}
++	}
++}
++
++func TestHakopodOracleFreeCustomScriptsPhasePreservesManagedClaims(t *testing.T) {
++	object, _, scheme := freeControllerFixture(t)
++	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(object).Build()
++	reconciler := &SingleInstanceDatabaseReconciler{Client: reader, Scheme: scheme, Log: logr.Discard()}
++	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
++	ctx := context.Background()
++	if _, err := reconciler.createOrReplacePVCforDatafilesVol(ctx, request, object); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := reconciler.createOrReplacePVCsForAdditionalPVCs(ctx, request, object); err != nil {
++		t.Fatal(err)
++	}
++	before := &corev1.PersistentVolumeClaimList{}
++	if err := reader.List(ctx, before, client.InNamespace(object.Namespace)); err != nil || len(before.Items) != 2 {
++		t.Fatal("managed claims were not created", err)
++	}
++	result, err := reconciler.createOrReplacePVCforCustomScriptsVol(ctx, request, object)
++	if err != nil || result.Requeue || result.RequeueAfter != 0 {
++		t.Fatal("unsupported legacy cleanup blocked the Free lifecycle", err)
++	}
++	for name, change := range map[string]func(*dbapi.SingleInstanceDatabase){
++		"legacy scripts volume": func(m *dbapi.SingleInstanceDatabase) { m.Spec.Persistence.ScriptsVolumeName = "foreign-volume" },
++		"explicit scripts":      func(m *dbapi.SingleInstanceDatabase) { m.Spec.Scripts = &dbapi.SingleInstanceDatabaseScriptsSpec{} },
++	} {
++		t.Run(name, func(t *testing.T) {
++			changed := object.DeepCopy()
++			change(changed)
++			if _, err := reconciler.createOrReplacePVCforCustomScriptsVol(ctx, request, changed); err == nil {
++				t.Fatal("custom scripts bypassed strict Free validation")
++			}
++		})
++	}
++	after := &corev1.PersistentVolumeClaimList{}
++	if err := reader.List(ctx, after, client.InNamespace(object.Namespace)); err != nil {
++		t.Fatal(err)
++	}
++	if !reflect.DeepEqual(before.Items, after.Items) {
++		t.Fatal("custom scripts cleanup changed a managed data or backup claim")
++	}
++	for _, claim := range after.Items {
++		if claim.DeletionTimestamp != nil {
++			t.Fatal("custom scripts cleanup began deleting a managed claim")
++		}
++	}
++}
++
++func TestHakopodOracleFreeCandidateSurvivesCRDAdmission(t *testing.T) {
++	root := os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR")
++	raw, err := os.ReadFile(filepath.Join(root, "database.json"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	definition, err := os.ReadFile(filepath.Join(root, "sidb.yaml"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	var crd apiextensionsv1.CustomResourceDefinition
++	if err = yaml.UnmarshalStrict(definition, &crd); err != nil {
++		t.Fatal(err)
++	}
++	if len(crd.Spec.Versions) != 1 || crd.Spec.Versions[0].Name != "v4" || crd.Spec.Versions[0].Schema == nil {
++		t.Fatal("requires the actual v4-only SIDB definition")
++	}
++	var props apiextensions.JSONSchemaProps
++	if err = apiextensionsv1.Convert_v1_JSONSchemaProps_To_apiextensions_JSONSchemaProps(crd.Spec.Versions[0].Schema.OpenAPIV3Schema, &props, nil); err != nil {
++		t.Fatal(err)
++	}
++	schema, err := structuralschema.NewStructural(&props)
++	if err != nil {
++		t.Fatal(err)
++	}
++	validator, _, err := validation.NewSchemaValidator(&props)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var original, admitted map[string]any
++	if err = json.Unmarshal(raw, &original); err != nil {
++		t.Fatal(err)
++	}
++	if err = json.Unmarshal(raw, &admitted); err != nil {
++		t.Fatal(err)
++	}
++	pruning.Prune(admitted, schema, true)
++	defaulting.Default(admitted, schema)
++	if failures := validation.ValidateCustomResource(field.NewPath("candidate"), admitted, validator); len(failures) != 0 {
++		t.Fatal(failures.ToAggregate())
++	}
++	if !reflect.DeepEqual(original["spec"], admitted["spec"]) {
++		t.Fatal("CRD admission changed the accepted Free specification")
++	}
++	encoded, err := json.Marshal(admitted)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var object dbapi.SingleInstanceDatabase
++	if err = json.Unmarshal(encoded, &object); err != nil {
++		t.Fatal(err)
++	}
++	if err = validateHakopodFreeResource(&object); err != nil {
++		t.Fatal("defaulted candidate rejected", err)
++	}
++	// The first admission does not create an absent legacy object. A later
++	// typed update does, so exercise serialization followed by admission too.
++	encoded, err = json.Marshal(&object)
++	if err != nil {
++		t.Fatal(err)
++	}
++	var updated map[string]any
++	if err = json.Unmarshal(encoded, &updated); err != nil {
++		t.Fatal(err)
++	}
++	pruning.Prune(updated, schema, true)
++	defaulting.Default(updated, schema)
++	if failures := validation.ValidateCustomResource(field.NewPath("updated"), updated, validator); len(failures) != 0 {
++		t.Fatal(failures.ToAggregate())
++	}
++	encoded, err = json.Marshal(updated)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err = json.Unmarshal(encoded, &object); err != nil {
++		t.Fatal(err)
++	}
++	if !reflect.DeepEqual(object.Spec.AdminPassword, dbapi.SingleInstanceDatabaseAdminPassword{SecretKey: "oracle_pwd"}) {
++		t.Fatal("typed round trip did not exercise the actual legacy default")
++	}
++	if err = validateHakopodFreeResource(&object); err != nil {
++		t.Fatal("typed controller round trip rejected", err)
++	}
++}
++
++func freeControllerFixture(t *testing.T) (*dbapi.SingleInstanceDatabase, *corev1.Pod, *runtime.Scheme) {
++	t.Helper()
++	raw, err := os.ReadFile(filepath.Join(os.Getenv("HAKOPOD_ORACLE_FREE_CANDIDATE_DIR"), "database.json"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	var object dbapi.SingleInstanceDatabase
++	if err = json.Unmarshal(raw, &object); err != nil {
++		t.Fatal(err)
++	}
++	object.UID, object.ResourceVersion = "database-uid", "7"
++	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "database-member", Namespace: object.Namespace, UID: "member-uid", ResourceVersion: "8", Labels: map[string]string{"app": object.Name}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: object.Spec.Image.PullFrom}}}}
++	if err = dbcommons.ApplyHakopodFreePodPolicy(pod, object.ObjectMeta); err != nil {
++		t.Fatal(err)
++	}
++	yes := true
++	pod.OwnerReferences = []metav1.OwnerReference{{APIVersion: "database.oracle.com/v4", Kind: "SingleInstanceDatabase", Name: object.Name, UID: object.UID, Controller: &yes, BlockOwnerDeletion: &yes}}
++	pod.Status = corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "database", Ready: true}}}
++	scheme := runtime.NewScheme()
++	if err = corev1.AddToScheme(scheme); err != nil {
++		t.Fatal(err)
++	}
++	if err = dbapi.AddToScheme(scheme); err != nil {
++		t.Fatal(err)
++	}
++	return &object, pod, scheme
++}
++
++func TestHakopodOracleFreeFindPodsRejectsSpoofedExecTargets(t *testing.T) {
++	for _, mode := range []string{"owned", "foreign owner", "empty containers", "unbounded inventory"} {
++		t.Run(mode, func(t *testing.T) {
++			object, pod, scheme := freeControllerFixture(t)
++			if mode == "foreign owner" {
++				pod.OwnerReferences[0].UID = "another-database"
++			}
++			if mode == "empty containers" {
++				pod.Spec.Containers = nil
++			}
++			objects := []client.Object{object, pod}
++			if mode == "unbounded inventory" {
++				for _, name := range []string{"second-member", "third-member"} {
++					other := pod.DeepCopy()
++					other.Name, other.UID = name, types.UID(name)
++					objects = append(objects, other)
++				}
++			}
++			reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
++			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
++			ready, count, available, deleting, err := dbcommons.FindPods(reader, "", "", object.Name, object.Namespace, context.Background(), request)
++			if mode == "owned" {
++				if err != nil || ready.UID != pod.UID || count != 1 || len(available) != 0 || len(deleting) != 0 {
++					t.Fatal("owned member was not selected", err)
++				}
++			} else if err == nil || ready.UID != "" || count != 0 || len(available) != 0 || len(deleting) != 0 {
++				t.Fatal("unsafe inventory exposed an execution target")
++			}
++		})
++	}
++}
++
++type freeListContinuationClient struct {
++	client.Client
++	continuation  string
++	probeObserved bool
++}
++
++func (c *freeListContinuationClient) List(ctx context.Context, list client.ObjectList, options ...client.ListOption) error {
++	settings := &client.ListOptions{}
++	settings.ApplyOptions(options)
++	if settings.Limit != 3 {
++		return errors.New("managed inventory must probe for a third item")
++	}
++	c.probeObserved = true
++	if err := c.Client.List(ctx, list, options...); err != nil {
++		return err
++	}
++	list.SetContinue(c.continuation)
++	return nil
++}
++
++func TestHakopodOracleFreeFindPodsHandlesBoundedCacheLists(t *testing.T) {
++	for tokenName, token := range map[string]string{"api": "", "cache": "continue-not-supported", "api continuation": "opaque-next-page", "different marker": "continue-not-supported "} {
++		for countName, count := range map[string]int{"zero": 0, "one": 1, "two": 2, "excess": 3} {
++			t.Run(tokenName+"/"+countName, func(t *testing.T) {
++				object, pod, scheme := freeControllerFixture(t)
++				objects := []client.Object{object}
++				for _, name := range []string{"first-member", "second-member", "third-member"}[:count] {
++					member := pod.DeepCopy()
++					member.Name, member.UID = name, types.UID(name)
++					objects = append(objects, member)
++				}
++				reader := &freeListContinuationClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build(), continuation: token}
++				request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
++				ready, found, available, deleting, err := dbcommons.FindPods(reader, "", "", object.Name, object.Namespace, context.Background(), request)
++				if !reader.probeObserved {
++					t.Fatal("bounded list was not requested")
++				}
++				if count > 2 || tokenName == "api continuation" || tokenName == "different marker" {
++					if err == nil || ready.UID != "" || found != 0 || len(available) != 0 || len(deleting) != 0 {
++						t.Fatal("incomplete inventory exposed execution targets")
++					}
++					return
++				}
++				readyCount := 0
++				if ready.UID != "" {
++					readyCount = 1
++				}
++				if err != nil || found != count || readyCount+len(available) != count || len(deleting) != 0 {
++					t.Fatal("complete bounded inventory was rejected", err)
++				}
++			})
++		}
++	}
++}
++
++type freeDeletionClient struct {
++	client.Client
++	deletes   []client.DeleteOptions
++	deleteErr error
++}
++
++func (c *freeDeletionClient) Delete(ctx context.Context, object client.Object, options ...client.DeleteOption) error {
++	var applied client.DeleteOptions
++	for _, option := range options {
++		option.ApplyToDelete(&applied)
++	}
++	c.deletes = append(c.deletes, applied)
++	if c.deleteErr != nil {
++		return c.deleteErr
++	}
++	return c.Client.Delete(ctx, object, options...)
++}
++
++func TestHakopodOracleFreeDeletePodsFencesIdentityAndPropagatesFailure(t *testing.T) {
++	for _, mode := range []string{"owned", "foreign owner", "delete failed"} {
++		t.Run(mode, func(t *testing.T) {
++			object, pod, scheme := freeControllerFixture(t)
++			if mode == "foreign owner" {
++				pod.OwnerReferences[0].UID = "another-database"
++			}
++			probe := &freeDeletionClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(object, pod).Build()}
++			if mode == "delete failed" {
++				probe.deleteErr = errors.New("identity changed before deletion")
++			}
++			reconciler := &SingleInstanceDatabaseReconciler{Client: probe, Scheme: scheme, Log: logr.Discard()}
++			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
++			_, err := reconciler.deletePods(context.Background(), request, object, []corev1.Pod{*pod}, corev1.Pod{}, 1, 0)
++			if mode == "owned" && err != nil || mode != "owned" && err == nil {
++				t.Fatal("unexpected deletion result", err)
++			}
++			if mode == "foreign owner" {
++				if len(probe.deletes) != 0 {
++					t.Fatal("attempted to delete a foreign member")
++				}
++				return
++			}
++			if len(probe.deletes) != 1 {
++				t.Fatal("expected one fenced delete")
++			}
++			options := probe.deletes[0]
++			if options.GracePeriodSeconds != nil || options.Preconditions == nil || options.Preconditions.UID == nil || *options.Preconditions.UID != pod.UID || options.Preconditions.ResourceVersion == nil || *options.Preconditions.ResourceVersion != pod.ResourceVersion {
++				t.Fatal("delete discarded the graceful shutdown or member identity")
++			}
++		})
++	}
++}
++
++func TestHakopodOracleFreeCleanupFencesClaims(t *testing.T) {
++	for _, mode := range []string{"owned", "foreign owner", "missing protection", "delete failed"} {
++		t.Run(mode, func(t *testing.T) {
++			object, _, scheme := freeControllerFixture(t)
++			probe := &freeDeletionClient{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(object).Build()}
++			reconciler := &SingleInstanceDatabaseReconciler{Client: probe, Scheme: scheme, Log: logr.Discard()}
++			request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(object)}
++			if _, err := reconciler.createOrReplacePVCforDatafilesVol(context.Background(), request, object); err != nil {
++				t.Fatal(err)
++			}
++			if _, err := reconciler.createOrReplacePVCsForAdditionalPVCs(context.Background(), request, object); err != nil {
++				t.Fatal(err)
++			}
++			expected := map[types.UID]string{}
++			for _, name := range []string{"database", "database-additional-0"} {
++				var claim corev1.PersistentVolumeClaim
++				if err := probe.Get(context.Background(), types.NamespacedName{Namespace: object.Namespace, Name: name}, &claim); err != nil {
++					t.Fatal(err)
++				}
++				claim.UID = types.UID("claim-" + name)
++				if name == "database-additional-0" && mode == "foreign owner" {
++					claim.OwnerReferences[0].UID = "another-database"
++				}
++				if name == "database-additional-0" && mode == "missing protection" {
++					claim.Finalizers = nil
++				}
++				if err := probe.Update(context.Background(), &claim); err != nil {
++					t.Fatal(err)
++				}
++				expected[claim.UID] = claim.ResourceVersion
++			}
++			if mode == "delete failed" {
++				probe.deleteErr = errors.New("claim changed before deletion")
++			}
++			pending, err := reconciler.cleanupManagedSingleInstanceDatabasePVCs(context.Background(), object)
++			if mode == "owned" && (!pending || err != nil) || mode != "owned" && err == nil {
++				t.Fatal("unexpected cleanup result", pending, err)
++			}
++			if mode == "foreign owner" || mode == "missing protection" {
++				if len(probe.deletes) != 0 {
++					t.Fatal("attempted to delete an unreviewed claim")
++				}
++				return
++			}
++			count := 2
++			if mode == "delete failed" {
++				count = 1
++			}
++			if len(probe.deletes) != count {
++				t.Fatal("unexpected count of fenced claim deletes", len(probe.deletes))
++			}
++			for _, options := range probe.deletes {
++				if options.Preconditions == nil || options.Preconditions.UID == nil || expected[*options.Preconditions.UID] == "" || options.Preconditions.ResourceVersion == nil || *options.Preconditions.ResourceVersion != expected[*options.Preconditions.UID] {
++					t.Fatal("claim deletion discarded its reviewed identity")
++				}
++				delete(expected, *options.Preconditions.UID)
++			}
++			if mode == "owned" {
++				pending, err = reconciler.cleanupManagedSingleInstanceDatabasePVCs(context.Background(), object)
++				if err != nil || !pending || len(probe.deletes) != 2 {
++					t.Fatal("cleanup did not wait for protected claim finalization", pending, err)
++				}
++				for _, name := range []string{"database", "database-additional-0"} {
++					var claim corev1.PersistentVolumeClaim
++					if err := probe.Get(context.Background(), types.NamespacedName{Namespace: object.Namespace, Name: name}, &claim); err != nil || claim.DeletionTimestamp == nil {
++						t.Fatal("claim was not retained for the reclamation controller", err)
++					}
++					claim.Finalizers = nil
++					if err := probe.Update(context.Background(), &claim); err != nil {
++						t.Fatal(err)
++					}
++				}
++				pending, err = reconciler.cleanupManagedSingleInstanceDatabasePVCs(context.Background(), object)
++				if err != nil || pending {
++					t.Fatal("cleanup did not finish after both claims were reclaimed", pending, err)
++				}
++			}
++		})
++	}
++}
+diff --git a/controllers/database/singleinstancedatabase_controller.go b/controllers/database/singleinstancedatabase_controller.go
+index bc99aa9..a8422c9 100644
+--- a/controllers/database/singleinstancedatabase_controller.go
++++ b/controllers/database/singleinstancedatabase_controller.go
+@@ -49,6 +49,7 @@ import (
+ 	"encoding/hex"
+ 	"errors"
+ 	"fmt"
++	"os"
+ 	"path/filepath"
+ 	"reflect"
+ 	"regexp"
+@@ -1055,7 +1056,7 @@ func desiredSIDBServiceEndpointPorts(cfg sidbResolvedServiceEndpointConfig) []co
+ 			servicePort = dbcommons.CONTAINER_TCPS_PORT
+ 		}
+ 		port := corev1.ServicePort{
+-			Name:       "listener-tcps",
++			Name:       "tcps",
+ 			Protocol:   corev1.ProtocolTCP,
+ 			Port:       servicePort,
+ 			TargetPort: intstr.FromInt(int(dbcommons.CONTAINER_TCPS_PORT)),
+@@ -1111,7 +1112,7 @@ func applySIDBEndpointStatus(m *dbapi.SingleInstanceDatabase, host string, ports
+ 		m.Status.ConnectString = buildSIDBConnectString(host, port, sid)
+ 		m.Status.PdbConnectString = buildSIDBConnectString(host, port, pdbName)
+ 	}
+-	tcpsPort := servicePortByName(ports, "listener-tcps")
++	tcpsPort := servicePortByName(ports, "tcps")
+ 	if tcpsPort != nil {
+ 		port := tcpsPort.Port
+ 		if useNodePort && tcpsPort.NodePort != 0 {
+@@ -1517,6 +1518,8 @@ func buildSIDBPermissionInitPaths(m *dbapi.SingleInstanceDatabase) []string {
+ // For more details, check Reconcile and its Result here:
+ // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
+ func (r *SingleInstanceDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
++	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
++	defer cancel()
+ 
+ 	r.Log.Info("Reconcile requested")
+ 	var result ctrl.Result
+@@ -1544,6 +1547,28 @@ func (r *SingleInstanceDatabaseReconciler) Reconcile(ctx context.Context, req ct
+ 		return requeueY, err
+ 	}
+ 
++	managed := phaseCtx.singleInstanceDatabase
++	if err := validateHakopodFreeResource(managed); err != nil {
++		return requeueN, err
++	}
++	if managed.Name != "database" || managed.Namespace != os.Getenv("WATCH_NAMESPACE") || managed.Labels["app.kubernetes.io/managed-by"] != "hakopod" || managed.Namespace != "hdb-"+managed.Labels["hakopod.io/database-id"] || managed.Annotations["hakopod.io/oracle-free-pod-policy"] == "" || managed.Spec.Edition != "free" || managed.Spec.CreateAs != "primary" || managed.Spec.Replicas != 1 || managed.Spec.Image.PullFrom != "container-registry.oracle.com/database/free:23.26.3.0@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba" || !getTcpsEnabled(managed) || getTcpsTLSSecret(managed) != "database-tls" {
++		return requeueN, fmt.Errorf("managed Oracle Free resource is outside its fixed contract")
++	}
++	if managed.Spec.Services == nil || len(managed.Spec.Services.Endpoints) != 1 {
++		return requeueN, fmt.Errorf("managed Oracle Free requires one private TCPS endpoint")
++	}
++	endpoint := managed.Spec.Services.Endpoints[0]
++	if endpoint.Name != "cluster" || endpoint.Type != "ClusterIP" || endpoint.TCP == nil || endpoint.TCP.Enabled || endpoint.TCPS == nil || !endpoint.TCPS.Enabled || endpoint.TCPS.Port != 2484 || endpoint.IsKeep || len(endpoint.Annotations) != 0 || endpoint.TCPS.NodePort != 0 || endpoint.TCP.Port != 0 || endpoint.TCP.NodePort != 0 {
++		return requeueN, fmt.Errorf("managed Oracle Free endpoint contract changed")
++	}
++	oradata := getOradataPersistenceConfig(managed)
++	if oradata.PvcName != "" || oradata.StorageClass == "" || oradata.Size == "" || oradata.AccessMode != "ReadWriteOnce" || len(managed.Spec.Persistence.AdditionalPVCs) != 1 {
++		return requeueN, fmt.Errorf("managed Oracle Free requires two operator-owned claims")
++	}
++	backup := managed.Spec.Persistence.AdditionalPVCs[0]
++	if backup.PvcName != "" || backup.StorageClass != oradata.StorageClass || backup.StorageSizeInGb <= 0 || backup.MountPath != "/opt/oracle/hakopod-backup" {
++		return requeueN, fmt.Errorf("managed Oracle Free backup claim changed")
++	}
+ 	if phaseCtx.singleInstanceDatabase.DeletionTimestamp == nil {
+ 		if locked, lockGen, lockMsg := lockpolicy.IsControllerUpdateLocked(
+ 			phaseCtx.singleInstanceDatabase.Status.Conditions,
+@@ -4055,6 +4080,9 @@ func (r *SingleInstanceDatabaseReconciler) instantiatePodSpec(m *dbapi.SingleIns
+ 	}
+ 
+ 	applyPrimarySeparationPreference(pod, m, rp)
++	if err := dbcommons.ApplyHakopodFreePodPolicy(pod, m.ObjectMeta); err != nil {
++		return nil, err
++	}
+ 
+ 	r.addTrueCacheBlobVolumeMount(pod, m, rp)
+ 	r.addTrueCacheDBCredentialsWalletVolumeMount(pod, m)
+@@ -4255,148 +4283,12 @@ func (r *SingleInstanceDatabaseReconciler) instantiateFRAPVCSpec(m *dbapi.Single
+ 
+ func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforCustomScriptsVol(ctx context.Context, req ctrl.Request,
+ 	m *dbapi.SingleInstanceDatabase) (ctrl.Result, error) {
+-
+-	log := r.Log.WithValues("createPVC CustomScripts Vol", req.NamespacedName)
+-
+-	desiredPVCName := desiredCustomScriptsPVCName(m)
+-
+-	existingPVCs := &corev1.PersistentVolumeClaimList{}
+-	if err := r.List(ctx, existingPVCs, client.InNamespace(m.Namespace), client.MatchingLabels{"app": m.Name}); err != nil {
+-		log.Error(err, "Failed to list PVCs")
+-		return requeueY, err
+-	}
+-
+-	stalePVCDeleted := false
+-	for i := range existingPVCs.Items {
+-		pvc := &existingPVCs.Items[i]
+-		if !metav1.IsControlledBy(pvc, m) {
+-			continue
+-		}
+-		if pvc.Name == m.Name || pvc.Name == getFraClaimName(m) || pvc.Name == desiredPVCName {
+-			continue
+-		}
+-		if !strings.HasPrefix(pvc.Name, m.Name+"-") {
+-			continue
+-		}
+-		result, err := r.deletePods(ctx, req, m, []corev1.Pod{}, corev1.Pod{}, 0, 0)
+-		if result.Requeue {
+-			return result, err
+-		}
+-		log.Info("Deleting stale custom scripts PVC", "name", pvc.Name)
+-		if err := r.Delete(ctx, pvc); err != nil {
+-			r.Log.Error(err, "Failed to delete stale custom scripts PVC", "Pvc.Name", pvc.Name)
+-			return requeueN, err
+-		}
+-		stalePVCDeleted = true
+-	}
+-	if stalePVCDeleted {
+-		return requeueY, nil
+-	}
+-
+-	// if customScriptsVolumeName is not present or it is same than DatafilesVolumeName
+-	if desiredPVCName == "" {
+-		return requeueN, nil
+-	}
+-
+-	pvcName := desiredPVCName
+-	// Check if the PVC already exists using r.Get, if not create a new one using r.Create
+-	pvc := &corev1.PersistentVolumeClaim{}
+-	// Get retrieves an obj ( a struct pointer ) for the given object key from the Kubernetes Cluster.
+-	err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: m.Namespace}, pvc)
+-
+-	if err == nil {
+-		if m.Spec.Persistence.ScriptsVolumeName != "" && pvc.Spec.VolumeName != m.Spec.Persistence.ScriptsVolumeName {
+-			// call deletePods() with zero pods in avaiable and nil readyPod to delete all pods
+-			result, err := r.deletePods(ctx, req, m, []corev1.Pod{}, corev1.Pod{}, 0, 0)
+-			if result.Requeue {
+-				return result, err
+-			}
+-
+-			log.Info("Deleting PVC", " name ", pvc.Name)
+-			err = r.Delete(ctx, pvc)
+-			if err != nil {
+-				r.Log.Error(err, "Failed to delete Pvc", "Pvc.Name", pvc.Name)
+-				return requeueN, err
+-			}
+-			return requeueY, nil
+-		} else {
+-			log.Info("Found Existing PVC", "Name", pvc.Name)
+-			return requeueN, nil
+-		}
+-	}
+-	if err != nil && apierrors.IsNotFound(err) {
+-		// Define a new PVC
+-
+-		// get accessMode and storage of pv mentioned to be used in pvc spec
+-		pv := &corev1.PersistentVolume{}
+-		pvName := m.Spec.Persistence.ScriptsVolumeName
+-		// Get retrieves an obj ( a struct pointer ) for the given object key from the Kubernetes Cluster.
+-		pvErr := r.Get(ctx, types.NamespacedName{Name: pvName, Namespace: m.Namespace}, pv)
+-		if pvErr != nil {
+-			log.Error(pvErr, "Failed to get PV")
+-			return requeueY, pvErr
+-		}
+-
+-		volumeQty := pv.Spec.Capacity[corev1.ResourceStorage]
+-
+-		AccessMode := pv.Spec.AccessModes[0]
+-		Storage := int(volumeQty.Value())
+-		StorageClass := ""
+-
+-		log.Info(fmt.Sprintf("PV storage: %v\n", Storage))
+-		log.Info(fmt.Sprintf("PV AccessMode: %v\n", AccessMode))
+-
+-		pvc := &corev1.PersistentVolumeClaim{
+-			TypeMeta: metav1.TypeMeta{
+-				Kind: "PersistentVolumeClaim",
+-			},
+-			ObjectMeta: metav1.ObjectMeta{
+-				Name:      pvcName,
+-				Namespace: m.Namespace,
+-				Labels: map[string]string{
+-					"app": m.Name,
+-				},
+-			},
+-			Spec: corev1.PersistentVolumeClaimSpec{
+-				AccessModes: func() []corev1.PersistentVolumeAccessMode {
+-					var accessMode []corev1.PersistentVolumeAccessMode
+-					accessMode = append(accessMode, corev1.PersistentVolumeAccessMode(AccessMode))
+-					return accessMode
+-				}(),
+-				Resources: corev1.VolumeResourceRequirements{
+-					Requests: map[corev1.ResourceName]resource.Quantity{
+-						// Requests describes the minimum amount of compute resources required
+-						"storage": *resource.NewQuantity(int64(Storage), resource.BinarySI),
+-					},
+-				},
+-				StorageClassName: &StorageClass,
+-				VolumeName:       pvName,
+-			},
+-		}
+-
+-		// Set SingleInstanceDatabase instance as the owner and controller
+-		_ = ctrl.SetControllerReference(m, pvc, r.Scheme)
+-
+-		log.Info("Creating a new PVC", "PVC.Namespace", pvc.Namespace, "PVC.Name", pvc.Name)
+-		err = r.Create(ctx, pvc)
+-		if err != nil {
+-			log.Error(err, "Failed to create new PVC", "PVC.Namespace", pvc.Namespace, "PVC.Name", pvc.Name)
+-			return requeueY, err
+-		}
+-		return requeueN, nil
+-	} else if err != nil {
+-		log.Error(err, "Failed to get PVC")
+-		return requeueY, err
++	if err := validateHakopodFreeResource(m); err != nil {
++		return requeueN, err
+ 	}
+-
+ 	return requeueN, nil
+ }
+ 
+-// #############################################################################
+-//
+-//	Stake a claim for Persistent Volume for Datafiles Volume
+-//
+-// #############################################################################
+ func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforDatafilesVol(ctx context.Context, req ctrl.Request,
+ 	m *dbapi.SingleInstanceDatabase) (ctrl.Result, error) {
+ 
+@@ -4408,93 +4300,23 @@ func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCforDatafilesVol(ctx
+ 		return requeueN, nil
+ 	}
+ 
+-	pvcDeleted := false
+ 	// Check if the PVC already exists using r.Get, if not create a new one using r.Create
+ 	pvc := &corev1.PersistentVolumeClaim{}
+ 	// Get retrieves an obj ( a struct pointer ) for the given object key from the Kubernetes Cluster.
+ 	err := r.Get(ctx, types.NamespacedName{Name: m.Name, Namespace: m.Namespace}, pvc)
+ 
+ 	if err == nil {
+-		if !metav1.IsControlledBy(pvc, m) {
+-			r.Recorder.Eventf(m, corev1.EventTypeWarning, "Managed PVC conflict", "Managed datafiles PVC %q already exists but is not controlled by this SingleInstanceDatabase", pvc.Name)
+-			return requeueN, fmt.Errorf("managed datafiles pvc %q already exists but is not controlled by SingleInstanceDatabase %s/%s", pvc.Name, m.Namespace, m.Name)
+-		}
+-		currentStorageClassName := ""
+-		if pvc.Spec.StorageClassName != nil {
+-			currentStorageClassName = *pvc.Spec.StorageClassName
+-		}
+-		if currentStorageClassName != oradataCfg.StorageClass ||
+-			(oradataCfg.DatafilesVolume != "" && pvc.Spec.VolumeName != oradataCfg.DatafilesVolume) ||
+-			pvc.Spec.AccessModes[0] != corev1.PersistentVolumeAccessMode(oradataCfg.AccessMode) {
+-			// PV change use cases which would trigger recreation of SIDB pods are :-
+-			// 1. Change in storage class
+-			// 2. Change in volume name
+-			// 3. Change in volume access mode
+-
+-			// deleting singleinstancedatabase resource
+-			result, err := r.deletePods(ctx, req, m, []corev1.Pod{}, corev1.Pod{}, 0, 0)
+-			if result.Requeue {
+-				return result, err
+-			}
+-
+-			// deleting persistent volume claim
+-			log.Info("Deleting PVC", " name ", pvc.Name)
+-			err = r.Delete(ctx, pvc)
+-			if err != nil {
+-				r.Log.Error(err, "Failed to delete Pvc", "Pvc.Name", pvc.Name)
+-				return requeueN, err
+-			}
+-			pvcDeleted = true
+-
+-		} else if pvc.Spec.Resources.Requests["storage"] != resource.MustParse(oradataCfg.Size) {
+-			// check the storage class of the pvc
+-			// if the storage class doesn't support resize the throw an error event and try expanding via deleting and recreating the pv and pods
+-			if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName == "" {
+-				r.Recorder.Eventf(m, corev1.EventTypeWarning, "PVC not resizable", "Cannot resize pvc as storage class is either nil or default")
+-				return requeueN, fmt.Errorf("cannot resize pvc as storage class is either nil or default")
+-			}
+-
+-			storageClassName := *pvc.Spec.StorageClassName
+-			storageClass := &storagev1.StorageClass{}
+-			err := r.Get(ctx, types.NamespacedName{Name: storageClassName}, storageClass)
+-			if err != nil {
+-				return requeueY, fmt.Errorf("error while fetching the storage class")
+-			}
+-
+-			if storageClass.AllowVolumeExpansion == nil || !*storageClass.AllowVolumeExpansion {
+-				r.Recorder.Eventf(m, corev1.EventTypeWarning, "PVC not resizable", "The storage class doesn't support volume expansion")
+-				return requeueN, fmt.Errorf("the storage class %s doesn't support volume expansion", storageClassName)
+-			}
+-
+-			newPVCSize := resource.MustParse(oradataCfg.Size)
+-			newPVCSizeAdd := &newPVCSize
+-			if newPVCSizeAdd.Cmp(pvc.Spec.Resources.Requests["storage"]) < 0 {
+-				r.Recorder.Eventf(m, corev1.EventTypeWarning, "Cannot Resize PVC", "Forbidden: field can not be less than previous value")
+-				return requeueN, fmt.Errorf("Resizing PVC to lower size volume not allowed")
+-			}
+-
+-			// Expanding the persistent volume claim
+-			pvc.Spec.Resources.Requests["storage"] = resource.MustParse(oradataCfg.Size)
+-			log.Info("Updating PVC", "pvc", pvc.Name, "volume", pvc.Spec.VolumeName)
+-			r.Recorder.Eventf(m, corev1.EventTypeNormal, "Updating PVC - volume expansion", "Resizing the pvc for storage expansion")
+-			err = r.Update(ctx, pvc)
+-			if err != nil {
+-				log.Error(err, "Error while updating the PVCs")
+-				return requeueY, fmt.Errorf("error while updating the PVCs")
+-			}
+-
+-		} else {
+-
+-			log.Info("Found Existing PVC", "Name", pvc.Name)
+-			return requeueN, nil
+-
++		if err := dbcommons.ValidateHakopodFreePVC(pvc, m.ObjectMeta, m.Name, oradataCfg.StorageClass, oradataCfg.Size); err != nil {
++			return requeueN, err
+ 		}
++		return requeueN, nil
+ 	}
+ 
+-	if pvcDeleted || err != nil && apierrors.IsNotFound(err) {
++	if apierrors.IsNotFound(err) {
+ 		// Define a new PVC
+ 		pvc = r.instantiatePVCSpec(m)
+ 		log.Info("Creating a new PVC", "PVC.Namespace", pvc.Namespace, "PVC.Name", pvc.Name)
++		controllerutil.AddFinalizer(pvc, dbcommons.HakopodOracleFreeStorageFinalizer)
+ 		err = r.Create(ctx, pvc)
+ 		if err != nil {
+ 			log.Error(err, "Failed to create new PVC", "PVC.Namespace", pvc.Namespace, "PVC.Name", pvc.Name)
+@@ -4625,6 +4447,9 @@ func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCsForAdditionalPVCs(
+ 		pvc := &corev1.PersistentVolumeClaim{}
+ 		err := r.Get(ctx, types.NamespacedName{Name: claimName, Namespace: m.Namespace}, pvc)
+ 		if err == nil {
++			if err := dbcommons.ValidateHakopodFreePVC(pvc, m.ObjectMeta, claimName, cfg.StorageClass, fmt.Sprintf("%dGi", cfg.StorageSizeInGb)); err != nil {
++				return requeueN, err
++			}
+ 			if !metav1.IsControlledBy(pvc, m) {
+ 				return requeueN, fmt.Errorf("managed additional pvc %q already exists but is not controlled by SingleInstanceDatabase %s/%s", claimName, m.Namespace, m.Name)
+ 			}
+@@ -4647,6 +4472,7 @@ func (r *SingleInstanceDatabaseReconciler) createOrReplacePVCsForAdditionalPVCs(
+ 		if err := ctrl.SetControllerReference(m, pvc, r.Scheme); err != nil {
+ 			return requeueN, err
+ 		}
++		controllerutil.AddFinalizer(pvc, dbcommons.HakopodOracleFreeStorageFinalizer)
+ 		if err := r.Create(ctx, pvc); err != nil {
+ 			return requeueY, err
+ 		}
+@@ -4667,16 +4493,14 @@ func (r *SingleInstanceDatabaseReconciler) reconcileSIDBEndpointService(
+ 	log logr.Logger,
+ ) (*corev1.Service, ctrl.Result, error) {
+ 	desiredPorts := desiredSIDBServiceEndpointPorts(cfg)
+-	desiredPublishNotReady := cfg.Name == dbapi.SingleInstanceDatabaseServiceEndpointNameCluster || shouldPublishNotReadyExternalService(m)
++	desiredPublishNotReady := false
+ 	desiredAnnotations := desiredSIDBServiceAnnotations(m, &cfg)
+ 	desiredSvc, err := r.instantiateSVCSpec(m, cfg.ServiceName, desiredPorts, cfg.Type, desiredPublishNotReady, desiredAnnotations, cfg.ExternalTrafficPolicy)
+ 	if err != nil {
+ 		log.Error(err, "Failed to build desired service owner reference", "Service.Namespace", m.Namespace, "Service.Name", cfg.ServiceName)
+ 		return nil, requeueY, err
+ 	}
+-	if cfg.IsKeep {
+-		desiredSvc.OwnerReferences = nil
+-	}
++	desiredSvc.Spec.Selector = map[string]string{"app": m.Name, "hakopod.io/database-id": m.Labels["hakopod.io/database-id"], "hakopod.io/oracle-member": "true"}
+ 
+ 	current := &corev1.Service{}
+ 	if err := r.Get(ctx, types.NamespacedName{Name: cfg.ServiceName, Namespace: m.Namespace}, current); err != nil {
+@@ -4692,6 +4516,9 @@ func (r *SingleInstanceDatabaseReconciler) reconcileSIDBEndpointService(
+ 		return desiredSvc, requeueY, nil
+ 	}
+ 
++	if err := dbcommons.ValidateHakopodFreeService(current, m.ObjectMeta); err != nil {
++		return nil, requeueN, err
++	}
+ 	switch {
+ 	case !reflect.DeepEqual(current.OwnerReferences, desiredSvc.OwnerReferences):
+ 		current.OwnerReferences = desiredSvc.OwnerReferences
+@@ -4767,12 +4594,7 @@ func (r *SingleInstanceDatabaseReconciler) createOrReplaceSVC(ctx context.Contex
+ 			log.Error(err, "Error encountered in obtaining optional service", serviceName)
+ 			return requeueY, err
+ 		}
+-		m.Status.Status = dbcommons.StatusUpdating
+-		if err := r.Delete(ctx, svc); err != nil {
+-			log.Error(err, "Failed to delete optional service", "Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
+-			return requeueY, err
+-		}
+-		return requeueY, nil
++		return requeueN, fmt.Errorf("managed Oracle Free found an unexpected optional service")
+ 	}
+ 
+ 	var sid, pdbName string
+@@ -4959,7 +4781,7 @@ func (r *SingleInstanceDatabaseReconciler) createOrReplacePods(m *dbapi.SingleIn
+ 					pod.Name,
+ 				)
+ 
+-				if err := r.Delete(ctx, pod); err != nil {
++				if err := r.Delete(ctx, pod, client.Preconditions{UID: &pod.UID, ResourceVersion: &pod.ResourceVersion}); err != nil {
+ 					log.Error(err, "Failed to delete pod for resource requirements update", "pod", pod.Name)
+ 					return requeueY, err
+ 				}
+@@ -5012,10 +4834,7 @@ func (r *SingleInstanceDatabaseReconciler) createOrReplacePods(m *dbapi.SingleIn
+ 					r.Log.Info("Pod unavailable reason: ", "reason", waitingReason)
+ 					if strings.Contains(waitingReason, "ImagePullBackOff") || strings.Contains(waitingReason, "ErrImagePull") {
+ 						r.Log.Info("Deleting pod", "name", allAvailable[i].Name)
+-						var gracePeriodSeconds int64 = 0
+-						policy := metav1.DeletePropagationForeground
+-						if err := r.Delete(ctx, &allAvailable[i], &client.DeleteOptions{
+-							GracePeriodSeconds: &gracePeriodSeconds, PropagationPolicy: &policy}); err != nil {
++						if err := r.Delete(ctx, &allAvailable[i], client.Preconditions{UID: &allAvailable[i].UID, ResourceVersion: &allAvailable[i].ResourceVersion}); err != nil {
+ 							r.Log.Error(err, "Failed to delete pod in image pull backoff", "name", allAvailable[i].Name)
+ 						}
+ 					}
+@@ -5269,6 +5088,13 @@ func (r *SingleInstanceDatabaseReconciler) createWallet(m *dbapi.SingleInstanceD
+ 
+ 	// Execing into the pod and creating the wallet
+ 	adminPassword := string(secret.Data[GetAdminPasswordSecretFileName(m)])
++	if m.Annotations["hakopod.io/oracle-pod-policy"] != "" {
++		_, err = dbcommons.ExecCommandWithInput(r, r.Config, pod.Name, pod.Namespace, walletContainer, ctx, req, true, dbcommons.ManagedOracleAdminWalletCommand, "bash", "-s")
++		if err != nil {
++			return requeueY, err
++		}
++		return requeueN, nil
++	}
+ 
+ 	out, err = dbcommons.ExecCommand(r, r.Config, pod.Name, pod.Namespace, walletContainer,
+ 		ctx, req, true, "bash", "-c", fmt.Sprintf("%s && %s && %s && %s && rm -f admin.pwd",
+@@ -5441,18 +5267,15 @@ func (r *SingleInstanceDatabaseReconciler) deletePods(ctx context.Context, req c
+ 			break
+ 		}
+ 		r.Log.Info("Deleting Pod : ", "POD.NAME", availablePod.Name)
+-		var delOpts *client.DeleteOptions = &client.DeleteOptions{}
+-		if replicasRequired == 0 {
+-			var gracePeriodSeconds int64 = 0
+-			policy := metav1.DeletePropagationForeground
+-			delOpts.GracePeriodSeconds = &gracePeriodSeconds
+-			delOpts.PropagationPolicy = &policy
++		if err := dbcommons.ValidateHakopodFreeObservedMember(&availablePod, m.ObjectMeta); err != nil {
++			return requeueN, err
+ 		}
++		delOpts := &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &availablePod.UID, ResourceVersion: &availablePod.ResourceVersion}}
+ 		err := r.Delete(ctx, &availablePod, delOpts)
+ 		noDeleted++
+ 		if err != nil {
+ 			r.Log.Error(err, "Failed to delete existing POD", "POD.Name", availablePod.Name)
+-			// Don't requeue
++			return requeueY, err
+ 		} else {
+ 			m.Status.Replicas--
+ 		}
+@@ -5637,7 +5460,7 @@ func (r *SingleInstanceDatabaseReconciler) updateClientWallet(m *dbapi.SingleIns
+ 				return err
+ 			}
+ 
+-			tcpsPort := servicePortByName(svc.Spec.Ports, "listener-tcps")
++			tcpsPort := servicePortByName(svc.Spec.Ports, "tcps")
+ 			if tcpsPort == nil {
+ 				continue
+ 			}
+@@ -5995,6 +5818,27 @@ fi
+ //
+ // #############################################################################
+ func (r *SingleInstanceDatabaseReconciler) configTcps(m *dbapi.SingleInstanceDatabase,
++	readyPod corev1.Pod, ctx context.Context, req ctrl.Request, phaseCtx *sidbPhaseContext) (ctrl.Result, error) {
++	// Hakopod's guarded entrypoint owns the wallet and listener. The API
++	// separately verifies the live certificate fingerprint before readiness.
++	if !getTcpsEnabled(m) || getTcpsTLSSecret(m) != "database-tls" {
++		return requeueN, fmt.Errorf("managed Oracle Free TCPS is required")
++	}
++	if _, err := dbcommons.ExecCommand(r, r.Config, readyPod.Name, readyPod.Namespace, "database", ctx, req, true, "test", "-f", "/tmp/hakopod/ready"); err != nil {
++		return requeueY, err
++	}
++	listening, _, err := hasTCPSListenerEndpointInPod(r, readyPod, ctx, req)
++	if err != nil || !listening {
++		return requeueY, fmt.Errorf("managed Oracle Free TCPS listener is not ready")
++	}
++	m.Status.IsTcpsEnabled = true
++	m.Status.TcpsTlsSecret = "database-tls"
++	return requeueN, nil
++}
++
++// The upstream TCPS path remains for source provenance, but is not called by
++// the Free-only controller because it publishes Data Guard wallet secrets.
++func (r *SingleInstanceDatabaseReconciler) upstreamConfigTcps(m *dbapi.SingleInstanceDatabase,
+ 	readyPod corev1.Pod, ctx context.Context, req ctrl.Request, phaseCtx *sidbPhaseContext) (ctrl.Result, error) {
+ 	eventReason := "Configuring TCPS"
+ 	tcpsEnabled := getTcpsEnabled(m)
+@@ -6764,7 +6608,7 @@ func (r *SingleInstanceDatabaseReconciler) manageSingleInstanceDatabaseDeletion(
+ 			// finalization logic fails, don't remove the finalizer so
+ 			// that we can retry during the next reconciliation.
+ 			result, err := r.cleanupSingleInstanceDatabase(req, ctx, m)
+-			if result.Requeue {
++			if err != nil || result.Requeue {
+ 				return result, err
+ 			}
+ 
+@@ -6839,18 +6683,26 @@ func (r *SingleInstanceDatabaseReconciler) cleanupSingleInstanceDatabase(req ctr
+ 
+ 	// call deletePods() with zero pods in avaiable and nil readyPod to delete all pods
+ 	result, err := r.deletePods(ctx, req, m, []corev1.Pod{}, corev1.Pod{}, 0, 0)
+-	if result.Requeue {
++	if err != nil || result.Requeue {
+ 		return result, err
+ 	}
+ 
+ 	for {
+ 		podList := &corev1.PodList{}
+-		listOpts := []client.ListOption{client.InNamespace(req.Namespace), client.MatchingLabels(dbcommons.GetLabelsForController("", req.Name))}
++		listOpts := []client.ListOption{client.InNamespace(req.Namespace), client.MatchingLabels(dbcommons.GetLabelsForController("", req.Name)), client.Limit(3)}
+ 
+ 		if err := r.List(ctx, podList, listOpts...); err != nil {
+ 			log.Error(err, "Failed to list pods of "+req.Name, "Namespace", req.Namespace)
+ 			return requeueY, err
+ 		}
++		if dbcommons.HakopodOracleListExceedsBound(podList.Continue, len(podList.Items)) {
++			return requeueY, fmt.Errorf("managed Oracle pod inventory exceeds its bound")
++		}
++		for i := range podList.Items {
++			if err := dbcommons.ValidateHakopodFreeObservedMember(&podList.Items[i], m.ObjectMeta); err != nil {
++				return requeueY, err
++			}
++		}
+ 		if len(podList.Items) == 0 {
+ 			break
+ 		}
+@@ -6874,47 +6726,8 @@ func (r *SingleInstanceDatabaseReconciler) cleanupSingleInstanceDatabase(req ctr
+ 	return requeueN, nil
+ }
+ 
+-func (r *SingleInstanceDatabaseReconciler) cleanupManagedSingleInstanceDatabasePVCs(ctx context.Context,
+-	m *dbapi.SingleInstanceDatabase) (bool, error) {
+-	log := r.Log.WithValues("cleanupManagedSingleInstanceDatabasePVCs", client.ObjectKeyFromObject(m))
+-
+-	claimNames := make([]string, 0, 2)
+-	oradataCfg := getOradataPersistenceConfig(m)
+-	if strings.TrimSpace(oradataCfg.PvcName) == "" && strings.TrimSpace(oradataCfg.Size) != "" {
+-		claimNames = append(claimNames, m.Name)
+-	}
+-	if isManagedFraPVC(m) {
+-		claimNames = append(claimNames, getFraClaimName(m))
+-	}
+-
+-	for _, claimName := range claimNames {
+-		pvc := &corev1.PersistentVolumeClaim{}
+-		err := r.Get(ctx, types.NamespacedName{Name: claimName, Namespace: m.Namespace}, pvc)
+-		if apierrors.IsNotFound(err) {
+-			continue
+-		}
+-		if err != nil {
+-			log.Error(err, "Failed to get managed PVC during SIDB deletion", "PVC.Name", claimName)
+-			return false, err
+-		}
+-		if !metav1.IsControlledBy(pvc, m) {
+-			log.Info("Skipping unmanaged PVC during SIDB cleanup", "PVC.Name", pvc.Name)
+-			continue
+-		}
+-
+-		if pvc.DeletionTimestamp == nil {
+-			log.Info("Deleting managed PVC during SIDB cleanup", "PVC.Name", pvc.Name)
+-			if err := r.Delete(ctx, pvc); err != nil && !apierrors.IsNotFound(err) {
+-				log.Error(err, "Failed to delete managed PVC during SIDB cleanup", "PVC.Name", pvc.Name)
+-				return false, err
+-			}
+-		}
+-
+-		log.Info("Waiting for managed PVC to be deleted", "PVC.Name", pvc.Name)
+-		return true, nil
+-	}
+-
+-	return false, nil
++func (r *SingleInstanceDatabaseReconciler) cleanupManagedSingleInstanceDatabasePVCs(ctx context.Context, m *dbapi.SingleInstanceDatabase) (bool, error) {
++	return r.cleanupHakopodFreeClaims(ctx, m)
+ }
+ 
+ // #############################################################################################
+@@ -7446,7 +7259,7 @@ func (r *SingleInstanceDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) er
+ 		For(&dbapi.SingleInstanceDatabase{}).
+ 		Owns(&corev1.Pod{}). //Watch for deleted pods of SingleInstanceDatabase Owner
+ 		WithEventFilter(dbcommons.ResourceEventHandler()).
+-		WithOptions(controller.Options{MaxConcurrentReconciles: 100}). //ReconcileHandler is never invoked concurrently with the same object.
++		WithOptions(controller.Options{MaxConcurrentReconciles: 1}). //ReconcileHandler is never invoked concurrently with the same object.
+ 		Complete(r)
+ }
+ 
+diff --git a/controllers/dataguard/dataguardbroker_reconcile_helpers.go b/controllers/dataguard/dataguardbroker_reconcile_helpers.go
+index 976e078..f1ad946 100644
+--- a/controllers/dataguard/dataguardbroker_reconcile_helpers.go
++++ b/controllers/dataguard/dataguardbroker_reconcile_helpers.go
+@@ -1001,6 +1001,7 @@ func computeDataguardBrokerRunnerRuntimeHash(broker *dbapi.DataguardBroker, runt
+ 	}
+ 	payload := map[string]interface{}{
+ 		"executionKey":     executionCandidateKey(candidate),
++		"hakopodPodPolicy": broker.Annotations["hakopod.io/oracle-pod-policy"],
+ 		"topologyHash":     topologyHash,
+ 		"authWalletSecret": strings.TrimSpace(runtime.AuthWalletSecretName),
+ 		"walletMountPath":  strings.TrimSpace(runtime.WalletMountPath),
+@@ -1057,9 +1058,13 @@ func listDataguardBrokerRunnerPods(ctx context.Context, r client.Client, broker
+ 			dataguardBrokerRunnerLabelBroker:    broker.Name,
+ 			dataguardBrokerRunnerLabelComponent: dataguardBrokerRunnerComponentValue,
+ 		},
++		client.Limit(3),
+ 	); err != nil {
+ 		return nil, err
+ 	}
++	if dbcommons.HakopodOracleListExceedsBound(pods.Continue, len(pods.Items)) {
++		return nil, fmt.Errorf("Oracle runner inventory exceeds its bound")
++	}
+ 	return pods.Items, nil
+ }
+ 
+@@ -1104,8 +1109,29 @@ func ensureDataguardBrokerRunnerPod(ctx context.Context, r *DataguardBrokerRecon
+ 		if !isNotFound(err) {
+ 			return false, "", err
+ 		}
++		if broker.Annotations["hakopod.io/oracle-pod-policy"] != "" {
++			previous, listErr := listDataguardBrokerRunnerPods(ctx, r.Client, broker)
++			if listErr != nil {
++				return false, "", listErr
++			}
++			for i := range previous {
++				old := &previous[i]
++				if !metav1.IsControlledBy(old, broker) {
++					return false, "", fmt.Errorf("managed Oracle runner ownership changed")
++				}
++				if old.DeletionTimestamp.IsZero() {
++					if deleteErr := clientIgnoreNotFound(r.Delete(ctx, old, client.Preconditions{UID: &old.UID, ResourceVersion: &old.ResourceVersion})); deleteErr != nil {
++						return false, "", deleteErr
++					}
++				}
++				return false, "waiting for the previous managed Oracle runner to terminate", nil
++			}
++		}
+ 		logDataguardBrokerRunnerCreation(ctx, r, broker, runtime, podName, runtimeHash)
+ 		pod := buildDataguardBrokerRunnerPod(broker, runtime, runtimeHash)
++		if err := dbcommons.ApplyHakopodPodPolicy(pod, broker.ObjectMeta); err != nil {
++			return false, "", err
++		}
+ 		if err := ctrl.SetControllerReference(broker, pod, r.Scheme); err != nil {
+ 			return false, "", err
+ 		}
+diff --git a/controllers/dataguard/dataguardbroker_topology_execution.go b/controllers/dataguard/dataguardbroker_topology_execution.go
+index 7b07701..ac82d47 100644
+--- a/controllers/dataguard/dataguardbroker_topology_execution.go
++++ b/controllers/dataguard/dataguardbroker_topology_execution.go
+@@ -3,6 +3,7 @@ package controllers
+ import (
+ 	"context"
+ 	"encoding/base64"
++	"encoding/json"
+ 	"errors"
+ 	"fmt"
+ 	"sort"
+@@ -337,6 +338,30 @@ func buildDataguardBrokerAuthWalletBuildCommand(state *dataguardTopologyResolved
+ 		return strings.ToUpper(strings.TrimSpace(members[i].DBUniqueName)) < strings.ToUpper(strings.TrimSpace(members[j].DBUniqueName))
+ 	})
+ 
++	managedLines := []string{"set -euo pipefail", "umask 077", fmt.Sprintf("mkdir -p %s", shellQuote(walletDir))}
++	managedRequest := func(operation, value string, arguments []string) {
++		raw, _ := json.Marshal(map[string]any{"operation": operation, "wallet": walletDir, "password": walletPassword, "value": value, "arguments": arguments})
++		managedLines = append(managedLines, fmt.Sprintf("python3 /etc/hakopod-oracle/wallet.py <<'__HAKOPOD_WALLET__'\n%s\n__HAKOPOD_WALLET__", string(raw)))
++	}
++	managedLines = append(managedLines, fmt.Sprintf("rm -f -- %s/ewallet.p12 %s/cwallet.sso", shellQuote(walletDir), shellQuote(walletDir)))
++	managedRequest("create", "", []string{})
++	for _, member := range members {
++		if member == nil {
++			continue
++		}
++		aliases := []string{member.Alias, member.StaticAlias, member.ConnectString}
++		if descriptor, err := buildDataguardStaticConnectDescriptor(member); err == nil && strings.TrimSpace(descriptor) != "" {
++			aliases = append(aliases, descriptor)
++		}
++		seen := map[string]bool{}
++		for _, alias := range aliases {
++			alias = strings.TrimSpace(alias)
++			if alias != "" && !seen[alias] {
++				managedRequest("credential", member.AdminPassword, []string{alias, "sys"})
++				seen[alias] = true
++			}
++		}
++	}
+ 	lines := []string{
+ 		"set -euo pipefail",
+ 		fmt.Sprintf("WALLET_DIR=%s", shellQuote(walletDir)),
+@@ -387,7 +412,7 @@ func buildDataguardBrokerAuthWalletBuildCommand(state *dataguardTopologyResolved
+ 		))
+ 	}
+ 	lines = append(lines, "rm -f \"$WALLET_DIR/.wallet.passwd\"")
+-	return strings.Join(lines, "\n") + "\n"
++	return "if [ \"${HAKOPOD_ORACLE_POLICY:-}\" = \"hakopod-oracle-tcps-v1\" ]; then\n" + strings.Join(managedLines, "\n") + "\nelse\n" + strings.Join(lines, "\n") + "\nfi\n"
+ }
+ 
+ func readBase64RunnerFile(ctx context.Context, r *DataguardBrokerReconciler, broker *dbapi.DataguardBroker, req ctrl.Request, path string) ([]byte, error) {
+@@ -653,7 +678,7 @@ func buildDataguardTopologyTNSAliasEntry(alias string, member *dataguardTopology
+ 		}
+ 		if sslServerDN != "" {
+ 			entry += fmt.Sprintf(`
+-    (SSL_SERVER_DN_MATCH = NO)
++    (SSL_SERVER_DN_MATCH = YES)
+     (SSL_SERVER_CERT_DN = %s)`, sslServerDN)
+ 		}
+ 		if strings.TrimSpace(member.WalletDirectory) != "" {
+@@ -718,7 +743,7 @@ func buildDataguardTopologySQLNet(state *dataguardTopologyResolvedState) string
+ 		)
+ 	}
+ 	if topologyUsesTCPS(state) {
+-		lines = append(lines, "SSL_SERVER_DN_MATCH=NO")
++		lines = append(lines, "SSL_SERVER_DN_MATCH=YES", "SSL_VERSION=1.2", "SQLNET.INBOUND_CONNECT_TIMEOUT=15", "SQLNET.RECV_TIMEOUT=60", "SQLNET.SEND_TIMEOUT=60")
+ 	}
+ 	return strings.Join(lines, "\n") + "\n"
+ }
+@@ -804,7 +829,7 @@ func execDataguardBrokerRunnerShell(ctx context.Context, r *DataguardBrokerRecon
+ 		return "", err
+ 	}
+ 	podName := pod.Name
+-	out, err := dbcommons.ExecCommand(r, r.Config, podName, broker.Namespace, dataguardBrokerRunnerContainerName, ctx, req, nolog, "bash", "-c", command)
++	out, err := dbcommons.ExecCommandWithInput(r, r.Config, podName, broker.Namespace, dataguardBrokerRunnerContainerName, ctx, req, true, command, "bash", "-s")
+ 	if err != nil {
+ 		if apierrors.IsNotFound(err) || strings.Contains(err.Error(), fmt.Sprintf("pods %q not found", podName)) {
+ 			return out, fmt.Errorf("%w: pod %s/%s not found", errDataguardBrokerRunnerUnavailable, broker.Namespace, podName)
+@@ -1188,7 +1213,7 @@ func mirrorDataguardRunnerCommandToContainerLogs(command, cleanup string) string
+ 		cleanup = ":"
+ 	}
+ 	return fmt.Sprintf(
+-		"command_status=0; { %s; } > >(tee /proc/1/fd/1) 2> >(tee /proc/1/fd/2 >&2) || command_status=$?; %s; exit $command_status",
++		"command_status=0; { %s; } || command_status=$?; %s; exit $command_status",
+ 		command,
+ 		cleanup,
+ 	)
+@@ -1488,7 +1513,7 @@ func buildDataguardStaticConnectDescriptor(member *dataguardTopologyResolvedMemb
+ 	)
+ 
+ 	if protocol == "TCPS" {
+-		security := "(SECURITY=(SSL_SERVER_DN_MATCH=NO"
++		security := "(SECURITY=(SSL_SERVER_DN_MATCH=YES"
+ 
+ 		if sslServerDN := strings.TrimSpace(member.SSLServerDN); sslServerDN != "" {
+ 			if err := dbapi.ValidateDataguardSingleLineText("sslServerDN", sslServerDN); err != nil {
+@@ -2203,8 +2228,10 @@ func performDataguardTopologyManualSwitchover(ctx context.Context, r *DataguardB
+ 		return fmt.Errorf("%w: target database %s is not PRIMARY yet", errDataguardTopologySwitchoverPending, targetDBUniqueName)
+ 	}
+ 
+-	formerPrimary := state.Primary
+-	if formerPrimary != nil && !strings.EqualFold(formerPrimary.DBUniqueName, targetDBUniqueName) {
++	for _, formerPrimary := range state.Members {
++		if formerPrimary == nil || strings.EqualFold(formerPrimary.DBUniqueName, targetDBUniqueName) {
++			continue
++		}
+ 		if currentMembers[strings.ToUpper(formerPrimary.DBUniqueName)] != "PHYSICAL_STANDBY" {
+ 			return fmt.Errorf("%w: former primary %s has not become PHYSICAL_STANDBY yet", errDataguardTopologySwitchoverPending, formerPrimary.DBUniqueName)
+ 		}
+diff --git a/controllers/dataguard/dataguardbroker_topology_execution_test.go b/controllers/dataguard/dataguardbroker_topology_execution_test.go
+index 88cbe58..d21df2f 100644
+--- a/controllers/dataguard/dataguardbroker_topology_execution_test.go
++++ b/controllers/dataguard/dataguardbroker_topology_execution_test.go
+@@ -523,13 +523,13 @@ func TestBuildDataguardTopologyRefreshConnectIdentifiersScriptUsesResolvedConnec
+ 	if !strings.Contains(script, "EDIT DATABASE PRIMDB SET PROPERTY DGConnectIdentifier='PRIMDBTCPS';") {
+ 		t.Fatalf("expected primary TCPS alias DGConnectIdentifier refresh, got:\n%s", script)
+ 	}
+-	if !strings.Contains(script, "EDIT DATABASE PRIMDB SET PROPERTY STATICCONNECTIDENTIFIER='(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=sidb-primary.shns.svc.cluster.local)(PORT=2484))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=PRIMDB_DGMGRL))(SECURITY=(SSL_SERVER_DN_MATCH=NO)))';") {
++	if !strings.Contains(script, "EDIT DATABASE PRIMDB SET PROPERTY STATICCONNECTIDENTIFIER='(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=sidb-primary.shns.svc.cluster.local)(PORT=2484))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=PRIMDB_DGMGRL))(SECURITY=(SSL_SERVER_DN_MATCH=YES)))';") {
+ 		t.Fatalf("expected primary static connect refresh, got:\n%s", script)
+ 	}
+ 	if !strings.Contains(script, "EDIT DATABASE STBYDB SET PROPERTY DGConnectIdentifier='STBYDBTCPS';") {
+ 		t.Fatalf("expected standby TCPS alias DGConnectIdentifier refresh, got:\n%s", script)
+ 	}
+-	if !strings.Contains(script, "EDIT DATABASE STBYDB SET PROPERTY STATICCONNECTIDENTIFIER='(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=sidb-standby.shns.svc.cluster.local)(PORT=2484))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=STBYDB_DGMGRL))(SECURITY=(SSL_SERVER_DN_MATCH=NO)))';") {
++	if !strings.Contains(script, "EDIT DATABASE STBYDB SET PROPERTY STATICCONNECTIDENTIFIER='(DESCRIPTION=(ADDRESS=(PROTOCOL=TCPS)(HOST=sidb-standby.shns.svc.cluster.local)(PORT=2484))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=STBYDB_DGMGRL))(SECURITY=(SSL_SERVER_DN_MATCH=YES)))';") {
+ 		t.Fatalf("expected standby static connect refresh, got:\n%s", script)
+ 	}
+ }
+diff --git a/hakopod_free_health.go b/hakopod_free_health.go
+new file mode 100644
+index 0000000..6454f6b
+--- /dev/null
++++ b/hakopod_free_health.go
+@@ -0,0 +1,28 @@
++package main
++
++import (
++	"context"
++	"fmt"
++	"net/http"
++	"time"
++
++	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++	"sigs.k8s.io/controller-runtime/pkg/healthz"
++)
++
++// Readiness requires the initial watches and a current request with the scoped
++// identity. A running process alone cannot safely replace a database member.
++func hakopodFreeReadiness(reader client.Reader, syncCache func(context.Context) bool, namespace string) healthz.Checker {
++	return func(request *http.Request) error {
++		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
++		defer cancel()
++		if !syncCache(ctx) {
++			return fmt.Errorf("Oracle Free controller cache is not ready")
++		}
++		if err := reader.List(ctx, &dbapi.SingleInstanceDatabaseList{}, client.InNamespace(namespace), client.Limit(1)); err != nil {
++			return fmt.Errorf("Oracle Free controller API is not ready")
++		}
++		return nil
++	}
++}
+diff --git a/hakopod_free_health_test.go b/hakopod_free_health_test.go
+new file mode 100644
+index 0000000..ece554c
+--- /dev/null
++++ b/hakopod_free_health_test.go
+@@ -0,0 +1,62 @@
++package main
++
++import (
++	"context"
++	"errors"
++	"net/http/httptest"
++	"testing"
++	"time"
++
++	dbapi "github.com/oracle/oracle-database-operator/apis/database/v4"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++)
++
++type freeReadinessReader struct {
++	client.Reader
++	err   error
++	calls int
++	t     *testing.T
++}
++
++func (r *freeReadinessReader) List(ctx context.Context, list client.ObjectList, options ...client.ListOption) error {
++	r.calls++
++	var settings client.ListOptions
++	for _, option := range options {
++		option.ApplyToList(&settings)
++	}
++	if _, ok := list.(*dbapi.SingleInstanceDatabaseList); !ok || settings.Namespace != "hdb-fixture" || settings.Limit != 1 {
++		r.t.Fatal("readiness left its bounded database scope")
++	}
++	deadline, ok := ctx.Deadline()
++	if !ok || time.Until(deadline) > 2*time.Second {
++		r.t.Fatal("readiness request has no short deadline")
++	}
++	return r.err
++}
++
++func TestHakopodOracleFreeReadinessRequiresCacheAndCurrentAPI(t *testing.T) {
++	for _, mode := range []string{"ready", "cache not ready", "API unavailable", "request canceled"} {
++		t.Run(mode, func(t *testing.T) {
++			reader := &freeReadinessReader{t: t}
++			if mode == "API unavailable" {
++				reader.err = errors.New("API unavailable")
++			}
++			request := httptest.NewRequest("GET", "/readyz", nil)
++			if mode == "request canceled" {
++				ctx, cancel := context.WithCancel(request.Context())
++				cancel()
++				request = request.WithContext(ctx)
++			}
++			check := hakopodFreeReadiness(reader, func(ctx context.Context) bool {
++				return mode != "cache not ready" && ctx.Err() == nil
++			}, "hdb-fixture")
++			err := check(request)
++			if mode == "ready" && err != nil || mode != "ready" && err == nil {
++				t.Fatal("incorrect controller readiness", err)
++			}
++			if (mode == "cache not ready" || mode == "request canceled") && reader.calls != 0 {
++				t.Fatal("unready cache performed API calls")
++			}
++		})
++	}
++}
+diff --git a/main.go b/main.go
+index 1c0e7f3..1f0c65b 100644
+--- a/main.go
++++ b/main.go
+@@ -44,7 +44,6 @@
+ package main
+ 
+ import (
+-	"context"
+ 	"crypto/tls"
+ 	"flag"
+ 	"fmt"
+@@ -109,6 +108,10 @@ func init() {
+ 
+ // main configures and starts the controller manager for the Oracle Database Operator.
+ func main() {
++	if os.Getenv("HAKOPOD_ORACLE_POLICY") != "hakopod-oracle-free-tcps-v1" || os.Getenv("ENABLE_WEBHOOKS") != "false" || !strings.HasPrefix(os.Getenv("WATCH_NAMESPACE"), "hdb-") || len(os.Getenv("WATCH_NAMESPACE")) != 36 || strings.Contains(os.Getenv("WATCH_NAMESPACE"), ",") {
++		setupLog.Error(fmt.Errorf("managed Oracle Free requires one database namespace and its fixed profile"), "invalid managed scope")
++		os.Exit(1)
++	}
+ 	metricsAddr, enableLeaderElection := parseFlags()
+ 	configureLogger()
+ 
+@@ -141,6 +144,10 @@ func main() {
+ 		os.Exit(1)
+ 	}
+ 
++	if err := mgr.AddReadyzCheck("oracle-free", hakopodFreeReadiness(mgr.GetAPIReader(), mgr.GetCache().WaitForCacheSync, os.Getenv("WATCH_NAMESPACE"))); err != nil {
++		setupLog.Error(err, "unable to register controller readiness")
++		os.Exit(1)
++	}
+ 	setupLog.Info("starting manager")
+ 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+ 		setupLog.Error(err, "problem running manager")
+@@ -191,7 +198,8 @@ func buildManagerOptions(metricsAddr string, enableLeaderElection bool, watchNam
+ 	}
+ 
+ 	return ctrl.Options{
+-		Scheme: scheme,
++		Scheme:                 scheme,
++		HealthProbeBindAddress: ":8081",
+ 		Metrics: metricsserver.Options{
+ 			BindAddress:    metricsAddr,
+ 			SecureServing:  envBoolOrDefault("METRICS_SECURE", true),
+@@ -217,55 +225,7 @@ func buildManagerOptions(metricsAddr string, enableLeaderElection bool, watchNam
+ type controllerSetupFn func(ctrl.Manager, int64) error
+ 
+ func setupControllers(mgr ctrl.Manager, interval int64) error {
+-	type controllerRegistration struct {
+-		name     string
+-		required bool
+-		probe    client.Object
+-		setup    controllerSetupFn
+-	}
+-
+-	controllers := []controllerRegistration{
+-		{name: "AutonomousDatabase", required: true, setup: setupAutonomousDatabaseController},
+-		{name: "AutonomousDatabaseBackup", required: true, setup: setupAutonomousDatabaseBackupController},
+-		{name: "AutonomousDatabaseRestore", required: true, setup: setupAutonomousDatabaseRestoreController},
+-		{name: "AutonomousContainerDatabase", required: true, setup: setupAutonomousContainerDatabaseController},
+-		{name: "SingleInstanceDatabase", required: true, setup: setupSingleInstanceDatabaseController},
+-		{name: "ShardingDatabase", required: true, setup: setupShardingDatabaseController},
+-		{name: "DbcsSystem", required: true, setup: setupDbcsSystemController},
+-		{name: "OracleRestDataService", required: true, setup: setupOrdsController},
+-		{name: "OracleRestart", required: true, setup: setupOracleRestartController},
+-		{name: "PrivateAi", required: true, setup: setupPrivateAiController},
+-		{name: "TrafficManager", required: true, probe: &networkv4.TrafficManager{}, setup: setupTrafficManagerController},
+-		{name: "LRPDB", required: true, setup: setupLRPDBController},
+-		{name: "LREST", required: true, setup: setupLRESTController},
+-		{name: "DataguardBroker", required: true, setup: setupDataguardBrokerController},
+-		{name: "OrdsSrvs", required: false, setup: setupOrdsSrvsController},
+-		{name: "DatabaseObserver", required: true, setup: setupDatabaseObserverController},
+-		// +kubebuilder:scaffold:builder
+-		{name: "RacDatabase", required: true, setup: setupRacDatabaseController},
+-		// +kubebuilder:scaffold:builder
+-	}
+-
+-	for _, controller := range controllers {
+-		if controller.probe != nil {
+-			available, err := isResourceInstalled(mgr, controller.probe)
+-			if err != nil {
+-				return annotate(controller.name, err)
+-			}
+-			if !available {
+-				setupLog.Info("skipping controller because CRD is not installed", "controller", controller.name)
+-				continue
+-			}
+-		}
+-		if err := controller.setup(mgr, interval); err != nil {
+-			if controller.required {
+-				return annotate(controller.name, err)
+-			}
+-			setupLog.Error(err, "unable to create controller", "controller", controller.name)
+-		}
+-	}
+-
+-	return nil
++	return setupSingleInstanceDatabaseController(mgr, interval)
+ }
+ 
+ func setupAutonomousDatabaseController(mgr ctrl.Manager, _ int64) error {
+@@ -617,15 +577,7 @@ func setupV4RacDatabaseWebhook(mgr ctrl.Manager) error {
+ 	return (&databasev4.RacDatabase{}).SetupWebhookWithManager(mgr)
+ }
+ 
+-func setupIndexes(mgr ctrl.Manager) error {
+-	indexFunc := func(obj client.Object) []string {
+-		return []string{obj.(*databasev4.LRPDB).Spec.LRPDBName}
+-	}
+-	if err := mgr.GetCache().IndexField(context.TODO(), &databasev4.LRPDB{}, "spec.pdbName", indexFunc); err != nil {
+-		return annotate("LRPDB", err)
+-	}
+-	return nil
+-}
++func setupIndexes(mgr ctrl.Manager) error { return nil }
+ 
+ // parseReconcileInterval reads RECONCILE_INTERVAL and falls back to 15.
+ func parseReconcileInterval() int64 {
