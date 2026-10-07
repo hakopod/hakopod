@@ -14,9 +14,11 @@ trusted placement and approvals require the corresponding Cloud integration and
 a separate operator rollout. This OSS release does not enable hosted provisioning.
 
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
-[ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md) and [Oracle Database](managed-oracle.md)
+[ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md),
+[DuckDB through MyDuck](managed-myduck.md) and [Oracle Database](managed-oracle.md)
 implementations have separate guides with their exact development evidence and
-remaining limits. Oracle Database remains held. Neon and Supabase are deferred.
+remaining limits. Oracle Database Free and MyDuck remain under qualification.
+Neon and Supabase are deferred.
 MySQL, MongoDB, ClickHouse and Vitess public endpoints remain unavailable.
 See the
 [release acceptance record](managed-database-release-acceptance.md) for tested

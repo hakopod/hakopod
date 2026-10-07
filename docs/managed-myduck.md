@@ -160,5 +160,6 @@ connection counters.
 The source tests and native acceptance tests are separate. Before release, the
 native tests must cover both protocols, rejected credentials and plaintext,
 restricted SQL, persistent pod replacement, certificate changes, encrypted
-backup and restore, worker loss, deletion and public-route behavior. A passing
-unit test does not establish those runtime results.
+backup and restore, worker loss and deletion. Public routes require additional
+outside-in acceptance before their separate gate can open. A passing unit test
+does not establish those runtime results.

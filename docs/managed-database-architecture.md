@@ -4,8 +4,8 @@ Status: self-hosted alpha.55 includes PostgreSQL, Redis, MySQL, MongoDB,
 private ClickHouse and private Vitess on Linux amd64 workers. The Vitess runtime
 passed five native cases and the official HTTP workflow. See the
 [acceptance record](managed-database-release-acceptance.md) for the tested scope.
-Oracle Database
-remains held; Neon and Supabase are deferred. Cloud availability requires a
+Oracle Database Free and DuckDB through MyDuck remain under qualification;
+Neon and Supabase are deferred. Cloud availability requires a
 separate Cloud release, operator rollout and approved capacity.
 
 ## Follow one create request
@@ -58,7 +58,7 @@ See [API and workers](../internal/api/databases.go), [durable operation claims](
 
 ## Who owns each part
 
-Hakopod owns the resource identity, desired revision, scoped access, credentials, operation history, allocation and application connection grants. An engine-specific Kubernetes controller manages its native database objects. Kubernetes schedules the resulting pods and attaches their owned volumes. The engine's replication protocol determines which members can accept writes.
+Hakopod owns the resource identity, desired revision, scoped access, credentials, operation history, allocation and application connection grants. Most engines use a Kubernetes database controller; Hakopod manages MyDuck's StatefulSet directly. Kubernetes schedules the resulting pods and attaches their owned volumes. For clustered databases, the engine's replication protocol determines which members can accept writes.
 
 Ownership checks matter during retries and deletion. A matching name is insufficient: namespace and resource identities must belong to this database. Cleanup must not adopt a pre-existing Secret or delete another workload's volume. A failed or interrupted deletion retains its allocation until the owned persistent data has actually gone.
 
@@ -71,8 +71,9 @@ Ownership checks matter during retries and deletion. A matching name is insuffic
 | ClickHouse 26.3 | Altinity operator, data members, three Keeper members for clusters | Local tables remain local to a shard. Distributed tables or explicit queries combine shards. |
 | Oracle Database Free 26ai | Namespace-scoped Oracle Database Operator 2.2.0, one SingleInstanceDatabase resource, TCPS listener and volumes; native acceptance is in progress | One PDB service. Free does not implement a Data Guard cluster. |
 | Vitess 23 | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native and HTTP acceptance passed for the fixed layouts in alpha.55. |
+| DuckDB through MyDuck | One hardened MyDuck process, one StatefulSet and one persistent volume; native acceptance is in progress | MySQL port 3306 and PostgreSQL port 5432 reach the same `app` database. No cluster or replicas. |
 
-Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Its new operator path remains disabled pending complete native acceptance. Enterprise and Data Guard have separate source implementations and remain disabled pending licensed native acceptance of the hardened controller and customer image.
+Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md), [MyDuck](managed-myduck.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Its new operator path remains disabled pending complete native acceptance. Enterprise and Data Guard have separate source implementations and remain disabled pending licensed native acceptance of the hardened controller and customer image.
 
 ## Replication, routing and pooling answer different questions
 
@@ -112,7 +113,7 @@ protocol = "postgres"
 endpoint = "read_write"
 ```
 
-A reviewed connection change checks the application and database revisions, saves the binding and queues application deployment in one transaction. Runtime resolution provides the restricted application account and public trust material to the bound service. Bootstrap, monitoring and recovery accounts stay separate. Applications receive neither Kubernetes credentials nor a database CA private key.
+A reviewed connection change checks the application and database revisions, saves the binding and queues application deployment in one transaction. Runtime resolution provides the engine's application connection account and public trust material to the bound service. Engines with separate application roles keep their bootstrap, monitoring and recovery accounts private. MyDuck uses one administrative account per protocol for its isolated database; it does not offer per-application SQL roles. Applications receive neither Kubernetes credentials nor a database CA private key.
 
 A private address does not authenticate its server. Required TLS checks the issuer, hostname and certificate actually served; native probes also check database access and role. A configuration flag alone cannot verify that a router checks its backend identity. MySQL Router's adversarial backend-certificate test is a separate acceptance gate.
 
@@ -135,6 +136,7 @@ An encrypted archive can be intact and still represent a different consistency b
 | ClickHouse | A native archive for each shard, captured sequentially. | A transactionally consistent snapshot across shards. |
 | Oracle Free | APP schema Data Pump capture at a flashback SCN, with a DDL guard. | RMAN, archived-redo recovery or Data Guard. |
 | Vitess | Framed per-shard logical dumps with version, shard map and VSchema. | One globally consistent cross-shard snapshot or continuous point-in-time recovery. |
+| DuckDB through MyDuck | A cold copy of `app.db` and its existing WAL, with the database process stopped and the volume fenced. | An online backup, point-in-time recovery or high availability. |
 
 The managed backup pipeline encrypts archives, records their digest and verifies stored bytes. Restore authenticates the archive before database writes. It requires a separate compatible empty target, closes application ingress, revokes existing target sessions and records recovery progress durably. Failed recovery leaves that target isolated for inspection or deletion; it must not be treated as an empty target for another attempt.
 
