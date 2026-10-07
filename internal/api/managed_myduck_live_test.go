@@ -254,7 +254,7 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 			}
 			return value
 		}
-		settings, e := pgx.ParseConfig("host=" + host + " port=5432 user=postgres dbname=app")
+		settings, e := pgx.ParseConfig("host=" + host + " port=5432 user=postgres dbname=app connect_timeout=5")
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -263,6 +263,8 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 		settings.DialFunc = func(step context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(step, "tcp", address)
 		}
+		// The port-forward fixes the connection target; TLS still verifies host.
+		settings.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
 		connection, e := pgx.ConnectConfig(ctx, settings)
 		if e != nil {
 			t.Fatal(e)
