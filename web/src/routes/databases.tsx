@@ -14,6 +14,7 @@ import { engineName, expectedMembers, shardedDatabase } from '../lib/database-vi
 import { timestamp } from '../lib/api'
 import { projectRouteScopeMatches } from '../lib/projects'
 import { DatabaseResourceNavigation } from '../components/database-resource-navigation'
+import { databaseEngines } from '../lib/database-create'
 
 export const Route = createFileRoute('/databases')({
   validateSearch: databaseSearch,
@@ -92,13 +93,7 @@ function Databases() {
               onValueChange={setEngine}
               options={[
                 { value: 'all', label: 'All engines' },
-                { value: 'postgresql', label: 'PostgreSQL' },
-                { value: 'redis', label: 'Redis' },
-                { value: 'mysql', label: 'MySQL' },
-                { value: 'mongodb', label: 'MongoDB' },
-                { value: 'clickhouse', label: 'ClickHouse' },
-                { value: 'oracle', label: 'Oracle Database' },
-                { value: 'vitess', label: 'Vitess' },
+                ...databaseEngines.map(({ id, name }) => ({ value: id, label: name })),
               ]}
             />
             <Button onClick={() => { void query.refetch(); void external.refetch() }} disabled={query.isFetching || external.isFetching}>

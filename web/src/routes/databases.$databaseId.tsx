@@ -98,7 +98,7 @@ function Detail() {
                   params={{ databaseId: id }}
                   search={search}
                 >
-                  {votingDatabase(d.spec.engine) ? d.spec.mode === 'cluster' ? 'Change replicas' : 'Capacity' : ['clickhouse', 'oracle', 'vitess'].includes(d.spec.engine) ? 'Capacity' : 'Resize'}
+                  {votingDatabase(d.spec.engine) ? d.spec.mode === 'cluster' ? 'Change replicas' : 'Capacity' : ['clickhouse', 'oracle', 'vitess', 'duckdb'].includes(d.spec.engine) ? 'Capacity' : 'Resize'}
                 </Link>
               </Button>
             )}
