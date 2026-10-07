@@ -75,7 +75,7 @@ def validate_report(report, root=ROOT):
     expected_keys = {"schema_version", "test", "execution", "environment", "runtime_source_files",
                      "runtime_source_files_after", "http_harness_source_files",
                      "http_harness_source_files_after", "log_sha256", "exit_code", "limit_error",
-                     "elapsed_seconds", "test_events", "passed"}
+                     "elapsed_seconds", "test_events", "retained_inventory_after", "passed"}
     if set(report) != expected_keys or type(report.get("schema_version")) is not int or report["schema_version"] != 1:
         raise ValueError("Vitess HTTP acceptance evidence schema is invalid")
     if (report.get("test") != "TestVitessHTTPVerticalSlice" or report.get("execution") != "http_vertical"
@@ -104,12 +104,29 @@ def validate_report(report, root=ROOT):
         raise ValueError("Vitess HTTP harness source changed before or after acceptance")
     environment = report.get("environment")
     outer_keys = {"context", "cluster_uid", "node_uids", "receipt_sha256", "available_cpu_milli",
-                  "scratch_available_bytes", "qualified_native_preflight"}
+                  "scratch_available_bytes", "retained_inventory", "qualified_native_preflight"}
     if (not isinstance(environment, dict) or set(environment) != outer_keys
             or environment.get("context") != "k3d-hakopod-dev"
             or not isinstance(environment.get("node_uids"), dict)
             or set(environment["node_uids"]) != NODES):
         raise ValueError("Vitess HTTP evidence belongs to another cluster")
+    retained_before, retained_after = environment["retained_inventory"], report["retained_inventory_after"]
+    if retained_before is None:
+        if retained_after is not None:
+            raise ValueError("Vitess HTTP retained inventory changed across acceptance")
+    else:
+        keys = {"status", "context", "namespace_count", "persistent_volume_count",
+                "inventory_sha256", "receipt_sha256"}
+        if (not isinstance(retained_before, dict) or set(retained_before) != keys
+                or retained_before != retained_after or retained_before.get("status") != "verified"
+                or retained_before.get("context") != "k3d-hakopod-dev"
+                or type(retained_before.get("namespace_count")) is not int
+                or not 1 <= retained_before["namespace_count"] <= 32
+                or type(retained_before.get("persistent_volume_count")) is not int
+                or not 0 <= retained_before["persistent_volume_count"] <= 128
+                or not NATIVE["DIGEST"].fullmatch(retained_before.get("inventory_sha256", ""))
+                or not NATIVE["DIGEST"].fullmatch(retained_before.get("receipt_sha256", ""))):
+            raise ValueError("Vitess HTTP retained inventory proof is invalid")
     images = [NATIVE["source_constant"](root, name) for name in
               ("vitessServerImage", "vitessOperatorImage", "vitessEtcdImage")]
     native_environment = environment["qualified_native_preflight"]

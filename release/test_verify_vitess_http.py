@@ -28,6 +28,7 @@ class VitessHTTPReleaseEvidenceTest(unittest.TestCase):
         self.environment = {"context": "k3d-hakopod-dev", "cluster_uid": "cluster", "receipt_sha256": DIGEST,
                             "node_uids": {f"k3d-hakopod-vitess-worker-{index}": f"uid-{index}" for index in range(3)},
                             "available_cpu_milli": 17700, "scratch_available_bytes": 12 * 1024 ** 3,
+                            "retained_inventory": None,
                             "qualified_native_preflight": {"fixture": "validated", "cluster": {
                                 "uid": "cluster", "receipt_sha256": DIGEST,
                                 "node_uids": {f"k3d-hakopod-vitess-worker-{index}": f"uid-{index}" for index in range(3)}}}}
@@ -36,6 +37,7 @@ class VitessHTTPReleaseEvidenceTest(unittest.TestCase):
                        "runtime_source_files_after": self.runtime_sources, "http_harness_source_files": self.harness_sources,
                        "http_harness_source_files_after": self.harness_sources, "log_sha256": DIGEST,
                        "exit_code": 0, "limit_error": "", "elapsed_seconds": 10.0,
+                       "retained_inventory_after": None,
                        "test_events": [{"Time": "2026-10-05T00:00:00Z", "Action": "run", "Test": "TestVitessHTTPVerticalSlice"},
                                        {"Time": "2026-10-05T00:00:10Z", "Action": "pass", "Test": "TestVitessHTTPVerticalSlice", "Elapsed": 10.0}],
                        "passed": True}
@@ -115,6 +117,17 @@ class VitessHTTPReleaseEvidenceTest(unittest.TestCase):
         self.native["validate_native_environment"] = lambda environment, case, images: (_ for _ in ()).throw(ValueError("image mismatch"))
         with self.assertRaisesRegex(ValueError, "image mismatch"):
             MODULE["validate_report"](self.report, self.root)
+
+    def test_accepts_only_matching_retained_inventory_proof(self):
+        retained = {"status": "verified", "context": "k3d-hakopod-dev", "namespace_count": 2,
+                    "persistent_volume_count": 4, "inventory_sha256": DIGEST, "receipt_sha256": DIGEST}
+        changed = copy.deepcopy(self.report)
+        changed["environment"]["retained_inventory"] = retained
+        changed["retained_inventory_after"] = copy.deepcopy(retained)
+        self.assertEqual(MODULE["validate_report"](changed, self.root), changed)
+        changed["retained_inventory_after"]["namespace_count"] = 1
+        with self.assertRaisesRegex(ValueError, "retained inventory"):
+            MODULE["validate_report"](changed, self.root)
 
 
 if __name__ == "__main__":
