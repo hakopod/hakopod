@@ -532,6 +532,45 @@ test("Vitess preserves reviewed configuration and uses MySQL gateway routes", as
   assert.deepEqual(await f.client.database(database.id).binding({ endpoint: 'read_only' }), { managed_database: database.id, protocol: 'mysql', endpoint: 'read_only' });
   await assert.rejects(f.client.database(database.id).binding({ endpoint: 'cluster', clusterAware: true }), { code: 'invalid_binding' });
 });
+test("MyDuck uses its pinned version and exposes only managed MySQL and PostgreSQL bindings", async () => {
+  const definition = db({ name: "myduck-fixture", engine: "duckdb", cpu: "500m", memory: "1Gi", storageGiB: 5 });
+  assert.equal(definition.version, "0.3.1-dev.20260919.3");
+  assert.equal(definition.mode, "standalone");
+  assert.equal(definition.replicas, 0);
+  assert.equal(definition.shards, 1);
+  assert.deepEqual(definition.tls, { mode: "required" });
+  const { client } = fixture(() => Response.json({ ...database, spec: definition }));
+  assert.deepEqual(await client.database(database.id).binding(), {
+    managed_database: database.id,
+    protocol: "mysql",
+    endpoint: "mysql",
+    username: "root",
+    database: "app",
+  });
+  assert.deepEqual(await client.database(database.id).binding({ endpoint: "postgresql", sslMode: "verify-full" }), {
+    managed_database: database.id,
+    protocol: "postgres",
+    endpoint: "postgresql",
+    username: "postgres",
+    database: "app",
+    ssl_mode: "verify-full",
+  });
+  for (const options of [
+    { endpoint: "read_write" },
+    { endpoint: "read_only" },
+    { endpoint: "cluster", clusterAware: true },
+    { endpoint: "pooled_read_write" },
+    { endpoint: "mysql", username: "app" },
+    { endpoint: "postgresql", username: "root" },
+    { endpoint: "mysql", database: "analytics" },
+    { endpoint: "mysql", password: { ref: "custom-password" } },
+    { endpoint: "mysql", sslMode: "verify-full" },
+    { endpoint: "postgresql", sslMode: "require" },
+    { endpoint: "postgresql", sslMode: "verify-ca" },
+    { endpoint: "postgresql", sslMode: "disable" },
+  ])
+    await assert.rejects(client.database(database.id).binding(options), { code: "invalid_binding" });
+});
 test("ClickHouse and Oracle SDK definitions preserve engine configuration and routing", async () => {
   for (const engine of ["clickhouse", "oracle"]) {
     const definition = db({ name: "engine-fixture", engine, cpu: "1", memory: "4Gi", storageGiB: 10 });
