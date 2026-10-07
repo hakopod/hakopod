@@ -135,7 +135,7 @@ index f06136e..bb8d8c2 100644
  
  // WithDuckLakeConfig enables the service-managed DuckLake connection layer.
 diff --git a/catalog/provider.go b/catalog/provider.go
-index 99738b5..074d4a8 100644
+index 99738b5..980aa7a 100644
 --- a/catalog/provider.go
 +++ b/catalog/provider.go
 @@ -60,6 +60,8 @@ type DatabaseProvider struct {
@@ -171,13 +171,19 @@ index 99738b5..074d4a8 100644
  	}
  
  	for _, q := range bootQueries {
-@@ -209,9 +211,11 @@ func NewDBProvider(defaultTimeZone, dataDir, defaultDB string, options ...Provid
+@@ -209,9 +211,17 @@ func NewDBProvider(defaultTimeZone, dataDir, defaultDB string, options ...Provid
  		return nil, err
  	}
  
 -	err = prov.attachCatalogs()
 -	if err != nil {
 -		return nil, err
++	if prov.managed != nil {
++		if _, err := prov.storage.ExecContext(context.Background(), "SET enable_external_access = false; SET lock_configuration = true"); err != nil {
++			return nil, fmt.Errorf("lock managed DuckDB configuration: %w", err)
++		}
++	}
++
 +	if prov.managed == nil {
 +		err = prov.attachCatalogs()
 +		if err != nil {
@@ -186,7 +192,7 @@ index 99738b5..074d4a8 100644
  	}
  
  	prov.ready = true
-@@ -235,7 +239,7 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
+@@ -235,14 +245,14 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
  	}
  	var attached atomic.Bool
  	connInitFn := func(execer driver.ExecerContext) error {
@@ -195,7 +201,15 @@ index 99738b5..074d4a8 100644
  			timeZone := strings.ReplaceAll(prov.defaultTimeZone, "'", "''")
  			if _, err := execer.ExecContext(context.Background(), "SET TimeZone = '"+timeZone+"'", nil); err != nil {
  				return err
-@@ -264,6 +268,26 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
+ 			}
+ 		}
+ 		if prov.dsn != "" && attached.Load() {
+-			_, err := execer.ExecContext(context.Background(), "USE "+QuoteIdentifierANSI(prov.defaultCatalogName), nil)
++			_, err := execer.ExecContext(context.Background(), "USE "+QuoteIdentifierANSI(prov.defaultCatalogName)+"; SET schema = "+QuoteIdentifierANSI(prov.defaultCatalogName), nil)
+ 			return err
+ 		}
+ 		return nil
+@@ -264,6 +274,26 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
  	// only after an explicit origin is available at a pool or direct-storage
  	// caller boundary.
  	storage := stdsql.OpenDB(connector)
@@ -222,22 +236,17 @@ index 99738b5..074d4a8 100644
  	if prov.duckLake != nil {
  		// Storage initializes one physical connection at its explicit boundary;
  		// retaining one idle connection lets direct callers reuse that initialized
-@@ -358,6 +382,13 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
- 		return err
+@@ -352,7 +382,7 @@ func (prov *DatabaseProvider) openStorageWithContext(readOnly bool, openCtx cont
+ 	if readOnly {
+ 		attachSQL += " (READ_ONLY)"
  	}
- 	attached.Store(true)
-+	if prov.managed != nil {
-+		if _, err := conn.ExecContext(ctx, "SET enable_external_access = false; SET lock_configuration = true"); err != nil {
-+			_ = storage.Close()
-+			_ = connector.Close()
-+			return fmt.Errorf("lock managed DuckDB configuration: %w", err)
-+		}
-+	}
- 	if recovery {
- 		// Recovery initialization must run on the same physical connection that
- 		// performed ATTACH and any WAL replay. Constructor/openStorage calls use
+-	if _, err := conn.ExecContext(ctx, attachSQL+"; USE "+QuoteIdentifierANSI(prov.defaultCatalogName)); err != nil {
++	if _, err := conn.ExecContext(ctx, attachSQL+"; USE "+QuoteIdentifierANSI(prov.defaultCatalogName)+"; CREATE SCHEMA IF NOT EXISTS "+QuoteIdentifierANSI(prov.defaultCatalogName)+"; SET schema = "+QuoteIdentifierANSI(prov.defaultCatalogName)); err != nil {
+ 		_ = storage.Close()
+ 		_ = connector.Close()
+ 		return err
 diff --git a/catalog/sensitive_sql.go b/catalog/sensitive_sql.go
-index c0a5eeb..5654ca4 100644
+index c0a5eeb..64e98b3 100644
 --- a/catalog/sensitive_sql.go
 +++ b/catalog/sensitive_sql.go
 @@ -3,10 +3,15 @@ package catalog
@@ -266,13 +275,22 @@ index c0a5eeb..5654ca4 100644
  	// BACKUP/RESTORE are legacy MyDuck commands. They intentionally keep
  	// their ObjectStorage implementation, including the user-supplied
  	// endpoint and credentials. Keep the recognized form on that path while
-@@ -343,6 +351,46 @@ func sensitiveStatement(tokens []sqlToken) bool {
+@@ -343,6 +351,55 @@ func sensitiveStatement(tokens []sqlToken) bool {
  	return containsBareRemoteURI(tokens)
  }
  
 +func managedForbiddenStatement(first string, tokens []sqlToken, words []string) bool {
++	// Managed bootstrap exclusively owns these compatibility schemas. User SQL
++	// cannot name them, including through USE, SET search_path, CTEs or COPY.
++	if containsWord(words, "__sys__") || containsWord(words, "performance_schema") || containsWord(words, "mysql") {
++		for _, operation := range []string{"create", "alter", "drop", "truncate", "comment", "insert", "update", "delete", "replace", "merge", "copy", "rename", "use"} {
++			if containsWord(words, operation) {
++				return true
++			}
++		}
++	}
 +	switch first {
-+	case "backup", "restore", "attach", "detach", "install", "grant", "revoke", "call":
++	case "backup", "restore", "attach", "detach", "install", "grant", "revoke", "call", "export", "import", "pragma":
 +		return true
 +	case "load":
 +		return true
@@ -287,7 +305,7 @@ index c0a5eeb..5654ca4 100644
 +	case "insert", "update", "delete", "replace":
 +		return containsWord(words, "mysql")
 +	case "set":
-+		return containsWord(words, "password") || containsWord(words, "global")
++		return containsWord(words, "password") || containsWord(words, "global") || containsWord(words, "schema") || containsWord(words, "search_path") || containsWord(words, "current_schema")
 +	case "start", "stop", "reset", "change":
 +		return containsWord(words, "replica") || containsWord(words, "replication")
 +	case "copy":
@@ -299,11 +317,11 @@ index c0a5eeb..5654ca4 100644
 +		}
 +	}
 +	for i, token := range tokens {
-+		if token.quoted || token.string || !isFunctionCall(tokens, i) {
++		if token.string || !isFunctionCall(tokens, i) {
 +			continue
 +		}
 +		switch tokenLower(token) {
-+		case "read_csv", "read_csv_auto", "read_json", "read_json_auto", "read_ndjson", "read_parquet", "read_text", "read_blob", "glob", "parquet_scan", "csv_scan", "delta_scan", "iceberg_scan", "postgres_scan", "mysql_scan", "sqlite_scan", "load_extension":
++		case "read_csv", "read_csv_auto", "read_json", "read_json_auto", "read_ndjson", "read_parquet", "read_text", "read_blob", "glob", "parquet_scan", "csv_scan", "delta_scan", "iceberg_scan", "postgres_scan", "mysql_scan", "sqlite_scan", "load_extension", "set_config":
 +			return true
 +		}
 +	}
@@ -314,10 +332,10 @@ index c0a5eeb..5654ca4 100644
  	return strings.ToLower(strings.TrimSpace(token.text))
  }
 diff --git a/catalog/sensitive_sql_test.go b/catalog/sensitive_sql_test.go
-index 483f960..49ae077 100644
+index 483f960..ca40761 100644
 --- a/catalog/sensitive_sql_test.go
 +++ b/catalog/sensitive_sql_test.go
-@@ -64,3 +64,34 @@ func TestSensitiveSQLBoundary(t *testing.T) {
+@@ -64,3 +64,48 @@ func TestSensitiveSQLBoundary(t *testing.T) {
  		})
  	}
  }
@@ -344,6 +362,20 @@ index 483f960..49ae077 100644
 +		{"CREATE /* hidden */ PLUGIN attacker SONAME 'x.so'", true},
 +		{"ALTER USER root IDENTIFIED BY 'secret'", true},
 +		{"SELECT * FROM read_parquet('/tmp/input.parquet')", true},
++		{"SELECT * FROM \"read_text\"('/etc/hakopod-app/password')", true},
++		{"CREATE OR REPLACE TABLE app.__sys__.persistent_variable AS SELECT 'guard'", true},
++		{"INSERT INTO performance_schema.global_status VALUES ('x', 'y')", true},
++		{"EXPORT DATABASE '/tmp/export'", true},
++		{"IMPORT DATABASE '/tmp/import'", true},
++		{"PRAGMA enable_external_access=true", true},
++		{"SET schema = '__sys__'", true},
++		{"SET search_path = concat('__', 'sys__')", true},
++		{"USE app", false},
++		{"USE __sys__", true},
++		{"SELECT set_config('search_path', '__sys__', false)", true},
++		{"COPY __sys__.persistent_variable FROM STDIN", true},
++		{"WITH changed AS (UPDATE __sys__.persistent_variable SET value = 'x') SELECT 1", true},
++		{"RENAME TABLE __sys__.persistent_variable TO stolen", true},
 +		{"SELECT 1", false},
 +	}
 +	for _, tt := range tests {
@@ -353,7 +385,7 @@ index 483f960..49ae077 100644
 +	}
 +}
 diff --git a/main.go b/main.go
-index 0d75a93..014d883 100644
+index 0d75a93..405e4d4 100644
 --- a/main.go
 +++ b/main.go
 @@ -16,6 +16,7 @@ package main
@@ -380,7 +412,7 @@ index 0d75a93..014d883 100644
  	"github.com/apecloud/myduckserver/replica"
  	"github.com/apecloud/myduckserver/transpiler"
  	"github.com/dolthub/go-mysql-server/memory"
-@@ -54,13 +55,19 @@ var (
+@@ -54,13 +55,20 @@ var (
  	initMode    = false
  	versionMode = false
  
@@ -391,36 +423,47 @@ index 0d75a93..014d883 100644
 -	dataDirectory = "."
 -	logLevel      = int(logrus.InfoLevel)
 -	readOnly      = false
-+	address           = "0.0.0.0"
-+	port              = 3306
-+	socket            string
-+	defaultDb         = "myduck"
-+	dataDirectory     = "."
-+	logLevel          = int(logrus.InfoLevel)
-+	readOnly          = false
-+	managedConfigPath string
-+	managedCheckPath  string
-+	managedEmptyPath  string
-+	managedMode       bool
-+	managedTLS        *tls.Config
-+	managedRuntime    managedConfig
++	address                 = "0.0.0.0"
++	port                    = 3306
++	socket                  string
++	defaultDb               = "myduck"
++	dataDirectory           = "."
++	logLevel                = int(logrus.InfoLevel)
++	readOnly                = false
++	managedConfigPath       string
++	managedCheckPath        string
++	managedEmptyPath        string
++	managedStorageEmptyPath string
++	managedMode             bool
++	managedTLS              *tls.Config
++	managedRuntime          managedConfig
  
  	replicaOptions replica.ReplicaOptions
  
-@@ -152,6 +159,9 @@ func runServerLifecycle(
+@@ -152,6 +160,10 @@ func runServerLifecycle(
  func init() {
  	flag.BoolVar(&initMode, "init", initMode, "Initialize the program and exit. The necessary extensions will be installed.")
  	flag.BoolVar(&versionMode, "version", versionMode, "Print version information and exit.")
 +	flag.StringVar(&managedConfigPath, "managed-config", "", "Run with a strict Hakopod managed-runtime configuration.")
 +	flag.StringVar(&managedCheckPath, "managed-check", "", "Verify both managed TLS endpoints and exit.")
 +	flag.StringVar(&managedEmptyPath, "managed-empty", "", "Verify both managed TLS endpoints and require an empty user schema.")
++	flag.StringVar(&managedStorageEmptyPath, "managed-storage-empty", "", "Verify a stopped managed data directory is empty.")
  
  	flag.StringVar(&address, "address", address, "The address to bind to.")
  	flag.IntVar(&port, "port", port, "The port to bind to.")
-@@ -194,6 +204,37 @@ func main() {
+@@ -194,6 +206,46 @@ func main() {
  		fmt.Println(versionInfo())
  		return
  	}
++	if managedStorageEmptyPath != "" {
++		if managedConfigPath != "" || managedCheckPath != "" || managedEmptyPath != "" {
++			logrus.Fatalln("managed modes are mutually exclusive")
++		}
++		if err := managedStorageEmpty(managedStorageEmptyPath); err != nil {
++			logrus.WithError(err).Fatalln("Managed storage empty check failed")
++		}
++		return
++	}
 +	if managedCheckPath != "" || managedEmptyPath != "" {
 +		if managedConfigPath != "" || managedCheckPath != "" && managedEmptyPath != "" {
 +			logrus.Fatalln("managed-config, managed-check, and managed-empty are mutually exclusive")
@@ -455,7 +498,7 @@ index 0d75a93..014d883 100644
  	var shutdownSignals chan os.Signal
  	if !initMode {
  		shutdownSignals = make(chan os.Signal, 1)
-@@ -212,7 +253,7 @@ func main() {
+@@ -212,7 +264,7 @@ func main() {
  	executeRestoreIfNeeded()
  
  	if initMode {
@@ -464,7 +507,7 @@ index 0d75a93..014d883 100644
  		provider.Close()
  		return
  	}
-@@ -224,7 +265,16 @@ func main() {
+@@ -224,7 +276,16 @@ func main() {
  		// values in its error text.
  		logrus.Fatalln("Failed to load DuckLake service configuration:", err)
  	}
@@ -482,7 +525,7 @@ index 0d75a93..014d883 100644
  	if err != nil {
  		logrus.Fatalln("Failed to open the database:", err)
  	}
-@@ -256,19 +306,25 @@ func main() {
+@@ -256,19 +317,25 @@ func main() {
  	})
  	defer func() { _ = finalize() }()
  	engine.Analyzer.Catalog.RegisterFunction(sql.NewContext(context.Background()), myfunc.ExtraBuiltIns...)
@@ -515,7 +558,7 @@ index 0d75a93..014d883 100644
  	}
  	var myServer *server.Server
  	myServer, err = server.NewServerWithHandler(
-@@ -279,7 +335,7 @@ func main() {
+@@ -279,7 +346,7 @@ func main() {
  		nil,
  		backend.WrapHandler(provider, engine, func(ctx context.Context, conn *mysql.Conn, query string) (*sql.Context, error) {
  			return myServer.SessionManager().NewContextWithQuery(ctx, conn, query)
@@ -524,7 +567,7 @@ index 0d75a93..014d883 100644
  	)
  	if err != nil {
  		logrus.WithError(err).Fatalln("Failed to create MySQL-protocol server")
-@@ -301,15 +357,21 @@ func main() {
+@@ -301,15 +368,21 @@ func main() {
  			pgserver.WithSessionManager(myServer.SessionManager()),
  			pgserver.WithConnID(&postgresConnID),
  			pgserver.WithReadOnly(readOnly),
@@ -551,10 +594,10 @@ index 0d75a93..014d883 100644
  		// Load the configuration for the Postgres server.
 diff --git a/managed_runtime.go b/managed_runtime.go
 new file mode 100644
-index 0000000..09f306f
+index 0000000..cdcf5bf
 --- /dev/null
 +++ b/managed_runtime.go
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,330 @@
 +package main
 +
 +import (
@@ -564,6 +607,7 @@ index 0000000..09f306f
 +	"crypto/tls"
 +	"crypto/x509"
 +	"database/sql"
++	"database/sql/driver"
 +	"encoding/hex"
 +	"encoding/json"
 +	"errors"
@@ -576,6 +620,7 @@ index 0000000..09f306f
 +	"strconv"
 +	"time"
 +
++	"github.com/duckdb/duckdb-go/v2"
 +	mysqlDriver "github.com/go-sql-driver/mysql"
 +	"github.com/jackc/pgx/v5"
 +)
@@ -720,8 +765,8 @@ index 0000000..09f306f
 +		return err
 +	}
 +	defer mysqlDB.Close()
-+	var mysqlOID string
-+	if err := mysqlDB.QueryRowContext(ctx, "SELECT CAST(database_oid AS VARCHAR) FROM duckdb_databases() WHERE database_name = 'app'").Scan(&mysqlOID); err != nil {
++	var mysqlReady int
++	if err := mysqlDB.QueryRowContext(ctx, "SELECT 1").Scan(&mysqlReady); err != nil {
 +		return fmt.Errorf("mysql managed check: %w", err)
 +	}
 +	pgConfig, err := pgx.ParseConfig(fmt.Sprintf("postgresql://postgres:%s@127.0.0.1:%d/app", url.QueryEscape(password), cfg.PostgresPort))
@@ -739,24 +784,22 @@ index 0000000..09f306f
 +	if err := pgConn.QueryRow(ctx, "SELECT CAST(database_oid AS VARCHAR) FROM duckdb_databases() WHERE database_name = 'app'").Scan(&pgOID); err != nil {
 +		return fmt.Errorf("postgres managed check: %w", err)
 +	}
-+	if mysqlOID == "" || mysqlOID != pgOID {
-+		return errors.New("wire protocols do not expose the same managed database")
++	if mysqlReady != 1 || pgOID == "" {
++		return errors.New("wire protocols do not expose the managed app database")
 +	}
 +	if requireEmpty {
 +		const emptyQuery = `SELECT
-+			(SELECT COUNT(*) FROM information_schema.tables WHERE table_catalog = 'app' AND table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql')) +
-+			(SELECT COUNT(*) FROM information_schema.schemata WHERE catalog_name = 'app' AND schema_name NOT IN ('main', 'information_schema', 'pg_catalog', 'mysql')) +
++			(SELECT CASE WHEN COUNT(*) = 5 AND COUNT(*) FILTER (WHERE schema_name NOT IN ('__sys__', 'app', 'mysql', 'performance_schema', 'public')) = 0 THEN 0 ELSE 1 END FROM duckdb_schemas() WHERE database_name = 'app' AND internal = false) +
++			(SELECT CASE WHEN COUNT(*) = 11 AND COUNT(*) FILTER (WHERE NOT (schema_name = '__sys__' AND table_name IN ('binlog_position', 'persistent_variable', 'pg_class_catalog', 'pg_matviews', 'pg_namespace_catalog', 'pg_proc', 'pg_range', 'pg_stat_replication', 'pg_subscription', 'pg_type') OR schema_name = 'performance_schema' AND table_name = 'global_status')) = 0 THEN 0 ELSE 1 END FROM duckdb_tables() WHERE database_name = 'app' AND internal = false) +
++			(SELECT CASE WHEN COUNT(*) = 5 AND COUNT(*) FILTER (WHERE schema_name != '__sys__' OR view_name NOT IN ('pg_attribute', 'pg_class', 'pg_index', 'pg_namespace', 'pg_stat_user_tables')) = 0 THEN 0 ELSE 1 END FROM duckdb_views() WHERE database_name = 'app' AND internal = false) +
 +			(SELECT COUNT(*) FROM duckdb_sequences() WHERE database_name = 'app') +
-+			(SELECT COUNT(*) FROM duckdb_functions() WHERE database_name = 'app' AND internal = false) +
++			(SELECT CASE WHEN COUNT(*) = 8 AND COUNT(*) FILTER (WHERE schema_name != '__sys__' OR function_name NOT IN ('_pg_expandarray', 'my_list_contains', 'my_split_list_str', 'mysql_crc32', 'pg_get_expr', 'pg_get_indexdef')) = 0 THEN 0 ELSE 1 END FROM duckdb_functions() WHERE database_name = 'app' AND internal = false) +
 +			(SELECT COUNT(*) FROM duckdb_types() WHERE database_name = 'app' AND internal = false)`
-+		var mysqlTables, pgTables int64
-+		if err := mysqlDB.QueryRowContext(ctx, emptyQuery).Scan(&mysqlTables); err != nil {
-+			return fmt.Errorf("mysql managed empty check: %w", err)
-+		}
++		var pgTables int64
 +		if err := pgConn.QueryRow(ctx, emptyQuery).Scan(&pgTables); err != nil {
 +			return fmt.Errorf("postgres managed empty check: %w", err)
 +		}
-+		if mysqlTables != 0 || pgTables != 0 {
++		if pgTables != 0 {
 +			return errors.New("managed database contains user tables")
 +		}
 +	}
@@ -830,6 +873,61 @@ index 0000000..09f306f
 +	}
 +	return nil
 +}
++
++func managedStorageEmpty(path string) error {
++	if path != "/var/lib/myduck" {
++		return errors.New("managed storage path must be /var/lib/myduck")
++	}
++	directory, err := os.Lstat(path)
++	if err != nil || !directory.IsDir() || directory.Mode()&os.ModeSymlink != 0 {
++		return errors.New("managed storage path must be a real directory")
++	}
++	if _, err := os.Lstat(filepath.Join(path, ".hakopod-restore-pending")); err == nil {
++		return errors.New("managed restore marker is present")
++	} else if !errors.Is(err, os.ErrNotExist) {
++		return errors.New("inspect managed restore marker")
++	}
++	databasePath := filepath.Join(path, "app.db")
++	if _, err := os.Lstat(databasePath + ".wal"); err == nil {
++		return errors.New("managed app.db WAL is present")
++	} else if !errors.Is(err, os.ErrNotExist) {
++		return errors.New("inspect managed app.db WAL")
++	}
++	database, err := os.Lstat(databasePath)
++	if err != nil || !database.Mode().IsRegular() || database.Mode()&os.ModeSymlink != 0 {
++		return errors.New("managed app.db must be a real regular file")
++	}
++	connector, err := duckdb.NewConnector(databasePath+"?access_mode=read_only", func(execer driver.ExecerContext) error {
++		for _, query := range []string{"SET memory_limit = '128MB'", "SET threads = 1", "SET autoinstall_known_extensions = false", "SET autoload_known_extensions = false", "SET enable_external_access = false", "SET lock_configuration = true"} {
++			if _, err := execer.ExecContext(context.Background(), query, nil); err != nil {
++				return err
++			}
++		}
++		return nil
++	})
++	if err != nil {
++		return fmt.Errorf("open managed app.db: %w", err)
++	}
++	db := sql.OpenDB(connector)
++	defer db.Close()
++	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
++	defer cancel()
++	const query = `SELECT
++			(SELECT CASE WHEN COUNT(*) = 5 AND COUNT(*) FILTER (WHERE schema_name NOT IN ('__sys__', 'app', 'mysql', 'performance_schema', 'public')) = 0 THEN 0 ELSE 1 END FROM duckdb_schemas() WHERE internal = false) +
++			(SELECT CASE WHEN COUNT(*) = 11 AND COUNT(*) FILTER (WHERE NOT (schema_name = '__sys__' AND table_name IN ('binlog_position', 'persistent_variable', 'pg_class_catalog', 'pg_matviews', 'pg_namespace_catalog', 'pg_proc', 'pg_range', 'pg_stat_replication', 'pg_subscription', 'pg_type') OR schema_name = 'performance_schema' AND table_name = 'global_status')) = 0 THEN 0 ELSE 1 END FROM duckdb_tables() WHERE internal = false) +
++			(SELECT CASE WHEN COUNT(*) = 5 AND COUNT(*) FILTER (WHERE schema_name != '__sys__' OR view_name NOT IN ('pg_attribute', 'pg_class', 'pg_index', 'pg_namespace', 'pg_stat_user_tables')) = 0 THEN 0 ELSE 1 END FROM duckdb_views() WHERE internal = false) +
++			(SELECT COUNT(*) FROM duckdb_sequences()) +
++			(SELECT CASE WHEN COUNT(*) = 8 AND COUNT(*) FILTER (WHERE schema_name != '__sys__' OR function_name NOT IN ('_pg_expandarray', 'my_list_contains', 'my_split_list_str', 'mysql_crc32', 'pg_get_expr', 'pg_get_indexdef')) = 0 THEN 0 ELSE 1 END FROM duckdb_functions() WHERE internal = false) +
++			(SELECT COUNT(*) FROM duckdb_types() WHERE internal = false)`
++	var objects int64
++	if err := db.QueryRowContext(ctx, query).Scan(&objects); err != nil {
++		return fmt.Errorf("inspect managed app.db: %w", err)
++	}
++	if objects != 0 {
++		return errors.New("managed app.db contains user objects")
++	}
++	return nil
++}
 diff --git a/persist.go b/persist.go
 index a7fc1fc..b72e796 100644
 --- a/persist.go
@@ -847,7 +945,7 @@ index a7fc1fc..b72e796 100644
  
  	if _, err := os.Stat(persister.FilePath); err == nil {
 diff --git a/pgserver/connection_handler.go b/pgserver/connection_handler.go
-index d40fcc1..08d6a06 100644
+index d40fcc1..15527ce 100644
 --- a/pgserver/connection_handler.go
 +++ b/pgserver/connection_handler.go
 @@ -29,6 +29,7 @@ import (
@@ -906,7 +1004,20 @@ index d40fcc1..08d6a06 100644
  		}
  		return h.handleStartup()
  	case *pgproto3.GSSEncRequest:
-@@ -1398,7 +1408,9 @@ func (h *ConnectionHandler) handleExecute(message *pgproto3.Execute) (err error)
+@@ -604,7 +614,11 @@ func (h *ConnectionHandler) chooseInitialDatabase(startupMessage *pgproto3.Start
+ 		}
+ 	}
+ 
+-	useStmt := fmt.Sprintf("USE %s.public;", db)
++	schema := "public"
++	if h.requireTLS && strings.EqualFold(db, "app") {
++		schema = "app"
++	}
++	useStmt := fmt.Sprintf("USE %s.%s;", db, schema)
+ 	setStmt := fmt.Sprintf("SET database TO %s;", db)
+ 	parsed, err := parser.ParseOne(setStmt)
+ 	if err != nil {
+@@ -1398,7 +1412,9 @@ func (h *ConnectionHandler) handleExecute(message *pgproto3.Execute) (err error)
  	rowsAffected := int32(0)
  
  	callback := h.spoolRowsCallback(query, &rowsAffected, true)
@@ -917,7 +1028,7 @@ index d40fcc1..08d6a06 100644
  	if err != nil {
  		return err
  	}
-@@ -2008,8 +2020,10 @@ func (h *ConnectionHandler) run(statement ConvertedStatement) error {
+@@ -2008,8 +2024,10 @@ func (h *ConnectionHandler) run(statement ConvertedStatement) error {
  	}
  
  	callback := h.spoolRowsCallback(statement, &rowsAffected, false)

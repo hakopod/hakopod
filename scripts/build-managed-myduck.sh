@@ -34,5 +34,6 @@ if [ "$MODE" = source-only ]; then
   exit 0
 fi
 go build -trimpath -ldflags='-s -w' -o "$SCRATCH/out/myduckserver" .
+python3 "$SCRIPT_DIR/collect-myduck-licenses.py" "$SCRATCH/src" "$SCRATCH/out/licenses"
 test -x "$SCRATCH/out/myduckserver"
 printf '%s\n' "$SCRATCH/out/myduckserver"
