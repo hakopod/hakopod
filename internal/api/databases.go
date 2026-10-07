@@ -207,8 +207,15 @@ func (s *Server) databaseCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	username := "app"
-	name := "app"
+	username, name := databaseCredentialDefaults(d)
+	write(w, 200, map[string]string{"username": username, "password": string(password), "database": name})
+}
+
+func databaseCredentialDefaults(d database.Resource) (string, string) {
+	username, name := "app", "app"
+	if d.Spec.Engine == "duckdb" {
+		username = "root"
+	}
 	if d.Spec.Engine == "oracle" {
 		username, name = "APP", "FREEPDB1"
 		if d.Spec.Oracle != nil && d.Spec.Oracle.Edition == "enterprise" {
@@ -219,7 +226,7 @@ func (s *Server) databaseCredentials(w http.ResponseWriter, r *http.Request) {
 		username = "default"
 		name = "0"
 	}
-	write(w, 200, map[string]string{"username": username, "password": string(password), "database": name})
+	return username, name
 }
 func (s *Server) deleteDatabase(w http.ResponseWriter, r *http.Request) {
 	var in struct {

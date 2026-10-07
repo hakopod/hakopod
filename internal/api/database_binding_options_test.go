@@ -70,6 +70,30 @@ func TestManagedDatabaseURLPreservesDefaultsAndSelectedTargets(t *testing.T) {
 	}
 }
 
+func TestDatabaseCredentialDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, engine, edition, username, database string
+	}{
+		{"postgresql", "postgresql", "", "app", "app"},
+		{"mysql", "mysql", "", "app", "app"},
+		{"myduck", "duckdb", "", "root", "app"},
+		{"redis", "redis", "", "default", "0"},
+		{"oracle-free", "oracle", "free", "APP", "FREEPDB1"},
+		{"oracle-enterprise", "oracle", "enterprise", "APP", "APPDB"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := database.Resource{Spec: database.Spec{Engine: tc.engine}}
+			if tc.engine == "oracle" {
+				d.Spec.Oracle = &database.OracleConfig{Edition: tc.edition}
+			}
+			username, name := databaseCredentialDefaults(d)
+			if username != tc.username || name != tc.database {
+				t.Fatalf("credential defaults = %q/%q, want %q/%q", username, name, tc.username, tc.database)
+			}
+		})
+	}
+}
+
 func TestMyDuckURLsKeepProtocolSpecificTLS(t *testing.T) {
 	d := database.Resource{ID: strings.Repeat("a", 32), Spec: database.Spec{Engine: "duckdb", TLS: &database.TLSConfig{Mode: "required"}}}
 	for _, tc := range []struct {
