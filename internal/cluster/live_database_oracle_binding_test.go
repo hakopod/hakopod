@@ -54,11 +54,12 @@ func testOracleBinding(t *testing.T, ctx context.Context, c *Client, d database.
 	if _, err = c.Deploy(ctx, target, nil); err != nil {
 		t.Fatal(err)
 	}
+	kubectlCache := t.TempDir()
 	probe := func(service, script, want string) {
 		t.Helper()
 		step, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
-		out, err := exec.CommandContext(step, "kubectl", "--kubeconfig", os.Getenv("HAKOPOD_TEST_KUBECONFIG"), "--context", "k3d-hakopod-dev", "-n", Namespace(target.ApplicationID), "exec", "deployment/"+service, "--", "bash", "-c", script).Output()
+		out, err := exec.CommandContext(step, "kubectl", "--cache-dir", kubectlCache, "--kubeconfig", os.Getenv("HAKOPOD_TEST_KUBECONFIG"), "--context", "k3d-hakopod-dev", "-n", Namespace(target.ApplicationID), "exec", "deployment/"+service, "--", "bash", "-c", script).Output()
 		if err != nil || strings.TrimSpace(string(out)) != want {
 			t.Fatalf("Oracle %s binding probe failed (%v)", service, err)
 		}

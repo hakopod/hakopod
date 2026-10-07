@@ -121,14 +121,17 @@ func TestManagedOracleRecoveryLive(t *testing.T) {
 			t.Fatal("Oracle source and target did not retain independent writes", err)
 		}
 	}
-	check, stop := context.WithTimeout(ctx, 15*time.Second)
-	defer stop()
 	for _, d := range []database.Resource{source, target} {
+		// Each observation verifies the controller, pod, credentials and TCPS.
+		// Give each resource its own bound before checking Data Pump cleanup.
+		check, stop := context.WithTimeout(ctx, 45*time.Second)
 		o, e := c.ObserveDatabase(check, d)
 		if e != nil {
-			t.Fatal(e)
+			stop()
+			t.Fatal("Oracle recovery cleanup health check failed", e)
 		}
 		got, e := c.oracleLocalQuery(check, d, o.Members[0], "ALTER SESSION SET CONTAINER=FREEPDB1;\nSELECT (SELECT COUNT(*) FROM dba_datapump_jobs WHERE job_name LIKE 'HP_%')+(SELECT COUNT(*) FROM dba_tab_privs WHERE grantee='APP' AND table_name='HAKOPOD_BACKUP') FROM dual")
+		stop()
 		if e != nil || got != "0" {
 			t.Fatal("Oracle recovery retained jobs or directory grants", e)
 		}
