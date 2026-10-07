@@ -1,6 +1,6 @@
 # Managed database platform expansion
 
-Status: implementation plan and reconciliation snapshot, 1 October 2026. This document does not announce
+Status: implementation plan and reconciliation snapshot, 7 October 2026. This document does not announce
 shipping support for additional engines, public endpoints or new TLS guarantees.
 The supported PostgreSQL and Redis lifecycle is described in
 [Managed databases](managed-databases.md).
@@ -29,7 +29,7 @@ unknown. Desired capacity and observed resources are different facts.
 | MongoDB, native development acceptance passed | One-member replica set with no HA claim | Native 3/5/7-member replica set through MongoDB Kubernetes Controller | Driver discovery and read preferences; advertised members must be reachable | One snapshot timestamp, raw BSON and metadata, separate empty target, session revocation and inspection-gated ingress; no continuous oplog recovery |
 | ClickHouse, native development acceptance passed | One server | Replicated shards with an explicitly allocated Keeper quorum | Native/HTTP query endpoint; distributed tables retain their engine semantics | Table metadata plus data, replication paths, each shard and Keeper-dependent recovery |
 | Vitess, native and HTTP development acceptance passed | One managed MySQL shard with its required control components | Vitess tablets, vtgate routing and a topology service; replicas and shards explicitly allocated | MySQL protocol through vtgate; shard routing follows the VSchema | Per-shard archives, topology metadata, separate-target restore and tablet reseed |
-| Oracle Database Free, native development acceptance passed | Oracle Database Free 26ai, version 23.26, with an owned single-instance workload | Enterprise Data Guard source exists; the runtime gate requires hardened-controller and licensed-image acceptance | Private PDB service over verified TCPS; Enterprise source uses native roles and reviewed graceful switchover | APP-schema Data Pump recovery; physical RMAN, archived-redo recovery and native Enterprise acceptance remain open |
+| Oracle Database Free, operator acceptance in progress | Oracle Database Free 26ai, version 23.26, through a namespace-scoped Oracle Database Operator | Free has one instance. Enterprise Data Guard has separate source and licensed-image acceptance requirements | Private PDB service over verified TCPS; Enterprise source uses native roles and reviewed graceful switchover | APP-schema Data Pump recovery; final operator lifecycle and recovery acceptance remain open, along with physical RMAN, archived-redo recovery and native Enterprise acceptance |
 
 A supported engine needs the complete vertical slice: strict versioned
 configuration, approved digest-pinned images, credential ownership, bounded
@@ -43,17 +43,15 @@ resources must be included in reservations and displayed in allocation reviews.
 ## Oracle implementation work
 
 Managed Oracle Database is part of the requested scope, including standalone
-and clustered deployment. The Free standalone runtime is implemented and its
-native create, CRUD, TLS enforcement, privilege boundaries and deletion have
-passed in development. Capture consistency, cancellation, application bindings
-and certificate renewal have also passed. The final native schema recovery run
-passed in 617.44 seconds, including object/data fidelity, target quota and
-privilege preservation, session revocation, inspection gates and owned cleanup.
-The import retains application-level privileges. This is development evidence
-for the tested Free schema contract; broader schema/workload qualification and
-production release remain separate gates.
-The dashboard exposes Free as a development preview. The edition and
-customer-image validation contract does not enable Enterprise deployment.
+and clustered deployment. Free now uses Oracle Database Operator 2.2.0 to manage
+one instance. Creation remains disabled in the API and dashboard until this
+operator path passes native lifecycle, security, renewal, recovery, controller
+loss and HTTP/API acceptance on the final source.
+
+Earlier development tests covered a Hakopod-managed StatefulSet. They verified
+schema recovery, target quotas, privilege restrictions and session revocation,
+but do not qualify the new controller. The edition and customer-image validation
+contract does not enable Enterprise deployment.
 See [Managed Oracle](managed-oracle.md) for the current
 contract and remaining evidence. Data Guard primary/standby orchestration now has
 a source implementation. Its runtime gate remains closed until the hardened
@@ -234,8 +232,9 @@ card or an upstream operator.
   availability.
 - [ ] Implement and verify managed Vitess, including its ownership and recovery
   boundaries.
-- [x] Verify Oracle Database Free lifecycle, TCPS renewal, application bindings
-  and isolated schema recovery in the named development cluster.
+- [ ] Verify Oracle Database Free lifecycle, TCPS renewal, application bindings,
+  isolated schema recovery, controller loss and HTTP/API operations through the
+  Oracle Database Operator in the named development cluster.
 - [ ] Verify Oracle Enterprise and Data Guard against the hardened controller
   and a licensed customer image before opening the runtime gate.
 - [ ] Complete PostgreSQL public-endpoint native acceptance for engine-specific
