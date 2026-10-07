@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -25,6 +26,9 @@ import (
 	managed "github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -87,6 +91,18 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	if err != nil || config.CurrentContext != "k3d-hakopod-dev" {
 		t.Fatal("requires k3d-hakopod-dev")
 	}
+	nodes := strings.FieldsFunc(os.Getenv("HAKOPOD_DATABASE_FIXTURE_NODES"), func(r rune) bool { return r == ',' || r == ' ' })
+	if len(nodes) == 0 {
+		t.Fatal("requires HAKOPOD_DATABASE_FIXTURE_NODES")
+	}
+	rest, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kube, err := kubernetes.NewForConfig(rest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	runtime, err := cluster.New(kubeconfig, cluster.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -98,13 +114,48 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	principal, err := db.Authenticate(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO projects(name) VALUES('myduck-foreign'); INSERT INTO environments(project,name) VALUES('myduck-foreign','development')"); err != nil {
+		t.Fatal(err)
+	}
+	_, scopedToken, err := db.CreateKey(ctx, principal, store.KeyInput{Name: "myduck-api-scope", Project: "demo", Environment: "development", Permissions: []string{"deployments:read", "deployments:write"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreignID := store.NewID()
+	foreignSpec := managed.Spec{SchemaVersion: 1, Name: "myduck-foreign", Engine: "duckdb", Version: managed.MyDuckVersion, Mode: "standalone", Shards: 1, CPU: "500m", Memory: "512Mi", StorageGiB: 1, TLS: &managed.TLSConfig{Mode: "required"}}
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO managed_databases(id,project,environment,name,revision,spec,status,credentials) VALUES($1,'myduck-foreign','development',$2,1,$3,'ready',$4)", foreignID, foreignSpec.Name, store.JSON(foreignSpec), []byte("fixture")); err != nil {
+		t.Fatal(err)
+	}
 	endpoint, access, secret, _ := liveBackupObjectStore(t, ctx)
 	server := &api.Server{Store: db, Cluster: runtime, Auth: api.AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{29}, 32))}}
 	server.ConfigureBackups(api.BackupConfig{DatabaseURL: dsn, StateDir: t.TempDir(), MaxBytes: 64 << 20})
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 	client := backupRequestClient{t: t, server: httpServer, token: token}
+	var destination struct {
+		Destination backup.Destination `json:"destination"`
+	}
+	if status := client.request("POST", "/backup-destinations", backup.DestinationInput{Name: "myduck-api-recovery", Endpoint: endpoint, Region: "us-east-1", Bucket: "hakopod-backup-tests", Prefix: "myduck-api", PathStyle: true, AllowHTTP: true, AccessKeyID: access, SecretAccessKey: secret}, &destination, ""); status != 201 {
+		t.Fatal("destination", status)
+	}
 	t.Run("authorization", func(t *testing.T) {
+		if status := (backupRequestClient{t: t, server: httpServer}).request("GET", "/databases?project=demo&environment=development", nil, nil, ""); status != http.StatusUnauthorized {
+			t.Fatal("missing token was not refused", status)
+		}
+		scoped := backupRequestClient{t: t, server: httpServer, token: scopedToken}
+		if status := scoped.request("POST", "/databases", map[string]any{"project": "myduck-foreign", "environment": "development", "spec": foreignSpec}, nil, store.NewID()); status != http.StatusForbidden {
+			t.Fatal("scoped key created a cross-project database", status)
+		}
+		if status := scoped.request("POST", "/databases/"+foreignID+"/credentials", map[string]any{}, nil, ""); status != http.StatusNotFound {
+			t.Fatal("scoped key accessed cross-project credentials", status)
+		}
+		if status := scoped.request("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: foreignID, Engine: "duckdb"}}, nil, store.NewID()); status != http.StatusNotFound {
+			t.Fatal("scoped key accepted a cross-project backup", status)
+		}
 		if status := client.request("GET", "/databases", nil, &struct {
 			Items []managed.Resource `json:"items"`
 		}{}, ""); status != 200 {
@@ -115,12 +166,6 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); server.RunManagedDatabases(runCtx) }()
 	defer func() { stopWorkers(); <-done }()
-	var destination struct {
-		Destination backup.Destination `json:"destination"`
-	}
-	if status := client.request("POST", "/backup-destinations", backup.DestinationInput{Name: "myduck-api-recovery", Endpoint: endpoint, Region: "us-east-1", Bucket: "hakopod-backup-tests", Prefix: "myduck-api", PathStyle: true, AllowHTTP: true, AccessKeyID: access, SecretAccessKey: secret}, &destination, ""); status != 201 {
-		t.Fatal("destination", status)
-	}
 	created := []managed.Resource{}
 	defer func() {
 		for _, item := range created {
@@ -140,12 +185,13 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 		}
 	}()
 	create := func(name string) managed.Resource {
-		spec := managed.Spec{SchemaVersion: 1, Name: name, Engine: "duckdb", Version: managed.MyDuckVersion, Mode: "standalone", Shards: 1, CPU: "500m", Memory: "512Mi", StorageGiB: 1, TLS: &managed.TLSConfig{Mode: "required"}}
+		spec := managed.Spec{SchemaVersion: 1, Name: name, Engine: "duckdb", Version: managed.MyDuckVersion, Mode: "standalone", Shards: 1, CPU: "500m", Memory: "512Mi", StorageGiB: 1, Placement: managed.Placement{NodeNames: append([]string(nil), nodes...)}, TLS: &managed.TLSConfig{Mode: "required"}}
 		var operation managed.Operation
 		if status := client.request("POST", "/databases", map[string]any{"project": "demo", "environment": "development", "spec": spec}, &operation, store.NewID()); status != 202 {
 			t.Fatal("create MyDuck", status)
 		}
 		created = append(created, managed.Resource{ID: operation.DatabaseID, Spec: spec})
+		t.Logf("Development MyDuck namespace %s", cluster.DatabaseNamespace(operation.DatabaseID))
 		for ctx.Err() == nil {
 			current, e := db.DatabaseInternal(ctx, operation.DatabaseID)
 			if e == nil && current.Status == "ready" && current.Observation.Status == "ready" && current.Observation.TLS != nil && current.Observation.TLS.Verified {
@@ -208,6 +254,7 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 			t.Fatal(e)
 		}
 		settings.Password, settings.TLSConfig = credentials["password"], myduckAPITLS(t, trust, host)
+		settings.Fallbacks = nil
 		settings.DialFunc = func(step context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(step, "tcp", address)
 		}
@@ -326,8 +373,38 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	}
 	t.Run("deletion", func(t *testing.T) {
 		var operation managed.Operation
-		if status := client.request("DELETE", "/databases/"+target.ID, map[string]any{"expected_revision": target.Revision, "confirm_name": target.Spec.Name}, &operation, store.NewID()); status != 202 || operation.Kind != "delete" {
+		if status := client.request("DELETE", "/databases/"+target.ID, map[string]any{"expected_revision": inspected.Revision, "confirm_name": inspected.Spec.Name}, &operation, store.NewID()); status != 202 || operation.Kind != "delete" {
 			t.Fatal("delete acceptance", status)
 		}
+		for ctx.Err() == nil {
+			if status := client.request("GET", "/database-operations/"+operation.ID, nil, &operation, ""); status != http.StatusOK {
+				t.Fatal("delete operation", status)
+			}
+			if operation.Status == "succeeded" {
+				break
+			}
+			if operation.Status == "failed" || operation.Status == "cancelled" {
+				t.Fatal("delete operation did not succeed", operation.Status, operation.Message)
+			}
+			time.Sleep(time.Second)
+		}
+		if operation.Status != "succeeded" {
+			t.Fatal("delete operation timed out")
+		}
+		namespace := cluster.DatabaseNamespace(target.ID)
+		for ctx.Err() == nil {
+			_, namespaceErr := kube.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+			claims, claimErr := kube.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+			namespaceGone := apierrors.IsNotFound(namespaceErr)
+			claimsGone := apierrors.IsNotFound(claimErr) || claimErr == nil && len(claims.Items) == 0
+			if namespaceGone && claimsGone {
+				return
+			}
+			if namespaceErr != nil && !namespaceGone || claimErr != nil && !apierrors.IsNotFound(claimErr) {
+				t.Fatal("inspect deleted MyDuck resources", namespaceErr, claimErr)
+			}
+			time.Sleep(time.Second)
+		}
+		t.Fatal("deleted MyDuck namespace or persistent volume claims remain")
 	})
 }
