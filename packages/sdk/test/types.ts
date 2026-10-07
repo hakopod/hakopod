@@ -59,6 +59,19 @@ db({
   placement: { spread: "zones" },
 });
 client.database("fixture").binding({ endpoint: "pooled_read_write" });
+const myduck = db({
+  name: "analytics",
+  engine: "duckdb",
+  cpu: "500m",
+  memory: "1Gi",
+  storageGiB: 5,
+});
+const myduckVersion: string = myduck.version;
+void myduckVersion;
+client.database("analytics").binding({ endpoint: "mysql" });
+client.database("analytics").binding({ endpoint: "postgresql", sslMode: "verify-full" });
+// @ts-expect-error MyDuck exposes named MySQL and PostgreSQL routes, not a native route.
+client.database("analytics").binding({ endpoint: "native" });
 // @ts-expect-error A path ID must be supplied.
 client.request("GET", "/database-operations/{id}", {});
 client.database("fixture").switchoverPlan("standby-pod");

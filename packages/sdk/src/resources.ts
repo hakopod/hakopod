@@ -86,7 +86,7 @@ export function db(input: DatabaseInput & { name: string }): DatabaseSpec {
     engine: input.engine,
     version:
       input.version ??
-      { postgresql: "18", redis: "8", mysql: "8.4", mongodb: "8.0", clickhouse: "26.3", oracle: "23.26", vitess: "23" }[input.engine],
+      { postgresql: "18", redis: "8", mysql: "8.4", mongodb: "8.0", clickhouse: "26.3", oracle: "23.26", vitess: "23", duckdb: "0.3.1-dev.20260919.3" }[input.engine],
     mode,
     replicas:
       input.replicas ??
@@ -1008,7 +1008,9 @@ export class DatabaseRef {
         | "read_only"
         | "cluster"
         | "pooled_read_write"
-        | "pooled_read_only";
+        | "pooled_read_only"
+        | "mysql"
+        | "postgresql";
       clusterAware?: boolean;
       username?: string;
       database?: string;
@@ -1081,7 +1083,9 @@ export class DatabaseRef {
         | "read_only"
         | "cluster"
         | "pooled_read_write"
-        | "pooled_read_only";
+        | "pooled_read_only"
+        | "mysql"
+        | "postgresql";
       clusterAware?: boolean;
       username?: string;
       database?: string;
@@ -1101,11 +1105,13 @@ export class DatabaseRef {
       );
     const endpoint =
       options.endpoint ??
-      (discovery
+      (current.spec.engine === "duckdb"
+        ? "mysql"
+        : discovery
         ? "cluster"
         : "read_write");
     const routes =
-      current.spec.engine === "oracle" ? ["read_write"] : current.spec.engine === "mongodb" ? ["cluster"] : ["redis", "clickhouse"].includes(current.spec.engine)
+      current.spec.engine === "duckdb" ? ["mysql", "postgresql"] : current.spec.engine === "oracle" ? ["read_write"] : current.spec.engine === "mongodb" ? ["cluster"] : ["redis", "clickhouse"].includes(current.spec.engine)
         ? current.spec.mode === "cluster"
           ? ["cluster"]
           : ["read_write"]
@@ -1130,6 +1136,20 @@ export class DatabaseRef {
         "invalid_binding",
       );
     const password = options.password;
+    if (current.spec.engine === "duckdb") {
+      const username = endpoint === "postgresql" ? "postgres" : "root";
+      if (
+        (options.username !== undefined && options.username !== username) ||
+        (options.database !== undefined && options.database !== "app") ||
+        password !== undefined ||
+        (options.sslMode !== undefined && options.sslMode !== "" &&
+          !(endpoint === "postgresql" && options.sslMode === "verify-full"))
+      )
+        throw new HakopodError(
+          "DuckDB (MyDuck) supports only its managed protocol account, app database, managed password and verified TLS.",
+          "invalid_binding",
+        );
+    }
     if (password !== undefined &&
       (!password || typeof password !== "object" ||
         Object.keys(password).some((key) => !["ref", "provider", "path", "key"].includes(key)) ||
@@ -1140,13 +1160,15 @@ export class DatabaseRef {
     return {
       managed_database: current.id,
       protocol:
-        current.spec.engine === "postgresql" ? "postgres" : current.spec.engine === "vitess" ? "mysql" : current.spec.engine,
+        current.spec.engine === "duckdb" ? endpoint === "postgresql" ? "postgres" : "mysql" : current.spec.engine === "postgresql" ? "postgres" : current.spec.engine === "vitess" ? "mysql" : current.spec.engine,
       endpoint,
       ...(options.clusterAware === undefined
         ? {}
         : { cluster_aware: options.clusterAware }),
-      ...(options.username === undefined ? {} : { username: options.username }),
-      ...(options.database === undefined ? {} : { database: options.database }),
+      ...(current.spec.engine === "duckdb"
+        ? { username: endpoint === "postgresql" ? "postgres" : "root", database: "app" }
+        : options.username === undefined ? {} : { username: options.username }),
+      ...(current.spec.engine === "duckdb" || options.database === undefined ? {} : { database: options.database }),
       ...(password === undefined ? {} : { password: snapshot(password) }),
       ...(options.sslMode === undefined ? {} : { ssl_mode: options.sslMode }),
     };
