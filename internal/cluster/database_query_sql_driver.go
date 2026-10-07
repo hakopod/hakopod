@@ -200,7 +200,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
-		return result, queryUnavailable()
+		return result, &database.QueryError{Code: "database_query_failed", Outcome: sqlRollbackOutcome(tx)}
 	}
 	types, _ := rows.ColumnTypes()
 	for i, name := range columns {
