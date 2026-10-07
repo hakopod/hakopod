@@ -415,11 +415,11 @@ function DatabaseAllocationForm({
             </p>
             {spec.engine === 'mysql' && capacity && <>
               <p>Each member also has a 100m CPU / 256Mi sidecar. {routerInstances(spec)} Routers each use 100m CPU / 128Mi.</p>
-              <p>Total requested: {capacity.cpu.toLocaleString(undefined, { maximumFractionDigits: 3 })} CPU cores · {(capacity.memoryMiB / 1024).toLocaleString(undefined, { maximumFractionDigits: 3 })} GiB memory · {spec.storage_gib * spec.shards * (1 + spec.replicas)} GiB storage. Additional capacity is reserved for replacement and recovery operations.</p>
+              <p>Reserved capacity: {capacity.cpu.toLocaleString(undefined, { maximumFractionDigits: 3 })} CPU cores · {(capacity.memoryMiB / 1024).toLocaleString(undefined, { maximumFractionDigits: 3 })} GiB memory · {spec.storage_gib * spec.shards * (1 + spec.replicas)} GiB storage. Includes supporting processes and headroom for replacement and recovery.</p>
             </>}
             {spec.engine === 'mongodb' && capacity && <>
               <p>Each member also has a 100m CPU / 256Mi agent and a separate 1 GiB log volume.</p>
-              <p>Total requested: {capacity.cpu.toLocaleString()} CPU cores · {(capacity.memoryMiB / 1024).toLocaleString()} GiB memory · {databaseStorageGiB(spec)} GiB storage. Additional capacity is reserved for replacement and recovery operations.</p>
+              <p>Reserved capacity: {capacity.cpu.toLocaleString()} CPU cores · {(capacity.memoryMiB / 1024).toLocaleString()} GiB memory · {databaseStorageGiB(spec)} GiB storage. Includes supporting processes and headroom for replacement and recovery.</p>
             </>}
             {replicaOnly && database && spec.replicas < database.spec.replicas && <Note>Reducing replicas keeps the previous CPU and storage reservations until the database is deleted. Memory reservation follows the completed layout.</Note>}
             {review.plan?.backup && (

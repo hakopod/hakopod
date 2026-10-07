@@ -51,7 +51,7 @@ test('MySQL creation requires a supported version, voting layout and resource al
   for (const replicas of [1, 3, 5]) assert.match(databaseCreateIssue({ ...mysql, mode: 'cluster', replicas }, 1) || '', /voting members/)
   assert.match(databaseCreateIssue({ ...mysql, cpu: '499m' }, 2) || '', /at least 500m/)
   assert.match(databaseCreateIssue({ ...mysql, memory: '1023Mi' }, 2) || '', /1Gi/)
-  for (const [replicas, cpu, memoryMiB] of [[0, 0.7, 1408], [2, 2, 4096], [6, 4.4, 9216]]) {
+  for (const [replicas, cpu, memoryMiB] of [[0, 1.4, 3144], [2, 2.7, 5982], [6, 5.1, 11302]]) {
     const spec = { ...mysql, mode: replicas ? 'cluster' as const : 'standalone' as const, replicas }
     const capacity = databaseRequestedCapacity(spec)!
     assert.ok(Math.abs(capacity.cpu - cpu) < 1e-9)
@@ -74,8 +74,8 @@ test('MongoDB allocation includes agents and log volumes without introducing rou
     const spec = { ...mongo, mode: replicas ? 'cluster' as const : 'standalone' as const, replicas }
     for (let step = 0; step < 4; step++) assert.equal(databaseCreateIssue(spec, step), undefined)
     const capacity = databaseRequestedCapacity(spec)!
-    assert.ok(Math.abs(capacity.cpu - (replicas + 1) * 0.6) < 1e-9)
-    assert.equal(capacity.memoryMiB, (replicas + 1) * 1280)
+    assert.ok(Math.abs(capacity.cpu - (replicas + 2) * 0.6) < 1e-9)
+    assert.equal(capacity.memoryMiB, (replicas + 2) * 1330 + 128)
     assert.equal(databaseStorageGiB(spec), (replicas + 1) * 6)
   }
   assert.match(databaseCreateIssue({ ...mongo, mode: 'cluster', replicas: 3 }, 1) || '', /voting members/)
@@ -87,8 +87,8 @@ test('MongoDB allocation includes agents and log volumes without introducing rou
 test('pooler capacity is included in creation without inflating member monitoring limits', () => {
   const spec = { ...initialDatabaseSpec, name: 'orders-db', mode: 'cluster' as const, replicas: 1, pooling: { mode: 'transaction' as const, instances: 2, max_client_connections: 200, default_pool_size: 10, read_only: true } }
   assert.equal(databaseCreateIssue(spec, 3), undefined)
-  assert.equal(databaseRequestedCapacity(spec)?.cpu, 1.5)
-  assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 2048)
+  assert.equal(databaseRequestedCapacity(spec)?.cpu, 2.25)
+  assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 3650)
   assert.equal(databaseCapacity(spec)?.cpu, 0.5)
   assert.match(databaseCreateIssue({ ...spec, replicas: 0 }, 3) || '', /needs at least one replica/)
   assert.match(databaseCreateIssue({ ...spec, pooling: { ...spec.pooling, default_pool_size: 21 } }, 3) || '', /server connections/)
@@ -99,8 +99,8 @@ test('ClickHouse creation accounts for Keepers and backup staging', () => {
   for (const step of [0, 1, 2, 3]) assert.equal(databaseCreateIssue(base, step), undefined)
   const spec = { ...base, mode: 'cluster' as const, shards: 2, replicas: 2 }
   for (const step of [0, 1, 2, 3]) assert.equal(databaseCreateIssue(spec, step), undefined)
-  assert.equal(databaseRequestedCapacity(spec)?.cpu, 3.75)
-  assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 13056)
+  assert.equal(databaseRequestedCapacity(spec)?.cpu, 4.5)
+  assert.equal(databaseRequestedCapacity(spec)?.memoryMiB, 16038)
   assert.equal(databaseStorageGiB(spec), 63)
   assert.equal(databaseMemberCapacity(spec)?.memoryMiB, 12288)
   assert.match(databaseCreateIssue({ ...spec, replicas: 6 }, 1) || '', /between 1 and 5/)
@@ -117,7 +117,10 @@ test('Oracle remains held while its defaults reserve recovery storage', () => {
   assert.equal(oracle.mode, 'standalone')
   assert.equal(oracle.oracle?.edition, 'free')
   assert.equal(databaseStorageGiB(oracle), 20)
-  assert.equal(databaseRequestedCapacity(oracle)?.memoryMiB, 4096)
+  // Matches the Oracle Free allocation contract in Go: member replacement,
+  // two operator budgets, sandbox overhead and the recovery helper.
+  assert.equal(databaseRequestedCapacity(oracle)?.cpu, 2.2)
+  assert.equal(databaseRequestedCapacity(oracle)?.memoryMiB, 9032)
   assert.match(databaseCreateIssue({ ...oracle, mode: 'cluster', replicas: 1 }, 1) || '', /Free supports standalone/)
   assert.match(databaseCreateIssue({ ...oracle, oracle: { edition: 'enterprise', image: 'registry.example/oracle:latest' } }, 0) || '', /available/)
   assert.match(databaseCreateIssue({ ...oracle, memory: '2Gi' }, 2) || '', /4Gi/)
@@ -131,6 +134,9 @@ test('MyDuck is visible but held until its native runtime is qualified', () => {
   assert.equal(myduck.mode, 'standalone')
   assert.equal(myduck.replicas, 0)
   assert.equal(myduck.shards, 1)
+  assert.equal(databaseRequestedCapacity(myduck)?.cpu, 0.5)
+  assert.equal(databaseRequestedCapacity(myduck)?.memoryMiB, 1252)
+  assert.equal(databaseMemberCapacity(myduck)?.memoryMiB, 512)
   assert.match(databaseCreateIssue(myduck, 0) || '', /available/)
   for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(myduck, step), undefined)
   assert.match(databaseCreateIssue({ ...myduck, mode: 'cluster', replicas: 1 }, 1) || '', /one standalone instance/)
