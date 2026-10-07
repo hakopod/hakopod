@@ -136,10 +136,11 @@ def run(args):
                GOMODCACHE=str(args.cache / "go-mod"), GOTMPDIR=str(args.cache / "go-tmp"),
                HAKOPOD_DATABASE_MYDUCK_TEST="1", HAKOPOD_DATABASE_RECOVERY_TEST="1", HAKOPOD_KEEP_DATABASE_FIXTURES="1",
                HAKOPOD_TEST_KUBECONFIG=str(args.kubeconfig), HAKOPOD_DATABASE_FIXTURE_NODES=args.nodes)
+    env["TMPDIR"] = str(args.cache / "test-tmp")
     if args.case == "http-api":
         env["HAKOPOD_MYDUCK_API_RECOVERY_TEST"] = "1"
         env["HAKOPOD_TEST_DATABASE_URL"] = protected_dsn(args.database_dsn_file)
-    for key in ("GOCACHE", "GOMODCACHE", "GOTMPDIR"):
+    for key in ("GOCACHE", "GOMODCACHE", "GOTMPDIR", "TMPDIR"):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
     test = VERIFIER["TESTS"][args.case]
     package = "github.com/hakopod/hakopod/internal/" + ("api" if args.case == "http-api" else "cluster")
