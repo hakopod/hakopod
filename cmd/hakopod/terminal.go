@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +17,13 @@ import (
 )
 
 func terminal(ctx context.Context, c *client, app, service, pod, container, commandJSON string) error {
+	boundedClient := *c
+	boundedHTTP := *c.http
+	if boundedHTTP.Timeout <= 0 || boundedHTTP.Timeout > 30*time.Second {
+		boundedHTTP.Timeout = 30 * time.Second
+	}
+	boundedClient.http = &boundedHTTP
+	c = &boundedClient
 	if service == "" || pod == "" {
 		return &exitError{2, "terminal requires --service and --pod; use the dashboard runtime inspector to select a running pod"}
 	}
@@ -42,7 +49,7 @@ func terminal(ctx context.Context, c *client, app, service, pod, container, comm
 	if err := c.request(ctx, "POST", base, map[string]any{"pod": pod, "container": container, "command": command, "cols": cols, "rows": rows}, "", &session); err != nil {
 		return err
 	}
-	if len(session.ID) != 32 {
+	if len(session.ID) != 32 || strings.Trim(session.ID, "0123456789abcdef") != "" {
 		return fmt.Errorf("API returned invalid terminal session")
 	}
 	base += "/" + url.PathEscape(session.ID)
@@ -51,20 +58,8 @@ func terminal(ctx context.Context, c *client, app, service, pod, container, comm
 		defer cancel()
 		_ = c.request(cleanup, "DELETE", base, nil, "", nil)
 	}()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", c.url+"/api/v1"+base+"/output", nil)
-	c.authorizeRequest(req)
-	streamClient := *c.http
-	streamClient.Timeout = 11 * time.Minute
-	res, err := streamClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("terminal connection failed")
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return responseError(res)
-	}
 	if isTTY {
 		old, err := term.MakeRaw(fd)
 		if err != nil {
@@ -73,7 +68,13 @@ func terminal(ctx context.Context, c *client, app, service, pod, container, comm
 		defer term.Restore(fd, old)
 	}
 	inputError := make(chan error, 1)
+	ready := make(chan struct{})
 	go func() {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return
+		}
 		buf := make([]byte, 4096)
 		for {
 			n, err := os.Stdin.Read(buf)
@@ -94,6 +95,11 @@ func terminal(ctx context.Context, c *client, app, service, pod, container, comm
 	}()
 	if isTTY {
 		go func() {
+			select {
+			case <-ready:
+			case <-ctx.Done():
+				return
+			}
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
 			for {
@@ -117,7 +123,7 @@ func terminal(ctx context.Context, c *client, app, service, pod, container, comm
 			}
 		}()
 	}
-	err = readTerminalOutput(res.Body, os.Stdout)
+	err := pollTerminalOutputReady(ctx, c, base, os.Stdout, ready)
 	select {
 	case inputErr := <-inputError:
 		return inputErr
@@ -125,47 +131,112 @@ func terminal(ctx context.Context, c *client, app, service, pod, container, comm
 	}
 	return err
 }
-func readTerminalOutput(input io.Reader, output io.Writer) error {
-	scanner := bufio.NewScanner(input)
-	scanner.Buffer(make([]byte, 4096), 16<<10)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
+func pollTerminalOutput(ctx context.Context, c *client, base string, output io.Writer) error {
+	return pollTerminalOutputReady(ctx, c, base, output, nil)
+}
+func pollTerminalOutputReady(ctx context.Context, c *client, base string, output io.Writer, ready chan struct{}) error {
+	httpClient := *c.http
+	if httpClient.Timeout <= 0 || httpClient.Timeout > 30*time.Second {
+		httpClient.Timeout = 30 * time.Second
+	}
+	cursor := int64(0)
+	for {
+		req, err := http.NewRequestWithContext(ctx, "GET", c.url+"/api/v1"+base+"/poll?cursor="+strconv.FormatInt(cursor, 10), nil)
+		if err != nil {
+			return err
 		}
-		var event struct {
-			Type    string `json:"type"`
-			Data    string `json:"data"`
-			Code    int    `json:"code"`
-			Message string `json:"message"`
+		c.authorizeRequest(req)
+		res, err := httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("Terminal output request failed: %w", err)
 		}
-		if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) != nil {
-			return fmt.Errorf("invalid terminal frame")
+		if res.StatusCode != 200 {
+			err = responseError(res)
+			res.Body.Close()
+			return err
 		}
-		switch event.Type {
-		case "output":
-			data, err := base64.StdEncoding.DecodeString(event.Data)
-			if err != nil || len(data) > 4096 {
-				return fmt.Errorf("invalid terminal output")
+		data, err := io.ReadAll(io.LimitReader(res.Body, (2<<20)+1))
+		res.Body.Close()
+		if err != nil {
+			return fmt.Errorf("Terminal output read failed: %w", err)
+		}
+		if len(data) > 2<<20 {
+			return fmt.Errorf("Terminal response exceeds the output limit")
+		}
+		var batch struct {
+			Frames []struct {
+				Cursor int64           `json:"cursor"`
+				Data   json.RawMessage `json:"data"`
+			} `json:"frames"`
+			Next      string `json:"next_cursor"`
+			Truncated bool   `json:"truncated"`
+			Done      bool   `json:"done"`
+		}
+		if json.Unmarshal(data, &batch) != nil || len(batch.Frames) > 256 {
+			return fmt.Errorf("Terminal response is invalid")
+		}
+		next, err := strconv.ParseInt(batch.Next, 10, 64)
+		if err != nil || next < cursor || batch.Next != strconv.FormatInt(next, 10) {
+			return fmt.Errorf("Terminal cursor is invalid")
+		}
+		if batch.Truncated {
+			return fmt.Errorf("Terminal output was truncated. Close this terminal and start a new terminal")
+		}
+		if ready != nil {
+			close(ready)
+			ready = nil
+		}
+		for _, frame := range batch.Frames {
+			if frame.Cursor != cursor+1 || frame.Cursor > next {
+				return fmt.Errorf("Terminal frame cursor is invalid")
 			}
-			if _, err = output.Write(data); err != nil {
-				return err
+			cursor = frame.Cursor
+			var event struct {
+				Type    string `json:"type"`
+				Data    string `json:"data"`
+				Code    *int   `json:"code"`
+				Message string `json:"message"`
 			}
-		case "exit":
-			if event.Code != 0 {
-				code := event.Code
-				if code < 1 || code > 255 {
-					code = 1
+			if json.Unmarshal(frame.Data, &event) != nil {
+				return fmt.Errorf("Terminal frame is invalid")
+			}
+			switch event.Type {
+			case "output":
+				decoded, err := base64.StdEncoding.DecodeString(event.Data)
+				if err != nil || len(decoded) > 4096 {
+					return fmt.Errorf("Terminal output is invalid")
 				}
-				return &exitError{code, event.Message}
+				if _, err = output.Write(decoded); err != nil {
+					return err
+				}
+			case "exit":
+				if event.Code == nil {
+					return fmt.Errorf("Terminal exit frame is invalid")
+				}
+				if *event.Code != 0 {
+					code := *event.Code
+					if code < 1 || code > 255 {
+						code = 1
+					}
+					return &exitError{code, "Terminal process failed"}
+				}
+				return nil
+			default:
+				return fmt.Errorf("Terminal frame type is invalid")
 			}
-			return nil
-		default:
-			return fmt.Errorf("unknown terminal frame")
+		}
+		if cursor != next {
+			return fmt.Errorf("Terminal response omitted output frames")
+		}
+		if batch.Done {
+			return fmt.Errorf("Terminal closed without an exit frame")
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("terminal output ended: %w", err)
-	}
-	return fmt.Errorf("terminal connection closed")
 }
