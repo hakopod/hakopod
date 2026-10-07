@@ -113,6 +113,42 @@ func TestOracleFreeStatusRequiresCurrentCompletedGeneration(t *testing.T) {
 	}
 }
 
+func TestOracleFreeStatusSupportsOptionalReplicaObservation(t *testing.T) {
+	for _, name := range []string{"reported singleton", "omitted count", "zero count", "extra member", "malformed count", "missing desired count", "zero desired count", "extra desired member", "malformed desired count"} {
+		t.Run(name, func(t *testing.T) {
+			object, err := oracleFreeObject(oracleFixture(), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			object.SetGeneration(4)
+			object.Object["status"] = map[string]any{"status": "Healthy", "replicas": int64(1), "conditions": []any{
+				map[string]any{"type": "ReconcileComplete", "status": "True", "reason": "LastReconcileCycleCompleted", "observedGeneration": int64(4), "lastTransitionTime": "2026-10-07T04:15:56Z"},
+			}}
+			switch name {
+			case "omitted count":
+				unstructured.RemoveNestedField(object.Object, "status", "replicas")
+			case "zero count":
+				_ = unstructured.SetNestedField(object.Object, int64(0), "status", "replicas")
+			case "extra member":
+				_ = unstructured.SetNestedField(object.Object, int64(2), "status", "replicas")
+			case "malformed count":
+				_ = unstructured.SetNestedField(object.Object, "1", "status", "replicas")
+			case "missing desired count":
+				unstructured.RemoveNestedField(object.Object, "spec", "replicas")
+			case "zero desired count":
+				_ = unstructured.SetNestedField(object.Object, int64(0), "spec", "replicas")
+			case "extra desired member":
+				_ = unstructured.SetNestedField(object.Object, int64(2), "spec", "replicas")
+			case "malformed desired count":
+				_ = unstructured.SetNestedField(object.Object, "1", "spec", "replicas")
+			}
+			if got, want := oracleFreeStatusReady(object), name == "reported singleton" || name == "omitted count"; got != want {
+				t.Fatalf("readiness = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestOracleFreeRenewalRequiresOwnershipAndMutationFence(t *testing.T) {
 	for _, mode := range []string{"fenced", "foreign owner", "duplicate members", "missing controller", "owned replacement"} {
 		t.Run(mode, func(t *testing.T) {
