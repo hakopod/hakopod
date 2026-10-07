@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,9 +26,15 @@ func TestManagedDatabaseURLPreservesDefaultsAndSelectedTargets(t *testing.T) {
 		{"mongodb", "mongodb", "app", "app", "mongodb"},
 		{"clickhouse", "clickhouse", "app", "app", "clickhouse"},
 		{"oracle", "oracle", "APP", "FREEPDB1", "oracle"},
+		{"duckdb-mysql", "mysql", "root", "app", "mysql"},
+		{"duckdb-postgres", "postgres", "postgres", "app", "postgres"},
 	} {
 		t.Run(tc.engine, func(t *testing.T) {
-			d := database.Resource{ID: strings.Repeat("a", 32), Spec: database.Spec{Engine: tc.engine, TLS: &database.TLSConfig{Mode: "required"}}}
+			engine := tc.engine
+			if strings.HasPrefix(engine, "duckdb-") {
+				engine = "duckdb"
+			}
+			d := database.Resource{ID: strings.Repeat("a", 32), Spec: database.Spec{Engine: engine, TLS: &database.TLSConfig{Mode: "required"}}}
 			endpoint := database.Endpoint{Host: "database.example.internal", Port: 5432, Purpose: "read_write"}
 			b := spec.Binding{ManagedDatabase: d.ID, Protocol: tc.protocol, Endpoint: endpoint.Purpose}
 			password := []byte("development-fixture:p@ss/?#%")
@@ -60,6 +67,22 @@ func TestManagedDatabaseURLPreservesDefaultsAndSelectedTargets(t *testing.T) {
 				t.Fatal("custom MongoDB login lost its authentication database")
 			}
 		})
+	}
+}
+
+func TestMyDuckURLsKeepProtocolSpecificTLS(t *testing.T) {
+	d := database.Resource{ID: strings.Repeat("a", 32), Spec: database.Spec{Engine: "duckdb", TLS: &database.TLSConfig{Mode: "required"}}}
+	for _, tc := range []struct{ purpose, protocol string; port int }{{"mysql", "mysql", 3306}, {"postgresql", "postgres", 5432}} {
+		u, err := url.Parse(managedDatabaseURL(d, spec.Binding{Protocol: tc.protocol, Endpoint: tc.purpose}, database.Endpoint{Purpose: tc.purpose, Host: "myduck.internal", Port: tc.port}, []byte("secret")))
+		if err != nil || u.Scheme != tc.protocol || u.Host != "myduck.internal:"+strconv.Itoa(tc.port) {
+			t.Fatal("MyDuck protocol endpoint changed")
+		}
+		if tc.protocol == "postgres" && (u.Query().Get("sslmode") != "verify-full" || u.Query().Get("sslrootcert") != cluster.DatabaseTrustPath(d.ID)) {
+			t.Fatal("MyDuck PostgreSQL endpoint lost verified TLS")
+		}
+		if tc.protocol == "mysql" && u.RawQuery != "" {
+			t.Fatal("MyDuck MySQL endpoint added unsupported URL TLS parameters")
+		}
 	}
 }
 

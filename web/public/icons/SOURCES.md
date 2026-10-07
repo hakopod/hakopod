@@ -4,6 +4,8 @@ Icons in this directory are individual SVGs from Simple Icons 16.30.0, distribut
 
 Source: https://github.com/simple-icons/simple-icons/tree/16.30.0/icons
 
+DuckDB uses the `duckdb.svg` asset from that pinned Simple Icons release.
+
 The Hakopod logo remains the supplied brand-kit asset. No emoji substitutes are used.
 
 ## Official project assets

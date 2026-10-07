@@ -144,7 +144,7 @@ function Connect({ id }: { id: string }) {
       </ConnectionState>
     )
   const chosenEndpoint =
-    endpoint || (d.spec.engine === 'mongodb' || ['redis', 'clickhouse'].includes(d.spec.engine) && d.spec.mode === 'cluster' ? 'cluster' : 'read_write')
+    endpoint || (d.spec.engine === 'duckdb' ? 'mysql' : d.spec.engine === 'mongodb' || ['redis', 'clickhouse'].includes(d.spec.engine) && d.spec.mode === 'cluster' ? 'cluster' : 'read_write')
   const optionIssue = databaseBindingIssue(d.spec, options, chosenEndpoint)
   const reviewIssue = databaseConnectionReviewIssue(plan, d.revision, selectedApplication?.revision, Math.max(now, Date.now()))
   const refreshFailed = Boolean(database.error || applications.error || application.error)
@@ -333,6 +333,7 @@ function Connect({ id }: { id: string }) {
           </label>
           </div>
           {chosenEndpoint.startsWith('pooled_') && <Note>PgBouncer uses {d.spec.pooling?.mode} pooling. Choose write or replica traffic explicitly. Clients must reconnect after failover.{d.spec.pooling?.mode === 'transaction' ? ' Session settings and temporary tables across transactions need a direct or session connection.' : ''}</Note>}
+          {d.spec.engine === 'duckdb' && <Note>This binding uses the {chosenEndpoint === 'postgresql' ? 'PostgreSQL' : 'MySQL'} protocol. Both endpoints reach the same DuckDB (MyDuck) instance.</Note>}
           {chosenEndpoint === 'cluster' && (
             <label className="flex min-h-11 items-center gap-2">
               <Input
@@ -352,6 +353,7 @@ function Connect({ id }: { id: string }) {
         {application.data && !selectedApplication && <FormError focus={false}>This application is outside the database’s project or environment. Choose an application in the displayed scope.</FormError>}
         <DatabaseBindingFields
           spec={d.spec}
+          endpoint={chosenEndpoint}
           draft={options}
           onChange={(draft) => { reset(); setOptions(draft) }}
           disabled={busy || Boolean(plan)}

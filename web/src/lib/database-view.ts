@@ -43,8 +43,8 @@ export function databaseRequestedCapacity(spec: DatabaseSpec) {
   }
   return { ...capacity, cpu: capacity.cpu + (poolers + keeperInstances(spec)) * 0.25 + routerInstances(spec) * 0.1 + oracleBrokerInstances(spec) * 0.1, memoryMiB: capacity.memoryMiB + (poolers + keeperInstances(spec)) * 256 + routerInstances(spec) * 128 + oracleBrokerInstances(spec) * 256 }
 }
-export const engineName = (engine: string) => ({ postgresql: 'PostgreSQL', redis: 'Redis', mysql: 'MySQL', mongodb: 'MongoDB', clickhouse: 'ClickHouse', oracle: 'Oracle Database', vitess: 'Vitess' })[engine] || engine
-export const endpointName = (purpose: string, engine?: string) => engine === 'vitess' && ['read_write', 'read_only'].includes(purpose) ? purpose === 'read_only' ? 'vtgate · app@replica' : 'vtgate · app@primary' : engine === 'clickhouse' && purpose === 'cluster' ? 'Cluster endpoint' :
+export const engineName = (engine: string) => ({ postgresql: 'PostgreSQL', redis: 'Redis', mysql: 'MySQL', mongodb: 'MongoDB', clickhouse: 'ClickHouse', oracle: 'Oracle Database', vitess: 'Vitess', duckdb: 'DuckDB (MyDuck)' })[engine] || engine
+export const endpointName = (purpose: string, engine?: string) => engine === 'duckdb' && purpose === 'mysql' ? 'MySQL protocol · port 3306' : engine === 'duckdb' && purpose === 'postgresql' ? 'PostgreSQL protocol · port 5432' : engine === 'vitess' && ['read_write', 'read_only'].includes(purpose) ? purpose === 'read_only' ? 'vtgate · app@replica' : 'vtgate · app@primary' : engine === 'clickhouse' && purpose === 'cluster' ? 'Cluster endpoint' :
   ({ read_write: 'Read / write', read_only: 'Read only', cluster: 'Cluster discovery', pooled_read_write: 'Pooled write', pooled_read_only: 'Pooled read' })[purpose] ||
   purpose.replaceAll('_', ' ')
 export const endpointAddress = (endpoint: { host: string; port: number; purpose: string }, engine: string) => `${endpoint.host}:${endpoint.port}${engine === 'vitess' ? endpoint.purpose === 'read_only' ? '/app@replica' : '/app@primary' : ''}`

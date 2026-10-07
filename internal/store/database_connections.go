@@ -68,6 +68,13 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 	if d.Spec.Engine == "mysql" || d.Spec.Engine == "vitess" {
 		b.Protocol = "mysql"
 	}
+	if d.Spec.Engine == "duckdb" {
+		if endpoint == "mysql" {
+			b.Protocol = "mysql"
+		} else if endpoint == "postgresql" {
+			b.Protocol = "postgres"
+		}
+	}
 	if d.Spec.Engine == "mongodb" {
 		b.Protocol = "mongodb"
 	}
@@ -140,6 +147,9 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 	}
 	if d.Spec.Engine == "vitess" {
 		plan.Warnings = append(plan.Warnings, "Vitess uses the MySQL protocol with app@primary or app@replica as the database target. Configure your driver to verify the gateway hostname using the mounted CA. The gateway does not decide which queries may use replicas; replica reads may lag.")
+	}
+	if d.Spec.Engine == "duckdb" {
+		plan.Warnings = append(plan.Warnings, "DuckDB (MyDuck) exposes MySQL and PostgreSQL protocols from the same database instance. This connection uses the selected protocol and its managed account.")
 	}
 	if d.Spec.Engine == "mongodb" {
 		plan.Warnings = append(plan.Warnings, "Use a MongoDB driver that discovers replica set members and verifies TLS. This binding requests majority writes and primary reads. Secondary reads require an explicit driver read preference and may lag.")

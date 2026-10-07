@@ -2,7 +2,7 @@ import type { DatabasePlacementNode, DatabaseSpec } from './databases'
 import { engineName, placementDomains } from './database-view'
 
 export function databaseEligibleNodes(engine: DatabaseSpec['engine'], nodes: DatabasePlacementNode[]) {
-  if (!['mysql', 'mongodb', 'vitess'].includes(engine)) return nodes
+  if (!['mysql', 'mongodb', 'vitess', 'duckdb'].includes(engine)) return nodes
   return nodes.map((node) => node.architecture === 'amd64' ? node : {
     ...node, available: false,
     reason: `${engineName(engine)} requires an amd64 node for its supported images.${node.reason ? ` ${node.reason}` : ''}`,

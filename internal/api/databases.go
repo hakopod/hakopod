@@ -100,6 +100,10 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_request", err.Error())
 		return
 	}
+	if in.Spec.Engine == "duckdb" && !database.MyDuckRuntimeQualified {
+		problem(w, 503, "database_controller_unavailable", "DuckDB (MyDuck) creation is unavailable until its pinned source, dual-protocol TLS and single-node lifecycle pass native qualification.")
+		return
+	}
 	if len(s.authEncryptionKey()) != 32 {
 		problem(w, 503, "unavailable", "configure the persistent encryption key before creating a database")
 		return
@@ -641,7 +645,7 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 			claim.Release()
 		}
 	}
-	renewIdentity := d.Status == "ready" && nativeStorageErr == nil && (d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess") && d.Spec.TLSRequired()
+	renewIdentity := d.Status == "ready" && nativeStorageErr == nil && (d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess" || d.Spec.Engine == "duckdb") && d.Spec.TLSRequired()
 	// Lifecycle readiness, not observed health, permits maintenance: stale API
 	// endpoints can prevent an otherwise ready database from becoming healthy.
 	reconcileNetworkPolicy := d.Status == "ready"

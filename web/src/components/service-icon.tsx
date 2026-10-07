@@ -15,6 +15,7 @@ const source: Record<string, string> = {
   mariadb: 'mariadb',
   mongodb: 'mongodb',
   vitess: 'vitess',
+  duckdb: 'duckdb',
   neon: 'neon',
   supabase: 'supabase',
   'uptime-kuma': 'uptimekuma',

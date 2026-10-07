@@ -61,13 +61,13 @@ func validateBindings(app Application) error {
 				if b.Protocol != "postgres" && b.Protocol != "redis" && b.Protocol != "mysql" && b.Protocol != "mongodb" && b.Protocol != "clickhouse" && b.Protocol != "oracle" {
 					return fmt.Errorf("managed database protocol must be postgres, mysql, redis, mongodb, clickhouse or oracle")
 				}
-				if b.Endpoint != "read_write" && b.Endpoint != "read_only" && b.Endpoint != "cluster" && b.Endpoint != "pooled_read_write" && b.Endpoint != "pooled_read_only" {
+				if b.Endpoint != "read_write" && b.Endpoint != "read_only" && b.Endpoint != "cluster" && b.Endpoint != "pooled_read_write" && b.Endpoint != "pooled_read_only" && b.Endpoint != "mysql" && b.Endpoint != "postgresql" {
 					return fmt.Errorf("choose a managed database endpoint")
 				}
-				if b.Protocol == "postgres" && (b.Endpoint == "cluster" || b.ClusterAware) || b.Protocol == "redis" && (b.Endpoint != "read_write" && b.Endpoint != "cluster" || (b.Endpoint == "cluster") != b.ClusterAware) {
+				if b.Protocol == "postgres" && (b.Endpoint == "cluster" || b.Endpoint == "mysql" || b.ClusterAware) || b.Protocol == "redis" && (b.Endpoint != "read_write" && b.Endpoint != "cluster" || (b.Endpoint == "cluster") != b.ClusterAware) {
 					return fmt.Errorf("database endpoint and cluster-aware acknowledgement do not match the protocol")
 				}
-				if b.Protocol == "mysql" && (b.ClusterAware || b.Endpoint != "read_write" && b.Endpoint != "read_only") {
+				if b.Protocol == "mysql" && (b.ClusterAware || b.Endpoint != "read_write" && b.Endpoint != "read_only" && b.Endpoint != "mysql") {
 					return fmt.Errorf("MySQL bindings require a write or replica route")
 				}
 				if b.Protocol == "mongodb" && (b.Endpoint != "cluster" || !b.ClusterAware) {

@@ -31,7 +31,7 @@ test('database placement counts available distinct failure domains within the se
 
 test('architecture restrictions preserve selections and exclude incompatible nodes from quorum', () => {
   const mixed = nodes.map((node) => node.name === 'worker-c' ? { ...node, architecture: 'arm64' } : node)
-  for (const engine of ['mysql', 'mongodb', 'vitess'] as const) {
+  for (const engine of ['mysql', 'mongodb', 'vitess', 'duckdb'] as const) {
     const spec = { ...initialDatabaseSpec, engine, mode: 'cluster' as const, replicas: 2, placement: { spread: 'nodes' as const } }
     assert.match(databasePlacementIssue(spec, mixed, false) || '', /Only 2/)
     assert.match(databasePlacementIssue({ ...spec, placement: { node_names: ['worker-c'] } }, mixed, true) || '', /unavailable/)

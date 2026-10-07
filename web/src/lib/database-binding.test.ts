@@ -40,9 +40,20 @@ test('SSL choices follow the database engine and cannot downgrade a required TLS
   const modes = (engine: typeof initialDatabaseSpec.engine, tls = true) => databaseBindingSSLOptions({ ...initialDatabaseSpec, engine, tls: tls ? { mode: 'required' } : undefined }).map((option) => option.value)
   assert.deepEqual(modes('postgresql'), ['', 'require', 'verify-ca', 'verify-full'])
   for (const engine of ['redis', 'mongodb', 'clickhouse', 'oracle'] as const) assert.deepEqual(modes(engine), ['', 'verify-full'])
-  for (const engine of ['mysql', 'vitess'] as const) assert.deepEqual(modes(engine), [''])
+  for (const engine of ['mysql', 'vitess', 'duckdb'] as const) assert.deepEqual(modes(engine), [''])
   for (const engine of ['postgresql', 'redis'] as const) assert.deepEqual(modes(engine, false), ['', 'disable'])
   assert.match(databaseBindingIssue(initialDatabaseSpec, { ...emptyDatabaseBindingDraft, sslMode: 'disable' }) || '', /TLS policy/)
+})
+
+test('MyDuck bindings keep the managed login and expose protocol-specific endpoints', () => {
+  const myduck = { ...initialDatabaseSpec, engine: 'duckdb' as const, version: '0.3.1-dev.20260919.3' }
+  assert.equal(databaseBindingIssue(myduck, emptyDatabaseBindingDraft, 'mysql'), undefined)
+  assert.equal(databaseBindingIssue(myduck, { ...emptyDatabaseBindingDraft, username: 'root', database: 'app' }, 'mysql'), undefined)
+  assert.equal(databaseBindingIssue(myduck, { ...emptyDatabaseBindingDraft, username: 'postgres', database: 'app' }, 'postgresql'), undefined)
+  assert.match(databaseBindingIssue(myduck, { ...emptyDatabaseBindingDraft, username: 'analyst', passwordSource: 'existing', passwordRef: 'analyst-password' }, 'mysql') || '', /managed app user/)
+  assert.match(databaseBindingIssue(myduck, { ...emptyDatabaseBindingDraft, passwordSource: 'existing', passwordRef: 'other-password' }, 'postgresql') || '', /managed app user/)
+  assert.deepEqual(databaseBindingSSLOptions(myduck, 'mysql').map((option) => option.value), [''])
+  assert.deepEqual(databaseBindingSSLOptions(myduck, 'postgresql').map((option) => option.value), ['', 'verify-full'])
 })
 
 test('pooled PostgreSQL keeps the managed login and database while direct endpoints permit overrides', () => {
