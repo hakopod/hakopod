@@ -58,11 +58,15 @@ func TestOracleFreeRejectsPodPrivilegeAndExecutionDrift(t *testing.T) {
 		"lifecycle": func(p *corev1.Pod) {
 			p.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{PostStart: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"sh"}}}}
 		},
-		"readiness":           func(p *corev1.Pod) { p.Spec.Containers[0].ReadinessProbe.Exec.Command = []string{"true"} },
-		"plaintext port":      func(p *corev1.Pod) { p.Spec.Containers[0].Ports[0].ContainerPort = 1521 },
-		"host port":           func(p *corev1.Pod) { p.Spec.Containers[0].Ports[0].HostPort = 2484 },
-		"host networking":     func(p *corev1.Pod) { p.Spec.HostNetwork = true },
-		"operator account":    func(p *corev1.Pod) { p.Spec.ServiceAccountName = "database-oracle-free-operator" },
+		"readiness":        func(p *corev1.Pod) { p.Spec.Containers[0].ReadinessProbe.Exec.Command = []string{"true"} },
+		"plaintext port":   func(p *corev1.Pod) { p.Spec.Containers[0].Ports[0].ContainerPort = 1521 },
+		"host port":        func(p *corev1.Pod) { p.Spec.Containers[0].Ports[0].HostPort = 2484 },
+		"host networking":  func(p *corev1.Pod) { p.Spec.HostNetwork = true },
+		"operator account": func(p *corev1.Pod) { p.Spec.ServiceAccountName = "database-oracle-free-operator" },
+		"operator account alias": func(p *corev1.Pod) {
+			p.Spec.ServiceAccountName = "database-oracle-free-operator"
+			p.Spec.DeprecatedServiceAccount = p.Spec.ServiceAccountName
+		},
 		"token mount":         func(p *corev1.Pod) { p.Spec.AutomountServiceAccountToken = ptr(true) },
 		"secret substitution": func(p *corev1.Pod) { p.Spec.Volumes[0].Secret.SecretName = "foreign" },
 		"extra sidecar":       func(p *corev1.Pod) { p.Spec.Containers = append(p.Spec.Containers, p.Spec.Containers[0]) },
@@ -417,6 +421,37 @@ func TestOracleFreeControllerReadinessRejectsStaleDeploymentPolicy(t *testing.T)
 			c := &Client{kube: fake.NewClientset(append([]runtime.Object{ns}, objects...)...)}
 			err := c.oracleFreeControllerReady(context.Background(), d)
 			if name == "ready" && err != nil || name != "ready" && err == nil {
+				t.Fatalf("unexpected controller readiness: %v", err)
+			}
+		})
+	}
+}
+
+func TestOracleFreeControllerReadinessHandlesAPIDefaultedServiceAccount(t *testing.T) {
+	d := oracleFixture()
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DatabaseNamespace(d.ID), UID: "namespace-uid", Labels: databaseLabels(d)}}
+	for _, name := range []string{"matching aliases", "conflicting template alias", "conflicting pod alias", "conflicting template default alias", "conflicting pod default alias"} {
+		t.Run(name, func(t *testing.T) {
+			objects := oracleFreeTestControllerObjects(t, d, ns.UID)
+			deployment := objects[0].(*appsv1.Deployment)
+			pod := objects[2].(*corev1.Pod)
+			deployment.Spec.Template.Spec.DeprecatedServiceAccount = deployment.Spec.Template.Spec.ServiceAccountName
+			pod.Spec.DeprecatedServiceAccount = pod.Spec.ServiceAccountName
+			if name == "conflicting template alias" {
+				deployment.Spec.Template.Spec.DeprecatedServiceAccount = "foreign"
+			}
+			if name == "conflicting pod alias" {
+				pod.Spec.DeprecatedServiceAccount = "foreign"
+			}
+			if name == "conflicting template default alias" {
+				deployment.Spec.Template.Spec.DeprecatedServiceAccount = "default"
+			}
+			if name == "conflicting pod default alias" {
+				pod.Spec.DeprecatedServiceAccount = "default"
+			}
+			c := &Client{kube: fake.NewClientset(append([]runtime.Object{ns}, objects...)...)}
+			err := c.oracleFreeControllerReady(context.Background(), d)
+			if name == "matching aliases" && err != nil || name != "matching aliases" && err == nil {
 				t.Fatalf("unexpected controller readiness: %v", err)
 			}
 		})
