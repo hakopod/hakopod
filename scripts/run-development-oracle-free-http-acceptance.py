@@ -253,6 +253,7 @@ def run(args):
                 or not temporary.is_absolute() or not temporary.is_relative_to(args.cache) or temporary.is_symlink()):
             raise ValueError("Oracle HTTP fixture paths escaped managed scratch")
         env["PATH"] = str(shim) + ":" + str(args.go.parent) + ":" + str(args.kubectl.parent) + ":/usr/local/bin:/usr/bin:/bin"
+        env["GOTMPDIR"] = str(temporary)
         code = run_test([str(args.go), "test", "-json", "-count=1", "./internal/api", "-run", "^" + test + "$", "-timeout=110m"], env, log)
         events, valid = RUNNER["structural_events"](log)
         after = VERIFIER["source_files"](ROOT)
