@@ -37,6 +37,7 @@ Final compilation and substantial tests ran on the VM. Early local checks stoppe
 - Dashboard API generation, production build, typecheck, 69 server/library tests and 235 UI checks passed.
 - SDK API generation, build and all 55 tests passed.
 - `git diff --check` passed.
+- The full Go rerun passed on the VM at 2026-10-07 20:15:42 UTC. It ran `go test -p=2 -timeout=20m ./...` with disposable PostgreSQL.
 
 The focused command sequence is recorded in VM service `hakopod-agent-parity-focused-final`.
 The dashboard and SDK sequence is recorded in `hakopod-agent-parity-web-complete`.
@@ -70,9 +71,12 @@ All native fixture namespaces, PVCs and associated PV claims were confirmed abse
 
 The initial full Go run found the numeric precision regression, which was fixed and passed in the final focused run.
 That full run also reached the aggregate ten-minute API package timeout while progressing through existing authentication tests.
-A full rerun with two package workers and a twenty-minute package timeout is pending at this record's initial creation.
+A full rerun with two package workers and a twenty-minute package timeout passed.
+The API package took 866.795 seconds. The store package took 621.756 seconds.
 That rerun started before the transport, configuration-free discovery and response-decoder corrections.
 The final focused checks, precision checks and native SQL run qualify those later changes separately.
+The disposable test PostgreSQL container and temporary cluster credential copy were removed after verification.
+The UI review server and local tunnel were stopped.
 
 No merge, release or production deployment is claimed.
 The public dashboard API proxy forwards a narrower operation set than the canonical API. HTTP MCP uses canonical dispatch.
