@@ -42,16 +42,10 @@ func (s *Store) StartDevice(ctx context.Context, project, environment string, pe
 	if (project == "") != (environment == "") {
 		return DeviceAuthorization{}, ErrInput
 	}
-	if len(permissions) == 0 {
-		permissions = []string{"deployments:read", "deployments:write", "logs:read"}
-	}
-	if len(permissions) > 3 {
-		return DeviceAuthorization{}, ErrInput
-	}
-	for _, p := range permissions {
-		if !contains([]string{"deployments:read", "deployments:write", "logs:read"}, p) {
-			return DeviceAuthorization{}, ErrForbidden
-		}
+	var err error
+	permissions, err = devicePermissions(permissions)
+	if err != nil {
+		return DeviceAuthorization{}, err
 	}
 	if project != "" && s.DeviceScopes == nil {
 		var exists bool
@@ -250,4 +244,28 @@ func (s *Store) deviceScopes(ctx context.Context, p Principal) ([]DeviceScope, e
 		}
 	}
 	return result, rows.Err()
+}
+
+// Device permissions require explicit consent. Defaults retain the existing deployment and log access.
+func devicePermissions(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return []string{"deployments:read", "deployments:write", "logs:read"}, nil
+	}
+	if len(in) > 6 {
+		return nil, ErrInput
+	}
+	seen := map[string]bool{}
+	for _, p := range in {
+		if !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query"}, p) {
+			return nil, ErrForbidden
+		}
+		if seen[p] {
+			return nil, ErrInput
+		}
+		seen[p] = true
+	}
+	if seen["databases:write-query"] && !seen["databases:query"] {
+		return nil, ErrInput
+	}
+	return append([]string(nil), in...), nil
 }

@@ -65,6 +65,7 @@ import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedu
 import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.edit'
 import { Route as DatabasesDatabaseIdConnectRouteImport } from './routes/databases.$databaseId.connect'
 import { Route as DatabasesDatabaseIdPublicEndpointsRouteImport } from './routes/databases.$databaseId.public-endpoints'
+import { Route as DatabasesDatabaseIdQueryRouteImport } from './routes/databases.$databaseId.query'
 import { Route as DatabasesDatabaseIdRecoverRouteImport } from './routes/databases.$databaseId.recover'
 import { Route as DatabasesDatabaseIdResizeRouteImport } from './routes/databases.$databaseId.resize'
 import { Route as DatabasesDatabaseIdResizeRetryRouteImport } from './routes/databases.$databaseId.resize-retry'
@@ -392,6 +393,12 @@ const DatabasesDatabaseIdPublicEndpointsRoute =
     path: '/public-endpoints',
     getParentRoute: () => DatabasesDatabaseIdRoute,
   } as any)
+const DatabasesDatabaseIdQueryRoute =
+  DatabasesDatabaseIdQueryRouteImport.update({
+    id: '/query',
+    path: '/query',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
 const DatabasesDatabaseIdRecoverRoute =
   DatabasesDatabaseIdRecoverRouteImport.update({
     id: '/recover',
@@ -666,6 +673,7 @@ export interface FileRoutesByFullPath {
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
+  '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
   '/databases/$databaseId/resize-retry': typeof DatabasesDatabaseIdResizeRetryRoute
@@ -761,6 +769,7 @@ export interface FileRoutesByTo {
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
+  '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
   '/databases/$databaseId/resize-retry': typeof DatabasesDatabaseIdResizeRetryRoute
@@ -857,6 +866,7 @@ export interface FileRoutesById {
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
+  '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
   '/databases/$databaseId/resize': typeof DatabasesDatabaseIdResizeRoute
   '/databases/$databaseId/resize-retry': typeof DatabasesDatabaseIdResizeRetryRoute
@@ -954,6 +964,7 @@ export interface FileRouteTypes {
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
     | '/databases/$databaseId/public-endpoints'
+    | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
     | '/databases/$databaseId/resize-retry'
@@ -1049,6 +1060,7 @@ export interface FileRouteTypes {
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
     | '/databases/$databaseId/public-endpoints'
+    | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
     | '/databases/$databaseId/resize-retry'
@@ -1144,6 +1156,7 @@ export interface FileRouteTypes {
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
     | '/databases/$databaseId/public-endpoints'
+    | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
     | '/databases/$databaseId/resize'
     | '/databases/$databaseId/resize-retry'
@@ -1605,6 +1618,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DatabasesDatabaseIdPublicEndpointsRouteImport
       parentRoute: typeof DatabasesDatabaseIdRoute
     }
+    '/databases/$databaseId/query': {
+      id: '/databases/$databaseId/query'
+      path: '/query'
+      fullPath: '/databases/$databaseId/query'
+      preLoaderRoute: typeof DatabasesDatabaseIdQueryRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
     '/databases/$databaseId/recover': {
       id: '/databases/$databaseId/recover'
       path: '/recover'
@@ -1931,6 +1951,7 @@ const BuildsRouteWithChildren =
 interface DatabasesDatabaseIdRouteChildren {
   DatabasesDatabaseIdConnectRoute: typeof DatabasesDatabaseIdConnectRoute
   DatabasesDatabaseIdPublicEndpointsRoute: typeof DatabasesDatabaseIdPublicEndpointsRoute
+  DatabasesDatabaseIdQueryRoute: typeof DatabasesDatabaseIdQueryRoute
   DatabasesDatabaseIdRecoverRoute: typeof DatabasesDatabaseIdRecoverRoute
   DatabasesDatabaseIdResizeRoute: typeof DatabasesDatabaseIdResizeRoute
   DatabasesDatabaseIdResizeRetryRoute: typeof DatabasesDatabaseIdResizeRetryRoute
@@ -1941,6 +1962,7 @@ const DatabasesDatabaseIdRouteChildren: DatabasesDatabaseIdRouteChildren = {
   DatabasesDatabaseIdConnectRoute: DatabasesDatabaseIdConnectRoute,
   DatabasesDatabaseIdPublicEndpointsRoute:
     DatabasesDatabaseIdPublicEndpointsRoute,
+  DatabasesDatabaseIdQueryRoute: DatabasesDatabaseIdQueryRoute,
   DatabasesDatabaseIdRecoverRoute: DatabasesDatabaseIdRecoverRoute,
   DatabasesDatabaseIdResizeRoute: DatabasesDatabaseIdResizeRoute,
   DatabasesDatabaseIdResizeRetryRoute: DatabasesDatabaseIdResizeRetryRoute,

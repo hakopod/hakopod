@@ -125,3 +125,23 @@ test('deployment events preserve streaming, reconnection cursor and cancellation
   assert.equal(response.headers.get('Cache-Control'), 'no-store')
   assert.equal(await response.text(), events)
 })
+
+test('dashboard execution transports retain session and origin enforcement', async (t) => {
+  const paths = [`databases/${'a'.repeat(32)}/query`, `applications/${'a'.repeat(32)}/services/web/exec`]
+  const mocked = t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    assert.equal(init?.method, 'POST')
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer fixture-token')
+    return Response.json({ outcome: 'read' })
+  })
+  for (const path of paths) {
+    const input = new Request(`http://127.0.0.1/api/${path}`, { method: 'POST', headers: { Origin: 'http://127.0.0.1' }, body: '{}' })
+    assert.equal((await proxy({ request: input.clone(), params: { _splat: path } })).status, 401)
+    input.headers.set('Cookie', sessionCookie(input, sealSession('fixture-token')).split(';')[0])
+    assert.equal((await proxy({ request: input, params: { _splat: path } })).status, 200)
+    const read = new Request(`http://127.0.0.1/api/${path}`)
+    assert.equal((await proxy({ request: read, params: { _splat: path } })).status, 405)
+    const foreign = new Request(`http://127.0.0.1/api/${path}`, { method: 'POST', headers: { Origin: 'https://other.example' }, body: '{}' })
+    assert.equal((await proxy({ request: foreign, params: { _splat: path } })).status, 403)
+  }
+  assert.equal(mocked.mock.callCount(), 2)
+})

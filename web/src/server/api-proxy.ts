@@ -22,7 +22,7 @@ export const allowed = [
   /^managed-platform-recovery-operations\/[a-f0-9]{32}(?:\/cancel)?$/,
   /^external-databases(?:\/[a-f0-9]{32}(?:\/(?:connections|trust|connection-plan|connect))?)?$/,
   /^external-database-operations\/[a-f0-9]{32}$/,
-  /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|connections|trust|metrics|credentials|resize-plan|resize-retry-plan|resize-retry|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry|public-endpoint-capabilities|public-endpoint-plan|public-endpoints(?:\/[a-f0-9]{32})?))?)?$/,
+  /^databases(?:\/[a-f0-9]{32}(?:\/(?:operations|connections|trust|metrics|query|credentials|resize-plan|resize-retry-plan|resize-retry|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry|public-endpoint-capabilities|public-endpoint-plan|public-endpoints(?:\/[a-f0-9]{32})?))?)?$/,
   /^database-operations\/[a-f0-9]{32}$/,
   /^database-public-endpoint-operations\/[a-f0-9]{32}$/,
   /^actions\/capabilities$/,
@@ -78,7 +78,7 @@ export const allowed = [
   /^license$/,
   /^applications\/[A-Za-z0-9_-]+\/logs\/query$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input))?)?$/,
-  /^(me|projects(?:\/[A-Za-z0-9_-]+)?|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback)|\/services\/[A-Za-z0-9_-]+\/(?:runtime|restart|stop|resume|scale|tls|delivery|certificates))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit|settings\/appearance)$/,
+  /^(me|projects(?:\/[A-Za-z0-9_-]+)?|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback)|\/services\/[A-Za-z0-9_-]+\/(?:runtime|restart|stop|resume|scale|tls|delivery|certificates|exec))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/cancel)?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit|settings\/appearance)$/,
   /^auth\/(?:status|onboarding|invites\/inspect|security|sessions(?:\/[A-Za-z0-9_-]+)?|device(?:\/approve)?|mfa\/totp\/(?:start|confirm|disable)|passkeys\/(?:(?:register|login)\/(?:start|finish)|[A-Za-z0-9_-]+))$/,
   /^teams(?:\/[A-Za-z0-9_-]+\/(?:members(?:\/[A-Za-z0-9_-]+)?|invites))?$/,
   /^users(?:\/[A-Za-z0-9_-]+)?$/,
@@ -144,6 +144,14 @@ export async function proxy({
       return oauth(request, path)
     if (!allowed.some((pattern) => pattern.test(path)))
       return Response.json({ error: { message: 'Unknown API endpoint.' } }, { status: 404 })
+    const executionPath =
+      /^databases\/[a-f0-9]{32}\/query$/.test(path) ||
+      /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/exec$/.test(path)
+    if (executionPath && request.method !== 'POST')
+      return Response.json(
+        { error: { message: 'Execution endpoints require POST.' } },
+        { status: 405, headers: { ...privateHeaders, Allow: 'POST' } },
+      )
     const actionsMethod =
       /^applications\/[A-Za-z0-9_-]+\/actions\/[A-Za-z0-9_-]+\/(?:jobs\/[A-Za-z0-9_-]+\/cancel|hold\/release)$/.test(
         path,

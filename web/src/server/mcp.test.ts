@@ -5,7 +5,7 @@ import { proxy } from './api-proxy.ts'
 test('public MCP proxy preserves client auth and protocol without browser privileges', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
     assert.equal(new URL(String(url)).pathname, '/api/v1/mcp')
-    assert.equal(new URL(String(url)).search, '?project=demo&environment=development')
+    assert.equal(new URL(String(url)).search, '?project=demo&environment=development&allow_deploy=false&allow_write=true&allow_exec=true&allow_sql=true&allow_sql_write=false')
     const headers = new Headers(init?.headers)
     assert.equal(headers.get('Authorization'), 'Bearer hp_client_key')
     assert.equal(headers.get('Accept'), 'application/json, text/event-stream')
@@ -21,7 +21,7 @@ test('public MCP proxy preserves client auth and protocol without browser privil
     })
   })
   const request = new Request(
-    'https://dashboard.example/api/v1/mcp?project=demo&environment=development',
+    'https://dashboard.example/api/v1/mcp?project=demo&environment=development&allow_deploy=false&allow_write=true&allow_exec=true&allow_sql=true&allow_sql_write=false',
     {
       method: 'POST',
       headers: {

@@ -294,12 +294,21 @@ func validKeyFields(name, project, environment, application string, permissions 
 		return errors.New("at least one permission is required")
 	}
 	for _, v := range permissions {
-		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "slack:relay"}, v) {
+		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "slack:relay", "pods:exec", "databases:query", "databases:write-query"}, v) {
 			return fmt.Errorf("unsupported permission %q", v)
 		}
 	}
 	if !contains(permissions, "admin") && (project == "" || environment == "") {
 		return errors.New("machine keys require explicit project and environment")
+	}
+	if (contains(permissions, "pods:exec") || contains(permissions, "databases:query") || contains(permissions, "databases:write-query")) && (project == "" || environment == "") {
+		return errors.New("command and query keys require an explicit project and environment")
+	}
+	if (contains(permissions, "databases:query") || contains(permissions, "databases:write-query")) && application != "" {
+		return errors.New("database query keys cannot have an application restriction")
+	}
+	if contains(permissions, "databases:write-query") && !contains(permissions, "databases:query") {
+		return errors.New("databases:write-query requires databases:query")
 	}
 	if (contains(permissions, "networks:write") || contains(permissions, "git:manage") || contains(permissions, "applications:manage") || contains(permissions, "slack:relay")) && (project == "" || environment == "" || application != "") {
 		return errors.New("scoped management keys require a project and environment without an application restriction")

@@ -123,9 +123,10 @@ recorded Git commit SHAs. Tools also suggest a framework recipe from supplied
 metadata and plan TOML changes.
 
 Self-hosted installations also expose a [Streamable HTTP MCP endpoint](http-mcp.md)
-at `/api/v1/mcp?project=demo&environment=development`, using a scoped bearer key. There is no host terminal,
-shell execution or implicit local-file access. Returned application content and
-logs are explicitly untrusted data.
+at `/api/v1/mcp?project=demo&environment=development`, using a scoped bearer key.
+Optional [agent control](agent-control.md) adds scoped pod commands, PostgreSQL queries and contract operation discovery.
+There is no host terminal or implicit local-file access. Returned application content,
+logs and query results are untrusted data.
 
 Deployment is absent by default. Add `--allow-deploy` only when the agent should
 be able to deploy after review. `plan` returns a canonical plan and a ten-minute

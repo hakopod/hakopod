@@ -32,6 +32,8 @@ const routes: [RegExp, string[]][] = [
     ['POST'],
   ],
   [/^databases$/, ['GET', 'POST']],
+  [/^databases\/[a-f0-9]{32}\/query$/, ['POST']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/exec$/, ['POST']],
   [/^managed-platforms(?:\/catalog)?$/, ['GET']],
   [/^managed-platforms\/[a-f0-9]{32}(?:\/(?:operations|recovery-operations|trust))?$/, ['GET']],
   [/^managed-platforms\/(?:reviews|operations)$/, ['POST']],

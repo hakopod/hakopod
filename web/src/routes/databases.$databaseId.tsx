@@ -71,6 +71,7 @@ function Detail() {
   if (query.error && !query.data) return <ErrorState error={query.error} />
   const d = query.data!
   const canManage = !identity.application && canAccess(identity, d.project, 'deployments:write')
+  const canQuery = !identity.application && ['databases:query', 'databases:write-query'].some((permission) => canAccess(identity,d.project,permission) && (identity.credential_type !== 'machine' || (identity.project === d.project && identity.environment === d.environment && identity.permissions.includes(permission))))
   const search = { project: d.project, environment: d.environment }
   const canBackups = identity.admin || identity.can_manage_backups
   return (
@@ -80,6 +81,9 @@ function Detail() {
         description={databaseSummary(d.spec)}
         action={
           <div className="flex flex-wrap gap-2">
+            {canQuery && d.spec.engine === 'postgresql' && d.status === 'ready' && (
+              <Button asChild><Link to="/databases/$databaseId/query" params={{ databaseId: id }} search={search}>SQL query</Link></Button>
+            )}
             {canManage && d.status === 'ready' && (
               <Button asChild variant="primary">
                 <Link

@@ -1,6 +1,6 @@
-# HTTP MCP for self-hosted Hakopod
+# HTTP MCP for Hakopod
 
-Self-hosted deployments expose the same tools as `hakopod mcp` at:
+Self-hosted deployments and managed tenant runtimes expose the same tools as `hakopod mcp` at:
 
 ```text
 https://YOUR_HAKOPOD_HOST/api/v1/mcp?project=demo&environment=development
@@ -11,7 +11,8 @@ with this URL and an `Authorization: Bearer …` header from its secret store.
 There is no separate MCP process or port to publish. The dashboard forwards
 this exact route to the local API. HTTPS is required for remote credentials.
 
-This feature is available in alpha.15 and later. Hosted Cloud does not expose this route.
+The self-hosted endpoint is available in alpha.15 and later. Managed tenant runtime support is added by the agent-control change.
+The shared Cloud control plane does not expose this route. Runtime support does not imply a public Cloud account authentication flow.
 
 ## Credentials and scope
 
@@ -103,6 +104,10 @@ ten minutes and are lost when the session ends. HTTP sessions retain up to four
 plans.
 
 ## Transport and limits
+
+See [agent control](agent-control.md) for contract discovery, separate execution permissions, pod commands and PostgreSQL queries.
+HTTP options use `true` or `false`. Duplicate or invalid values are rejected.
+The session retains its original options. Initialize a new session to change them.
 
 POST `initialize` with JSON-RPC 2.0 and a protocol version. The server negotiates
 `2025-06-18` or `2025-03-26` and returns `Mcp-Session-Id`. Preserve that header
