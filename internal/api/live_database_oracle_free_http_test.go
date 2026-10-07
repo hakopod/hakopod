@@ -23,10 +23,12 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/hakopod/hakopod/internal/worker"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -160,6 +162,90 @@ func oracleHTTPWaitDeployment(t *testing.T, ctx context.Context, client backupRe
 	}
 	t.Fatal("application deployment timed out")
 	return store.Deployment{}
+}
+
+type oracleHTTPPodIdentity struct {
+	uid          types.UID
+	containerID  string
+	restartCount int32
+}
+
+func oracleHTTPWaitPodIdentity(ctx context.Context, kube kubernetes.Interface, namespace, service string, interval time.Duration) (oracleHTTPPodIdentity, error) {
+	for {
+		pods, err := kube.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: "hakopod.io/service=" + service, Limit: 2})
+		if err != nil {
+			return oracleHTTPPodIdentity{}, err
+		}
+		active := make([]corev1.Pod, 0, len(pods.Items))
+		for _, pod := range pods.Items {
+			if pod.DeletionTimestamp == nil && pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
+				active = append(active, pod)
+			}
+		}
+		if pods.Continue == "" && len(active) == 1 {
+			pod := active[0]
+			ready := false
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+					ready = true
+					break
+				}
+			}
+			if pod.UID != "" && pod.Status.Phase == corev1.PodRunning && ready && len(pod.Status.ContainerStatuses) == 1 {
+				container := pod.Status.ContainerStatuses[0]
+				if container.Ready && container.State.Running != nil && container.ContainerID != "" {
+					return oracleHTTPPodIdentity{uid: pod.UID, containerID: container.ContainerID, restartCount: container.RestartCount}, nil
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return oracleHTTPPodIdentity{}, ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
+func TestOracleHTTPWaitPodIdentitySettlesAndIgnoresTerminatingPod(t *testing.T) {
+	now := metav1.Now()
+	pending := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allowed-new", Namespace: "application", UID: "new", Labels: map[string]string{"hakopod.io/service": "allowed"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning}}
+	terminating := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allowed-old", Namespace: "application", UID: "old", Labels: map[string]string{"hakopod.io/service": "allowed"}, DeletionTimestamp: &now, Finalizers: []string{"fixture"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning}}
+	kube := fake.NewSimpleClientset(pending, terminating)
+	updated := make(chan error, 1)
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		current, err := kube.CoreV1().Pods("application").Get(context.Background(), pending.Name, metav1.GetOptions{})
+		if err != nil {
+			updated <- err
+			return
+		}
+		current.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+		current.Status.ContainerStatuses = []corev1.ContainerStatus{{Ready: true, RestartCount: 2, ContainerID: "containerd://new", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}
+		_, err = kube.CoreV1().Pods("application").UpdateStatus(context.Background(), current, metav1.UpdateOptions{})
+		updated <- err
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	identity, err := oracleHTTPWaitPodIdentity(ctx, kube, "application", "allowed", time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.uid != "new" || identity.containerID != "containerd://new" || identity.restartCount != 2 {
+		t.Fatal("unexpected settled pod identity", identity)
+	}
+	if err := <-updated; err != nil {
+		t.Fatal("update pod status", err)
+	}
+}
+
+func TestOracleHTTPWaitPodIdentityTimesOut(t *testing.T) {
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "allowed", Namespace: "application", UID: "pending", Labels: map[string]string{"hakopod.io/service": "allowed"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning}}
+	kube := fake.NewSimpleClientset(pod)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if _, err := oracleHTTPWaitPodIdentity(ctx, kube, "application", "allowed", time.Millisecond); err == nil {
+		t.Fatal("pod identity wait unexpectedly succeeded")
+	}
 }
 
 func oracleHTTPApplication() spec.Application {
@@ -632,13 +718,15 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	}
 	revoked = oracleHTTPWaitDeployment(t, ctx, client, revoked)
 	appRevision = revoked.Revision
-	pods, err := kube.CoreV1().Pods(appNamespace).List(ctx, metav1.ListOptions{LabelSelector: "hakopod.io/service=allowed", Limit: 2})
-	if err != nil || len(pods.Items) != 1 || pods.Items[0].UID == "" || len(pods.Items[0].Status.ContainerStatuses) != 1 || pods.Items[0].Status.ContainerStatuses[0].ContainerID == "" {
+	podIdentityCtx, cancelPodIdentity := context.WithTimeout(ctx, 45*time.Second)
+	identity, err := oracleHTTPWaitPodIdentity(podIdentityCtx, kube, appNamespace, "allowed", time.Second)
+	cancelPodIdentity()
+	if err != nil {
 		t.Fatal("unbound application pod identity is unavailable", err)
 	}
-	applicationPodUID := pods.Items[0].UID
-	applicationContainerID := pods.Items[0].Status.ContainerStatuses[0].ContainerID
-	applicationRestartCount := pods.Items[0].Status.ContainerStatuses[0].RestartCount
+	applicationPodUID := identity.uid
+	applicationContainerID := identity.containerID
+	applicationRestartCount := identity.restartCount
 	if status := client.request("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, ""); status != http.StatusOK {
 		t.Fatal("fresh restore plan after target binding revocation", status)
 	}
@@ -724,7 +812,7 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	case <-time.After(60 * time.Second):
 		t.Fatal("held Oracle session survived replacement")
 	}
-	pods, err = kube.CoreV1().Pods(appNamespace).List(ctx, metav1.ListOptions{LabelSelector: "hakopod.io/service=allowed", Limit: 2})
+	pods, err := kube.CoreV1().Pods(appNamespace).List(ctx, metav1.ListOptions{LabelSelector: "hakopod.io/service=allowed", Limit: 2})
 	if err != nil || len(pods.Items) != 1 || pods.Items[0].UID != applicationPodUID || len(pods.Items[0].Status.ContainerStatuses) != 1 || pods.Items[0].Status.ContainerStatuses[0].ContainerID != applicationContainerID || pods.Items[0].Status.ContainerStatuses[0].RestartCount != applicationRestartCount {
 		t.Fatal("application pod or container changed during database recovery", err)
 	}
