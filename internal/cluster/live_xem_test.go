@@ -88,7 +88,7 @@ func xemAcceptance(t *testing.T, ctx context.Context, c *Client, path string, no
 	for _, name := range spec.Names(app) {
 		t.Logf("runtime service %s image=%s", name, app.Services[name].Image)
 	}
-	mathesarCapacity(t, ctx, c, node, app)
+	templateFixtureCapacity(t, ctx, c, node, app)
 	target := Target{ApplicationID: runID, Project: "xem-acceptance", Environment: "test", OperationID: "fixtures", Revision: 1, Spec: app}
 	labels := labelsFor(target, "")
 	labels[xemFixtureLabel] = runID
