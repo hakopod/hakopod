@@ -121,9 +121,10 @@ accounts. PostgreSQL authentication is also rebuilt from that Secret.
 
 ## Backup and recovery
 
-A MyDuck backup briefly stops the instance. Existing connections close and new
-connections fail until it restarts. Schedule backups for a suitable maintenance
-window and make sure applications handle reconnection.
+A MyDuck backup stops the instance while its files are copied. Existing
+connections close and new connections fail until it restarts. The pause depends
+on the database size and transfer speed. Schedule backups for a suitable
+maintenance window and make sure applications handle reconnection.
 
 Hakopod records a durable operation fence, verifies the current database and
 storage identities, and stops the StatefulSet. It waits for the database pod to
