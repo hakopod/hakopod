@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -14,6 +15,32 @@ SPEC.loader.exec_module(ORACLE)
 
 
 class OracleNativeBoundary(unittest.TestCase):
+    def test_native_process_uses_external_temporary_directory_without_home(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(ORACLE.os.environ, {}, clear=True):
+            root = Path(tmp)
+            args = SimpleNamespace(kubectl=Path("/bin/kubectl"), kubeconfig=Path("/run/kubeconfig"),
+                cache=root / "cache", output=root / "output", nodes="k3d-hakopod-dev-server-0",
+                sidb_crd=Path("/run/sidb.yaml"), case="lifecycle", docker=Path("/bin/docker"), go=Path("/bin/go"))
+            reached_native_boundary = RuntimeError("native execution intentionally stopped")
+
+            def inspect_process(command, source, env, log):
+                self.assertEqual(source, ORACLE.ROOT)
+                self.assertEqual(env["TMPDIR"], str(args.cache / "tmp"))
+                self.assertNotIn("HOME", env)
+                for key in ("GOCACHE", "GOMODCACHE", "GOTMPDIR", "TMPDIR"):
+                    self.assertTrue(Path(env[key]).is_dir())
+                    self.assertTrue(Path(env[key]).is_relative_to(args.cache))
+                raise reached_native_boundary
+
+            with mock.patch.object(ORACLE.platform, "system", return_value="Linux"), \
+                 mock.patch.object(ORACLE.platform, "machine", return_value="x86_64"), \
+                 mock.patch.object(ORACLE, "environment", return_value=({}, {})), \
+                 mock.patch.dict(ORACLE.VERIFIER, source_files=mock.Mock(return_value={}), source_images=mock.Mock(return_value={})), \
+                 mock.patch.dict(ORACLE.RUNNER, run_bounded=mock.Mock(side_effect=inspect_process)):
+                with self.assertRaises(RuntimeError) as caught:
+                    ORACLE.run(args)
+                self.assertIs(caught.exception, reached_native_boundary)
+
     def test_kubectl_cache_is_explicit_and_external_without_home(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(ORACLE.os.environ, {}, clear=True):
             cache = Path(tmp) / "cache"

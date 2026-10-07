@@ -35,13 +35,19 @@ func (c *Client) databaseCertificatesFromIdentity(ctx context.Context, d databas
 		return empty, nil, fmt.Errorf("verified database TLS is unavailable")
 	}
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
-	if err != nil || ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
+	if err != nil {
+		return empty, nil, fmt.Errorf("read database certificate namespace: %w", err)
+	}
+	if ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
 		return empty, nil, fmt.Errorf("database certificate namespace ownership changed")
 	}
 
 	gvr, kind := databaseGVR(d.Spec)
 	object, err := c.dynamic.Resource(gvr).Namespace(ns.Name).Get(ctx, "database", metav1.GetOptions{})
-	if err != nil || object.GetUID() == "" || object.GetLabels()[databaseOwner] != d.ID || object.GetLabels()[managedBy] != "hakopod" {
+	if err != nil {
+		return empty, nil, fmt.Errorf("read database certificate controller: %w", err)
+	}
+	if object.GetUID() == "" || object.GetLabels()[databaseOwner] != d.ID || object.GetLabels()[managedBy] != "hakopod" {
 		return empty, nil, fmt.Errorf("database certificate controller ownership changed")
 	}
 	if d.Spec.Engine == "redis" || d.Spec.Engine == "mysql" || d.Spec.Engine == "mongodb" || d.Spec.Engine == "clickhouse" || d.Spec.Engine == "oracle" || d.Spec.Engine == "vitess" || d.Spec.Engine == "duckdb" {
