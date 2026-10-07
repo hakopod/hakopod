@@ -347,6 +347,11 @@ func oracleFreePodMatches(pod corev1.Pod, d database.Resource) bool {
 func oracleFreePodSpecsEqual(actual, expected corev1.PodSpec) bool {
 	normalize := func(spec *corev1.PodSpec) {
 		spec.NodeName = ""
+		// The API mirrors serviceAccountName into its deprecated alias, including
+		// on Deployment templates. A conflicting alias must remain a mismatch.
+		if spec.DeprecatedServiceAccount == spec.ServiceAccountName {
+			spec.DeprecatedServiceAccount = ""
+		}
 		if spec.RuntimeClassName != nil && *spec.RuntimeClassName == "runsc" {
 			if _, _, valid := managedPlatformSandboxOverhead(spec.Overhead); valid {
 				spec.Overhead = nil
@@ -355,7 +360,7 @@ func oracleFreePodSpecsEqual(actual, expected corev1.PodSpec) bool {
 		if spec.ServiceAccountName == "default" {
 			spec.ServiceAccountName = ""
 		}
-		if spec.DeprecatedServiceAccount == "default" {
+		if spec.DeprecatedServiceAccount == "default" && spec.ServiceAccountName == "" {
 			spec.DeprecatedServiceAccount = ""
 		}
 		if spec.RestartPolicy == "" {
