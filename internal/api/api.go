@@ -1056,7 +1056,7 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-func (s *Server) guardStream(ctx context.Context, cancel context.CancelFunc, key string, a store.Application, permission string) {
+func (s *Server) guardStream(ctx context.Context, cancel context.CancelFunc, key string, a store.Application, permissions ...string) {
 	// A blocked pool acquisition must not stretch the revocation window. Poll
 	// every three seconds and allow at most two seconds for each authority read.
 	timer := time.NewTicker(3 * time.Second)
@@ -1067,11 +1067,17 @@ func (s *Server) guardStream(ctx context.Context, cancel context.CancelFunc, key
 			return
 		case <-timer.C:
 			check, done := context.WithTimeout(ctx, 2*time.Second)
-			p, err := s.Store.KeyPrincipal(check, key)
+			p, err := s.runtimePrincipalForKey(check, key)
 			done()
-			if err != nil || !p.Allows(permission, a.Project, a.Environment, a.Name) {
+			if err != nil || p.MFARequired {
 				cancel()
 				return
+			}
+			for _, permission := range permissions {
+				if !p.Allows(permission, a.Project, a.Environment, a.Name) {
+					cancel()
+					return
+				}
 			}
 		}
 	}

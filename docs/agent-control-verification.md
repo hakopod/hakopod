@@ -34,7 +34,7 @@ See [the inventory](agent-parity/coverage-matrix.md), [generation process](agent
 | Reviewed writes | Database writes require a reviewed resource revision. Platform operations retain canonical plan, review, revision and retry-key checks. |
 | Exact values | Pod output uses base64. SQL null remains JSON null. Query cells use text. CLI/MCP JSON decoding preserves integers above 2^53. |
 | Bounded work | Pod commands and SQL each have four process-wide slots and a 20-second deadline. Pod output is capped at 64 KiB per stream. SQL caps results at 1,000 rows and 1 MiB. |
-| Bounded terminals | Sessions have bounded input, output retention, duration and idle time. Polling uses exact decimal cursors and reports missed retained output. |
+| Bounded terminals | Sessions have bounded input, output retention, duration and idle time. Polling uses exact decimal cursors and reports missed retained output. Trusted product scopes survive creation requests. Active streams recheck current keys, product authority and required permissions. |
 | Accurate uncertainty | Disconnected pod commands do not claim process termination. SQL reports unknown unless the final result or rollback is confirmed. No automatic command or query retry is added. |
 | Current Cloud authority | Workspace identity, current role, delegated credential and node credential restrictions intersect. Delegated callers cannot approve their own requests. |
 | Sensitive evidence | Audits omit command bodies, SQL, parameters, database credentials and result rows. No fixture evidence establishes production behavior. |
@@ -49,10 +49,13 @@ Source edits, source generation, formatting and inspection ran locally. Snapshot
 | `hakopod-agent-readonly-final` | Platform production build, typecheck, 72 server/library tests, 238 UI tests and 55 SDK tests passed. Includes capability-driven read-only UI and unavailable-scope refusal. |
 | `hakopod-agent-final-descriptions` | Final OpenAPI/proxy generation and exact SDK generation check passed after agent-language corrections. |
 | `hakopod-agent-interface-final-v2` | Earlier full Go run passed except an obsolete unsupported-MySQL assertion. Corrected cluster tests passed separately. Later rollback changes require a fresh full run. |
+| `hakopod-agent-bcf36b48-full-go` | Full `go test -count=1 -p=1 -timeout=20m ./...` passed on the committed archive and exact templates submodule. Later terminal changes require separate checks. |
+| `hakopod-agent-terminal-runtime-v5` | Focused scope, stream guard, terminal authority, polling and buffer tests passed. A later poll-buffer locking correction is under race and native acceptance. |
 | `agent-cloud-policy-v2` | Shared credential-policy helper, focused server/gateway/state/identity and full Cloud Go suite passed before rebase. |
 | `agent-cloud-rebased-v1` | After rebase onto Cloud main 570504, full Cloud Go, composed production build, typecheck, 2 grant dependency tests, server tests and 238 UI tests passed. Engine source was copied from the platform working tree. |
 
-Final platform Go verification and the committed Cloud engine pin remain pending in this working record.
+The committed platform snapshot `bcf36b48` passed the CI full Go test step, dashboard and SDK checks. Its amd64/arm64 template and Managed Actions runtime acceptance passed. The remaining CI steps and the later terminal changes require their own final results.
+Cloud pins platform `bcf36b48` in commit `0b22db3`. The new terminal mapping requires a later engine pin and fresh verification.
 Cloud snapshot manifest SHA-256: `733f67092275b98550ab66ab3d9000c38c42cfc29939bc349f45e5997372e3c7`.
 
 ## Native development acceptance
@@ -62,9 +65,9 @@ Tests use only `k3d-hakopod-dev` and owned disposable resources.
 | Workflow | Evidence |
 | --- | --- |
 | Pod execution | Passed separate stdout/stderr, exit 7 and authorization revocation in 5.91 seconds. |
-| Application terminal polling | Passed owned pinned-pod input/output, exit 7, key revocation and cleanup in 10.54 seconds. |
-| PostgreSQL | Earlier acceptance passed TLS, exact numeric/null values, DDL/DML/readback, limits, server read-only rejection and cancellation in 91.68 seconds. Rollback-reporting patch requires rerun. |
-| MySQL | Native v6 passed exact binds, DDL/DML/readback, limits, cancellation, API controls and server read-only enforcement. Rollback-reporting patch requires rerun. |
+| Application terminal polling | Snapshot `agent-terminal-runtime-v4-20261008` passed owned pinned-pod input/output, exit 7, key revocation and trusted product-authority revocation. The product revocation check closed the output handler in 3.07 seconds while the key remained valid. The full test passed in 62.55 seconds and confirmed namespace deletion. |
+| PostgreSQL | Final rollback snapshot `agent-control-pg-rollback-20261008` passed focused transaction/revocation checks and managed native acceptance in 112.25 seconds. Covers TLS, exact values, DDL/DML/readback, limits, read-only refusal, cancellation and confirmed-versus-unknown rollback. Namespace and volumes were removed. |
+| MySQL | Final native snapshot `mysql-final-source` passed exact binds, DDL/DML/readback, limits, cancellation, API controls, read-only enforcement and rollback regressions. Managed native acceptance and normal cleanup passed in 394.21 seconds. |
 | ClickHouse | Native v4 passed JSONCompact numeric/null preservation, read-only insert refusal, result limits, cancellation and normal namespace cleanup. Nontransactional execution only. |
 | MyDuck | Diagnostic runs found that MySQL prepared INSERT binds fail and reported read-only modes permit writes. PostgreSQL wire binds worked. Final nontransactional execution acceptance remains pending. |
 | Oracle and Vitess | Executors exist but remain disabled until their engine-specific native checks pass. |
@@ -81,7 +84,8 @@ The [UI review](agent-control-ui-review.md) passed for the documented route fami
 All artificial UI fixtures are labelled DEVELOPMENT ONLY. Full Cloud shell, physical touch, assistive technology and 320px layouts remain unverified.
 
 An independent contract review identified Cloud credential inheritance and stale delegated permission reporting. Both fixes passed re-review on Cloud commit 69980179.
-A later SQL review identified unconfirmed rollback claims. The fix and new regression/native checks are recorded above as pending qualification.
+A later SQL review identified unconfirmed rollback claims. PostgreSQL and MySQL corrections passed the regression and native checks recorded above.
+Terminal review also required current `pods:exec` checks for runtime-scoped browser and CLI sessions. Creation, follow-ups and active streams now apply that ceiling. Scoped fixture tests require actual project membership; global administrator status does not replace that membership.
 
 ## Release limits
 

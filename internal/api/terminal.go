@@ -96,14 +96,22 @@ func (s *Server) registerTerminalRoutes(m *http.ServeMux) {
 	m.HandleFunc("POST /api/v1/applications/{id}/services/{service}/terminal/{session}/input", s.terminalInput)
 	m.HandleFunc("DELETE /api/v1/applications/{id}/services/{service}/terminal/{session}", s.deleteTerminal)
 }
+
+func terminalAccessAllowed(p store.Principal, a store.Application) bool {
+	if p.CredentialType != "browser" && p.CredentialType != "cli" && p.CredentialType != "machine" {
+		return false
+	}
+	return p.CredentialType != "machine" && !p.RuntimeScoped || p.Allows("pods:exec", a.Project, a.Environment, a.Name)
+}
+
 func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request) {
 	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:write")
 	if !ok {
 		return
 	}
 	p := who(r)
-	if p.CredentialType != "browser" && p.CredentialType != "cli" && (p.CredentialType != "machine" || !p.Allows("pods:exec", a.Project, a.Environment, a.Name)) {
-		problem(w, 403, "terminal_permission_required", "Use a dashboard or CLI session, or a scoped machine credential with pods:exec")
+	if !terminalAccessAllowed(p, a) {
+		problem(w, 403, "terminal_permission_required", "Use a browser or CLI session. Scoped credentials also require pods:exec.")
 		return
 	}
 	var o cluster.TerminalOptions
@@ -129,7 +137,12 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "pod_unavailable", "Select a running container from this service")
 		return
 	}
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(10*time.Minute))
+	// Retain the trusted product scope after the creation request ends.
+	base := context.Background()
+	if scope, ok := r.Context().Value(runtimeScopeKey{}).(RuntimeScope); ok {
+		base = context.WithValue(base, runtimeScopeKey{}, scope)
+	}
+	ctx, cancel := context.WithDeadline(base, time.Now().Add(10*time.Minute))
 	x := &terminalSession{id: store.NewID(), owner: p.ID, key: p.KeyID, app: a.ID, service: service, options: o, uid: uid, expires: time.Now().Add(10 * time.Minute), lastInput: time.Now(), ctx: ctx, cancel: cancel, input: make(chan []byte, 8), sizes: make(chan remotecommand.TerminalSize, 1)}
 	x.sizes <- remotecommand.TerminalSize{Width: o.Cols, Height: o.Rows}
 	s.terminalMu.Lock()
@@ -176,7 +189,17 @@ func (s *Server) terminalFor(w http.ResponseWriter, r *http.Request) (*terminalS
 	x := s.terminals[r.PathValue("session")]
 	s.terminalMu.Unlock()
 	p := who(r)
-	if x == nil || (!x.expires.IsZero() && time.Now().After(x.expires.Add(30*time.Second))) || x.app != a.ID || x.service != r.PathValue("service") || x.owner != p.ID || x.key != p.KeyID || (x.ctx.Err() != nil && x.poll == nil) {
+	if !terminalAccessAllowed(p, a) {
+		problem(w, 403, "terminal_permission_required", "Use a browser or CLI session. Scoped credentials also require pods:exec.")
+		return nil, a, false
+	}
+	polled := false
+	if x != nil {
+		x.mu.Lock()
+		polled = x.poll != nil
+		x.mu.Unlock()
+	}
+	if x == nil || (!x.expires.IsZero() && time.Now().After(x.expires.Add(30*time.Second))) || x.app != a.ID || x.service != r.PathValue("service") || x.owner != p.ID || x.key != p.KeyID || (x.ctx.Err() != nil && !polled) {
 		problem(w, 404, "terminal_expired", "Terminal is closed or belongs to another session; reconnect")
 		return nil, a, false
 	}
@@ -328,11 +351,11 @@ func (s *Server) terminalOutput(w http.ResponseWriter, r *http.Request) {
 	if x.hostNode != "" {
 		go s.guardHostTerminal(x)
 	} else {
-		permission := "deployments:write"
-		if who(r).CredentialType == "machine" {
-			permission = "pods:exec"
+		permissions := []string{"deployments:write"}
+		if who(r).CredentialType == "machine" || who(r).RuntimeScoped {
+			permissions = append(permissions, "pods:exec")
 		}
-		go s.guardStream(x.ctx, x.cancel, x.key, a, permission)
+		go s.guardStream(x.ctx, x.cancel, x.key, a, permissions...)
 	}
 	writes := guardResponseWrites(x.ctx, w, 10*time.Second)
 	defer writes.stop()

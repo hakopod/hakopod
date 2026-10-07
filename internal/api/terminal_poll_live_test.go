@@ -10,12 +10,15 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -77,10 +80,23 @@ func TestTerminalPollLive(t *testing.T) {
 		}
 		if e = kube.CoreV1().Namespaces().Delete(clean, ns.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &ns.UID}}); e != nil {
 			t.Error(e)
+			return
 		}
+		for clean.Err() == nil {
+			_, e := kube.CoreV1().Namespaces().Get(clean, ns.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(e) {
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		t.Error("terminal fixture namespace cleanup timed out")
 	})
 	labels["hakopod.io/service"] = "worker"
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "terminal", Labels: labels}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: app.Services["worker"].Image, Command: []string{"sleep", "3600"}}}}}
+	automount := false
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "terminal", Labels: labels}, Spec: corev1.PodSpec{AutomountServiceAccountToken: &automount, Containers: []corev1.Container{{Name: "app", Image: app.Services["worker"].Image, Command: []string{"sleep", "3600"}, Resources: corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("16Mi")},
+		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
+	}}}}}
 	if _, err = kube.CoreV1().Pods(ns.Name).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +179,109 @@ func TestTerminalPollLive(t *testing.T) {
 	if !exited || !strings.Contains(output.String(), "received:fixture-input") {
 		t.Fatal("real terminal output/exit missing", output.String())
 	}
+	t.Run("product-authority-revocation", func(t *testing.T) {
+		principal, err := db.Authenticate(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var revoked atomic.Bool
+		scope := RuntimeScope{AllowMachine: true, Identity: principal.ID, Project: "demo", Environment: "development",
+			Permissions: []string{"deployments:read", "deployments:write", "pods:exec"},
+			Authorize: func(context.Context) error {
+				if revoked.Load() {
+					return store.ErrForbidden
+				}
+				return nil
+			},
+		}
+		scopedCall := func(method, path, body string) *httptest.ResponseRecorder {
+			requestContext, requestDone := context.WithCancel(ctx)
+			defer requestDone()
+			r := httptest.NewRequest(method, "/api/v1"+path, strings.NewReader(body)).WithContext(requestContext)
+			r.Header.Set("Authorization", "Bearer "+key)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, WithRuntimeScope(r, scope))
+			return w
+		}
+		base := "/applications/" + id + "/services/worker/terminal"
+		created := scopedCall("POST", base, `{"pod":"terminal","container":"app","command":["/bin/sh","-c","printf 'ready\\n'; read -r value"]}`)
+		if created.Code != 201 {
+			t.Fatal(created.Code, created.Body.String())
+		}
+		var session struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(created.Body.Bytes(), &session); err != nil {
+			t.Fatal(err)
+		}
+		base += "/" + session.ID
+		server.terminalMu.Lock()
+		x := server.terminals[session.ID]
+		server.terminalMu.Unlock()
+		if x == nil || x.ctx.Err() != nil {
+			t.Fatal("creation request cancellation closed the terminal")
+		}
+		defer server.closeTerminal(x)
+		if _, ok := x.ctx.Value(runtimeScopeKey{}).(RuntimeScope); !ok {
+			t.Fatal("terminal lost its trusted product scope")
+		}
+		started := scopedCall("GET", base+"/poll", "")
+		if started.Code != 200 {
+			t.Fatal(started.Code, started.Body.String())
+		}
+		// Wait for actual container output before revoking the product authority.
+		readyDeadline := time.Now().Add(10 * time.Second)
+		for {
+			x.mu.Lock()
+			buffer := x.poll
+			x.mu.Unlock()
+			buffer.mu.Lock()
+			ready := false
+			for _, sample := range buffer.frames {
+				var frame struct{ Type, Data string }
+				if json.Unmarshal(sample.Data, &frame) == nil && frame.Type == "output" {
+					data, _ := base64.StdEncoding.DecodeString(frame.Data)
+					ready = ready || strings.Contains(string(data), "ready")
+				}
+			}
+			buffer.mu.Unlock()
+			if ready {
+				break
+			}
+			if time.Now().After(readyDeadline) {
+				t.Fatal("scoped terminal did not produce output")
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if x.ctx.Err() != nil {
+			t.Fatal("scoped terminal stopped before product authority revocation")
+		}
+		revoked.Store(true)
+		select {
+		case <-x.ctx.Done():
+		case <-time.After(6 * time.Second):
+			t.Fatal("terminal survived product authority revocation")
+		}
+		closedDeadline := time.Now().Add(3 * time.Second)
+		for {
+			x.poll.mu.Lock()
+			closed := x.poll.done
+			x.poll.mu.Unlock()
+			if closed {
+				break
+			}
+			if time.Now().After(closedDeadline) {
+				t.Fatal("terminal output handler survived product authority revocation")
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if _, err := db.Authenticate(ctx, key); err != nil {
+			t.Fatal("product revocation changed the underlying key", err)
+		}
+		if denied := scopedCall("GET", base+"/poll", ""); denied.Code != 403 {
+			t.Fatal("revoked product authority retained terminal output", denied.Code)
+		}
+	})
 	// Exact key revocation must stop access even while completed output is retained.
 	if _, err = db.Pool.Exec(ctx, "UPDATE api_keys SET revoked_at=now() WHERE id=(SELECT id FROM api_keys WHERE name='terminal-poll-fixture' LIMIT 1)"); err != nil {
 		t.Fatal(err)
