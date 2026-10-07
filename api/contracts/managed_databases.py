@@ -8,19 +8,20 @@ schemas['DatabasePublicTrust'] = obj({'certificate_pem': S, 'fingerprint': S, 'i
 schemas['DatabasePooling'] = obj({'mode': {'type': 'string', 'enum': ['session', 'transaction']}, 'instances': {'type': 'integer', 'minimum': 1, 'maximum': 3}, 'max_client_connections': {'type': 'integer', 'minimum': 20, 'maximum': 2000}, 'default_pool_size': {'type': 'integer', 'minimum': 1, 'maximum': 20}, 'read_only': B}, ['mode', 'instances', 'max_client_connections', 'default_pool_size', 'read_only'])
 schemas['ManagedDatabaseSpec'] = obj({
     'schema_version': {'type': 'integer', 'const': 1}, 'name': S,
-    'engine': {'type': 'string', 'enum': ['postgresql', 'redis', 'mysql', 'mongodb', 'clickhouse', 'oracle', 'vitess']},
+    'engine': {'type': 'string', 'enum': ['postgresql', 'redis', 'mysql', 'mongodb', 'clickhouse', 'oracle', 'vitess', 'duckdb']},
     'version': S, 'mode': {'type': 'string', 'enum': ['standalone', 'cluster']},
     'replicas': I, 'shards': I, 'cpu': S, 'memory': S, 'storage_gib': I, 'placement': ref('DatabasePlacement'), 'tls': ref('DatabaseTLSConfig'), 'pooling': ref('DatabasePooling'), 'oracle': ref('DatabaseOracleConfig'), 'vitess': ref('DatabaseVitessConfig'),
 }, ['schema_version', 'name', 'engine', 'version', 'mode', 'replicas', 'shards', 'cpu', 'memory', 'storage_gib'])
+schemas['ManagedDatabaseSpec']['properties']['engine']['description'] = 'Managed engine identifier. duckdb selects DuckDB through MyDuck and remains unavailable until native single-node, dual-protocol TLS qualification passes.'
 schemas['DatabaseMember'] = obj({'name': S, 'uid': S, 'role': S, 'shard': S, 'ready': B, 'node': S, 'zone': S, 'region': S, 'provider': S, 'phase': S, 'restarts': I, 'created_at': T, 'image': S, 'metrics': ref('RuntimeMetrics')}, ['name', 'uid', 'role', 'ready'])
 schemas['DatabasePlacementObservation'] = obj({'verified': B, 'message': S, 'nodes': I, 'zones': I, 'regions': I, 'providers': I}, ['verified', 'message', 'nodes', 'zones', 'regions', 'providers'])
-schemas['DatabaseEndpoint'] = obj({'purpose': S, 'host': S, 'port': I}, ['purpose', 'host', 'port'])
+schemas['DatabaseEndpoint'] = obj({'purpose': {'type': 'string', 'enum': ['read_write', 'read_only', 'pooled_read_write', 'pooled_read_only', 'native', 'https', 'cluster', 'mysql', 'postgresql']}, 'host': S, 'port': I}, ['purpose', 'host', 'port'])
 schemas['DatabaseObservation'] = obj({'observed_at': T, 'revision': I, 'status': S, 'message': S, 'members': array(ref('DatabaseMember')), 'endpoints': array(ref('DatabaseEndpoint')), 'primary': S, 'slots_assigned': I, 'slots_healthy': B, 'topology_fingerprint': S, 'metrics': ref('RuntimeMetrics'), 'placement': ref('DatabasePlacementObservation')}, ['observed_at', 'revision', 'status', 'message', 'members', 'endpoints', 'slots_healthy'])
 schemas['DatabaseObservation']['properties']['tls'] = ref('DatabaseTLSObservation')
 schemas['DatabaseRecovery'] = obj({'artifact_id': S, 'job_id': S, 'source_id': S, 'source_revision': I, 'captured_at': T, 'restored_at': T, 'inspected_at': T}, ['artifact_id', 'job_id'])
 schemas['ManagedDatabase'] = obj({'id': S, 'project': S, 'environment': S, 'revision': I, 'spec': ref('ManagedDatabaseSpec'), 'status': S, 'observation': ref('DatabaseObservation'), 'recovery': ref('DatabaseRecovery'), 'created_at': T, 'updated_at': T, 'deleted_at': T}, ['id', 'project', 'environment', 'revision', 'spec', 'status', 'observation', 'created_at', 'updated_at'])
 schemas['DatabasePublicEndpointSpec'] = obj({
-    'purpose': {'type': 'string', 'enum': ['read_write', 'read_only', 'pooled_read_write', 'pooled_read_only', 'native', 'https', 'cluster']},
+    'purpose': {'type': 'string', 'enum': ['read_write', 'read_only', 'pooled_read_write', 'pooled_read_only', 'native', 'https', 'cluster', 'mysql', 'postgresql']},
     'source_cidrs': {'type': 'array', 'items': {'type': 'string', 'format': 'ipv4'}, 'minItems': 1, 'maxItems': 16, 'uniqueItems': True},
     'max_connections': {'type': 'integer', 'minimum': 1, 'maximum': 256},
 }, ['purpose', 'source_cidrs', 'max_connections'])
@@ -113,11 +114,12 @@ schemas['BackupSource']['properties']['engine']['enum'].append('redis')
 schemas['BackupSource']['properties']['engine']['enum'].append('mongodb')
 schemas['BackupSource']['properties']['engine']['enum'].append('oracle')
 schemas['BackupSource']['properties']['engine']['enum'].append('vitess')
+schemas['BackupSource']['properties']['engine']['enum'].append('duckdb')
 schemas['BackupTarget']['properties'].update({'managed_database_id': S, 'managed_database_name': S, 'runtime_fingerprint': S})
 schemas['BackupArtifact']['properties'].update({'source_revision': I, 'captured_at': T, 'verified_at': T})
 
 binding_ssl_mode = {'type': 'string', 'enum': ['', 'disable', 'require', 'verify-ca', 'verify-full'], 'description': 'Omit to follow the managed database TLS policy. PostgreSQL supports require, verify-ca and verify-full. Other TLS engines support verify-full except MySQL/Vitess, whose driver must configure TLS separately. disable is allowed only for legacy plaintext PostgreSQL or Redis.'}
-schemas['ServiceBinding']['properties'].update({'managed_database': S, 'endpoint': S, 'cluster_aware': B, 'ssl_mode': binding_ssl_mode})
+schemas['ServiceBinding']['properties'].update({'managed_database': S, 'endpoint': {'type': 'string', 'enum': ['', 'read_write', 'read_only', 'cluster', 'pooled_read_write', 'pooled_read_only', 'mysql', 'postgresql']}, 'cluster_aware': B, 'ssl_mode': binding_ssl_mode})
 schemas['ServiceBinding']['properties']['protocol']['enum'].append('mongodb')
 schemas['ServiceBinding']['properties']['protocol']['enum'].append('clickhouse')
 schemas['ServiceBinding']['properties']['protocol']['enum'].append('oracle')
