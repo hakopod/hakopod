@@ -34,7 +34,8 @@ class MyDuckQualificationTest(unittest.TestCase):
         attempts = []
         for case, test in MODULE["TESTS"].items():
             package = "github.com/hakopod/hakopod/internal/" + ("api" if case == "http-api" else "cluster")
-            tests = [test] + ([test + "/" + phase for phase in MODULE["HTTP_PHASES"]] if case == "http-api" else [])
+            phases = MODULE["HTTP_PHASES"] if case == "http-api" else MODULE["RECOVERY_PHASES"] if case == "recovery" else ["alternate_users"]
+            tests = [test] + [test + "/" + phase for phase in phases]
             events = [{"Action": "run", "Package": package, "Test": name} for name in tests]
             events += [{"Action": "pass", "Package": package, "Test": name} for name in reversed(tests)]
             attempts.append({"case": case, "exit_code": 0,
@@ -43,7 +44,7 @@ class MyDuckQualificationTest(unittest.TestCase):
                 "node_uids": {"k3d-hakopod-dev-server-0": "22222222-2222-2222-2222-222222222222"},
                 "preserved_resources": {"before_sha256": "d" * 64, "after_sha256": "d" * 64,
                     "namespace_count": 4, "persistent_volume_count": 0, "s3_container_count": 0},
-                "cleanup": {"namespaces": ["hdb-" + "a" * 32] + (["hdb-" + "b" * 32] if case != "lifecycle" else []),
+                "cleanup": {"namespaces": ["hdb-" + letter * 32 for letter in "abcd"[:MODULE["FIXTURE_COUNTS"][case]]],
                             "namespaces_absent": True, "persistent_volumes_absent": True}})
         self.acceptance = {"schema_version": 1, "context": "k3d-hakopod-dev", "execution": "native", "platform": "linux/amd64",
                            "source_files": self.sources, "images": self.images, "attempts": attempts}
@@ -118,6 +119,21 @@ class MyDuckQualificationTest(unittest.TestCase):
         path.write_text('{"schema_version":1,"schema_version":1}')
         with self.assertRaisesRegex(ValueError, "Duplicate"):
             MODULE["read_json"](path)
+
+    def test_negative_restore_and_alternate_user_evidence_is_required(self):
+        for case, phase in (("lifecycle", "alternate_users"),
+                            *(("recovery", phase) for phase in MODULE["RECOVERY_PHASES"])):
+            value = copy.deepcopy(self.acceptance)
+            attempt = next(item for item in value["attempts"] if item["case"] == case)
+            name = MODULE["TESTS"][case] + "/" + phase
+            attempt["test_events"] = [event for event in attempt["test_events"] if event["Test"] != name]
+            with self.subTest(case=case, phase=phase), self.assertRaises(ValueError):
+                MODULE["validate_acceptance"](value, self.sources, self.images)
+        value = copy.deepcopy(self.acceptance)
+        recovery = next(item for item in value["attempts"] if item["case"] == "recovery")
+        recovery["cleanup"]["namespaces"].pop()
+        with self.assertRaisesRegex(ValueError, "fixture inventory"):
+            MODULE["validate_acceptance"](value, self.sources, self.images)
 
     def test_packaging_provenance_requires_actual_schema_and_build_identity(self):
         mutations = [lambda value: value.update(schema_version=True),

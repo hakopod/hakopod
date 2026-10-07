@@ -23,8 +23,11 @@ UUID = re.compile(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
 TESTS = {"lifecycle": "TestManagedMyDuckLive", "recovery": "TestManagedMyDuckColdRecoveryLive",
          "http-api": "TestManagedMyDuckHTTPLive"}
 HTTP_PHASES = ("authorization", "lifecycle", "backup_restore", "worker_loss", "cancellation", "deletion")
+RECOVERY_PHASES = ("nonempty_target", "corrupt_restore", "successful_restore")
+FIXTURE_COUNTS = {"lifecycle": 1, "recovery": 4, "http-api": 2}
 BUILD_INPUTS = {"Dockerfile.myduck", "scripts/apply-managed-myduck-patches.py", "scripts/build-managed-myduck.sh",
-                "patches/myduck/0001-harden-managed-runtime.patch", "cmd/hakopod-myduck-storage/main.go"}
+                "scripts/collect-myduck-licenses.py", "patches/myduck/0001-harden-managed-runtime.patch",
+                "cmd/hakopod-myduck-storage/main.go"}
 FILES = {"source-build-manifest.json", "packaging-receipt.json", "native-acceptance.json"}
 BINARIES = {"/usr/local/bin/myduckserver", "/usr/local/bin/hakopod-myduck-storage"}
 
@@ -176,12 +179,16 @@ def validate_acceptance(acceptance, sources, images):
         if not isinstance(cleanup, dict) or set(cleanup) != {"namespaces", "namespaces_absent", "persistent_volumes_absent"} or cleanup["namespaces_absent"] is not True or cleanup["persistent_volumes_absent"] is not True:
             raise ValueError("MyDuck native fixture cleanup is unverified")
         names = cleanup["namespaces"]
-        count = 1 if case == "lifecycle" else 2
+        count = FIXTURE_COUNTS[case]
         if not isinstance(names, list) or len(names) != count or len(set(names)) != count or any(not isinstance(name, str) or not re.fullmatch(r"hdb-[a-f0-9]{32}", name) for name in names):
             raise ValueError("MyDuck fixture inventory is incomplete")
         required = {TESTS[case]}
         if case == "http-api":
             required.update(TESTS[case] + "/" + phase for phase in HTTP_PHASES)
+        if case == "recovery":
+            required.update(TESTS[case] + "/" + phase for phase in RECOVERY_PHASES)
+        if case == "lifecycle":
+            required.add(TESTS[case] + "/alternate_users")
         package = "github.com/hakopod/hakopod/internal/" + ("api" if case == "http-api" else "cluster")
         passed = accepted_events(attempt["test_events"], required, package)
         if any(name != TESTS[case] and not name.startswith(TESTS[case] + "/") for name in passed):

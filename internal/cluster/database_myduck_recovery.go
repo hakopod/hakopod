@@ -231,9 +231,6 @@ func (c *Client) WithMyDuckColdStorage(ctx context.Context, d database.Resource,
 		return fmt.Errorf("MyDuck cold-storage runtime policy changed")
 	}
 	if restore {
-		if err = c.DatabaseEmpty(ctx, d, observed); err != nil {
-			return err
-		}
 		if err = c.databaseNetworkPolicy(ctx, d, before); err != nil {
 			return err
 		}
@@ -310,6 +307,18 @@ func (c *Client) WithMyDuckColdStorage(ctx context.Context, d database.Resource,
 	}
 	mode := "capture"
 	if restore {
+		// A live emptiness check can race an already connected writer. The
+		// original process is now gone and this isolated helper alone mounts
+		// the fenced volume. Check its catalog before reading restore bytes.
+		if err = before(); err != nil {
+			return err
+		}
+		empty, stop := context.WithTimeout(ctx, 30*time.Second)
+		err = c.databaseExecVerifiedPod(empty, helper, "storage", []string{"/usr/local/bin/myduckserver", "--managed-storage-empty=/var/lib/myduck"}, nil, io.Discard)
+		stop()
+		if err != nil {
+			return fmt.Errorf("MyDuck stopped target is not verified empty: %w", err)
+		}
 		mode = "restore"
 	}
 	command := []string{myduckStorageBinary, "--mode=" + mode, "--database-id=" + d.ID, "--revision=" + strconv.FormatInt(d.Revision, 10), "--version=" + d.Spec.Version, "--max-bytes=" + strconv.FormatInt(d.Spec.StorageGiB<<30, 10)}

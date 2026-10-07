@@ -129,13 +129,13 @@ func (c *Client) myduckEngineMetrics(ctx context.Context, d database.Resource, o
 	if err != nil {
 		return database.EngineMetrics{}, err
 	}
-	client, err := c.myduckMySQLClient(ctx, d, observed.Members[0], password, identity)
+	client, err := c.myduckPostgresClient(ctx, d, observed.Members[0], password, identity)
 	if err != nil {
 		return database.EngineMetrics{}, err
 	}
-	defer client.Close()
+	defer client.Close(ctx)
 	var used int64
-	if err = client.QueryRowContext(ctx, "SELECT CAST(used_blocks * block_size AS BIGINT) FROM pragma_database_size() WHERE database_name = 'app'").Scan(&used); err != nil || used < 0 {
+	if err = client.QueryRow(ctx, "SELECT CAST(used_blocks * block_size AS BIGINT) FROM pragma_database_size() WHERE database_name = 'app'").Scan(&used); err != nil || used < 0 {
 		return database.EngineMetrics{}, fmt.Errorf("MyDuck storage statistics are unavailable")
 	}
 	now := time.Now().UTC()
