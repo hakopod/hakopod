@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,13 +56,25 @@ cat >&3`
 	return &mongodbStreamConn{Conn: conn, close: closeStream}, nil
 }
 
+func myduckCredentialOwned(secret *corev1.Secret, d database.Resource, ns *corev1.Namespace) error {
+	if ns == nil || ns.Name != DatabaseNamespace(d.ID) || ns.UID == "" || ns.DeletionTimestamp != nil || secret == nil || secret.Name != "database-credentials" || secret.Namespace != ns.Name || secret.DeletionTimestamp != nil || secret.Type != corev1.SecretTypeBasicAuth || secret.Immutable == nil || !*secret.Immutable || len(secret.Data) != 2 || string(secret.Data["username"]) != "app" || len(secret.Data["password"]) != 64 || strings.ContainsAny(string(secret.Data["password"]), "\r\n\x00") || !reflect.DeepEqual(secret.OwnerReferences, databaseIdentityMeta(d, ns.UID, secret.Name).OwnerReferences) {
+		return fmt.Errorf("MyDuck credential identity or ownership changed")
+	}
+	for key, value := range databaseLabels(d) {
+		if ns.Labels[key] != value || secret.Labels[key] != value {
+			return fmt.Errorf("MyDuck credential scope changed")
+		}
+	}
+	return nil
+}
+
 func (c *Client) myduckClientIdentity(ctx context.Context, d database.Resource) ([]byte, *tls.Config, error) {
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
 	if err != nil || ns.UID == "" || ns.DeletionTimestamp != nil || ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
 		return nil, nil, fmt.Errorf("MyDuck identity namespace changed")
 	}
 	secret, err := c.kube.CoreV1().Secrets(ns.Name).Get(ctx, "database-credentials", metav1.GetOptions{})
-	if err != nil || databaseIdentityOwned(secret, d, ns.UID) != nil || len(secret.Data["password"]) != 64 {
+	if err != nil || myduckCredentialOwned(secret, d, ns) != nil {
 		return nil, nil, fmt.Errorf("MyDuck credentials are unavailable")
 	}
 	trust, certificate, err := c.databaseCertificates(ctx, d)

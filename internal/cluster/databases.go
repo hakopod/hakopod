@@ -334,6 +334,12 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 		if err = before(); err != nil {
 			return err
 		}
+		if d.Spec.Engine == "duckdb" {
+			current, readErr := c.kube.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{})
+			if readErr != nil || current.UID != existing.UID || current.DeletionTimestamp != nil || current.Labels[databaseOwner] != d.ID || current.Labels[managedBy] != "hakopod" {
+				return fmt.Errorf("MyDuck credential namespace changed before creation")
+			}
+		}
 		metadata := metav1.ObjectMeta{Name: "database-credentials", Namespace: ns, Labels: databaseLabels(d)}
 		if d.Spec.Engine == "vitess" || d.Spec.Engine == "duckdb" {
 			if existing.UID == "" || existing.DeletionTimestamp != nil {
@@ -352,8 +358,10 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 	if subtle.ConstantTimeCompare(secret.Data["password"], password) != 1 || string(secret.Data["username"]) != "app" {
 		return fmt.Errorf("database credential identity changed")
 	}
-	if d.Spec.Engine == "duckdb" && (existing.UID == "" || existing.DeletionTimestamp != nil || secret.DeletionTimestamp != nil || secret.Type != corev1.SecretTypeBasicAuth || secret.Immutable == nil || !*secret.Immutable || len(secret.Data) != 2 || !reflect.DeepEqual(secret.OwnerReferences, databaseIdentityMeta(d, existing.UID, secret.Name).OwnerReferences)) {
-		return fmt.Errorf("MyDuck credential namespace ownership changed")
+	if d.Spec.Engine == "duckdb" {
+		if err = myduckCredentialOwned(secret, d, existing); err != nil {
+			return err
+		}
 	}
 	if d.Spec.Engine == "vitess" {
 		if err = c.reconcileVitessCredentialOwnership(ctx, d, existing, secret, password, before); err != nil {
