@@ -52,7 +52,17 @@ func database(t *testing.T) (*store.Store, string) {
 	if err = db.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close(); _, _ = conn.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)"); conn.Close(ctx) })
+	t.Cleanup(func() {
+		db.Close()
+		cleanup, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if _, cleanupErr := conn.Exec(cleanup, "DROP DATABASE "+name+" WITH (FORCE)"); cleanupErr != nil {
+			t.Error("drop temporary test database", cleanupErr)
+		}
+		if cleanupErr := conn.Close(cleanup); cleanupErr != nil {
+			t.Error("close temporary database administrator connection", cleanupErr)
+		}
+	})
 	return db, testDSN
 }
 func TestDurabilityAuthorizationAndConcurrency(t *testing.T) {
