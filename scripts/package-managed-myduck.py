@@ -15,7 +15,7 @@ import tempfile
 BASE_IMAGE = "python@sha256:2b4f19dae3a777dfc3b76730bda1e82e1f66ab2a2686fa93ca78edbfb4f04ffe"
 UPSTREAM_COMMIT = "6e3427591fd8895df9585969e7256f958fb639bb"
 VERSION = "0.1.0-hakopod.2"
-SERVER_SHA256 = "8765654bf68c3bc503ba1c589ad3921b78bad7a11117c348372948159458b0c3"
+SERVER_SHA256 = "dac6601bb9312446411f5d22ef293467037aa29d857e79060943ae9a9e1b56ab"
 HELPER_SHA256 = "32babdbeab26339e270bcd341fe056cfd94fc30e38f9fa97ed833664f8233eda"
 WHEELS = {
     "sqlglot-30.17.0-py3-none-any.whl": "84435ac283a60173da31b5fd7d11a725037a1c3fd6ed1e21fb065de74ddb579f",
@@ -53,8 +53,8 @@ def main() -> None:
     image = base / "image-final-v11"
     source_root = base / "image-final-v9" / "rootfs"
     wheels = base / "sqlglot-30.17.0-wheels"
-    server = base / "final-bin-v19" / "myduckserver"
-    helper = base / "final-bin-v19" / "hakopod-myduck-storage"
+    server = base / "final-bin-v21" / "myduckserver"
+    helper = base / "final-bin-v21" / "hakopod-myduck-storage"
     crane = base / "crane" / "crane"
     publisher = base / "publish-managed-runtime.py"
 

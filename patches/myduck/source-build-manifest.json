@@ -2,12 +2,12 @@
   "files": {
     "Dockerfile.myduck": "87ff1798311ecb38ff714370197c6dacc2262804cc309c476266b1597ce8629e",
     "cmd/hakopod-myduck-storage/main.go": "754a9e3829b0e7f6eeb0617f3c6c7f830b4080cf529597322ca12a434370f34a",
-    "patches/myduck/0001-harden-managed-runtime.patch": "e267cb41b7155a4e8e88acc23f9959c3defcc2f1ffd20b679682f32ec710b420",
+    "patches/myduck/0001-harden-managed-runtime.patch": "98a785d72d6f262b3005958e8c03d602ecb6f8b03a2086cffe7184b31ef57300",
     "patches/myduck/runtime-overlay-manifest.json": "3d3c347cc2945f2b9345328cdc02af0290ec53d0ff5e6840f538f6672fe9cb5e",
     "scripts/apply-managed-myduck-patches.py": "794bc9a3adfc6db568f72e7919548ffe7c83400c15f0e984ca9e623b14492d2d",
     "scripts/build-managed-myduck.sh": "4c0bdf8c56812632e4f6965faeee1c34f6d1ccb195795b6183436b417e4256f5",
     "scripts/collect-myduck-licenses.py": "293ee4528bd46b67cf486d791a7f8bd25dfe3273ddd8cbb4a9da6e902fd00b0a",
-    "scripts/package-managed-myduck.py": "a7efd9791d72af83da0dcad1853c296b04339f565289b8c4b93c993b8dd83d56"
+    "scripts/package-managed-myduck.py": "7ea69e36d963cd876980e87d5a3c03673f6af5180d5b42ea66f5f09c8165e5a6"
   },
   "schema_version": 1,
   "upstream_commit": "6e3427591fd8895df9585969e7256f958fb639bb",
