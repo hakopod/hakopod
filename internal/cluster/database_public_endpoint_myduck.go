@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"strings"
 	"time"
 
 	mysqlclient "github.com/go-sql-driver/mysql"
@@ -142,7 +141,7 @@ func (c *Client) verifyMyDuckPublicEndpointBackend(ctx context.Context, d databa
 		return err
 	}
 	secret, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
-	if err != nil || databaseIdentityOwned(secret, d, ns.UID) != nil || len(secret.Data["password"]) < 32 || len(secret.Data["password"]) > 128 || strings.ContainsAny(string(secret.Data["password"]), "\r\n\x00") {
+	if err != nil || myduckCredentialOwned(secret, d, ns) != nil {
 		return fmt.Errorf("MyDuck public endpoint probe credentials are unavailable")
 	}
 	config, err := myduckPublicEndpointTLSConfig(trust, endpoint.Allocation.Host, issued.Fingerprint)
