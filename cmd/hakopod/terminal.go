@@ -216,7 +216,7 @@ func pollTerminalOutputReady(ctx context.Context, c *client, base string, output
 				if *event.Code != 0 {
 					code := *event.Code
 					if code < 1 || code > 255 {
-						code = 1
+						return &exitError{1, "Terminal transport closed. The process outcome is unknown"}
 					}
 					return &exitError{code, "Terminal process failed"}
 				}
