@@ -555,6 +555,20 @@ test("MyDuck uses its pinned version and exposes only managed MySQL and PostgreS
     database: "app",
     ssl_mode: "verify-full",
   });
+  assert.deepEqual(await client.database(database.id).binding({ endpoint: "mysql", username: "", database: "" }), {
+    managed_database: database.id,
+    protocol: "mysql",
+    endpoint: "mysql",
+    username: "root",
+    database: "app",
+  });
+  assert.deepEqual(await client.database(database.id).binding({ endpoint: "postgresql", username: "", database: "" }), {
+    managed_database: database.id,
+    protocol: "postgres",
+    endpoint: "postgresql",
+    username: "postgres",
+    database: "app",
+  });
   for (const options of [
     { endpoint: "read_write" },
     { endpoint: "read_only" },

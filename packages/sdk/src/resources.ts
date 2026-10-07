@@ -1139,8 +1139,8 @@ export class DatabaseRef {
     if (current.spec.engine === "duckdb") {
       const username = endpoint === "postgresql" ? "postgres" : "root";
       if (
-        (options.username !== undefined && options.username !== username) ||
-        (options.database !== undefined && options.database !== "app") ||
+        (options.username !== undefined && options.username !== "" && options.username !== username) ||
+        (options.database !== undefined && options.database !== "" && options.database !== "app") ||
         password !== undefined ||
         (options.sslMode !== undefined && options.sslMode !== "" &&
           !(endpoint === "postgresql" && options.sslMode === "verify-full"))
