@@ -29,6 +29,7 @@ export GOMAXPROCS=2 GOFLAGS='-p=2 -tags=duckdb_arrow' GOMEMLIMIT=5GiB
 export GOMODCACHE="$SCRATCH/gomodcache" GOCACHE="$SCRATCH/gocache" GOTMPDIR="$SCRATCH/tmp"
 cd "$SCRATCH/src"
 go test -run '^TestManagedLockdownBoundary$' ./catalog
+go test -run '^TestManagedStartupWireRejection$' ./pgserver
 go test -run '^$' ./pgserver .
 if [ "$MODE" = source-only ]; then
   exit 0
