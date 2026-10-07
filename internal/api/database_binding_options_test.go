@@ -72,7 +72,10 @@ func TestManagedDatabaseURLPreservesDefaultsAndSelectedTargets(t *testing.T) {
 
 func TestMyDuckURLsKeepProtocolSpecificTLS(t *testing.T) {
 	d := database.Resource{ID: strings.Repeat("a", 32), Spec: database.Spec{Engine: "duckdb", TLS: &database.TLSConfig{Mode: "required"}}}
-	for _, tc := range []struct{ purpose, protocol string; port int }{{"mysql", "mysql", 3306}, {"postgresql", "postgres", 5432}} {
+	for _, tc := range []struct {
+		purpose, protocol string
+		port              int
+	}{{"mysql", "mysql", 3306}, {"postgresql", "postgres", 5432}} {
 		u, err := url.Parse(managedDatabaseURL(d, spec.Binding{Protocol: tc.protocol, Endpoint: tc.purpose}, database.Endpoint{Purpose: tc.purpose, Host: "myduck.internal", Port: tc.port}, []byte("secret")))
 		if err != nil || u.Scheme != tc.protocol || u.Host != "myduck.internal:"+strconv.Itoa(tc.port) {
 			t.Fatal("MyDuck protocol endpoint changed")

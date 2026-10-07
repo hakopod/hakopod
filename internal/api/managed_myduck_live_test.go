@@ -35,7 +35,7 @@ import (
 func myduckAPIPortForward(t *testing.T, ctx context.Context, kubeconfig, namespace string, port int) (string, func()) {
 	t.Helper()
 	forward, stop := context.WithCancel(ctx)
-	command := exec.CommandContext(forward, "kubectl", "--kubeconfig", kubeconfig, "--context", "k3d-hakopod-dev", "-n", namespace, "port-forward", "service/database", fmt.Sprintf(":%d", port), "--address=127.0.0.1")
+	command := exec.CommandContext(forward, "kubectl", "--kubeconfig", kubeconfig, "--context", "k3d-hakopod-dev", "--cache-dir", t.TempDir(), "-n", namespace, "port-forward", "service/database", fmt.Sprintf(":%d", port), "--address=127.0.0.1")
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		stop()

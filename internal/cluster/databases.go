@@ -31,13 +31,13 @@ var redisClusterResource = schema.GroupVersionResource{Group: "redis.redis.opstr
 var mysqlDatabaseResource = schema.GroupVersionResource{Group: "mysql.oracle.com", Version: "v2", Resource: "innodbclusters"}
 var databaseImages = map[string]string{
 	"duckdb:" + database.MyDuckVersion: myduckServerImage,
-	"postgresql:17":   "ghcr.io/cloudnative-pg/postgresql:17.11@sha256:70664ebcfa1100361b5bdc28bbf06fdbe08db2dc4ad7bd14de33c5e05fe8ea8e",
-	"postgresql:18":   "ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533",
-	"redis:8":         "ghcr.io/hakopod/hakopod-redis-runtime:8.2.10-opstree@sha256:caa42ea6bb728692da6045aca364f2ae3a33e15242a2e874dfbfa75ecceb5657",
-	"mysql:8.4":       "container-registry.oracle.com/mysql/community-server:8.4.12@sha256:7dcc4add9183664de3a214daf85a50c3ba6cccfd7534f700b6561bf5b41885be",
-	"mongodb:8.0":     mongodbServerImage,
-	"clickhouse:26.3": clickhouseServerImage,
-	"oracle:23.26":    database.OracleFreeImage,
+	"postgresql:17":                    "ghcr.io/cloudnative-pg/postgresql:17.11@sha256:70664ebcfa1100361b5bdc28bbf06fdbe08db2dc4ad7bd14de33c5e05fe8ea8e",
+	"postgresql:18":                    "ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533",
+	"redis:8":                          "ghcr.io/hakopod/hakopod-redis-runtime:8.2.10-opstree@sha256:caa42ea6bb728692da6045aca364f2ae3a33e15242a2e874dfbfa75ecceb5657",
+	"mysql:8.4":                        "container-registry.oracle.com/mysql/community-server:8.4.12@sha256:7dcc4add9183664de3a214daf85a50c3ba6cccfd7534f700b6561bf5b41885be",
+	"mongodb:8.0":                      mongodbServerImage,
+	"clickhouse:26.3":                  clickhouseServerImage,
+	"oracle:23.26":                     database.OracleFreeImage,
 }
 
 func DatabaseNamespace(id string) string { return "hdb-" + id }
@@ -406,8 +406,12 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 	}
 	if d.Spec.Engine == "duckdb" {
 		identity, e := c.kube.CoreV1().Secrets(ns).Get(ctx, "database-tls", metav1.GetOptions{})
-		if e != nil { return e }
-		if e = databaseIdentityOwned(identity, d, existing.UID); e != nil { return e }
+		if e != nil {
+			return e
+		}
+		if e = databaseIdentityOwned(identity, d, existing.UID); e != nil {
+			return e
+		}
 		_ = unstructured.SetNestedField(object.Object, myduckIdentityFingerprint(identity), "spec", "template", "metadata", "annotations", myduckIdentityAnnotation)
 	}
 	gvr, _ := databaseGVR(d.Spec)

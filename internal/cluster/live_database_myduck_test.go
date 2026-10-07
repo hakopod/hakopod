@@ -215,40 +215,62 @@ func TestManagedMyDuckLive(t *testing.T) {
 func testMyDuckRenewal(t *testing.T, ctx context.Context, c *Client, d database.Resource, previous database.Observation) database.Observation {
 	t.Helper()
 	password, oldIdentity, err := c.myduckClientIdentity(ctx, d)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Applications trust the database CA and hostname. The control-plane
 	// observation additionally pins the current leaf, which changes on renewal.
 	oldIdentity = oldIdentity.Clone()
 	oldIdentity.VerifyConnection = nil
 	issuer, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-ca", metav1.GetOptions{})
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	pair, err := tls.X509KeyPair(issuer.Data["ca.crt"], issuer.Data["ca.key"])
-	if err != nil { t.Fatal("MyDuck fixture issuer is invalid") }
+	if err != nil {
+		t.Fatal("MyDuck fixture issuer is invalid")
+	}
 	ca, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	signer := pair.PrivateKey.(crypto.Signer)
 	ca.NotAfter = time.Now().Add(24 * time.Hour)
 	der, err := x509.CreateCertificate(rand.Reader, ca, ca, signer.Public(), signer)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	issuer.Data["ca.crt"] = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	if _, err = c.kube.CoreV1().Secrets(issuer.Namespace).Update(ctx, issuer, metav1.UpdateOptions{}); err != nil { t.Fatal(err) }
-	if err = c.RenewDatabaseIdentity(ctx, d, func() error { return ctx.Err() }); err != nil { t.Fatal(err) }
+	if _, err = c.kube.CoreV1().Secrets(issuer.Namespace).Update(ctx, issuer, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.RenewDatabaseIdentity(ctx, d, func() error { return ctx.Err() }); err != nil {
+		t.Fatal(err)
+	}
 	wait, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	for wait.Err() == nil {
 		next, observeErr := c.ObserveDatabase(wait, d)
 		if observeErr == nil && next.Status == "ready" && len(next.Members) == 1 && next.Members[0].UID != previous.Members[0].UID && next.TLS != nil && next.TLS.Verified && next.TLS.Fingerprint != previous.TLS.Fingerprint && next.TLS.CAFingerprint != previous.TLS.CAFingerprint {
 			mysql, err := c.myduckMySQLClient(wait, d, next.Members[0], password, oldIdentity)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			err = mysql.PingContext(wait)
 			_ = mysql.Close()
-			if err != nil { t.Fatal("MySQL lost existing CA trust during renewal", err) }
+			if err != nil {
+				t.Fatal("MySQL lost existing CA trust during renewal", err)
+			}
 			pg, err := c.myduckPostgresClient(wait, d, next.Members[0], password, oldIdentity)
-			if err != nil { t.Fatal("PostgreSQL lost existing CA trust during renewal", err) }
+			if err != nil {
+				t.Fatal("PostgreSQL lost existing CA trust during renewal", err)
+			}
 			_ = pg.Close(wait)
 			return next
 		}
-		if sleepContext(wait, 3*time.Second) != nil { break }
+		if sleepContext(wait, 3*time.Second) != nil {
+			break
+		}
 	}
 	t.Fatal("MyDuck did not serve its renewed identity on both protocols")
 	return previous
