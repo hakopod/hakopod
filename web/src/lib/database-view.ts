@@ -22,26 +22,47 @@ export function databaseMemberCapacity(spec: DatabaseSpec) {
   return capacity && (votingDatabase(spec.engine) || spec.engine === 'vitess') ? { ...capacity, cpu: capacity.cpu + expectedMembers(spec) * 0.1, memoryMiB: capacity.memoryMiB + expectedMembers(spec) * 256 } : capacity
 }
 export function databaseRequestedCapacity(spec: DatabaseSpec) {
-  const capacity = databaseMemberCapacity(spec)
-  if (!capacity) return null
+  const member = databaseCapacity(spec, 1)
+  if (!member) return null
+  // Match Go's CPUReservationMilli and DatabaseMemoryReservation. Member
+  // monitoring uses databaseMemberCapacity and excludes operational headroom.
+  const copies = expectedMembers(spec) + 1
+  let cpu = member.cpu * copies
+  let memoryMiB = (member.memoryMiB + 50) * copies + 128
   const poolers = poolerInstances(spec)
-  if (spec.engine === 'vitess') {
-    const members = expectedMembers(spec)
-    const memberCPU = capacity.cpu / members - 0.1
-    const memberMemoryMiB = capacity.memoryMiB / members - 256
-    return {
-      ...capacity,
-      cpu: capacity.cpu + memberCPU * (1 + 2 * spec.shards) + 0.1 +
-        (vitessGateways(spec) + 1) * 0.25 + (spec.shards + 2) * 0.5 +
-        (vitessTopologyMembers(spec) + 1) * 0.1 + 2 * 0.1 + 2 * spec.shards * 0.1 + 0.1,
-      memoryMiB: capacity.memoryMiB + memberMemoryMiB * (1 + 2 * spec.shards) +
-        (members + 1 + 2 * spec.shards) * 50 + 128 + 256 +
-        (vitessGateways(spec) + 1) * (256 + 50) + (spec.shards + 2) * (256 + 50) +
-        (vitessTopologyMembers(spec) + 1) * (256 + 50) + 2 * (256 + 50) +
-        2 * spec.shards * 512 + (512 + 50),
-    }
+  if (poolers) {
+    const routes = spec.pooling?.read_only ? 2 : 1
+    cpu += (poolers + routes) * 0.25
+    memoryMiB += (poolers + routes) * 306
   }
-  return { ...capacity, cpu: capacity.cpu + (poolers + keeperInstances(spec)) * 0.25 + routerInstances(spec) * 0.1 + oracleBrokerInstances(spec) * 0.1, memoryMiB: capacity.memoryMiB + (poolers + keeperInstances(spec)) * 256 + routerInstances(spec) * 128 + oracleBrokerInstances(spec) * 256 }
+  if (votingDatabase(spec.engine)) {
+    cpu += copies * 0.1
+    memoryMiB += copies * 256
+  }
+  if (spec.engine === 'mysql') {
+    cpu += (routerInstances(spec) + 1) * 0.1
+    memoryMiB += (routerInstances(spec) + 1) * 178
+  }
+  const keepers = keeperInstances(spec)
+  if (keepers) {
+    cpu += (keepers + 1) * 0.25
+    memoryMiB += (keepers + 1) * 306
+  }
+  if (spec.engine === 'vitess') {
+    cpu += copies * 0.1 + (vitessGateways(spec) + 1) * 0.25 +
+      (spec.shards + 2) * 0.5 + (vitessTopologyMembers(spec) + 1) * 0.1 +
+      2 * 0.1 + 0.1 + 2 * spec.shards * (member.cpu + 0.1)
+    memoryMiB += copies * 256 + (vitessGateways(spec) + 1) * 306 +
+      (spec.shards + 2) * 306 + (vitessTopologyMembers(spec) + 1) * 306 +
+      2 * 306 + 562 + 2 * spec.shards * (member.memoryMiB + 512 + 50)
+  }
+  if (spec.engine === 'oracle' && spec.oracle?.edition === 'free') {
+    cpu += 0.2
+    memoryMiB += 2 * 306
+  }
+  cpu += oracleBrokerInstances(spec) * 0.1
+  memoryMiB += oracleBrokerInstances(spec) * 306
+  return { cpu, memoryMiB }
 }
 export const engineName = (engine: string) => ({ postgresql: 'PostgreSQL', redis: 'Redis', mysql: 'MySQL', mongodb: 'MongoDB', clickhouse: 'ClickHouse', oracle: 'Oracle Database', vitess: 'Vitess', duckdb: 'DuckDB (MyDuck)' })[engine] || engine
 export const endpointName = (purpose: string, engine?: string) => engine === 'duckdb' && purpose === 'mysql' ? 'MySQL protocol · port 3306' : engine === 'duckdb' && purpose === 'postgresql' ? 'PostgreSQL protocol · port 5432' : engine === 'vitess' && ['read_write', 'read_only'].includes(purpose) ? purpose === 'read_only' ? 'vtgate · app@replica' : 'vtgate · app@primary' : engine === 'clickhouse' && purpose === 'cluster' ? 'Cluster endpoint' :

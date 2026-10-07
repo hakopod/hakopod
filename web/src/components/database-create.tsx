@@ -686,7 +686,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                 <div className="db-allocation-total">
                   <Cpu size={18} aria-hidden="true" />
                   <span>
-                    <strong>Total requested allocation</strong>
+                    <strong>Reserved capacity</strong>
                     <span>
                       {total
                         ? `${total.cpu.toLocaleString()} CPU cores · ${(total.memoryMiB / 1024).toLocaleString()} GiB memory`
@@ -694,6 +694,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                       · {databaseStorageGiB(spec)} GiB storage including support volumes · {members}{' '}
                       data {members === 1 ? 'member' : 'members'}
                     </span>
+                    <span className="field-help">Includes supporting processes and headroom for replacement and recovery.</span>
                   </span>
                 </div>
               </div>
@@ -1004,7 +1005,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                       </dd>
                     </div>
                     <div>
-                      <dt>Total allocation</dt>
+                      <dt>Reserved capacity</dt>
                       <dd>
                         {total?.cpu.toLocaleString()} CPU cores ·{' '}
                         {total && (total.memoryMiB / 1024).toLocaleString()} GiB memory ·{' '}
@@ -1211,7 +1212,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
               )}
               <div>
                 <dt>
-                  <Cpu size={14} aria-hidden="true" /> Total CPU
+                  <Cpu size={14} aria-hidden="true" /> Reserved CPU
                 </dt>
                 <dd>
                   {total
@@ -1221,7 +1222,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
               </div>
               <div>
                 <dt>
-                  <MemoryStick size={14} aria-hidden="true" /> Total memory
+                  <MemoryStick size={14} aria-hidden="true" /> Reserved memory
                 </dt>
                 <dd>{total ? `${(total.memoryMiB / 1024).toLocaleString()} GiB` : '—'}</dd>
               </div>
