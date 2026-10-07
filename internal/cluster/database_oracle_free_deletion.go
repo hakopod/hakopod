@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -15,6 +16,8 @@ import (
 
 const oracleFreeFinalizer = "database.oracle.com/singleinstancedatabasefinalizer"
 const oracleFreeStorageFinalizer = "hakopod.io/oracle-free-storage"
+
+var errOracleFreeDeletionProgress = errors.New("Oracle Free deletion is waiting for concurrent resource cleanup")
 
 // The scoped operator must survive until SIDB finishes its own finalizer.
 func (c *Client) deleteOracleFreeController(ctx context.Context, d database.Resource, before func() error) (bool, error) {
@@ -69,6 +72,9 @@ func (c *Client) deleteOracleFreeController(ctx context.Context, d database.Reso
 		}
 	}
 	if err = c.oracleFreePrepareDeletionClaims(ctx, owned, object, before); err != nil {
+		if errors.Is(err, errOracleFreeDeletionProgress) {
+			return false, nil
+		}
 		return false, err
 	}
 	if object.GetDeletionTimestamp() != nil {
@@ -80,6 +86,9 @@ func (c *Client) deleteOracleFreeController(ctx context.Context, d database.Reso
 	uid, version := object.GetUID(), object.GetResourceVersion()
 	foreground := metav1.DeletePropagationForeground
 	err = api.Delete(ctx, object.GetName(), metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &version}, PropagationPolicy: &foreground})
+	if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
+		return false, nil
+	}
 	return false, err
 }
 
@@ -106,12 +115,23 @@ func (c *Client) oracleFreePrepareDeletionClaims(ctx context.Context, d database
 			continue
 		}
 		volume, err := c.kube.CoreV1().PersistentVolumes().Get(ctx, claim.Spec.VolumeName, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) && root.GetDeletionTimestamp() != nil && claim.DeletionTimestamp != nil {
+			// Reclamation can finish before the PVC loses its finalizer. The
+			// bounded scan below still checks for a late-bound backing volume.
+			continue
+		}
 		if err != nil {
 			return err
 		}
 		ref := volume.Spec.ClaimRef
-		if volume.UID == "" || volume.ResourceVersion == "" || volume.DeletionTimestamp != nil || ref == nil || ref.APIVersion != "v1" || ref.Kind != "PersistentVolumeClaim" || ref.Namespace != claim.Namespace || ref.Name != claim.Name || ref.UID != claim.UID {
+		if volume.UID == "" || volume.ResourceVersion == "" || ref == nil || ref.APIVersion != "v1" || ref.Kind != "PersistentVolumeClaim" || ref.Namespace != claim.Namespace || ref.Name != claim.Name || ref.UID != claim.UID {
 			return fmt.Errorf("Oracle Free deletion backing volume identity changed")
+		}
+		if volume.DeletionTimestamp != nil {
+			if root.GetDeletionTimestamp() == nil || claim.DeletionTimestamp == nil || volume.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimDelete {
+				return fmt.Errorf("Oracle Free backing volume is deleting before safe reclamation")
+			}
+			continue
 		}
 		volumes = append(volumes, volume)
 	}
@@ -140,6 +160,9 @@ func (c *Client) oracleFreePrepareDeletionClaims(ctx context.Context, d database
 					return fmt.Errorf("Oracle Free deletion backing volume identity changed")
 				}
 				if volume.DeletionTimestamp != nil {
+					if claim.DeletionTimestamp == nil || volume.Spec.PersistentVolumeReclaimPolicy != corev1.PersistentVolumeReclaimDelete {
+						return fmt.Errorf("Oracle Free backing volume is deleting before safe reclamation")
+					}
 					continue
 				}
 				found := false
@@ -163,6 +186,9 @@ func (c *Client) oracleFreePrepareDeletionClaims(ctx context.Context, d database
 			return err
 		}
 		if _, err = c.kube.CoreV1().PersistentVolumes().Update(ctx, volume, metav1.UpdateOptions{}); err != nil {
+			if apierrors.IsConflict(err) || apierrors.IsNotFound(err) && root.GetDeletionTimestamp() != nil {
+				return errOracleFreeDeletionProgress
+			}
 			return err
 		}
 	}
@@ -177,6 +203,9 @@ func (c *Client) oracleFreePrepareDeletionClaims(ctx context.Context, d database
 				return err
 			}
 			if _, err = c.kube.CoreV1().PersistentVolumeClaims(claim.Namespace).Update(ctx, claim, metav1.UpdateOptions{}); err != nil {
+				if apierrors.IsConflict(err) || apierrors.IsNotFound(err) {
+					return errOracleFreeDeletionProgress
+				}
 				return err
 			}
 		}
