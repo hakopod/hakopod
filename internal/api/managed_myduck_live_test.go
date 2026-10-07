@@ -82,6 +82,44 @@ func myduckAPITLS(t *testing.T, trust managed.PublicTrust, host string) *tls.Con
 	return &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, ServerName: host}
 }
 
+func myduckAPIWaitReady(t *testing.T, ctx context.Context, db *store.Store, runtime *cluster.Client, previous managed.Resource, replaced bool) managed.Resource {
+	t.Helper()
+	wait, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	if len(previous.Observation.Members) != 1 || previous.Observation.Members[0].UID == "" {
+		t.Fatal("MyDuck readiness requires the previous member identity")
+	}
+	prior := previous.Observation.Members[0]
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for wait.Err() == nil {
+		current, err := db.DatabaseInternal(wait, previous.ID)
+		if err != nil {
+			t.Fatal("read MyDuck readiness", err)
+		}
+		if current.Revision != previous.Revision || current.Spec.Engine != "duckdb" || current.Status == "failed" {
+			t.Fatal("MyDuck identity or recovery state changed while waiting for readiness")
+		}
+		step, stop := context.WithTimeout(wait, 25*time.Second)
+		observed, err := runtime.ObserveDatabase(step, current)
+		stop()
+		if err == nil && current.Status == "ready" && observed.Status == "ready" && observed.Fresh(time.Now(), current.Revision) && observed.TLS != nil && observed.TLS.Verified && len(observed.Members) == 1 {
+			member := observed.Members[0]
+			if member.Ready && member.UID != "" && member.Name == prior.Name && member.Name == observed.Primary && member.Role == "primary" && (!replaced || member.UID != prior.UID) {
+				// Retain the actual observation; do not rewrite the store's cached state.
+				current.Observation = observed
+				return current
+			}
+		}
+		select {
+		case <-wait.Done():
+		case <-ticker.C:
+		}
+	}
+	t.Fatal("MyDuck did not regain current member readiness and authenticated TLS before the deadline")
+	return managed.Resource{}
+}
+
 func TestManagedMyDuckHTTPLive(t *testing.T) {
 	if os.Getenv("HAKOPOD_MYDUCK_API_RECOVERY_TEST") != "1" {
 		t.Skip("set HAKOPOD_MYDUCK_API_RECOVERY_TEST=1 only in the qualified development-cluster runner")
@@ -328,13 +366,9 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 			t.Fatal("interrupted cold backup was not cancelled after cleanup")
 		}
 	})
-	for ctx.Err() == nil {
-		source, err = db.DatabaseInternal(ctx, source.ID)
-		if err == nil && source.Status == "ready" && source.Observation.Status == "ready" {
-			break
-		}
-		time.Sleep(time.Second)
-	}
+	// Cancellation can happen before the old pod stops. Check live health in
+	// either case instead of accepting its cached pre-cancellation observation.
+	source = myduckAPIWaitReady(t, ctx, db, runtime, source, false)
 	var job backup.Job
 	if status := client.request("POST", "/backups", map[string]any{"destination_id": destination.Destination.ID, "source": backup.Source{Kind: "managed_database", ManagedDatabaseID: source.ID, Engine: "duckdb"}}, &job, store.NewID()); status != 202 {
 		t.Fatal("backup acceptance", status)
@@ -350,6 +384,7 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	if err != nil || artifact.Format != "age-v1+myduck-cold-v1" || artifact.VerifiedAt == nil {
 		t.Fatal("cold archive evidence", err)
 	}
+	source = myduckAPIWaitReady(t, ctx, db, runtime, source, true)
 	query(source, "mysql", "INSERT INTO recovery_rows VALUES(2,'after')")
 	var plan backup.RestorePlan
 	if status := client.request("POST", "/databases/"+target.ID+"/restore-plan", map[string]string{"artifact_id": artifact.ID}, &plan, ""); status != 200 {
@@ -366,6 +401,7 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	if err != nil || recovery.Status != "succeeded" {
 		t.Fatal("restore", recovery.Status, recovery.Error, err)
 	}
+	target = myduckAPIWaitReady(t, ctx, db, runtime, target, true)
 	if query(target, "postgresql", "SELECT CAST(count(*) AS VARCHAR) FROM recovery_rows") != "1" || query(source, "mysql", "SELECT CAST(count(*) AS CHAR) FROM recovery_rows") != "2" {
 		t.Fatal("recovery point or source changed")
 	}

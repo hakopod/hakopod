@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/hakopod/hakopod/internal/backup"
-	"github.com/hakopod/hakopod/internal/database"
 	"io"
 	"time"
+
+	"github.com/hakopod/hakopod/internal/backup"
+	"github.com/hakopod/hakopod/internal/database"
+	"github.com/hakopod/hakopod/internal/store"
 )
 
 func (r *backupRuntime) RecoverColdStorage(ctx context.Context, job backup.Job) (bool, error) {
@@ -125,8 +127,13 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 		return fmt.Errorf("managed recovery target is not healthy")
 	}
 	var restoreErr error
+	var recoveryObserved bool
 	switch d.Spec.Engine {
 	case "duckdb":
+		if len(observed.Members) != 1 || observed.Members[0].UID == "" {
+			return fmt.Errorf("MyDuck cold restore requires one current member identity")
+		}
+		previousMemberUID := observed.Members[0].UID
 		jobContext, ok := backup.WorkerJobFromContext(ctx)
 		if !ok || jobContext.Kind != "restore" || jobContext.ID != job.ID || jobContext.Lease != job.Lease {
 			return fmt.Errorf("MyDuck cold restore requires the active backup worker")
@@ -138,7 +145,7 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 			return r.server.Store.CheckDatabaseColdStorageWorker(ctx, d.ID, d.Revision, job.ID, job.Lease, job.Kind)
 		}
 		restoreErr = r.server.Cluster.WithMyDuckColdStorage(ctx, d, observed, job.ID, true, before, input, nil)
-		cleanup, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		fence, claimErr := r.server.Store.ClaimDatabaseColdStorageCleanup(cleanup, job.ID, job.Lease)
 		if claimErr != nil {
@@ -147,6 +154,28 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 		cleanupBefore := func() error { return r.server.Store.CheckDatabaseColdStorageCleanup(cleanup, fence) }
 		if reconcileErr := r.server.Cluster.ReconcileMyDuckColdStorage(cleanup, d, job.ID, restoreErr == nil, cleanupBefore); reconcileErr != nil {
 			return fmt.Errorf("MyDuck cold restore cleanup is incomplete: %w", reconcileErr)
+		}
+		if restoreErr == nil {
+			readyCtx, cancelReady := context.WithTimeout(cleanup, 90*time.Second)
+			observed, err = waitForMyDuckRecoveryReady(readyCtx, d, previousMemberUID, time.Second, func(step context.Context) error {
+				if checkErr := r.server.Store.CheckDatabaseColdStorageCleanup(step, fence); checkErr != nil {
+					return checkErr
+				}
+				current, checkErr := r.server.Store.DatabaseInternal(step, d.ID)
+				if checkErr != nil || current.Status != "restoring" || current.Revision != d.Revision || current.Recovery == nil || current.Recovery.JobID != job.ID || current.Recovery.ArtifactID != job.ArtifactID {
+					return store.ErrClaimLost
+				}
+				active, checkErr := r.server.Store.BackupJob(step, job.ID)
+				if checkErr != nil || active.Status != "running" || active.CancelRequested || active.Lease != job.Lease || active.Target == nil || active.Target.ManagedDatabaseID != d.ID || active.Target.Revision != d.Revision || active.Target.Engine != d.Spec.Engine || active.ArtifactID != job.ArtifactID {
+					return store.ErrClaimLost
+				}
+				return nil
+			}, r.server.Cluster.ObserveDatabase)
+			cancelReady()
+			if err != nil {
+				return fmt.Errorf("MyDuck restored member did not become ready: %w", err)
+			}
+			recoveryObserved = true
 		}
 		if releaseErr := r.server.Store.ReleaseDatabaseColdStorageFence(cleanup, fence); releaseErr != nil {
 			return fmt.Errorf("MyDuck cold restore fence could not be cleared: %w", releaseErr)
@@ -173,11 +202,13 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 	}
 	// Recovery may replace pods to revoke existing sessions. Record those new
 	// identities while the job still owns the target and before it can succeed.
-	observeCtx, cancelObserve := context.WithTimeout(ctx, 25*time.Second)
-	observed, err = r.server.Cluster.ObserveDatabase(observeCtx, d)
-	cancelObserve()
-	if err != nil || observed.Status != "ready" || observed.Revision != d.Revision {
-		return fmt.Errorf("managed recovery result could not be verified")
+	if !recoveryObserved {
+		observeCtx, cancelObserve := context.WithTimeout(ctx, 25*time.Second)
+		observed, err = r.server.Cluster.ObserveDatabase(observeCtx, d)
+		cancelObserve()
+		if err != nil || observed.Status != "ready" || observed.Revision != d.Revision {
+			return fmt.Errorf("managed recovery result could not be verified")
+		}
 	}
 	recordCtx, cancelRecord := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelRecord()
@@ -185,4 +216,26 @@ func (r *backupRuntime) restoreManagedDatabase(ctx context.Context, target backu
 		return fmt.Errorf("managed recovery result could not be recorded: %w", err)
 	}
 	return nil
+}
+
+func waitForMyDuckRecoveryReady(ctx context.Context, d database.Resource, previousMemberUID string, interval time.Duration, authority func(context.Context) error, observe func(context.Context, database.Resource) (database.Observation, error)) (database.Observation, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return database.Observation{}, err
+		}
+		if err := authority(ctx); err != nil {
+			return database.Observation{}, err
+		}
+		observed, err := observe(ctx, d)
+		if err == nil && observed.Status == "ready" && observed.Fresh(time.Now(), d.Revision) && len(observed.Members) == 1 && observed.Members[0].Name != "" && observed.Members[0].UID != "" && observed.Members[0].UID != previousMemberUID && observed.Members[0].Ready && observed.Primary == observed.Members[0].Name && observed.TLS != nil && observed.TLS.Required && observed.TLS.Verified && observed.TLS.PlaintextRejected && observed.TopologyFingerprint != "" {
+			return observed, nil
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return database.Observation{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
