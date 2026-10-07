@@ -24,6 +24,8 @@ type terminalPollBuffer struct {
 	bytes  int
 	cursor int64
 	done   bool
+	ready  chan struct{}
+	status int
 }
 
 func (b *terminalPollBuffer) append(data []byte) {
@@ -44,10 +46,11 @@ type terminalPollWriter struct {
 }
 
 func (w *terminalPollWriter) Header() http.Header              { return w.header }
-func (w *terminalPollWriter) WriteHeader(int)                  {}
+func (w *terminalPollWriter) WriteHeader(status int)           { w.buffer.attach(status) }
 func (w *terminalPollWriter) Flush()                           {}
 func (w *terminalPollWriter) SetWriteDeadline(time.Time) error { return nil }
 func (w *terminalPollWriter) Write(p []byte) (int, error) {
+	w.WriteHeader(http.StatusOK)
 	// Canonical terminalOutput emits each complete JSON frame in one write.
 	if len(p) > 8 && string(p[:6]) == "data: " {
 		raw := p[6 : len(p)-2]
@@ -60,6 +63,30 @@ func (w *terminalPollWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+func (b *terminalPollBuffer) attach(status int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.status != 0 {
+		return
+	}
+	b.status = status
+	if b.ready != nil {
+		close(b.ready)
+	}
+}
+
+func (b *terminalPollBuffer) waitAttached(ctx context.Context) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-b.ready:
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return b.status, nil
+	}
+}
+
 func (s *Server) terminalPoll(w http.ResponseWriter, r *http.Request) {
 	cursor, err := strconv.ParseInt(r.URL.Query().Get("cursor"), 10, 64)
 	if r.URL.Query().Get("cursor") == "" {
@@ -81,13 +108,33 @@ func (s *Server) terminalPoll(w http.ResponseWriter, r *http.Request) {
 			problem(w, 409, "already_connected", "This terminal already uses streaming output")
 			return
 		}
-		x.poll = &terminalPollBuffer{}
+		x.poll = &terminalPollBuffer{ready: make(chan struct{})}
 		request := r.Clone(context.WithValue(context.WithoutCancel(r.Context()), terminalPollContextKey{}, true))
 		writer := &terminalPollWriter{header: http.Header{}, buffer: x.poll}
-		go s.terminalOutput(writer, request)
+		go func() {
+			defer func() {
+				// An early authorization or capacity failure must end attachment.
+				writer.buffer.attach(http.StatusServiceUnavailable)
+				writer.buffer.mu.Lock()
+				writer.buffer.done = true
+				writer.buffer.mu.Unlock()
+			}()
+			s.terminalOutput(writer, request)
+		}()
 	}
 	buffer := x.poll
 	x.mu.Unlock()
+	attachCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	status, err := buffer.waitAttached(attachCtx)
+	cancel()
+	if err != nil || status != http.StatusOK {
+		s.closeTerminal(x)
+		if err != nil {
+			status = http.StatusGatewayTimeout
+		}
+		problem(w, status, "terminal_attach_failed", "Terminal output could not attach. Open a new terminal.")
+		return
+	}
 	out, err := buffer.sample(cursor)
 	if err != nil {
 		problem(w, 400, "invalid_cursor", "Cursor is ahead of terminal output")

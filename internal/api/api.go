@@ -1074,7 +1074,7 @@ func (s *Server) guardStream(ctx context.Context, cancel context.CancelFunc, key
 				return
 			}
 			for _, permission := range permissions {
-				if !p.Allows(permission, a.Project, a.Environment, a.Name) {
+				if !p.Allows(permission, a.Project, a.Environment, a.Name) || permission == "pods:exec" && !podExecAllowed(p, a) {
 					cancel()
 					return
 				}

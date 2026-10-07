@@ -82,6 +82,15 @@ func TestPodExecMachineGrant(t *testing.T) {
 	if !podExecAllowed(human, app) {
 		t.Fatal("human administrator refused")
 	}
+	cli := human
+	cli.CredentialType = "cli"
+	if podExecAllowed(cli, app) {
+		t.Fatal("administrator CLI bypassed explicit execution consent")
+	}
+	cli.Permissions = []string{"admin", "pods:exec"}
+	if !podExecAllowed(cli, app) {
+		t.Fatal("explicit CLI execution consent was rejected")
+	}
 }
 
 func TestPodExecOutputDrainAndSnapshot(t *testing.T) {

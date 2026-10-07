@@ -31,6 +31,27 @@ func TestStreamGuardRechecksTrustedRuntimeAuthority(t *testing.T) {
 	}
 	s := &Server{Store: db}
 	app := store.Application{Project: "demo", Environment: "development", Name: "app"}
+	t.Run("cli-explicit-grant-removed-with-admin-retained", func(t *testing.T) {
+		cli, err := db.NewSession(ctx, owner.ID, "cli", "demo", "development", []string{"admin", "pods:exec"})
+		if err != nil || !podExecAllowed(cli.User, app) {
+			t.Fatal("explicit CLI consent was rejected", err)
+		}
+		if _, err := db.Pool.Exec(ctx, "UPDATE api_keys SET permissions=ARRAY['admin'] WHERE id=$1", cli.User.KeyID); err != nil {
+			t.Fatal(err)
+		}
+		current, err := db.KeyPrincipal(ctx, cli.User.KeyID)
+		if err != nil || !current.Allows("pods:exec", app.Project, app.Environment, app.Name) {
+			t.Fatal("fixture did not retain wildcard authority", err)
+		}
+		stream, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go s.guardStream(stream, cancel, cli.User.KeyID, app, "deployments:write", "pods:exec")
+		select {
+		case <-stream.Done():
+		case <-time.After(6 * time.Second):
+			t.Fatal("administrator CLI retained a stream after execution consent removal")
+		}
+	})
 	for _, scenario := range []string{"callback-revoked", "permission-narrowed"} {
 		t.Run(scenario, func(t *testing.T) {
 			var revoked atomic.Bool

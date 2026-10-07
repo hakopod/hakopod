@@ -50,12 +50,15 @@ Source edits, source generation, formatting and inspection ran locally. Snapshot
 | `hakopod-agent-final-descriptions` | Final OpenAPI/proxy generation and exact SDK generation check passed after agent-language corrections. |
 | `hakopod-agent-interface-final-v2` | Earlier full Go run passed except an obsolete unsupported-MySQL assertion. Corrected cluster tests passed separately. Later rollback changes require a fresh full run. |
 | `hakopod-agent-bcf36b48-full-go` | Full `go test -count=1 -p=1 -timeout=20m ./...` passed on the committed archive and exact templates submodule. Later terminal changes require separate checks. |
-| `hakopod-agent-terminal-runtime-v5` | Focused scope, stream guard, terminal authority, polling and buffer tests passed. A later poll-buffer locking correction is under race and native acceptance. |
+| `hakopod-agent-terminal-runtime-v5` | Focused scope, stream guard, terminal authority, polling and buffer tests passed. |
+| `hakopod-agent-terminal-final-v8` | Focused race tests and native terminal polling passed in 104.264 seconds. Includes explicit machine grants, runtime narrowing, product revocation and confirmed namespace cleanup. Later CLI consent and attachment changes require a separate result. |
+| `hakopod-agent-terminal-final-v9` | Focused race tests passed in 122.325 seconds. Includes current CLI/machine grants, administrator wildcard rejection, active grant removal, attachment failures and SQL authorization. Native terminal input/output, exit, product revocation and namespace cleanup passed in 75.96 seconds. The first input request succeeded immediately after the first poll, without retry. |
+| `agent-cli-terminal-poll-20261008` v3 | CLI polling protocol tests passed in 0.192 seconds. Covers cursor progression, output bounds, truncation, exit status, input readiness, rejected input and DELETE cleanup. |
 | `hakopod-agent-sql-postrows` | Driver regressions passed for authority loss after write-authorized row queries. Confirmed rollback reports `rolled_back`; failed rollback reports `unknown`. |
 | `agent-cloud-policy-v2` | Shared credential-policy helper, focused server/gateway/state/identity and full Cloud Go suite passed before rebase. |
 | `agent-cloud-rebased-v1` | After rebase onto Cloud main 570504, full Cloud Go, composed production build, typecheck, 2 grant dependency tests, server tests and 238 UI tests passed. Engine source was copied from the platform working tree. |
 
-The committed platform snapshot `bcf36b48` passed the CI full Go test step, dashboard and SDK checks. Its amd64/arm64 template and Managed Actions runtime acceptance passed. The remaining CI steps and the later terminal changes require their own final results.
+The committed platform snapshot `8b883e6d` passed CI run `37699987107`, including full Go, separate native-acceptance build, vet, command builds, script checks, dashboard and SDK. Its amd64/arm64 template and Managed Actions runtime acceptance also passed. PostgreSQL network, ingress and certificate acceptance passed. Later changes require their own final results.
 Cloud pins platform `bcf36b48` in commit `0b22db3`. The new terminal mapping requires a later engine pin and fresh verification.
 Cloud snapshot manifest SHA-256: `733f67092275b98550ab66ab3d9000c38c42cfc29939bc349f45e5997372e3c7`.
 
@@ -79,6 +82,8 @@ SQL and credentials do not appear in relay command arguments. Kubernetes does no
 MyDuck must not advertise read-only support. Its reviewed UI requires an explicit write selection and explains nontransactional persistence.
 A capability is enabled only after the corresponding native checks pass. Support is read from the target's query-capability endpoint.
 
+Later terminal snapshots v6 and v7 passed functional assertions but failed the 45-second namespace cleanup wait. They are not passing acceptance results. Snapshots v8 and v9 used a bounded 90-second absence check and passed cleanup without changing cluster resources or finalizers.
+
 ## Independent review
 
 The [UI review](agent-control-ui-review.md) passed for the documented route families, both themes, 1440px and 390px layouts, keyboard interactions and measured bounds.
@@ -87,6 +92,8 @@ All artificial UI fixtures are labelled DEVELOPMENT ONLY. Full Cloud shell, phys
 An independent contract review identified Cloud credential inheritance and stale delegated permission reporting. Both fixes passed re-review on Cloud commit 69980179.
 A later SQL review identified unconfirmed rollback claims. PostgreSQL and MySQL corrections passed the regression and native checks recorded above. A later post-rows authority-loss correction passed independent review and driver regressions; it changes failure reporting without changing successful execution or the Kubernetes transport.
 Terminal review also required current `pods:exec` checks for runtime-scoped browser and CLI sessions. Creation, follow-ups and active streams now apply that ceiling. Scoped fixture tests require actual project membership; global administrator status does not replace that membership.
+Further review found that direct CLI sessions could inherit execution from an administrator wildcard. CLI pod commands, terminals and SQL now require explicit grants. Active terminal checks detect removal of that grant even when administrator permission remains.
+The CLI and canonical polling handlers now coordinate attachment before accepting input. Early attachment failures return an error instead of a successful empty poll.
 
 ## Release limits
 

@@ -56,16 +56,16 @@ func podExecAllowed(p store.Principal, a store.Application) bool {
 	if !p.Allows(podExecPermission, a.Project, a.Environment, a.Name) {
 		return false
 	}
-	if p.CredentialType == "machine" {
+	if p.CredentialType == "machine" || p.CredentialType == "cli" {
 		explicit := false
 		for _, permission := range p.Permissions {
 			if permission == podExecPermission {
 				explicit = true
 			}
 		}
-		return explicit && p.Project != "" && p.Environment != ""
+		return explicit && (p.CredentialType == "cli" || p.Project != "" && p.Environment != "")
 	}
-	return p.CredentialType == "browser" || p.CredentialType == "cli"
+	return p.CredentialType == "browser"
 }
 
 type podExecBuffer struct {

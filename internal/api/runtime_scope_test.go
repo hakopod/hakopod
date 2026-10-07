@@ -50,6 +50,26 @@ func TestRuntimeExecutionGrantsRequireBothKeyAndWorkspace(t *testing.T) {
 	}
 }
 
+func TestRuntimeScopeDoesNotExpandSensitiveAdministratorGrants(t *testing.T) {
+	for _, credential := range []string{"machine", "cli"} {
+		for _, permission := range []string{"pods:exec", "databases:query", "databases:write-query", "agent:credentials"} {
+			t.Run(credential+"/"+permission, func(t *testing.T) {
+				p := store.Principal{ID: "alice", Admin: true, CredentialType: credential, Project: "one", Environment: "production", Permissions: []string{"admin"}}
+				scope := RuntimeScope{AllowMachine: true, Identity: p.ID, Project: p.Project, Environment: p.Environment, Permissions: []string{"deployments:read", permission}, Authorize: func(context.Context) error { return nil }}
+				narrowed, err := scopedRuntimePrincipal(p, scope)
+				if err != nil || narrowed.Allows(permission, p.Project, p.Environment, "") || !narrowed.Allows("deployments:read", p.Project, p.Environment, "") {
+					t.Fatal("administrator wildcard became a sensitive grant", err)
+				}
+				p.Permissions = append(p.Permissions, permission)
+				narrowed, err = scopedRuntimePrincipal(p, scope)
+				if err != nil || !narrowed.Allows(permission, p.Project, p.Environment, "") {
+					t.Fatal("explicit sensitive grant was lost", err)
+				}
+			})
+		}
+	}
+}
+
 func TestRuntimeScopeCannotGrantOrCrossWorkspaceAuthority(t *testing.T) {
 	p := store.Principal{ID: "alice", Email: "alice@example.test", CredentialType: "browser", Permissions: []string{"admin"}, ProjectRoles: []store.ProjectRole{{Project: "free-alice", Role: "developer"}, {Project: "other", Role: "developer"}}}
 	narrowed, err := scopedRuntimePrincipal(p, RuntimeScope{Identity: "alice", Project: "free-alice", Environment: "production"})
