@@ -1,0 +1,3 @@
+8a64742fb2327f720488f5b7e494aff2ba84aec3b82e0edb2f10c58e076bfe01  /srv/hakopod-backup-scratch/oracle-free-operator-v13/upstream-build/image/bin/manager
+e95475af11f972045b264d4936352cc0f5e783f3dab084fd209bdd7043eb56ac  /srv/hakopod-backup-scratch/oracle-free-operator-v13/upstream-build/image/upstream.patch
+8bc95dc17a6be6c01c059064c04be32334c49d61dfb226e30e8a2d58cff98cde  /srv/hakopod-backup-scratch/oracle-free-operator-v13/upstream-build/image/crds/singleinstancedatabases.yaml

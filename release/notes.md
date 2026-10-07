@@ -47,10 +47,16 @@ removals in the diff. Required secrets follow the edited configuration, failed
 requests preserve drafts, and deployment retains scope and revision checks.
 The editor's schema is generated from the API contract.
 
-This release retains the managed Vitess and Outpost capabilities introduced in
+This release retains managed Vitess and the Outpost application template. They
+were introduced in
 [alpha.55](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.55) and
-[alpha.54](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.54).
+[alpha.54](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.54),
+respectively.
 Their documented platform, capacity and recovery requirements still apply.
+
+Vitess retains its alpha.55 runtime, operator and original acceptance evidence.
+An exact source compatibility review covers the shared control-plane changes;
+packaging still verifies the immutable images and rejects unreviewed changes.
 
 Install alpha.56 with the published installer:
 

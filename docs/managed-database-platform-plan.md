@@ -28,8 +28,9 @@ unknown. Desired capacity and observed resources are different facts.
 | MySQL, native development acceptance passed | One member and one Router | Native Group Replication with 3, 5 or 7 voting members; two Routers | MySQL Router primary and secondary routes | Read-locked logical capture, least-privilege restore, verified rejoin and ordered deletion |
 | MongoDB, native development acceptance passed | One-member replica set with no HA claim | Native 3/5/7-member replica set through MongoDB Kubernetes Controller | Driver discovery and read preferences; advertised members must be reachable | One snapshot timestamp, raw BSON and metadata, separate empty target, session revocation and inspection-gated ingress; no continuous oplog recovery |
 | ClickHouse, native development acceptance passed | One server | Replicated shards with an explicitly allocated Keeper quorum | Native/HTTP query endpoint; distributed tables retain their engine semantics | Table metadata plus data, replication paths, each shard and Keeper-dependent recovery |
-| Vitess, native and HTTP development acceptance passed | One managed MySQL shard with its required control components | Vitess tablets, vtgate routing and a topology service; replicas and shards explicitly allocated | MySQL protocol through vtgate; shard routing follows the VSchema | Per-shard archives, topology metadata, separate-target restore and tablet reseed |
-| Oracle Database Free, operator acceptance in progress | Oracle Database Free 26ai, version 23.26, through a namespace-scoped Oracle Database Operator | Free has one instance. Enterprise Data Guard has separate source and licensed-image acceptance requirements | Private PDB service over verified TCPS; Enterprise source uses native roles and reviewed graceful switchover | APP-schema Data Pump recovery; final operator lifecycle and recovery acceptance remain open, along with physical RMAN, archived-redo recovery and native Enterprise acceptance |
+| Vitess, alpha.55 development acceptance passed | One managed MySQL shard with its required control components | Vitess tablets, vtgate routing and a topology service; replicas and shards explicitly allocated | MySQL protocol through vtgate; shard routing follows the VSchema | Per-shard archives, topology metadata, separate-target restore and tablet reseed |
+| DuckDB through MyDuck, alpha.56 development acceptance passed | One persistent MyDuck instance | No replicas or automatic failover | TLS-required MySQL port 3306 and PostgreSQL port 5432 reach the same DuckDB database; no managed pool | Cold encrypted capture and separate-target replacement; no online backup or point-in-time recovery |
+| Oracle Database Free, alpha.56 development acceptance passed | Oracle Database Free 26ai through a namespace-scoped Oracle Database Operator 2.2.0 | Free has one instance. Enterprise Data Guard has separate source and licensed-image acceptance requirements | Private TCPS port 2484 serves the `APP` account on `FREEPDB1`; Enterprise source uses native roles and reviewed graceful switchover | APP-schema Data Pump export and separate-target import; physical RMAN, archived-redo recovery and native Enterprise acceptance remain unavailable |
 
 A supported engine needs the complete vertical slice: strict versioned
 configuration, approved digest-pinned images, credential ownership, bounded
@@ -44,9 +45,9 @@ resources must be included in reservations and displayed in allocation reviews.
 
 Managed Oracle Database is part of the requested scope, including standalone
 and clustered deployment. Free now uses Oracle Database Operator 2.2.0 to manage
-one instance. Creation remains disabled in the API and dashboard until this
-operator path passes native lifecycle, security, renewal, recovery, controller
-loss and HTTP/API acceptance on the final source.
+one instance. Its alpha.56 development acceptance covers lifecycle, security,
+renewal, recovery, controller loss and HTTP/API behavior on the qualified source.
+See the [release acceptance record](managed-database-release-acceptance.md).
 
 Earlier development tests covered a Hakopod-managed StatefulSet. They verified
 schema recovery, target quotas, privilege restrictions and session revocation,
@@ -63,7 +64,8 @@ silently select RAC, Active Data Guard or an extra licensed option.
 The chosen product model is Oracle Database Free for standalone use, plus
 customer-supplied Enterprise images for licensed deployments. Oracle Database
 Free is proprietary software available without a database license fee; it must
-not be described as open source. Free does not provide the Enterprise Data Guard
+not be described as open source. It is limited to two CPUs, 2 GB of database
+memory and 12 GB of user data. Free does not provide the Enterprise Data Guard
 cluster offering. The create flow must separate those editions and explain their
 limits before review. Enterprise customers supply an immutable image reference,
 a project/environment-scoped registry credential reference when needed, and an
@@ -197,7 +199,7 @@ acceptance are complete.
 ## Delivery checklist
 
 The requested engine scope is PostgreSQL, Redis, MySQL, MongoDB, ClickHouse,
-managed Vitess and managed Oracle Database.
+managed Vitess, DuckDB through MyDuck and managed Oracle Database.
 Each engine needs the full lifecycle and security contract above. Website
 content follows verified release availability, not the existence of a catalog
 card or an upstream operator.
@@ -230,13 +232,16 @@ card or an upstream operator.
   and found no staged archives after capture or restore. This is development
   evidence from two nodes on one VM, not production or independent-zone
   availability.
-- [ ] Implement and verify managed Vitess, including its ownership and recovery
-  boundaries.
-- [ ] Verify Oracle Database Free lifecycle, TCPS renewal, application bindings,
+- [x] Verify MyDuck lifecycle, both private TLS protocols, restricted SQL,
+  persistence, renewal, bindings, separate-target recovery and owned cleanup.
+- [x] Verify Oracle Database Free lifecycle, TCPS renewal, application bindings,
   isolated schema recovery, controller loss and HTTP/API operations through the
   Oracle Database Operator in the named development cluster.
 - [ ] Verify Oracle Enterprise and Data Guard against the hardened controller
   and a licensed customer image before opening the runtime gate.
+- [ ] Keep Cloud alpha.35 packaging and deployment separate. Do not add Oracle or
+  Vitess to the shared production pool without capacity expansion; qualify
+  MyDuck placement and capacity separately before a Cloud rollout.
 - [ ] Complete PostgreSQL public-endpoint native acceptance for engine-specific
   discovery, enforced source restrictions, TLS, durable exposure and revocation.
   The integrated source and synthetic dashboard review do not establish native

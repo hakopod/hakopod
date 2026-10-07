@@ -1,14 +1,12 @@
 # How Hakopod manages a database
 
-Status: published self-hosted alpha.55 includes PostgreSQL, Redis, MySQL,
-MongoDB, private ClickHouse and private Vitess on Linux amd64 workers. Oracle
-Database Free and DuckDB through MyDuck are enabled only in the alpha.56
-candidate for qualification; neither is published or available in Cloud
-alpha.34. Their complete native and HTTP suites must pass again against the
-current candidate. Public endpoints, Neon and Supabase remain unavailable.
-Cloud availability requires a separate Cloud release, operator rollout and
-approved capacity. See the
-[acceptance record](managed-database-release-acceptance.md) for released scope.
+Status: self-hosted alpha.56 retains private Vitess from alpha.55 and adds
+private single-instance Oracle Database Free and DuckDB through MyDuck on Linux
+amd64 workers alongside PostgreSQL, Redis, MySQL, MongoDB and private
+ClickHouse. Public endpoints, Neon and Supabase remain unavailable. Cloud alpha.35 is a separate
+package and deployment; its shared production pool cannot fit Oracle or Vitess,
+and MyDuck requires separate capacity and placement acceptance. See the
+[acceptance record](managed-database-release-acceptance.md) for exact evidence.
 
 ## Follow one create request
 
@@ -71,11 +69,11 @@ Ownership checks matter during retries and deletion. A matching name is insuffic
 | MySQL 8.4 | Oracle MySQL Operator, InnoDB Cluster members with sidecars, MySQL Router | Router has explicit primary and secondary ports. Voting members determine write availability. |
 | MongoDB 8.0 | MongoDB Kubernetes Controller, replica-set members and agents | The driver discovers members and selects according to read preference and write concern. |
 | ClickHouse 26.3 | Altinity operator, data members, three Keeper members for clusters | Local tables remain local to a shard. Distributed tables or explicit queries combine shards. |
-| Oracle Database Free 26ai | Namespace-scoped Oracle Database Operator 2.2.0, one SingleInstanceDatabase resource, TCPS listener and volumes; current-candidate qualification is pending | One PDB service. Free does not implement a Data Guard cluster. |
+| Oracle Database Free 26ai | Namespace-scoped Oracle Database Operator 2.2.0, one SingleInstanceDatabase resource, TCPS listener, data volume and separate Data Pump staging volume | Private TCPS port 2484 serves the `APP` account on `FREEPDB1`. Free does not implement a Data Guard cluster. |
 | Vitess 23 | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native and HTTP acceptance passed for the fixed layouts in alpha.55. |
-| DuckDB through MyDuck | One hardened MyDuck process, one StatefulSet and one persistent volume; current-candidate qualification is pending | MySQL port 3306 and PostgreSQL port 5432 reach the same `app` database. No cluster or replicas. |
+| DuckDB through MyDuck | One hardened MyDuck process, one StatefulSet and one persistent volume | TLS-required MySQL port 3306 and PostgreSQL port 5432 reach the same `app` database. No replicas, automatic failover, managed pool or in-place resize. |
 
-Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md), [MyDuck](managed-myduck.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Its candidate gate is open only for qualification; publication still requires complete native acceptance. Enterprise and Data Guard have separate source implementations and remain unavailable pending licensed native acceptance of the hardened controller and customer image.
+Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md), [MyDuck](managed-myduck.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary, no-cost software limited to two CPUs, 2 GB of database memory and 12 GB of user data. Enterprise and Data Guard have separate source implementations and remain unavailable pending licensed native acceptance of the hardened controller and customer image.
 
 ## Replication, routing and pooling answer different questions
 
@@ -102,7 +100,7 @@ For example, three MySQL members at 500m CPU and 1Gi each, three sidecars at 100
 
 ClickHouse reserves a backup staging volume equal to each data member's data volume, plus three 1Gi Keeper volumes in cluster mode. MongoDB includes agent resources and separate log volumes. Oracle Free includes a backup staging volume and its own schema quota; increasing the pod reservation does not remove Oracle's license limits. Vitess includes tablet, gateway, control and topology processes; its source contract accounts for the namespace-scoped operator too.
 
-Cloud serializes database and application reservations against the same workspace allocation. Shrinking members must not refund storage that remains retained. A plan that fits steady-state pods can still fail admission because it cannot fit a replacement. See [CPU reservations](../internal/database/allocation.go), [database model](../internal/database/model.go) and [allocation transactions](../internal/store/database_allocations.go).
+Cloud serializes database and application reservations against the same workspace allocation. Shrinking members must not refund storage that remains retained. A plan that fits steady-state pods can still fail admission because it cannot fit a replacement. Cloud alpha.35 does not expand production capacity: the shared pool cannot fit Oracle or Vitess, and MyDuck remains dependent on separate capacity and placement acceptance. See [CPU reservations](../internal/database/allocation.go), [database model](../internal/database/model.go) and [allocation transactions](../internal/store/database_allocations.go).
 
 ## Credentials and TLS have separate jobs
 

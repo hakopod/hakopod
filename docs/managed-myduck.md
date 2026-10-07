@@ -1,10 +1,10 @@
 # Managed DuckDB with MyDuck
 
-Status: MyDuck is enabled in the alpha.56 candidate so its native
-qualification can run. It is not available in the published OSS alpha.55 or
-Cloud alpha.34 releases. Do not offer it until the current candidate passes the
-complete native lifecycle and HTTP acceptance suites and the release is
-published. Public endpoints remain unavailable.
+Status: MyDuck is available in OSS alpha.56 for private, single-instance use on
+Linux amd64. Its MySQL and PostgreSQL listeners require TLS. Public endpoints,
+replicas, automatic failover, managed connection pooling and in-place resize are
+not available. Cloud alpha.35 has separate packaging, deployment and capacity
+checks and is not qualified by the OSS release.
 
 MyDuck lets applications use MySQL and PostgreSQL clients with a DuckDB database.
 Both connections reach the same data on one persistent instance. A table written
@@ -148,10 +148,15 @@ verifies the entire encrypted archive before changing the target. After the
 target process stops, the isolated helper opens its catalog read-only and checks
 for existing user objects. This prevents a connected writer from adding data
 between the check and replacement. The helper then checks every archive file
-and stages the replacement. A durable marker prevents MyDuck
-from opening files left by an interrupted replacement. A failed restore stays
-stopped and isolated; the original database is unchanged. Inspect a successful
-restore before switching application bindings.
+and stages the replacement. A durable marker prevents MyDuck from opening files
+left by an interrupted replacement.
+
+A failed archive replacement stays stopped and isolated; the source database is
+unchanged. After replacement, Hakopod polls live readiness, TLS, and the fresh
+replacement pod UID before it can report success. If those checks fail, the
+recovery remains unverified and is never reported as successful. The topology
+fingerprint comes from the observed pod UID. Inspect a successful restore before
+switching application bindings.
 
 These backups exclude credentials, server configuration, temporary files and
 point-in-time recovery. Preserve the backup encryption key separately from the
@@ -165,16 +170,15 @@ samples. DuckDB storage statistics report allocated persistent blocks. Missing
 samples are shown as unavailable; the UI does not invent replication, query or
 connection counters.
 
-The current candidate includes the namespace owner-reference correction for
-managed credentials. Focused VM tests and an independent source review passed
-after that correction. All native qualification must run again against the
-current candidate; earlier lifecycle results do not qualify it.
+The alpha.56 native lifecycle, recovery and HTTP cases passed against exact
+source `b253812df8236905ab4db2015380dae5da2ed7f1` in the named
+`k3d-hakopod-dev` development cluster. They covered both private protocols,
+authentication and TLS refusal, restricted SQL, persistence and replacement,
+credential and certificate changes, binding and revocation, encrypted backup,
+separate-target restore, interruption recovery, durable operation fencing,
+deletion and fixture cleanup. Source and cluster baselines were unchanged, and
+helper processes were gone after cleanup.
 
-Before release, native acceptance must cover both protocols, rejected
-credentials and plaintext, restricted SQL, persistent pod replacement,
-certificate and credential changes, application binding and revocation,
-encrypted backup and separate-target restore, interruption recovery, deletion,
-and namespace and volume cleanup. The HTTP suite must exercise the same released
-API and durable-operation path used by the dashboard and CLI. Record the exact
-source, image digest, cluster and results. Public routes require separate
+See [managed database release acceptance](managed-database-release-acceptance.md)
+for the measured evidence and its limits. Public routes require separate
 outside-in acceptance and remain unavailable.

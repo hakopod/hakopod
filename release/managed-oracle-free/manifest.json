@@ -1,257 +1,32 @@
 {
-  "attempts": [
-    {
-      "case": "lifecycle",
-      "cleanup": {
-        "namespaces": [
-          "hdb-3ed386afe09f34dbc2fa77a0df0d4ffb"
-        ],
-        "namespaces_absent": true,
-        "persistent_volumes_absent": true
-      },
-      "cluster_uid": "5540f766-ac17-4da7-bb32-b3456c1b9d2f",
-      "exit_code": 0,
-      "log_sha256": "553daaaee9f1f063629d2c95cf877a1cbb118f321d803e41717866ea6339e1e9",
-      "node_uids": {
-        "k3d-hakopod-database-worker-0": "bc8a0a70-11f6-4219-8b61-3b28c45b9f1c",
-        "k3d-hakopod-database-worker-1": "e5d291e4-cdac-411b-84ef-3efa73907e26",
-        "k3d-hakopod-dev-server-0": "132f082d-244d-4c3f-85ea-70904ae885dc"
-      },
-      "preserved_resources": {
-        "after_sha256": "8dd813440d33617ce7752413d45889b5ff9ebf85619e7ecd9e215e7869f56de1",
-        "before_sha256": "8dd813440d33617ce7752413d45889b5ff9ebf85619e7ecd9e215e7869f56de1",
-        "namespace_count": 7,
-        "persistent_volume_count": 5,
-        "s3_container_count": 0
-      },
-      "source_manifest_after_sha256": "4eb8943af87ce5b925b1cd6e1a95dee10e1a7f7ae1106eb0aff99c8faa91f316",
-      "source_manifest_sha256": "4eb8943af87ce5b925b1cd6e1a95dee10e1a7f7ae1106eb0aff99c8faa91f316",
-      "test_events": [
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckLive"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckLive/alternate_users"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckLive/alternate_users"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckLive/protocol_scope"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckLive/protocol_scope"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckLive"
-        }
-      ]
-    },
-    {
-      "case": "recovery",
-      "cleanup": {
-        "namespaces": [
-          "hdb-32fe99a84c28c60e020ad003b343a43c",
-          "hdb-63a80671b52a7e3bd273bffc27002ec8",
-          "hdb-96656164a9711ec6bc50f681d617b2b6",
-          "hdb-bcd108d201fc2f144b9f49e87f06807c",
-          "hdb-dbaba12959677743d5a656c8aa7ab8d5"
-        ],
-        "namespaces_absent": true,
-        "persistent_volumes_absent": true
-      },
-      "cluster_uid": "5540f766-ac17-4da7-bb32-b3456c1b9d2f",
-      "exit_code": 0,
-      "log_sha256": "7d9371a1a2f68974f70c988eaa0985b86793f2f4b25a3e16cc31b327b43d9223",
-      "node_uids": {
-        "k3d-hakopod-database-worker-0": "bc8a0a70-11f6-4219-8b61-3b28c45b9f1c",
-        "k3d-hakopod-database-worker-1": "e5d291e4-cdac-411b-84ef-3efa73907e26",
-        "k3d-hakopod-dev-server-0": "132f082d-244d-4c3f-85ea-70904ae885dc"
-      },
-      "preserved_resources": {
-        "after_sha256": "8dd813440d33617ce7752413d45889b5ff9ebf85619e7ecd9e215e7869f56de1",
-        "before_sha256": "8dd813440d33617ce7752413d45889b5ff9ebf85619e7ecd9e215e7869f56de1",
-        "namespace_count": 7,
-        "persistent_volume_count": 5,
-        "s3_container_count": 0
-      },
-      "source_manifest_after_sha256": "4eb8943af87ce5b925b1cd6e1a95dee10e1a7f7ae1106eb0aff99c8faa91f316",
-      "source_manifest_sha256": "4eb8943af87ce5b925b1cd6e1a95dee10e1a7f7ae1106eb0aff99c8faa91f316",
-      "test_events": [
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/nonempty_target"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/nonempty_target"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/baseline_replacement"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/baseline_replacement"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/corrupt_restore"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/corrupt_restore"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/successful_restore"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive/successful_restore"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/cluster",
-          "Test": "TestManagedMyDuckColdRecoveryLive"
-        }
-      ]
-    },
-    {
-      "case": "http-api",
-      "cleanup": {
-        "namespaces": [
-          "hdb-bc961f3ba61339c2c473c6a1966a9766",
-          "hdb-f5bdba990157618919c828dbce2a539a"
-        ],
-        "namespaces_absent": true,
-        "persistent_volumes_absent": true
-      },
-      "cluster_uid": "5540f766-ac17-4da7-bb32-b3456c1b9d2f",
-      "exit_code": 0,
-      "log_sha256": "612c932de3c6dec2faa0eb04d90c1e00b71507035378936c53c8aaae646d500b",
-      "node_uids": {
-        "k3d-hakopod-database-worker-0": "bc8a0a70-11f6-4219-8b61-3b28c45b9f1c",
-        "k3d-hakopod-database-worker-1": "e5d291e4-cdac-411b-84ef-3efa73907e26",
-        "k3d-hakopod-dev-server-0": "132f082d-244d-4c3f-85ea-70904ae885dc"
-      },
-      "preserved_resources": {
-        "after_sha256": "8dd813440d33617ce7752413d45889b5ff9ebf85619e7ecd9e215e7869f56de1",
-        "before_sha256": "8dd813440d33617ce7752413d45889b5ff9ebf85619e7ecd9e215e7869f56de1",
-        "namespace_count": 7,
-        "persistent_volume_count": 5,
-        "s3_container_count": 0
-      },
-      "source_manifest_after_sha256": "4eb8943af87ce5b925b1cd6e1a95dee10e1a7f7ae1106eb0aff99c8faa91f316",
-      "source_manifest_sha256": "4eb8943af87ce5b925b1cd6e1a95dee10e1a7f7ae1106eb0aff99c8faa91f316",
-      "test_events": [
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/authorization"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/authorization"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/lifecycle"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/lifecycle"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/worker_loss"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/worker_loss"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/cancellation"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/cancellation"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/backup_restore"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/backup_restore"
-        },
-        {
-          "Action": "run",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/deletion"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive/deletion"
-        },
-        {
-          "Action": "pass",
-          "Package": "github.com/hakopod/hakopod/internal/api",
-          "Test": "TestManagedMyDuckHTTPLive"
-        }
-      ]
-    }
-  ],
-  "context": "k3d-hakopod-dev",
-  "execution": "native",
+  "files": {
+    "build-artifacts.txt": "b17fae19625af49ad337e3b18eee355661416e7a6c95bb741948b8d6b48b51b4",
+    "native-acceptance.json": "7db0aa74e096f6c90078a949838a1d67dc2f298c790a9f9876bfbd209ce50eb1",
+    "operator-upstream.patch": "e95475af11f972045b264d4936352cc0f5e783f3dab084fd209bdd7043eb56ac",
+    "packaging-receipt.json": "a052e01c448ad077e822c8ef111e9b322979982797f884009226c993fa5c7a5f",
+    "sidb-v4.yaml": "8bc95dc17a6be6c01c059064c04be32334c49d61dfb226e30e8a2d58cff98cde",
+    "source-build-manifest.json": "5cc446b4637f69997fac80fa1c0bc467ad0cba371fc038928b6ae229a08725cc"
+  },
   "images": {
-    "runtime": "ghcr.io/hakopod/managed-myduck@sha256:ad324a97360dea53f9e32cb367666b8fefa6f52377000c084a63c1712ca79873"
+    "database": {
+      "binaries": {},
+      "reference": "container-registry.oracle.com/database/free:23.26.3.0@sha256:f988b0c04c4c386cd306a2a914c0d7a9702d83acc31b064a28ad8eb6278a8fba"
+    },
+    "operator": {
+      "binaries": {
+        "/manager": "8a64742fb2327f720488f5b7e494aff2ba84aec3b82e0edb2f10c58e076bfe01"
+      },
+      "reference": "ghcr.io/hakopod/managed-oracle-free-operator@sha256:e728b6283d4f27947af96232b9d74dc31d9adf288a62722c026c2ce3b6fe7660"
+    }
   },
   "platform": "linux/amd64",
   "schema_version": 1,
+  "source": {
+    "repository": "https://github.com/oracle/oracle-database-operator",
+    "revision": "ff6f9178c1650df30afbf203ebdb633e9b80760a"
+  },
   "source_files": {
-    "Dockerfile.myduck": "87ff1798311ecb38ff714370197c6dacc2262804cc309c476266b1597ce8629e",
+    "Dockerfile.oracle-free-operator": "fad66a0b39d138955f25cbf20c4b6e622eb52f84041c5214feaabf2270e97f4f",
     "api/contracts/actions.py": "0fa1752dc2d2248bfc47855d5c3e1af1e4fbd2b4134030217a843cdfbc636e71",
     "api/contracts/alarms.py": "7614074f968fc7ab0a56bb7a504a4b766177263966fc4f9512fb9697fe8fdcfd",
     "api/contracts/audit_history.py": "8835de3744e9dea4b5c668c63c1655df7c61f7ddcaf40853ab805c819f0e8d16",
@@ -314,8 +89,6 @@
     "auth/runtime_scope.go": "08196612f20df95c373f23278d38ca21ccaa863deef5cf1a3ea53c8b0b8f0334",
     "auth/service.go": "c4900d1ad524c58401273b06da56ff9383b2240b16a7ef6ee2c6aba2d06be694",
     "auth/service_test.go": "44c9cff3bdd2beb69be4f89a2336f9737113b6472b2a3a4ad5734881e90b6a9f",
-    "cmd/hakopod-myduck-storage/main.go": "754a9e3829b0e7f6eeb0617f3c6c7f830b4080cf529597322ca12a434370f34a",
-    "cmd/hakopod-myduck-storage/main_test.go": "e5f770500cbbafd8f74fa04d0d9fba6158b61eff35c3062455228c1eb5a9097e",
     "cmd/hakopod-server/actions_workspace_probe.go": "370d97e812d69f253ee3f29641c099ffcbc0cfc1c295eae6bed940f68f60df87",
     "cmd/hakopod-server/actions_workspace_probe_test.go": "56d8bdd0f55d75e9c4487d3ddd9f80a9a5dc1ac5636581cbb86d3c6a12cbda09",
     "cmd/hakopod-server/auth_config.go": "1a86e89cd33cbc3b3e77025ebf0f817eac2c94c6745a58387de5145ce0561714",
@@ -334,6 +107,7 @@
     "cmd/hakopod-server/smtp_config_test.go": "0f7da083a3690a05ece98922336fa176fec67f08fe91eedde74391f9a56d0279",
     "go.mod": "d236fe24d2e3b3a1e57e169676137d910ad9ab99014e6e3e08a2aa7a8f86374d",
     "go.sum": "8d38efab6d3bb4816115833d767f0406697bfc9851430f67d95fb33933861efa",
+    "installer/oracle_free_controller.py": "cb419a3e91d3caa8bd0e86eb441f1e3fb2f9d967f0f93f79b0b740ff4a6bad27",
     "internal/actions/bitbucket.go": "2a73491f58b7731b3d9308594a65ef82f9d74734d94dd8c5e10d0060df002196",
     "internal/actions/bitbucket_config.go": "eb2035ffc7af7e1d9de1d57670e4a082f7da262fadba787a7617c49f79bc81fb",
     "internal/actions/bitbucket_config_test.go": "df243eebbf69f3ffca927f06964a9e8059f9648ab6c552dd8ffa5643b5f851cb",
@@ -769,7 +543,7 @@
     "internal/cluster/database_oracle_free_deletion.go": "9bf1e4dd8a944f93022fed39c7771a2b07b84a2dfb5a5bd285841c550fdeaf77",
     "internal/cluster/database_oracle_free_deletion_progress_test.go": "980e07fe00c90740c619743161462686e7778a77f17301f7f55d00858cedc321",
     "internal/cluster/database_oracle_free_lifecycle_test.go": "fe5346e4559ce70609bef852fa2bcc90dce36c8f5cb4cb1f9c1274dad034889f",
-    "internal/cluster/database_oracle_free_qualification.go": "4a906d0aa687124c087963f7d23696b1ef59ded675916caef27c3fe6bc4d3e04",
+    "internal/cluster/database_oracle_free_qualification.go": "e46ccb49bde71e4e12971b4b2b09553dfcb7a20b48a9138df77ca4d5173404cd",
     "internal/cluster/database_oracle_free_spec_test.go": "a99059789eaacd93ddf152c8f68c757c6a644634fdffa846fa745650102c0669",
     "internal/cluster/database_oracle_free_storage.go": "f4a037f779aa740cfad1c4021d180e77729df931560ee68b85bd10bf0e7c40f5",
     "internal/cluster/database_oracle_free_test.go": "d9ab4519810c15e277d1d49b6de9e363dca212fb37871266128879df2a16cf06",
@@ -1121,7 +895,7 @@
     "internal/database/mongodb_snapshot_test.go": "d7fd58b58d9c519591461196ab6b2096fb0fcd5fc8a7efc42d9f4b214b278d1d",
     "internal/database/monitoring.go": "33b47a900add89a4144f7a941d9392a76bbfacd5ba2dd262183d44ef1f736c80",
     "internal/database/myduck.go": "7c12e684efe8d1eba5f745511a1b30e60f98d9e3ed2fdc0ddf17a0620cc7f0e0",
-    "internal/database/myduck_qualification.go": "dce5c8113d2553d801bd69a49673336f82aa583895ad04baba43b1f60ae8792a",
+    "internal/database/myduck_qualification.go": "f700797a71ceeb01e3384458329b1a10fff42c755ea3fd0ba3d917534d6e5541",
     "internal/database/myduck_test.go": "486e24281fbdd000824ddd955ca99cd4f3549d408ed66dc08f52b358ac4f9330",
     "internal/database/mysql.go": "113fff645bea9a3986bfdfe8b758a4cace8cb7b1deaac62aa0f108c22c6646db",
     "internal/database/mysql_test.go": "9038308a9536993dcd492322bbb6151da385aa65d6b8130f80dce8d50a42702c",
@@ -1665,20 +1439,23 @@
     "internal/worker/volume_resize.go": "d5140e331c90b56decfce95aea5ffb52905e5c93a97f12e1f297ddcf52a38856",
     "internal/worker/volume_resize_test.go": "a9397e0cd35e4a923786ff0c7d9529299d63bbb938f7c14c8186f1cf1955a45c",
     "internal/worker/worker.go": "3ddea4f075551f87ac737e136d2d26bdda5dd67eb156187d1ef5ceb363618b55",
-    "patches/myduck/0001-harden-managed-runtime.patch": "85cbfb3bdf2779c655eb9ac4bd041916b88ee22bb6b8b107e9231f8d8d00055e",
-    "patches/myduck/README.md": "c937a7d2e364f985f285380a6306c471ceeb9bd903b14afa748ec92aa37bc899",
-    "patches/myduck/runtime-overlay-manifest.json": "3d3c347cc2945f2b9345328cdc02af0290ec53d0ff5e6840f538f6672fe9cb5e",
-    "patches/myduck/source-build-manifest.json": "a5bfc7d93bc1dfb89daa6e012b1ddd89055575cc5550a95193b3798bfdd8ecaa",
+    "patches/oracle-operator/hakopod_free_health.go.txt": "cbaf9a21a126ac581ca554686354016484f379dc43469ffe9e32c5df1e81bbcb",
+    "patches/oracle-operator/hakopod_free_health_test.go.txt": "895dc82250c63819259f3b25c0ba9904d6b9982d428073f615be0603d542d10b",
+    "patches/oracle-operator/hakopod_free_policy.go.txt": "fbda8a1e7f7099b14782f0be0bef898c73888c8a2036be8bc0a6b02560feff70",
+    "patches/oracle-operator/hakopod_free_policy_test.go.txt": "8f8184fd9560561508b200d0249d13d02bc14b22cc8aaf5823a5465f8fe5cc4b",
+    "patches/oracle-operator/hakopod_free_resource.go.txt": "16576daadb8f9946acf1c7a1ddd1927961b463f07d62f429aaa46abaf9a050fd",
+    "patches/oracle-operator/hakopod_free_resource_test.go.txt": "c1b55713724374ae82cd52661a984c6fe13a8bc332ceb0eaff70ab6f2a3064e0",
+    "patches/oracle-operator/hakopod_policy.go.txt": "eff8fc51c892f0a637665e1cfe20934d9b2ab03daa0b5473ea64bfc6a028d8aa",
     "release/managed-runtime-availability.py": "60dbd4d3e865fb63e41d8cf2dc5fcbc8957fbdeaceba40f59b30e14a0a4e12b0",
-    "release/record-myduck-qualification.py": "ecd3370efb9056642e0d6e4da7d233db7992555501081fe7c4970afe50116c24",
-    "release/verify-myduck-runtime.py": "0ee2abe25ef74214294c9bfabb793c6d8fb81f393856de47ebf3ba3673529e66",
+    "release/record-oracle-free-qualification.py": "5b47ea88fc4eeabc90ffc4399d81b3d9d76f883b2a422ff00d995e64d551fc63",
     "release/verify-oracle-free-runtime.py": "5e8f3e7518fc5c29f7d77c35000db093ad2dde79be9f739170c118c4aaed899c",
-    "scripts/apply-managed-myduck-patches.py": "794bc9a3adfc6db568f72e7919548ffe7c83400c15f0e984ca9e623b14492d2d",
-    "scripts/build-managed-myduck.sh": "7e2c38d3eed3d109c1615b9c64a16d0953c10740540353dbd67082b0afc54efa",
-    "scripts/collect-myduck-licenses.py": "293ee4528bd46b67cf486d791a7f8bd25dfe3273ddd8cbb4a9da6e902fd00b0a",
-    "scripts/package-managed-myduck.py": "11aefdc5aff083d96e55cab9438c83eb709e6b8be06eca8e1102f41dd52496d0",
-    "scripts/run-development-myduck-acceptance.py": "2aa8ef871447b0c0ab2b2d379478e284a5d97612f5c2de69d0fce469f7bcdf16",
+    "scripts/apply-managed-oracle-patches.py": "4f014da4c071ddfffde5d0e039efa3c7a0eaec67509cf74d348f0e4c6e9bc73a",
+    "scripts/build-managed-oracle-free.sh": "c03c4b852ed113e7b215b76b84d067d92dafa1b8826f78973a1e0f09ac93ed50",
+    "scripts/export-oracle-free-crd.py": "6aadb24c40a1e1f98da0636b58c6244b8f5c67a6204b8fc5bbf53c2feae4fd29",
+    "scripts/oracle-free-http-fixtures.py": "77cbccf13d07ea0dfa8e1b49bf3a74e98f63f6d8d33bf408c6cd39d965f03e88",
+    "scripts/package-managed-oracle-free.py": "0bd7187e0b406ffcec2568c7f2ba73debb0930f90735345c9fa9ab82cb3a3fba",
     "scripts/run-development-oracle-free-acceptance.py": "d5389a1f5231b1d12690072f7b48ba45f62472d005c41503b42e479dd0ca29c7",
+    "scripts/run-development-oracle-free-http-acceptance.py": "e33672127a23d20e8275de147dcbb7a8b0204ef90807c999860678a2422bb73f",
     "scripts/run-development-vitess-acceptance.py": "4e2abf106177bfa113b70f8f75d088f6115cb6912807cf74cea6dc20d8f3f578",
     "templates/.github/workflows/catalog-images.yml": "df2033f3a310a8ab6f47356ca8a42ebe4467c186e081d487ebdff6596222facf",
     "templates/.github/workflows/validate.yml": "3ca27f00897e88043425e97f4ba7a8c88b171c86daba5fb98fc58faed3440270",
