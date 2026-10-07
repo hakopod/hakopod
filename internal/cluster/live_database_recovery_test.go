@@ -172,12 +172,25 @@ func developmentRecoveryFixtureNodes(t *testing.T) []string {
 	nodes := strings.Split(value, ",")
 	seen := make(map[string]bool, len(nodes))
 	for _, node := range nodes {
-		if (node != "k3d-hakopod-dev-server-0" && node != "k3d-hakopod-database-worker-0") || seen[node] {
+		if (node != "k3d-hakopod-dev-server-0" && node != "k3d-hakopod-database-worker-0" && node != "k3d-hakopod-database-worker-1") || seen[node] {
 			t.Fatal("recovery fixtures require distinct dedicated database development nodes")
 		}
 		seen[node] = true
 	}
 	return nodes
+}
+
+func TestDevelopmentRecoveryFixtureNodesAllowsDedicatedDevelopmentNodes(t *testing.T) {
+	want := []string{
+		"k3d-hakopod-dev-server-0",
+		"k3d-hakopod-database-worker-0",
+		"k3d-hakopod-database-worker-1",
+	}
+	t.Setenv("HAKOPOD_DATABASE_FIXTURE_NODES", strings.Join(want, ","))
+	got := developmentRecoveryFixtureNodes(t)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("recovery fixture nodes = %q, want %q", got, want)
+	}
 }
 
 func newRecoveryFixtureConfigured(t *testing.T, ctx context.Context, c *Client, engine, version string, configure func(*database.Spec), clustered ...bool) (database.Resource, database.Observation) {
