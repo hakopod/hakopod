@@ -187,6 +187,10 @@ func myduckStoragePodMatches(pod *corev1.Pod, desired *corev1.Pod, d database.Re
 			return false
 		}
 		spec.PreemptionPolicy = nil
+		if spec.Priority != nil && *spec.Priority != 0 {
+			return false
+		}
+		spec.Priority = nil
 		for i := range spec.Containers {
 			container := &spec.Containers[i]
 			if container.TerminationMessagePath != "" && container.TerminationMessagePath != "/dev/termination-log" || container.TerminationMessagePolicy != "" && container.TerminationMessagePolicy != corev1.TerminationMessageReadFile {
