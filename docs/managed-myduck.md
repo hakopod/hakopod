@@ -1,9 +1,10 @@
 # Managed DuckDB with MyDuck
 
-This implementation is under qualification. Database creation and public endpoints
-remain disabled until the pinned runtime passes the required acceptance tests.
-Oracle Free and MyDuck are being prepared for the same release; neither is part
-of the already published `v0.1.0-alpha.55` release.
+Status: MyDuck is enabled in alpha.56 candidate source `058c25c` so its native
+qualification can run. It is not available in the published OSS alpha.55 or
+Cloud alpha.34 releases. Do not offer it until the current candidate passes the
+complete native lifecycle and HTTP acceptance suites and the release is
+published. Public endpoints remain unavailable.
 
 MyDuck lets applications use MySQL and PostgreSQL clients with a DuckDB database.
 Both connections reach the same data on one persistent instance. A table written
@@ -43,7 +44,10 @@ availability. Multiple nodes or zone labels do not replicate this database.
 The runtime is built from
 [`apecloud/myduckserver` commit `6e3427591fd8895df9585969e7256f958fb639bb`](https://github.com/apecloud/myduckserver/tree/6e3427591fd8895df9585969e7256f958fb639bb)
 with the changes in [the managed runtime patch](../patches/myduck/README.md).
-The managed image is pinned by digest after publication and verification.
+The published managed image is
+`ghcr.io/hakopod/managed-myduck@sha256:29e6618d70a2f4ac3926eb86293ba015c243984246075eb16049a266cf2ae1cd`,
+version `0.1.0-hakopod.2`. Publication makes the artifact retrievable; it does
+not qualify the managed service.
 
 ## Configuration
 
@@ -161,9 +165,16 @@ samples. DuckDB storage statistics report allocated persistent blocks. Missing
 samples are shown as unavailable; the UI does not invent replication, query or
 connection counters.
 
-The source tests and native acceptance tests are separate. Before release, the
-native tests must cover both protocols, rejected credentials and plaintext,
-restricted SQL, persistent pod replacement, certificate changes, encrypted
-backup and restore, worker loss and deletion. Public routes require additional
-outside-in acceptance before their separate gate can open. A passing unit test
-does not establish those runtime results.
+The current candidate includes the namespace owner-reference correction for
+managed credentials. Focused VM tests and an independent source review passed
+after that correction. All native qualification must run again against the
+current candidate; earlier lifecycle results do not qualify it.
+
+Before release, native acceptance must cover both protocols, rejected
+credentials and plaintext, restricted SQL, persistent pod replacement,
+certificate and credential changes, application binding and revocation,
+encrypted backup and separate-target restore, interruption recovery, deletion,
+and namespace and volume cleanup. The HTTP suite must exercise the same released
+API and durable-operation path used by the dashboard and CLI. Record the exact
+source, image digest, cluster and results. Public routes require separate
+outside-in acceptance and remain unavailable.

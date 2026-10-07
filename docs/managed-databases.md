@@ -16,10 +16,12 @@ a separate operator rollout. This OSS release does not enable hosted provisionin
 The expanded [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md),
 [ClickHouse](managed-clickhouse.md), [Vitess](managed-vitess.md),
 [DuckDB through MyDuck](managed-myduck.md) and [Oracle Database](managed-oracle.md)
-implementations have separate guides with their exact development evidence and
-remaining limits. Oracle Database Free and MyDuck remain under qualification.
-Neon and Supabase are deferred.
-MySQL, MongoDB, ClickHouse and Vitess public endpoints remain unavailable.
+implementations have separate guides with their contracts and limits. Oracle
+Database Free and MyDuck are enabled in alpha.56 candidate source `058c25c`
+only for qualification; they are not in published OSS alpha.55 or Cloud alpha.34. Their
+native and HTTP qualification must run again against the current candidate.
+Public endpoints, Neon and Supabase remain unavailable. Oracle Enterprise and
+Data Guard also remain unavailable and require separate licensed acceptance.
 See the
 [release acceptance record](managed-database-release-acceptance.md) for tested
 source revisions and immutable runtime references.
@@ -340,9 +342,10 @@ approval for the destination revision, project, environment and database name.
 Vitess acceptance records bind the exact tested source and image digests. The
 alpha.55 runtime passed all five native cases and the official HTTP workflow
 after rebasing. Packaging verifies those records against the source and images.
-Oracle Database remains held.
-Its engine guide describes implementation details
-separately from released availability.
+Oracle Database Free and MyDuck appear in the candidate UI so qualification can
+exercise the real workflow. That does not make them published services. Their
+engine guides state the remaining release checks. Oracle Enterprise, Data Guard
+and all public routes remain unavailable.
 
 ## Monitoring history
 
