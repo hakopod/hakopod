@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/backup"
 	managed "github.com/hakopod/hakopod/internal/database"
+	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -133,6 +135,110 @@ func (*managedAdmissionRuntime) Dump(context.Context, backup.Target, io.Writer) 
 }
 func (*managedAdmissionRuntime) Restore(context.Context, backup.Target, io.Reader) error {
 	return errors.New("managed admission fixture never executes restores")
+}
+
+func TestManagedRestoreHTTPConflictPreservesReviewAndTarget(t *testing.T) {
+	db, dsn := database(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	raw, err := db.Bootstrap(ctx, "managed-restore-http-conflict")
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal, err := db.Authenticate(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := managed.Resource{ID: store.NewID(), Project: "demo", Environment: "development", Spec: managed.Spec{SchemaVersion: 1, Name: "restore-http-target", Engine: "oracle", Version: "23.26", Mode: "standalone", Shards: 1, CPU: "1", Memory: "4Gi", StorageGiB: 10, TLS: &managed.TLSConfig{Mode: "required"}, Oracle: &managed.OracleConfig{Edition: "free"}}, EncryptedCredentials: []byte("sealed-test-fixture")}
+	if _, err = db.AcceptDatabase(ctx, principal, target, 0, "restore-http-target", "create"); err != nil {
+		t.Fatal(err)
+	}
+	operation, err := db.ClaimDatabaseOperation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation := managed.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now().UTC()}
+	if err = db.RecordDatabaseStep(ctx, operation, observation, "succeeded", "ready", ""); err != nil {
+		t.Fatal(err)
+	}
+	target, err = db.DatabaseInternal(ctx, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := db.PutBackupDestination(ctx, principal, backup.Destination{ID: store.NewID(), Name: "restore-http-destination", EncryptedCredentials: []byte("sealed-test-fixture")}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactID := store.NewID()
+	source := backup.Source{Kind: "managed_database", ManagedDatabaseID: store.NewID(), Engine: "oracle"}
+	capturedAt := time.Now().Add(-time.Minute).UTC()
+	if _, err = db.Pool.Exec(ctx, "INSERT INTO backup_artifacts(id,job_id,destination_id,source,source_version,source_revision,object_key,sha256,bytes,format,scope,captured_at,verified_at) VALUES($1,$2,$3,$4,'23.26',1,$5,$6,128,'age-v1+oracle-datapump-v1','managed restore HTTP conflict fixture',$7,now())", artifactID, store.NewID(), destination.ID, store.JSON(source), backup.ObjectKey(destination, artifactID), strings.Repeat("0", 64), capturedAt); err != nil {
+		t.Fatal(err)
+	}
+	management := &api.Server{Store: db, Auth: api.AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{17}, 32))}}
+	management.ConfigureBackups(api.BackupConfig{DatabaseURL: dsn, StateDir: t.TempDir()})
+	server := httptest.NewServer(management.Handler())
+	defer server.Close()
+	server.Client().Timeout = 30 * time.Second
+	client := backupRequestClient{t: t, server: server, token: raw}
+	plan := backup.RestorePlan{ID: store.NewID(), ArtifactID: artifactID, Target: backup.Target{Source: backup.Source{Kind: "managed_database", ManagedDatabaseID: target.ID, Engine: target.Spec.Engine}, ManagedDatabaseName: target.Spec.Name, Revision: target.Revision, Available: true}, Confirmation: target.Spec.Name, ExpiresAt: time.Now().Add(time.Minute)}
+	if err = db.SaveBackupRestorePlan(ctx, principal, plan); err != nil {
+		t.Fatal(err)
+	}
+	app, err := spec.Normalize(spec.Application{SchemaVersion: 1, Name: "restore-http-binding", Services: map[string]spec.Service{"api": {Image: "nginx:alpine", Bindings: map[string]spec.Binding{"DATABASE_URL": {ManagedDatabase: target.ID, Protocol: "oracle", Endpoint: "read_write"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := db.Accept(ctx, principal, target.Project, target.Environment, app, 0, "restore-http-bind")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE deployments SET status='succeeded' WHERE id=$1", bound.ID); err != nil {
+		t.Fatal(err)
+	}
+	before, err := db.DatabaseInternal(ctx, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, code := client.requestCode("POST", "/backup-artifacts/"+artifactID+"/restore", map[string]string{"plan_id": plan.ID, "confirmation": plan.Confirmation}, nil, "restore-http-bound-refusal"); status != http.StatusConflict || code != "conflict" {
+		t.Fatal("bound restore response", status, code)
+	}
+	after, err := db.DatabaseInternal(ctx, target.ID)
+	if err != nil || after.Status != before.Status || after.Revision != before.Revision || !reflect.DeepEqual(after.Recovery, before.Recovery) {
+		t.Fatal("denied restore changed target state", err)
+	}
+	var used *time.Time
+	var jobID *string
+	if err = db.Pool.QueryRow(ctx, "SELECT used_at,job_id FROM backup_restore_plans WHERE id=$1", plan.ID).Scan(&used, &jobID); err != nil || used != nil || jobID != nil {
+		t.Fatal("denied restore consumed its review", used, jobID, err)
+	}
+	var jobs int
+	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM backup_jobs WHERE idempotency_key=$1", "restore-http-bound-refusal").Scan(&jobs); err != nil || jobs != 0 {
+		t.Fatal("denied restore enqueued a job", jobs, err)
+	}
+	service := app.Services["api"]
+	service.Bindings = nil
+	app.Services["api"] = service
+	unbound, err := db.Accept(ctx, principal, target.Project, target.Environment, app, 1, "restore-http-unbind")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE deployments SET status='succeeded' WHERE id=$1", unbound.ID); err != nil {
+		t.Fatal(err)
+	}
+	fresh := plan
+	fresh.ID = store.NewID()
+	if err = db.SaveBackupRestorePlan(ctx, principal, fresh); err != nil {
+		t.Fatal("fresh restore plan", err)
+	}
+	var accepted backup.Job
+	if status, code := client.requestCode("POST", "/backup-artifacts/"+artifactID+"/restore", map[string]string{"plan_id": fresh.ID, "confirmation": fresh.Confirmation}, &accepted, "restore-http-after-unbind"); status != http.StatusAccepted || code != "" || accepted.ID == "" {
+		t.Fatal("unbound restore acceptance", status, code, accepted.ID)
+	}
+	recovering, err := db.DatabaseInternal(ctx, target.ID)
+	if err != nil || recovering.Status != "restoring" || recovering.Recovery == nil || recovering.Recovery.ArtifactID != artifactID || recovering.Recovery.JobID != accepted.ID || recovering.Recovery.SourceID != source.ManagedDatabaseID || recovering.Recovery.SourceRevision != 1 {
+		t.Fatal("accepted restore did not bind recovery state", recovering.Status, recovering.Recovery, err)
+	}
 }
 
 func TestManagedBackupAdmissionUsesDurableState(t *testing.T) {

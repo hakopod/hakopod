@@ -623,7 +623,7 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	}
 	preRestoreDeployment = oracleHTTPWaitDeployment(t, ctx, client, preRestoreDeployment)
 	appRevision = preRestoreDeployment.Revision
-	if status, code := client.requestCode("POST", "/backup-artifacts/"+artifact.ID+"/restore", map[string]string{"plan_id": plan.ID, "confirmation": target.Spec.Name}, nil, "oracle-free-http-bound-restore-refusal"); status != http.StatusConflict || code != "backup_conflict" {
+	if status, code := client.requestCode("POST", "/backup-artifacts/"+artifact.ID+"/restore", map[string]string{"plan_id": plan.ID, "confirmation": target.Spec.Name}, nil, "oracle-free-http-bound-restore-refusal"); status != http.StatusConflict || code != "conflict" {
 		t.Fatal("restore into bound Oracle target was not refused", status, code)
 	}
 	var revoked store.Deployment
