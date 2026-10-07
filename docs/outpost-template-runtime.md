@@ -1,5 +1,10 @@
 # Outpost template runtime acceptance
 
+Historical record: the dedicated Outpost runtime tests and CI workflow were
+removed on 2026-10-07. Outpost is an application template, not a managed Hakopod
+service. The results below describe the earlier run; they are not a current
+release requirement. Template configuration checks remain part of the Go tests.
+
 On 2026-10-05, all 16 cases in [Outpost runtime acceptance run 37259478804](https://github.com/hakopod/hakopod/actions/runs/37259478804)
 passed on the first attempt of that run. The jobs ran every bundled/external
 PostgreSQL, Redis and RabbitMQ combination on native GitHub-hosted AMD64 and ARM64
@@ -101,4 +106,3 @@ deployment flow.
 Anonymous image-registry inspection remains a separate provenance record. Its
 manifest/configuration observations are not used as a substitute for the runtime
 checks above.
-
