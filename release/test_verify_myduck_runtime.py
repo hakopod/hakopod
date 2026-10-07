@@ -34,7 +34,7 @@ class MyDuckQualificationTest(unittest.TestCase):
         attempts = []
         for case, test in MODULE["TESTS"].items():
             package = "github.com/hakopod/hakopod/internal/" + ("api" if case == "http-api" else "cluster")
-            phases = MODULE["HTTP_PHASES"] if case == "http-api" else MODULE["RECOVERY_PHASES"] if case == "recovery" else ["alternate_users"]
+            phases = MODULE["HTTP_PHASES"] if case == "http-api" else MODULE["RECOVERY_PHASES"] if case == "recovery" else MODULE["LIFECYCLE_PHASES"]
             tests = [test] + [test + "/" + phase for phase in phases]
             events = [{"Action": "run", "Package": package, "Test": name} for name in tests]
             events += [{"Action": "pass", "Package": package, "Test": name} for name in reversed(tests)]
@@ -123,7 +123,7 @@ class MyDuckQualificationTest(unittest.TestCase):
             MODULE["read_json"](path)
 
     def test_negative_restore_and_alternate_user_evidence_is_required(self):
-        for case, phase in (("lifecycle", "alternate_users"),
+        for case, phase in (*(('lifecycle', phase) for phase in MODULE["LIFECYCLE_PHASES"]),
                             *(("recovery", phase) for phase in MODULE["RECOVERY_PHASES"])):
             value = copy.deepcopy(self.acceptance)
             attempt = next(item for item in value["attempts"] if item["case"] == case)
