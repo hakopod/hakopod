@@ -69,10 +69,10 @@ Ownership checks matter during retries and deletion. A matching name is insuffic
 | MySQL 8.4 | Oracle MySQL Operator, InnoDB Cluster members with sidecars, MySQL Router | Router has explicit primary and secondary ports. Voting members determine write availability. |
 | MongoDB 8.0 | MongoDB Kubernetes Controller, replica-set members and agents | The driver discovers members and selects according to read preference and write concern. |
 | ClickHouse 26.3 | Altinity operator, data members, three Keeper members for clusters | Local tables remain local to a shard. Distributed tables or explicit queries combine shards. |
-| Oracle Database Free 26ai | Hakopod-owned standalone StatefulSet, TCPS listener and volumes | One PDB service. Free does not implement a Data Guard cluster. |
+| Oracle Database Free 26ai | Namespace-scoped Oracle Database Operator 2.2.0, one SingleInstanceDatabase resource, TCPS listener and volumes; native acceptance is in progress | One PDB service. Free does not implement a Data Guard cluster. |
 | Vitess 23 | Namespace-scoped operator, MySQL/vttablet, vtgate, vtctld, vtorc and three etcd members | vtgate uses keyspace, shard map and explicit VSchema. Native and HTTP acceptance passed for the fixed layouts in alpha.55. |
 
-Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Enterprise and Data Guard have a source implementation, but deployment remains disabled pending licensed native acceptance of the hardened controller and customer image.
+Read the [PostgreSQL/Redis](managed-databases.md), [MySQL](managed-mysql.md), [MongoDB](managed-mongodb.md), [ClickHouse](managed-clickhouse.md) and [Oracle](managed-oracle.md) guides before choosing an engine. Oracle Free is proprietary free-to-use software with upstream limits. Its new operator path remains disabled pending complete native acceptance. Enterprise and Data Guard have separate source implementations and remain disabled pending licensed native acceptance of the hardened controller and customer image.
 
 ## Replication, routing and pooling answer different questions
 
