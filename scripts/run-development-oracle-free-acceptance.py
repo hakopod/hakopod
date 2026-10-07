@@ -250,9 +250,10 @@ def run(args):
                GOMAXPROCS="2", GOENV="off", GOWORK="off", GOFLAGS="-mod=readonly -p=1", GOTOOLCHAIN="local",
                CGO_ENABLED="0", GOOS="linux", GOARCH="amd64", GOCACHE=str(args.cache / "go-build"),
                GOMODCACHE=str(args.cache / "go-mod"), GOTMPDIR=str(args.cache / "go-tmp"),
+               TMPDIR=str(args.cache / "tmp"),
                HAKOPOD_ORACLE_TEST="1", HAKOPOD_KEEP_DATABASE_FIXTURES="1",
                HAKOPOD_TEST_KUBECONFIG=str(args.kubeconfig), HAKOPOD_DATABASE_FIXTURE_NODES=args.nodes)
-    for key in ("GOCACHE", "GOMODCACHE", "GOTMPDIR"):
+    for key in ("GOCACHE", "GOMODCACHE", "GOTMPDIR", "TMPDIR"):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
     log = args.output / "native-test.jsonl"
     test = VERIFIER["TESTS"][args.case]
