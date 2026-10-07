@@ -18,9 +18,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// The hardened build is pinned here after publication and independent pull
-// verification. An empty pin never falls back to an upstream image.
-const myduckServerImage = ""
+// Release admission requires native qualification and an independent pull of
+// this exact hardened image. An empty pin never falls back to upstream.
+const myduckServerImage = "ghcr.io/hakopod/managed-myduck@sha256:65c4d23d96c6a2e79a49a7b07934dd26fe4ae1487cbec2322e3de0ffbd311790"
 const myduckConfigPath = "/etc/hakopod-config/managed.json"
 const myduckIdentityAnnotation = "hakopod.io/myduck-identity"
 const myduckMemberLabel = "hakopod.io/myduck-member"
