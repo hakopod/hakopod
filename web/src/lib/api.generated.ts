@@ -397,7 +397,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Run one command in the specified owned container. Requires pods:exec. A machine key must explicitly grant this permission. An unknown outcome does not establish process termination. */
+        /** @description Run one command in the specified owned container. Requires pods:exec. CLI and machine credentials require an explicit pods:exec grant. An unknown outcome does not establish process termination. */
         post: operations["executePodCommand"];
         delete?: never;
         options?: never;
@@ -414,7 +414,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Run one SQL statement using the managed application identity. Read the engine capabilities first. Reads require databases:query. Writes require databases:write-query and a reviewed database revision. Results can contain private data. Check an unknown outcome before retrying. */
+        /** @description Run one SQL statement using the managed application identity. Read the engine capabilities first. All queries require databases:query. Writes also require databases:write-query and a reviewed database revision. CLI and machine credentials require explicit SQL grants. Results can contain private data. Check an unknown outcome before retrying. */
         post: operations["queryManagedDatabase"];
         delete?: never;
         options?: never;
