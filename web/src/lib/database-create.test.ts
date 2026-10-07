@@ -124,6 +124,20 @@ test('Oracle remains held while its defaults reserve recovery storage', () => {
   assert.equal(databaseEngineDefaults(oracle, 'postgresql').oracle, undefined)
 })
 
+test('MyDuck is visible but held until its native runtime is qualified', () => {
+  const previous = { ...initialDatabaseSpec, name: 'analytics', mode: 'cluster' as const, replicas: 2 }
+  const myduck = databaseEngineDefaults(previous, 'duckdb')
+  assert.equal(myduck.version, '0.3.1-dev.20260919.3')
+  assert.equal(myduck.mode, 'standalone')
+  assert.equal(myduck.replicas, 0)
+  assert.equal(myduck.shards, 1)
+  assert.match(databaseCreateIssue(myduck, 0) || '', /available/)
+  for (const step of [1, 2, 3]) assert.equal(databaseCreateIssue(myduck, step), undefined)
+  assert.match(databaseCreateIssue({ ...myduck, mode: 'cluster', replicas: 1 }, 1) || '', /one standalone instance/)
+  assert.equal(endpointName('mysql', 'duckdb'), 'MySQL protocol · port 3306')
+  assert.equal(endpointName('postgresql', 'duckdb'), 'PostgreSQL protocol · port 5432')
+})
+
 test('Vitess copied endpoints retain the tablet routing target', () => {
   const endpoint = { host: 'database.hdb-fixture.svc', port: 3306, purpose: 'read_only' }
   assert.equal(endpointName(endpoint.purpose, 'vitess'), 'vtgate · app@replica')

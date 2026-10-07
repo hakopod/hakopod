@@ -22,6 +22,12 @@ func (b Binding) ValidateManagedOptions() error {
 	if b.Protocol == "oracle" {
 		defaultUser = "APP"
 	}
+	if b.Endpoint == "mysql" {
+		defaultUser = "root"
+	}
+	if b.Endpoint == "postgresql" {
+		defaultUser = "postgres"
+	}
 	if b.Username != "" && b.Username != defaultUser && b.Password == nil {
 		return fmt.Errorf("a custom username requires a scoped password reference")
 	}

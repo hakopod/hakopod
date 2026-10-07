@@ -2,8 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from './client'
 import type { components } from './api.generated'
 
-export type ManagedDatabase = components['schemas']['ManagedDatabase']
-export type DatabaseSpec = components['schemas']['ManagedDatabaseSpec']
+type GeneratedDatabaseSpec = components['schemas']['ManagedDatabaseSpec']
+export type DatabaseEngine = GeneratedDatabaseSpec['engine'] | 'duckdb'
+export type DatabaseSpec = Omit<GeneratedDatabaseSpec, 'engine'> & { engine: DatabaseEngine }
+export type ManagedDatabase = Omit<components['schemas']['ManagedDatabase'], 'spec'> & { spec: DatabaseSpec }
+export const apiDatabaseSpec = (spec: DatabaseSpec) => spec as unknown as GeneratedDatabaseSpec
 export type DatabaseResizeReview = components['schemas']['DatabaseResizePlan']
 export type DatabaseConnectionReference = components['schemas']['DatabaseConnectionReference']
 export type DatabaseOperation = components['schemas']['DatabaseOperation']
@@ -70,10 +73,10 @@ export const databaseSearch = (search: Record<string, unknown>) => ({
   environment: typeof search.environment === 'string' ? search.environment : '',
 })
 export function useDatabase(id?: string) {
-  return useQuery({
+  return useQuery<ManagedDatabase>({
     queryKey: ['managed-database', id],
     queryFn: ({ signal }) =>
-      unwrap(client.GET('/databases/{id}', { signal, params: { path: { id: id! } } })),
+      unwrap(client.GET('/databases/{id}', { signal, params: { path: { id: id! } } })) as unknown as Promise<ManagedDatabase>,
     enabled: Boolean(id),
     refetchInterval: 5000,
     gcTime: 0,
@@ -90,7 +93,7 @@ export function useDatabases(project: string, environment: string, enabled = tru
   })
 }
 export const databaseSummary = (spec: DatabaseSpec) =>
-  `${({ postgresql: 'PostgreSQL', mysql: 'MySQL', redis: 'Redis', mongodb: 'MongoDB', clickhouse: 'ClickHouse', oracle: 'Oracle Database', vitess: 'Vitess' })[spec.engine]} ${spec.version} · ${spec.mode === 'standalone' ? 'Standalone' : ['redis', 'clickhouse', 'vitess'].includes(spec.engine) ? `${spec.shards} shards · ${spec.replicas} replicas per shard` : `${spec.replicas} ${spec.replicas === 1 ? 'replica' : 'replicas'}`}`
+  `${({ postgresql: 'PostgreSQL', mysql: 'MySQL', redis: 'Redis', mongodb: 'MongoDB', clickhouse: 'ClickHouse', oracle: 'Oracle Database', vitess: 'Vitess', duckdb: 'DuckDB (MyDuck)' })[spec.engine]} ${spec.version} · ${spec.mode === 'standalone' ? 'Standalone' : ['redis', 'clickhouse', 'vitess'].includes(spec.engine) ? `${spec.shards} shards · ${spec.replicas} replicas per shard` : `${spec.replicas} ${spec.replicas === 1 ? 'replica' : 'replicas'}`}`
 
 export function databaseHealth(d: ManagedDatabase, now = Date.now()) {
   if (

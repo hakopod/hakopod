@@ -144,6 +144,13 @@ func (s *Server) ConfigureDatabaseBindings() {
 // passwords from its application-scoped secret snapshot before creating a Secret.
 func managedDatabaseURL(d database.Resource, b spec.Binding, endpoint database.Endpoint, password []byte) string {
 	user, db := "app", "app"
+	if d.Spec.Engine == "duckdb" {
+		if b.Protocol == "postgres" {
+			user = "postgres"
+		} else {
+			user = "root"
+		}
+	}
 	if d.Spec.Engine == "oracle" {
 		user, db = "APP", "FREEPDB1"
 		if d.Spec.Oracle != nil && d.Spec.Oracle.Edition == "enterprise" {
@@ -176,6 +183,11 @@ func managedDatabaseURL(d database.Resource, b spec.Binding, endpoint database.E
 			}
 			query.Set("sslmode", mode)
 			if mode == "verify-full" || mode == "verify-ca" {
+				query.Set("sslrootcert", cluster.DatabaseTrustPath(d.ID))
+			}
+		case "duckdb":
+			if b.Protocol == "postgres" {
+				query.Set("sslmode", "verify-full")
 				query.Set("sslrootcert", cluster.DatabaseTrustPath(d.ID))
 			}
 		case "redis":

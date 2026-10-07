@@ -99,6 +99,9 @@ func TestManagedBindingOptionValidation(t *testing.T) {
 		{"redis negative", func(b *Binding) { b.Protocol = "redis"; b.Database = "-1" }, false},
 		{"redis require unsupported", func(b *Binding) { b.Protocol = "redis"; b.SSLMode = "require" }, false},
 		{"mysql driver tls", func(b *Binding) { b.Protocol = "mysql"; b.SSLMode = "verify-full" }, false},
+		{"MyDuck MySQL endpoint", func(b *Binding) { b.Protocol = "mysql"; b.Endpoint = "mysql"; b.Username = "root" }, true},
+		{"MyDuck PostgreSQL endpoint", func(b *Binding) { b.Endpoint = "postgresql"; b.Username = "postgres" }, true},
+		{"MyDuck protocol mismatch", func(b *Binding) { b.Protocol = "mysql"; b.Endpoint = "postgresql" }, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

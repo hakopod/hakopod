@@ -16,15 +16,16 @@ export const databaseEngines = [
   { id: 'clickhouse', name: 'ClickHouse', category: 'Analytics', description: 'Column-oriented storage for analytics and replicated shards.', enabled: true },
   { id: 'oracle', name: 'Oracle Database', category: 'Relational', description: 'Creation is unavailable pending native qualification.', enabled: false },
   { id: 'vitess', name: 'Vitess', category: 'Distributed MySQL', description: 'MySQL-compatible routing across managed shards.', enabled: true },
+  { id: 'duckdb', name: 'DuckDB (MyDuck)', category: 'Analytics', description: 'One DuckDB instance with MySQL and PostgreSQL endpoints. Native qualification is still pending; high availability is unavailable.', enabled: false },
 ] as const
 
-export const databaseVersions = (engine: string) => ({ mongodb: ['8.0'], mysql: ['8.4'], redis: ['8'], clickhouse: ['26.3'], oracle: ['23.26'], vitess: ['23'], postgresql: ['17', '18'] })[engine] || []
-export const databaseMinimum = (engine: string) => engine === 'oracle' ? { cpu: 1, memoryMiB: 4096, storageGiB: 10 } : engine === 'clickhouse' ? { cpu: 0.5, memoryMiB: 2048, storageGiB: 1 } : (votingDatabase(engine) || engine === 'vitess') ? { cpu: 0.5, memoryMiB: 1024, storageGiB: 1 } : { cpu: 0.1, memoryMiB: 128, storageGiB: 1 }
+export const databaseVersions = (engine: string) => ({ mongodb: ['8.0'], mysql: ['8.4'], redis: ['8'], clickhouse: ['26.3'], oracle: ['23.26'], vitess: ['23'], duckdb: ['0.3.1-dev.20260919.3'], postgresql: ['17', '18'] })[engine] || []
+export const databaseMinimum = (engine: string) => engine === 'oracle' ? { cpu: 1, memoryMiB: 4096, storageGiB: 10 } : engine === 'clickhouse' ? { cpu: 0.5, memoryMiB: 2048, storageGiB: 1 } : engine === 'duckdb' ? { cpu: 0.1, memoryMiB: 512, storageGiB: 1 } : (votingDatabase(engine) || engine === 'vitess') ? { cpu: 0.5, memoryMiB: 1024, storageGiB: 1 } : { cpu: 0.1, memoryMiB: 128, storageGiB: 1 }
 export const maximumReplicas = (engine: string) => engine === 'redis' ? 2 : ['clickhouse', 'vitess'].includes(engine) ? 5 : 6
 
 export function databaseEngineDefaults(spec: DatabaseSpec, engine: DatabaseSpec['engine']): DatabaseSpec {
   const minimum = databaseMinimum(engine), capacity = databaseCapacity(spec, 1)
-  const mode = engine === 'oracle' ? 'standalone' : spec.mode
+  const mode = engine === 'oracle' || engine === 'duckdb' ? 'standalone' : spec.mode
   return {
     ...spec, engine, mode, version: databaseVersions(engine)[0], pooling: undefined,
     oracle: engine === 'oracle' ? { edition: 'free' } : undefined,
@@ -49,6 +50,7 @@ export function databaseCreateIssue(spec: DatabaseSpec, step: number): string | 
   if (step === 1) {
     if (!['standalone', 'cluster'].includes(spec.mode)) return 'Choose a deployment layout.'
     if (spec.engine === 'oracle' && spec.mode !== 'standalone') return 'Oracle Database Free supports standalone deployments. Data Guard requires Enterprise edition.'
+    if (spec.engine === 'duckdb' && spec.mode !== 'standalone') return 'DuckDB (MyDuck) currently supports one standalone instance.'
     if (spec.mode === 'cluster' && (!Number.isInteger(spec.replicas) || spec.replicas < 1 || spec.replicas > maximumReplicas(spec.engine))) return `Choose between 1 and ${maximumReplicas(spec.engine)} replicas.`
     const [minShards, maxShards] = spec.mode === 'cluster' && spec.engine === 'redis' ? [3, 16] : spec.mode === 'cluster' && ['clickhouse', 'vitess'].includes(spec.engine) ? [1, 8] : [1, 1]
     if (!Number.isInteger(spec.shards) || spec.shards < minShards || spec.shards > maxShards) return `Choose ${minShards === maxShards ? 'one shard' : `${minShards}–${maxShards} shards`} for this layout.`
@@ -66,6 +68,7 @@ export function databaseCreateIssue(spec: DatabaseSpec, step: number): string | 
     if (!cpu || cpu.cpu < 0.1 || cpu.cpu > 16) return 'CPU must be between 100m and 16 cores per member.'
     if (!memory || memory.memoryMiB < 128 || memory.memoryMiB > 65536) return 'Memory must be between 128Mi and 64Gi per member.'
     if ((votingDatabase(spec.engine) || spec.engine === 'vitess') && (cpu!.cpu < 0.5 || memory!.memoryMiB < 1024)) return `${engineName(spec.engine)} requires at least 500m CPU and 1Gi memory per database member.`
+    if (spec.engine === 'duckdb' && memory!.memoryMiB < 512) return 'DuckDB (MyDuck) requires at least 512Mi memory.'
     if (spec.engine === 'clickhouse' && (cpu!.cpu < 0.5 || memory!.memoryMiB < 2048)) return 'ClickHouse requires at least 500m CPU and 2Gi memory per data member.'
     if (spec.engine === 'oracle' && (cpu!.cpu < 1 || memory!.memoryMiB < 4096 || spec.storage_gib < 10)) return 'Oracle Database Free requires at least 1 CPU, 4Gi memory and 10Gi storage, plus backup staging storage.'
     if (!Number.isInteger(spec.storage_gib) || spec.storage_gib < 1 || spec.storage_gib > 1024) return 'Storage must be between 1 and 1024 GiB per member.'

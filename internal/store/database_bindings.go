@@ -41,6 +41,13 @@ func validateDatabaseBinding(d database.Resource, b spec.Binding) error {
 	if d.Spec.Engine == "vitess" && (b.Username != "" && b.Username != "app" || b.Database != "" && b.Database != "app") {
 		return fmt.Errorf("%w: managed Vitess supports only the app login and keyspace; the selected endpoint sets its route", ErrInput)
 	}
+	myduckUser := "root"
+	if b.Endpoint == "postgresql" {
+		myduckUser = "postgres"
+	}
+	if d.Spec.Engine == "duckdb" && (b.Username != "" && b.Username != myduckUser || b.Database != "" && b.Database != "app" || b.Password != nil) {
+		return fmt.Errorf("%w: managed DuckDB (MyDuck) currently supports only its protocol account, app database and managed password", ErrInput)
+	}
 	if d.DeletedAt != nil || d.Status != "ready" || d.Observation.Status != "ready" {
 		return fmt.Errorf("%w: managed database is not ready", ErrConflict)
 	}
@@ -58,6 +65,10 @@ func validateDatabaseBinding(d database.Resource, b spec.Binding) error {
 	} else if d.Spec.Engine == "mysql" || d.Spec.Engine == "vitess" {
 		if b.Protocol != "mysql" || b.ClusterAware || (b.Endpoint != "read_write" && !(b.Endpoint == "read_only" && d.Spec.Replicas > 0)) {
 			return ErrInput
+		}
+	} else if d.Spec.Engine == "duckdb" {
+		if b.ClusterAware || b.Endpoint == "mysql" && b.Protocol != "mysql" || b.Endpoint == "postgresql" && b.Protocol != "postgres" || b.Endpoint != "mysql" && b.Endpoint != "postgresql" {
+			return fmt.Errorf("%w: select the MySQL or PostgreSQL endpoint for DuckDB (MyDuck)", ErrInput)
 		}
 	} else if d.Spec.Engine == "oracle" {
 		if b.Protocol != "oracle" || b.Endpoint != "read_write" || b.ClusterAware || d.Spec.Mode != "standalone" {

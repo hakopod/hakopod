@@ -120,8 +120,12 @@ func (s Spec) Validate() error {
 		if s.Mode == "cluster" && (s.Replicas < 1 || s.Replicas > 5) {
 			return fmt.Errorf("Oracle Data Guard requires 1–5 physical standbys")
 		}
+	case "duckdb":
+		if err := s.ValidateMyDuck(); err != nil {
+			return err
+		}
 	default:
-		return fmt.Errorf("engine must be postgresql, redis, mysql, mongodb, clickhouse, vitess or oracle")
+		return fmt.Errorf("engine must be postgresql, redis, mysql, mongodb, clickhouse, vitess, oracle or duckdb")
 	}
 	if s.Mode == "standalone" && (s.Replicas != 0 || s.Shards != 1) {
 		return fmt.Errorf("standalone databases require one shard and no replicas")
@@ -145,6 +149,9 @@ func (s Spec) Validate() error {
 	}
 	if s.Engine == "mongodb" && (cpu.Cmp(resource.MustParse("500m")) < 0 || memory.Cmp(resource.MustParse("1Gi")) < 0) {
 		return fmt.Errorf("MongoDB requires at least 500m CPU and 1Gi memory per member, plus agent resources")
+	}
+	if s.Engine == "duckdb" && memory.Cmp(resource.MustParse("512Mi")) < 0 {
+		return fmt.Errorf("DuckDB (MyDuck) requires at least 512Mi memory for its database and protocol servers")
 	}
 	if s.Engine == "clickhouse" && (cpu.Cmp(resource.MustParse("500m")) < 0 || memory.Cmp(resource.MustParse("2Gi")) < 0) {
 		return fmt.Errorf("ClickHouse requires at least 500m CPU and 2Gi memory per data member, plus Keeper resources in cluster mode")
@@ -323,6 +330,9 @@ func PlanResize(db Resource, next Spec, evidence *BackupEvidence, now time.Time)
 	}
 	if db.Spec.Engine == "oracle" && !db.Spec.Equal(next) {
 		return p, fmt.Errorf("Oracle capacity is fixed at creation; restore into a separate database to change resources")
+	}
+	if db.Spec.Engine == "duckdb" && !db.Spec.Equal(next) {
+		return p, fmt.Errorf("MyDuck capacity is fixed at creation; restore into a separate database to change resources")
 	}
 	if db.Spec.Engine == "mysql" && (db.Spec.CPU != next.CPU || db.Spec.Memory != next.Memory || db.Spec.StorageGiB != next.StorageGiB) {
 		return p, fmt.Errorf("MySQL member resources are immutable with this controller; restore into a separate database to change capacity")

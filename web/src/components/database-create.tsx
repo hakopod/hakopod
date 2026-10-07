@@ -20,7 +20,7 @@ import {
 import { client, unwrap } from '../lib/client'
 import { canAccess, useScope } from '../lib/scope'
 import { message } from '../lib/api'
-import { useDatabasePlacementNodes, type DatabaseSpec } from '../lib/databases'
+import { apiDatabaseSpec, useDatabasePlacementNodes, type DatabaseSpec } from '../lib/databases'
 import { useBackupDestinations } from '../lib/backups'
 import { databaseEligibleNodes, databasePlacementIssue } from '../lib/database-placement'
 import { DatabasePlacementPicker } from './database-placement-picker'
@@ -179,7 +179,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
             const operation = await unwrap(
               client.POST('/databases', {
                 params: { header: { 'Idempotency-Key': key.current } },
-                body: { project, environment, spec },
+                body: { project, environment, spec: apiDatabaseSpec(spec) },
               }),
             )
             void cache.invalidateQueries({ queryKey: ['managed-databases'] })
@@ -346,7 +346,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     </p>
                   </FormSection>
                 )}
-                {['clickhouse', 'oracle'].includes(spec.engine) && (
+                {['clickhouse', 'oracle', 'duckdb'].includes(spec.engine) && (
                   <Note>
                     Development preview. Native acceptance is in progress; this is not a production
                     availability guarantee.
@@ -378,13 +378,15 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                       type="button"
                       className="db-layout-card"
                       aria-pressed={spec.mode === 'cluster'}
-                      disabled={busy || spec.engine === 'oracle'}
+                      disabled={busy || spec.engine === 'oracle' || spec.engine === 'duckdb'}
                       onClick={() => chooseMode('cluster')}
                     >
                       <Network size={22} aria-hidden="true" />
                       <strong>Cluster</strong>
                       <span>
-                        {spec.engine === 'oracle'
+                        {spec.engine === 'duckdb'
+                          ? 'MyDuck currently runs as one instance without high availability.'
+                          : spec.engine === 'oracle'
                           ? 'Data Guard requires customer-licensed Enterprise support, which is still in development.'
                           : spec.engine === 'vitess'
                             ? 'Route through vtgate to a primary tablet in each shard, with replicas and three topology members.'
@@ -398,7 +400,9 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                       </span>
                       <span className="db-engine-tags">
                         <span>
-                          {spec.engine === 'oracle'
+                          {spec.engine === 'duckdb'
+                            ? 'Unavailable'
+                            : spec.engine === 'oracle'
                             ? 'Enterprise required'
                             : shardedDatabase(spec.engine)
                               ? 'Shards + replicas'
@@ -672,6 +676,11 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     includes redundant vtgate gateways, three etcd topology members, control services,
                     and bounded native-backup recovery headroom. Storage includes one data volume per tablet
                     and 1 GiB for each topology member.
+                  </Note>
+                )}
+                {spec.engine === 'duckdb' && (
+                  <Note>
+                    One MyDuck instance serves the same app database over MySQL on port 3306 and PostgreSQL on port 5432. High availability is unavailable.
                   </Note>
                 )}
                 <div className="db-allocation-total">
@@ -964,7 +973,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
 
             {step === 4 && (
               <div className="grid gap-4">
-                {['clickhouse', 'oracle'].includes(spec.engine) && (
+                {['clickhouse', 'oracle', 'duckdb'].includes(spec.engine) && (
                   <Note>
                     Development preview. Review the current acceptance status before using this
                     database for production workloads.

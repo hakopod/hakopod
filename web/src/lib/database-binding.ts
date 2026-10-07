@@ -16,8 +16,8 @@ export const emptyDatabaseBindingDraft: DatabaseBindingDraft = {
   username: '', database: '', sslMode: '', passwordSource: 'managed', passwordRef: '', passwordValue: '',
 }
 
-export function managedDatabaseUser(engine: DatabaseSpec['engine']) {
-  return engine === 'redis' ? 'default' : engine === 'oracle' ? 'APP' : 'app'
+export function managedDatabaseUser(engine: DatabaseSpec['engine'], endpoint = '') {
+  return engine === 'duckdb' ? endpoint === 'postgresql' ? 'postgres' : 'root' : engine === 'redis' ? 'default' : engine === 'oracle' ? 'APP' : 'app'
 }
 
 export function managedDatabaseName(spec: DatabaseSpec) {
@@ -28,8 +28,8 @@ export function databaseBindingDatabaseLabel(engine: DatabaseSpec['engine']) {
   return engine === 'redis' ? 'Database index' : engine === 'oracle' ? 'Service name' : engine === 'vitess' ? 'Keyspace' : 'Database name'
 }
 
-export function databaseBindingSSLOptions(spec: DatabaseSpec) {
-  const driverTLS = spec.engine === 'mysql' || spec.engine === 'vitess'
+export function databaseBindingSSLOptions(spec: DatabaseSpec, endpoint = '') {
+  const driverTLS = spec.engine === 'mysql' || spec.engine === 'vitess' || spec.engine === 'duckdb' && endpoint !== 'postgresql'
   const required = spec.tls?.mode === 'required'
   const options: { value: DatabaseBindingSSLMode; label: string }[] = [{ value: '', label: `Database policy (${required ? driverTLS ? 'TLS required' : 'verify-full' : 'legacy plaintext'})` }]
   if (driverTLS) return options
@@ -56,11 +56,14 @@ export function databaseBindingIssue(spec: DatabaseSpec, draft: DatabaseBindingD
     return 'Enter a keyspace without a route suffix; the endpoint selects primary or replica routing.'
   if (spec.engine === 'vitess' && (draft.username && draft.username !== 'app' || draft.database && draft.database !== 'app'))
     return 'This managed Vitess instance supports only the app login and keyspace. Leave these fields blank or use app.'
+  const myduckUser = endpoint === 'postgresql' ? 'postgres' : 'root'
+  if (spec.engine === 'duckdb' && (draft.username && draft.username !== myduckUser || draft.database && draft.database !== 'app' || draft.passwordSource !== 'managed'))
+    return `DuckDB (MyDuck) currently supports only its managed ${myduckUser} user, app database and managed password for this protocol.`
   if (spec.engine === 'postgresql' && endpoint.startsWith('pooled_') && (draft.username && draft.username !== 'app' || draft.database && draft.database !== 'app'))
     return 'Choose a direct endpoint for a custom login or database.'
-  if (!databaseBindingSSLOptions(spec).some((option) => option.value === draft.sslMode))
+  if (!databaseBindingSSLOptions(spec, endpoint).some((option) => option.value === draft.sslMode))
     return 'Choose an SSL mode supported by this database and its TLS policy.'
-  if (draft.username && draft.username !== managedDatabaseUser(spec.engine) && draft.passwordSource === 'managed')
+  if (draft.username && draft.username !== managedDatabaseUser(spec.engine, endpoint) && draft.passwordSource === 'managed')
     return 'Provide the existing password for this username, or select a saved application secret.'
   if (draft.passwordSource === 'existing' && !draft.passwordRef)
     return 'Choose a saved password from this application’s secrets.'
