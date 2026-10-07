@@ -20,17 +20,17 @@ type CustomRole struct {
 // Custom roles grant only existing project capabilities, never installation or
 // membership administration. A missing or expired role grants no authority.
 func validRolePermissions(permissions []string) bool {
-	if len(permissions) == 0 || len(permissions) > 3 {
+	if len(permissions) == 0 || len(permissions) > 6 {
 		return false
 	}
 	seen := map[string]bool{}
 	for _, permission := range permissions {
-		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read"}, permission) {
+		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query"}, permission) {
 			return false
 		}
 		seen[permission] = true
 	}
-	return !seen["deployments:write"] || seen["deployments:read"]
+	return (!seen["deployments:write"] || seen["deployments:read"]) && (!seen["databases:write-query"] || seen["databases:query"])
 }
 
 func (r ProjectRole) permissions() []string {

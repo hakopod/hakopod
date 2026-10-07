@@ -388,6 +388,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/services/{service}/exec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Run one command in the specified owned container. Requires pods:exec. A machine key must explicitly grant this permission. An unknown outcome does not establish process termination. */
+        post: operations["executePodCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Run one PostgreSQL statement that supports EXPLAIN. Requires databases:query. Writes also require databases:write-query. Transaction control and COPY are unavailable. Results can contain private data. */
+        post: operations["queryManagedDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alarms": {
         parameters: {
             query?: never;
@@ -2850,9 +2884,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Self-hosted Streamable HTTP MCP. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. See docs/http-mcp.md. */
+        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
         post: operations["mcpMessage"];
-        /** @description Self-hosted Streamable HTTP MCP. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. See docs/http-mcp.md. */
+        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
         delete: operations["closeMCPSession"];
         options?: never;
         head?: never;
@@ -4877,6 +4911,66 @@ export interface components {
             provider: "gitlab";
             instance_url: string;
             jobs: components["schemas"]["ActionsProviderWorkflowJob"][];
+        };
+        PodExecInput: {
+            pod: string;
+            container: string;
+            command: string[];
+            /** @default 20 */
+            timeout_seconds: number;
+            /** @default 65536 */
+            max_output_bytes: number;
+        };
+        PodExecResult: {
+            execution_id: string;
+            pod: string;
+            container: string;
+            pod_uid: string;
+            /** @enum {string} */
+            outcome: "exited" | "unknown";
+            exit_code: number | null;
+            reason?: string;
+            stdout_base64: string;
+            stderr_base64: string;
+            stdout_truncated: boolean;
+            stderr_truncated: boolean;
+            audit_recorded: boolean;
+        };
+        DatabaseQueryInput: {
+            sql: string;
+            parameters?: (string | number | boolean | null)[];
+            /** @default true */
+            read_only: boolean;
+            /** @default 100 */
+            max_rows: number;
+            /** @default 262144 */
+            max_bytes: number;
+            /** @description Reviewed database revision. Required when read_only is false. */
+            expected_revision?: number;
+        };
+        DatabaseQueryColumn: {
+            name: string;
+            type_oid: number;
+        };
+        DatabaseQueryResult: {
+            operation_id: string;
+            database_id: string;
+            read_only: boolean;
+            columns: components["schemas"]["DatabaseQueryColumn"][];
+            rows: (string | null)[][];
+            rows_affected: number;
+            truncated: boolean;
+            /** @enum {string} */
+            outcome: "read" | "committed" | "rolled_back";
+        };
+        DatabaseQueryError: {
+            error: {
+                code: string;
+                message: string;
+            };
+            operation_id: string;
+            /** @enum {string} */
+            outcome: "not_started" | "rolled_back" | "unknown" | "read" | "committed";
         };
         Alarm: {
             id: string;
@@ -8905,6 +8999,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    executePodCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PodExecInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PodExecResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    queryManagedDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseQueryInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseQueryResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] | components["schemas"]["DatabaseQueryError"];
                 };
             };
         };
@@ -15329,6 +15494,10 @@ export interface operations {
                 project: string;
                 environment: string;
                 allow_deploy?: boolean;
+                allow_write?: boolean;
+                allow_exec?: boolean;
+                allow_sql?: boolean;
+                allow_sql_write?: boolean;
             };
             header?: {
                 "Mcp-Session-Id"?: string;
@@ -15376,6 +15545,10 @@ export interface operations {
                 project: string;
                 environment: string;
                 allow_deploy?: boolean;
+                allow_write?: boolean;
+                allow_exec?: boolean;
+                allow_sql?: boolean;
+                allow_sql_write?: boolean;
             };
             header: {
                 "Mcp-Session-Id": string;

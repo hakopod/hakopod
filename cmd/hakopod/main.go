@@ -87,6 +87,23 @@ func run() error {
 	branch := fs.String("branch", "", "branch/reference label for a preview image")
 	discardPreview := fs.Bool("acknowledge-data-expiry", false, "allow automatic deletion of preview workloads, volumes and native secrets")
 	allowDeploy := fs.Bool("allow-deploy", false, "enable reviewed MCP deployment tool")
+	allowWrite := fs.Bool("allow-write", false, "enable contract operation mutations")
+	allowExec := fs.Bool("allow-exec", false, "enable bounded service pod execution")
+	allowSQL := fs.Bool("allow-sql", false, "enable bounded database SQL queries")
+	allowSQLWrite := fs.Bool("allow-sql-write", false, "enable database SQL writes with --allow-sql")
+	apiPathJSON := fs.String("path-json", "", "operation path parameters as a JSON object")
+	apiQueryJSON := fs.String("query-json", "", "operation query parameters as a JSON object")
+	apiCursor := fs.String("cursor", "", "operation discovery cursor")
+	apiFamily := fs.String("family", "", "operation discovery resource family")
+	apiOperation := fs.String("operation", "", "operation schema to inspect")
+	apiLimit := fs.Int("limit", 25, "operation discovery page size, 1 to 100")
+	sqlFile := fs.String("sql-file", "", "SQL statement file")
+	sqlParameters := fs.String("parameters-json", "", "SQL parameter JSON array")
+	sqlMaxRows := fs.Int("max-rows", 100, "SQL row cap, at most 1000")
+	sqlMaxBytes := fs.Int("max-bytes", 256<<10, "SQL response byte cap, at most 1 MiB")
+	execTimeout := fs.Int("timeout-seconds", 20, "pod execution timeout, 1 to 20 seconds")
+	execMaxOutput := fs.Int("max-output-bytes", 65536, "pod output cap per stream, at most 65536")
+	apiBodyFile := fs.String("body-file", "", "operation JSON request body file")
 	outputJSON := fs.Bool("json", false, "machine-readable JSON")
 	wait := fs.Bool("wait", false, "wait for final deployment outcome")
 	idem := fs.String("idempotency-key", "", "stable retry key (generated if omitted)")
@@ -142,6 +159,9 @@ func run() error {
 	// to the end so `status APP --json` and `--json APP` behave consistently.
 	if err := fs.Parse(reorder(os.Args[2:])); err != nil {
 		return &exitError{2, err.Error()}
+	}
+	if command == "api" && fs.NArg() == 1 && fs.Arg(0) == "operations" {
+		return runAPIOperation(context.Background(), nil, config{}, fs.Args(), "", "", "", "", false, *apiCursor, *apiFamily, *apiOperation, *apiLimit)
 	}
 	if command == "external-database" && *wait {
 		return &exitError{2, "use external-database operation OPERATION_ID to follow the accepted operation"}
@@ -322,7 +342,18 @@ func run() error {
 	switch command {
 	case "external-database":
 		return externalDatabaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), externalDatabaseFlags{CredentialsFile: *externalCredentialsFile, CredentialsStdin: *externalCredentialsStdin, IdempotencyKey: *idem, ReviewID: *reviewID, Name: *name, Revision: *revision, ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable})
+	case "exec":
+		if fs.NArg() != 1 {
+			return errors.New("usage: hakopod exec APP --service SERVICE --pod POD --container CONTAINER --command-json ARRAY --allow-exec")
+		}
+		return runExecution(ctx, c, cfg, "exec", fs.Arg(0), executionFlags{Service: *service, Pod: *pod, Container: *container, CommandJSON: *commandJSON, AllowExec: *allowExec, Timeout: *execTimeout, MaxOutput: *execMaxOutput})
 	case "database":
+		if fs.Arg(0) == "query" {
+			if fs.NArg() != 2 {
+				return errors.New("usage: hakopod database query ID --sql-file FILE [--parameters-json ARRAY] [--allow-sql-write --revision REVISION]")
+			}
+			return runExecution(ctx, c, cfg, "query", fs.Arg(1), executionFlags{SQLFile: *sqlFile, ParametersJSON: *sqlParameters, AllowSQLWrite: *allowSQLWrite, MaxRows: *sqlMaxRows, MaxBytes: *sqlMaxBytes, ExpectedRevision: *revision})
+		}
 		if !explicitFile && (fs.Arg(0) == "resize-retry-plan" || fs.Arg(0) == "resize-retry") {
 			// A retry uses its saved specification, not the default application file.
 			*file = ""
@@ -332,8 +363,10 @@ func run() error {
 		return managedPlatformCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *name)
 	case "previews", "preview-create", "preview-delete":
 		return previewCommand(ctx, c, cfg, command, arg, *name, *branch, *file, *idem, *ttl, *discardPreview)
+	case "api":
+		return runAPIOperation(ctx, c, cfg, fs.Args(), *apiPathJSON, *apiQueryJSON, *apiBodyFile, *idem, *allowWrite, *apiCursor, *apiFamily, *apiOperation, *apiLimit)
 	case "mcp":
-		return serveAgent(ctx, c, cfg, *allowDeploy, os.Stdin, os.Stdout)
+		return serveAgentOptions(ctx, c, cfg, *allowDeploy, *allowWrite, *allowExec, *allowSQL, *allowSQLWrite, os.Stdin, os.Stdout)
 	case "projects", "nodes", "keys", "audit":
 		var out any
 		if err = c.request(ctx, "GET", "/"+command, nil, "", &out); err != nil {
@@ -619,7 +652,13 @@ func (c *client) request(ctx context.Context, method, path string, in any, idem 
 }
 func responseError(res *http.Response) error {
 	var body struct {
-		Error struct{ Code, Message string }
+		Outcome     string `json:"outcome"`
+		OperationID string `json:"operation_id"`
+		Error       struct {
+			Code, Message string
+			Outcome       string `json:"outcome"`
+			OperationID   string `json:"operation_id"`
+		}
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 32<<10)).Decode(&body); err != nil {
 		return fmt.Errorf("API returned HTTP %d", res.StatusCode)
@@ -634,7 +673,20 @@ func responseError(res *http.Response) error {
 	if res.StatusCode == 409 {
 		code = 4
 	}
-	return &exitError{code, body.Error.Code + ": " + body.Error.Message}
+	if body.Outcome != "" {
+		body.Error.Outcome = body.Outcome
+	}
+	if body.OperationID != "" {
+		body.Error.OperationID = body.OperationID
+	}
+	message := body.Error.Code + ": " + body.Error.Message
+	if body.Error.Outcome == "unknown" || body.Error.Outcome == "not_started" || body.Error.Outcome == "rolled_back" {
+		message += " (outcome=" + body.Error.Outcome + ")"
+	}
+	if agentID.MatchString(body.Error.OperationID) {
+		message += " (operation_id=" + body.Error.OperationID + ")"
+	}
+	return &exitError{code, message}
 }
 func waitDeployment(ctx context.Context, c *client, d store.Deployment) (store.Deployment, error) {
 	timer := time.NewTicker(2 * time.Second)
@@ -738,7 +790,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--allow-exec": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -754,6 +806,9 @@ func reorder(args []string) []string {
 	return append(flags, pos...)
 }
 func help() {
+	fmt.Println("  exec APP --service SERVICE --pod POD --container CONTAINER --command-json ARRAY --allow-exec")
+	fmt.Println("  database query ID --sql-file FILE [--parameters-json ARRAY] [--allow-sql-write --revision REVISION]")
+	fmt.Println("  api operations | api call OPERATION [--path-json JSON] [--query-json JSON] [--body-file FILE] [--allow-write]")
 	w := bufio.NewWriter(os.Stdout)
 	defer w.Flush()
 	fmt.Fprintln(w, `Hakopod — deploy containers on infrastructure you own.

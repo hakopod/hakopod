@@ -7,8 +7,8 @@ route("/mcp","delete","closeMCPSession",{},"","204",scope=True)
 paths["/mcp"]["delete"]["responses"]["204"]={"description":"Session closed"}
 for method in ["post","delete"]:
     operation=paths["/mcp"][method]
-    operation["description"]="Self-hosted Streamable HTTP MCP. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. See docs/http-mcp.md."
-    operation["parameters"] += [{"name":"allow_deploy","in":"query","schema":B},{"name":"Mcp-Session-Id","in":"header","required":method=="delete","schema":S},{"name":"MCP-Protocol-Version","in":"header","schema":S}]
+    operation["description"]="Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a project/environment-scoped machine bearer key. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md."
+    operation["parameters"] += [{"name":name,"in":"query","schema":B} for name in ["allow_deploy","allow_write","allow_exec","allow_sql","allow_sql_write"]]+[{"name":"Mcp-Session-Id","in":"header","required":method=="delete","schema":S},{"name":"MCP-Protocol-Version","in":"header","schema":S}]
 paths["/mcp"]["post"]["responses"]["200"]["headers"]={"Mcp-Session-Id":{"description":"Returned by initialize; required on subsequent requests","schema":S}}
 
 schemas["SourceBuild"] = obj({"image":{**S,"pattern":r"^[^\s@]+@sha256:[a-f0-9]{64}$"},"commit_sha":{**S,"pattern":r"^[a-f0-9]{40}([a-f0-9]{24})?$"},"provider":{"type":"string","enum":["github","gitlab","other"]},"repository":{**S,"maxLength":256},"branch":{**S,"maxLength":256},"run_url":{**S,"maxLength":2048}},["image","commit_sha","provider","repository"])

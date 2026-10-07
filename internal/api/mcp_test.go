@@ -151,8 +151,8 @@ func TestHTTPMCPAuthenticationScopeAndReviewedDeployment(t *testing.T) {
 	if result.Body.String() != repeat.Body.String() {
 		t.Fatal("reviewed retry changed accepted release")
 	}
-	// Explicit Cloud embedding never registers this endpoint.
-	cloud := (&api.Server{Store: db, Auth: api.AuthConfig{DeploymentMode: cluster.DeploymentManagedCloud}}).Handler()
+	// The shared Cloud control plane does not expose a tenant MCP route.
+	cloud := (&api.Server{Store: db, CloudControlPlane: true, Auth: api.AuthConfig{DeploymentMode: cluster.DeploymentManagedCloud}}).Handler()
 	r := httptest.NewRequest("POST", endpoint, strings.NewReader(initialize))
 	r.Header.Set("Authorization", "Bearer "+writer)
 	w := httptest.NewRecorder()

@@ -420,3 +420,26 @@ test('public device exchange strips ambient credentials and only accepts POST', 
   )
   assert.equal(mocked.mock.callCount(), 1)
 })
+
+test('SQL and pod execution preserve exact bearer requests and reject other methods', async (t) => {
+  const paths = [`databases/${'a'.repeat(32)}/query`, `applications/${app}/services/web/exec`]
+  const body = '{"parameters":[9007199254740993],"sql":"select $1"}'
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    assert.ok(paths.some((path) => new URL(String(url)).pathname === `/api/v1/${path}`))
+    assert.equal(new URL(String(url)).search, '?project=demo&environment=development')
+    assert.equal(init?.method, 'POST')
+    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer hp_fixture')
+    assert.equal(new Headers(init?.headers).has('Cookie'), false)
+    assert.equal(new TextDecoder().decode(init?.body as Uint8Array), body)
+    return Response.json({ outcome: 'unknown', operation_id: 'fixture' }, { status: 409 })
+  })
+  for (const path of paths) {
+    const response = await request(`${path}?project=demo&environment=development`, 'POST', body, { Cookie: 'ambient-browser' })
+    assert.equal(response.status, 409)
+    assert.deepEqual(await response.json(), { outcome: 'unknown', operation_id: 'fixture' })
+    assert.equal((await request(path)).status, 405)
+    assert.equal((await request(path, 'DELETE', '{}')).status, 405)
+    assert.equal((await request(path + '/extra', 'POST', '{}')).status, 404)
+  }
+  assert.equal(mocked.mock.callCount(), 2)
+})

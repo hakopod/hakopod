@@ -103,3 +103,65 @@ func TestExternalDeviceScopeRevocationBeforeIssuance(t *testing.T) {
 		t.Fatal("missing binding", err)
 	}
 }
+func TestDevicePermissionsRequireExplicitExecutionConsent(t *testing.T) {
+	defaults, err := devicePermissions(nil)
+	if err != nil || len(defaults) != 3 || !contains(defaults, "deployments:read") || !contains(defaults, "deployments:write") || !contains(defaults, "logs:read") {
+		t.Fatal(defaults, err)
+	}
+	if contains(defaults, "pods:exec") || contains(defaults, "databases:query") {
+		t.Fatal("default execution privilege expanded")
+	}
+	all := []string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query"}
+	got, err := devicePermissions(all)
+	if err != nil || len(got) != 6 {
+		t.Fatal(got, err)
+	}
+	got[0] = "changed"
+	if all[0] != "deployments:read" {
+		t.Fatal("permission slice aliased")
+	}
+	for _, in := range [][]string{{"databases:write-query"}, {"pods:exec", "pods:exec"}, {"admin"}, {"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query", "pods:exec"}} {
+		if _, err := devicePermissions(in); err == nil {
+			t.Fatal("invalid permissions accepted", in)
+		}
+	}
+}
+func TestDeviceConsentIssuesOnlyRequestedExecutionPermissions(t *testing.T) {
+	s := isolatedDatabase(t)
+	ctx := context.Background()
+	id := NewID()
+	if _, err := s.Pool.Exec(ctx, "INSERT INTO projects(name) VALUES('demo'); INSERT INTO environments(project,name) VALUES('demo','development')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, "INSERT INTO identities(id,name,email,admin,permissions,email_verified) VALUES($1,'Execution fixture','execution@example.test',true,ARRAY['admin'],true)", id); err != nil {
+		t.Fatal(err)
+	}
+	browser, err := s.NewSession(ctx, id, "browser", "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions := []string{"deployments:read", "pods:exec", "databases:query", "databases:write-query"}
+	request, err := s.StartDevice(ctx, "demo", "development", permissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details, err := s.DeviceDetails(ctx, browser.User, request.UserCode)
+	if err != nil || len(details.Permissions) != len(permissions) {
+		t.Fatal(details, err)
+	}
+	if err := s.ApproveDevice(ctx, browser.User, request.UserCode, true, DeviceScope{Project: "demo", Environment: "development"}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.PollDevice(ctx, request.DeviceCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, permission := range permissions {
+		if !session.User.Allows(permission, "demo", "development", "") {
+			t.Fatal("requested permission omitted", permission)
+		}
+	}
+	if session.User.Allows("deployments:write", "demo", "development", "") || session.User.Allows("pods:exec", "demo", "other", "") {
+		t.Fatal("consent acquired unrequested scope or permission")
+	}
+}
