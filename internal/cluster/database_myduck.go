@@ -302,11 +302,31 @@ func (c *Client) verifyMyDuckTLS(ctx context.Context, d database.Resource, o *da
 	if len(o.Members) != 1 {
 		return fmt.Errorf("MyDuck TLS requires one current member")
 	}
-	step, cancel := context.WithTimeout(ctx, 15*time.Second)
+	step, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	output := &databaseBoundedWriter{limit: 4096}
 	if err := c.DatabaseExec(step, d, o.Members[0], []string{"/usr/local/bin/myduckserver", "--managed-check=" + myduckConfigPath}, nil, output); err != nil {
 		return fmt.Errorf("MyDuck did not pass both authenticated TLS protocol checks")
 	}
+	// A Secret projection may still contain the previous certificate. Verify
+	// the served leaf against the current control-plane identity as well.
+	password, identity, err := c.myduckClientIdentity(step, d)
+	if err != nil {
+		return err
+	}
+	mysql, err := c.myduckMySQLClient(step, d, o.Members[0], password, identity)
+	if err != nil {
+		return err
+	}
+	err = mysql.PingContext(step)
+	_ = mysql.Close()
+	if err != nil {
+		return fmt.Errorf("MyDuck MySQL endpoint has not loaded its current identity")
+	}
+	postgres, err := c.myduckPostgresClient(step, d, o.Members[0], password, identity)
+	if err != nil {
+		return fmt.Errorf("MyDuck PostgreSQL endpoint has not loaded its current identity")
+	}
+	_ = postgres.Close(step)
 	return nil
 }

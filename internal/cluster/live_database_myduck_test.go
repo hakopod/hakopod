@@ -216,6 +216,10 @@ func testMyDuckRenewal(t *testing.T, ctx context.Context, c *Client, d database.
 	t.Helper()
 	password, oldIdentity, err := c.myduckClientIdentity(ctx, d)
 	if err != nil { t.Fatal(err) }
+	// Applications trust the database CA and hostname. The control-plane
+	// observation additionally pins the current leaf, which changes on renewal.
+	oldIdentity = oldIdentity.Clone()
+	oldIdentity.VerifyConnection = nil
 	issuer, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-ca", metav1.GetOptions{})
 	if err != nil { t.Fatal(err) }
 	pair, err := tls.X509KeyPair(issuer.Data["ca.crt"], issuer.Data["ca.key"])
