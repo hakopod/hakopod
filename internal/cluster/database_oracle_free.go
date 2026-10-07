@@ -512,9 +512,15 @@ func (c *Client) oracleFreeRevisionReady(ctx context.Context, d database.Resourc
 
 func oracleFreeStatusReady(object *unstructured.Unstructured) bool {
 	status, _, _ := unstructured.NestedString(object.Object, "status", "status")
-	replicas, _, _ := unstructured.NestedInt64(object.Object, "status", "replicas")
+	desired, found, err := unstructured.NestedInt64(object.Object, "spec", "replicas")
+	if err != nil || !found || desired != 1 {
+		return false
+	}
+	// The Free controller can omit this optional status field. The caller also
+	// requires one owned live Pod; a reported count must agree with that contract.
+	replicas, reported, err := unstructured.NestedInt64(object.Object, "status", "replicas")
 	conditions, _, _ := unstructured.NestedSlice(object.Object, "status", "conditions")
-	if status != "Healthy" || replicas != 1 || object.GetGeneration() < 1 || len(conditions) > 16 {
+	if status != "Healthy" || err != nil || reported && replicas != 1 || object.GetGeneration() < 1 || len(conditions) > 16 {
 		return false
 	}
 	var complete, pending time.Time
