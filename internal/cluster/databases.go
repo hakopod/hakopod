@@ -335,9 +335,9 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 			return err
 		}
 		metadata := metav1.ObjectMeta{Name: "database-credentials", Namespace: ns, Labels: databaseLabels(d)}
-		if d.Spec.Engine == "vitess" {
+		if d.Spec.Engine == "vitess" || d.Spec.Engine == "duckdb" {
 			if existing.UID == "" || existing.DeletionTimestamp != nil {
-				return fmt.Errorf("Vitess credential namespace identity changed")
+				return fmt.Errorf("database credential namespace identity changed")
 			}
 			metadata = databaseIdentityMeta(d, existing.UID, "database-credentials")
 		}
@@ -351,6 +351,9 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 	}
 	if subtle.ConstantTimeCompare(secret.Data["password"], password) != 1 || string(secret.Data["username"]) != "app" {
 		return fmt.Errorf("database credential identity changed")
+	}
+	if d.Spec.Engine == "duckdb" && (existing.UID == "" || existing.DeletionTimestamp != nil || secret.DeletionTimestamp != nil || secret.Type != corev1.SecretTypeBasicAuth || secret.Immutable == nil || !*secret.Immutable || len(secret.Data) != 2 || !reflect.DeepEqual(secret.OwnerReferences, databaseIdentityMeta(d, existing.UID, secret.Name).OwnerReferences)) {
+		return fmt.Errorf("MyDuck credential namespace ownership changed")
 	}
 	if d.Spec.Engine == "vitess" {
 		if err = c.reconcileVitessCredentialOwnership(ctx, d, existing, secret, password, before); err != nil {
