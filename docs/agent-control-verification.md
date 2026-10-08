@@ -22,7 +22,7 @@ Dynamic calls and alternate transports require manual review. Counts do not prov
 The Go source inventory accounts for 340 literal API route declarations: 326 match OpenAPI and 14 have explicit exclusions.
 CI rejects a new literal route without a contract or documented exclusion. Multiplexed and dynamic routes require separate review.
 
-Contract SHA-256: `d674958447de9a8741bd06de58b344a084495ff28f44a0fec0a985b4030e4c34`.
+Contract SHA-256: `accfa4bd3ad71d837fd7e64683eeb694a310897c08fee2dc1bc606d75885a36c`.
 See [the inventory](agent-parity/coverage-matrix.md), [generation process](agent-parity/contract-generation.md) and [connection workflows](agent-parity/connection-workflows.md).
 
 ## Implemented boundaries
@@ -61,6 +61,7 @@ Source edits, source generation, formatting and inspection ran locally. Snapshot
 | `hakopod-sql-execution-mode` and columns outcome v2 | All five focused driver tests passed after explicit nontransactional execution and column-failure outcome fixes. Read-only requests retain server-enforced transactions. Nontransactional failures do not claim rollback. |
 | `agent-route-inventory-20261008` | Source inventory and three drift-check regressions passed. Covers new routes, missing exclusion reasons, obsolete exclusions, documented exclusions and comments. |
 | `agent-contract-schema-v3` | Full operations suite passed in 5.406 seconds. The compiled JSON Schema validator covers unions, exact one-of semantics, conditionals, references with sibling constraints, exact numeric bounds, Unicode length, collections, closed object extensions and open webhook payloads. External schemas are refused. Error redaction and independent input bounds passed. Dashboard and SDK types were regenerated with openapi-typescript 7.13.0. |
+| `agent-contract-paths-v4` | Full operations suite passed in 6.136 seconds. Every route variable has one required path declaration. Generation rejects duplicate and invalid declarations. Dashboard and SDK types were regenerated with openapi-typescript 7.13.0. |
 | `agent-catalog-semantic-v2` | Full operations package tests passed in 2.280 seconds. Discovery preserves the OpenAPI summary and description in operation pages and details. Absent descriptions remain absent. |
 | `agent-dashboard-drift-20261008` | The dashboard regeneration command and exact generated-file comparison passed on a disposable VM snapshot. CI now rejects changes to dashboard API types or editor schemas that were not regenerated. |
 | `agent-oracle-decoder-limits-v5` | Nine adversarial decoder tests passed. The query-only receive limit checks packet lengths and accumulated values before allocation or append. It also limits cumulative wire reception. Management connections retain the upstream default. Six SQL and receive-limit mapping tests passed separately. Native Oracle execution remains separate. |

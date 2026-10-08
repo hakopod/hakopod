@@ -186,12 +186,6 @@ func invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bo
 			}
 		}
 	}
-	// Some contract routes omit a path parameter declaration. The path template remains authoritative.
-	for _, part := range strings.Split(path, "/") {
-		if strings.HasPrefix(part, "{") {
-			allowedPath[strings.Trim(part, "{}")] = true
-		}
-	}
 	for k, v := range in.Path {
 		if !allowedPath[k] || !segment.MatchString(v) || v == "." || v == ".." {
 			return nil, errors.New("invalid path parameter")

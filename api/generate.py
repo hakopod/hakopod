@@ -2,6 +2,7 @@
 """Generate the checked-in OpenAPI contract; no runtime dependency."""
 import json
 import runpy
+import re
 from pathlib import Path
 
 S = {"type": "string"}
@@ -99,6 +100,24 @@ for schema, base, properties, required in object_extensions:
     if parent.get("type") != "object":
         raise ValueError(f"object extension base is not an object: {base}")
     schema.update({**parent, "properties": {**parent["properties"], **properties}, "required": [*parent["required"], *required]})
+# Path variables are required by the route itself. Explicit schemas take precedence.
+for path, methods in paths.items():
+    variables = re.findall(r"\{([^}]+)\}", path)
+    for operation in methods.values():
+        if "operationId" not in operation:
+            continue
+        parameters = operation.setdefault("parameters", [])
+        declared = set()
+        for parameter in parameters:
+            key = (parameter["in"], parameter["name"])
+            if key in declared:
+                raise ValueError(f"duplicate parameter in {operation['operationId']}: {key}")
+            declared.add(key)
+            if parameter["in"] == "path" and (parameter["name"] not in variables or parameter.get("required") is not True):
+                raise ValueError(f"invalid path parameter in {operation['operationId']}")
+        for variable in variables:
+            if ("path", variable) not in declared:
+                parameters.append({"name": variable, "in": "path", "required": True, "schema": S})
 runpy.run_path(str(Path(__file__).with_name("contracts") / "agent_policy.py"), init_globals={"paths": paths})
 doc={"openapi":"3.1.0", "info":{"title":"Hakopod Management API","version":"0.1.0","description":"Manage applications and databases through the versioned API. Each operation defines its input format and required permissions. The API checks current credentials, scope and resource ownership. CLI and MCP connections require explicit options for execution, administration and credential access."}, "servers":[{"url":"/api/v1"}], "security":[{"bearerAuth":[]}], "paths":paths,"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}},"schemas":schemas}}
 Path(__file__).with_name("openapi.json").write_text(json.dumps(doc,indent=2)+"\n")

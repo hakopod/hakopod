@@ -46,6 +46,35 @@ func TestCatalogSafetyAndCompleteness(t *testing.T) {
 		t.Fatal("catalog exposed mutable state")
 	}
 }
+
+func TestCatalogPathParametersMatchRouteTemplates(t *testing.T) {
+	for _, operation := range catalog {
+		expected := map[string]bool{}
+		for _, segment := range strings.Split(operation.Path, "/") {
+			if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+				expected[strings.TrimSuffix(strings.TrimPrefix(segment, "{"), "}")] = true
+			}
+		}
+		seen := map[string]bool{}
+		for _, parameter := range operation.Parameters {
+			key := parameter.In + ":" + parameter.Name
+			if seen[key] {
+				t.Fatalf("duplicate parameter: %s %s", operation.ID, key)
+			}
+			seen[key] = true
+			if parameter.In != "path" {
+				continue
+			}
+			if !expected[parameter.Name] || !parameter.Required || parameter.Schema == nil {
+				t.Fatalf("invalid path parameter: %s %s", operation.ID, parameter.Name)
+			}
+			delete(expected, parameter.Name)
+		}
+		if len(expected) != 0 {
+			t.Fatalf("missing path parameters: %s", operation.ID)
+		}
+	}
+}
 func TestRejectUnsafeInvocation(t *testing.T) {
 	cases := []Invocation{
 		{Operation: "getApplication", Path: map[string]string{"id": "../keys"}},
