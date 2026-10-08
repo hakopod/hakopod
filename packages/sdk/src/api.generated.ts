@@ -12277,6 +12277,7 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+                target: string;
             };
             cookie?: never;
         };
@@ -12312,6 +12313,7 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+                target: string;
             };
             cookie?: never;
         };
@@ -12351,6 +12353,7 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+                target: string;
             };
             cookie?: never;
         };
@@ -14125,6 +14128,7 @@ export interface operations {
             };
             path: {
                 id: string;
+                endpoint: string;
             };
             cookie?: never;
         };
@@ -15929,6 +15933,7 @@ export interface operations {
             path: {
                 id: string;
                 service: string;
+                session: string;
             };
             cookie?: never;
         };
@@ -16558,7 +16563,10 @@ export interface operations {
                 cursor?: string;
             };
             header?: never;
-            path?: never;
+            path: {
+                node: string;
+                session: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -17597,6 +17605,7 @@ export interface operations {
             };
             path: {
                 id: string;
+                service: string;
             };
             cookie?: never;
         };
@@ -17636,6 +17645,7 @@ export interface operations {
             };
             path: {
                 id: string;
+                service: string;
             };
             cookie?: never;
         };

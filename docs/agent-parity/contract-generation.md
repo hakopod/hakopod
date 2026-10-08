@@ -23,6 +23,8 @@ Format and content keywords remain annotations. The canonical handlers apply dom
 
 Declared object types reject unknown fields. Explicit maps and provider webhook payloads retain their declared open fields.
 Object extensions merge their base fields before generation. They do not combine incompatible closed object branches.
+Generation declares each route variable as a required path parameter. Explicit parameter schemas retain their constraints.
+Generation rejects duplicate parameters and invalid path declarations. Clients use the generated declarations without separate path inference.
 Every input has independent bounds: 32 nested levels, 10,000 values and 1,000 items per array.
 Numeric literals have at most 128 characters, with exponents from -1000 to 1000.
 The request and response limits remain 1 MiB.
@@ -54,6 +56,7 @@ An agent cannot use generated invocation to approve its own access.
 
 CI checks OpenAPI, proxy, SDK, dashboard API types and editor-schema generation for drift.
 Tests reject missing exposure metadata and unsafe invocation paths.
+Tests also check that each route variable has exactly one required path parameter.
 CI also checks literal Go API route declarations against OpenAPI. A new declaration must have a contract or an explained exclusion.
 `api/route_coverage_exclusions.json` records internal protocols, acceptance probes, the contract download, a retired route and the Slack OAuth callback.
 The check rejects obsolete exclusions. Dynamic route expressions and transports that dispatch several methods still require separate review.

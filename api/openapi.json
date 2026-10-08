@@ -1891,14 +1891,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "service",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -7389,14 +7381,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "service",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -7440,14 +7424,6 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "service",
             "in": "path",
             "required": true,
             "schema": {
@@ -7514,14 +7490,6 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "service",
             "in": "path",
             "required": true,
             "schema": {
@@ -7691,6 +7659,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "target",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -7740,6 +7716,14 @@
         "parameters": [
           {
             "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
             "in": "path",
             "required": true,
             "schema": {
@@ -7814,6 +7798,14 @@
         "parameters": [
           {
             "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "target",
             "in": "path",
             "required": true,
             "schema": {
@@ -10898,6 +10890,14 @@
               "type": "string",
               "minLength": 8,
               "maxLength": 128
+            }
+          },
+          {
+            "name": "endpoint",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -14072,14 +14072,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "service",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -14155,14 +14147,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "service",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -14224,14 +14208,6 @@
           },
           {
             "name": "session",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "service",
             "in": "path",
             "required": true,
             "schema": {
@@ -14318,14 +14294,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "service",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -14378,6 +14346,14 @@
           },
           {
             "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
             "in": "path",
             "required": true,
             "schema": {
@@ -15544,6 +15520,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15925,14 +15917,6 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "service",
             "in": "path",
             "required": true,
             "schema": {
@@ -17534,6 +17518,14 @@
               "minLength": 8,
               "maxLength": 128
             }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -17610,6 +17602,14 @@
               "type": "string",
               "minLength": 8,
               "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -20489,6 +20489,7 @@
             "description": "Reviewable suggestions from repository metadata; no repository code is executed."
           }
         },
+        "parameters": [],
         "x-hakopod-agent": {
           "boundary": "project",
           "category": "write",

@@ -46,10 +46,6 @@ for path in paths:
     if path.startswith('/registries/'):
         for operation in paths[path].values():
             operation['parameters'].append({'name':'name','in':'path','required':True,'schema':S})
-for path in paths:
-    if '/services/{service}/' in path:
-        for operation in paths[path].values():
-            operation['parameters'].append({'name':'service','in':'path','required':True,'schema':S})
 
 schemas["Service"]["properties"]["suspended"] = B
 for action in ("stop", "resume"):
