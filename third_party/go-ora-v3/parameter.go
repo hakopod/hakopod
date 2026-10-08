@@ -51,18 +51,19 @@ type Out struct {
 //)
 
 type ParameterInfo struct {
-	Name         string
-	SchemaName   string
-	DomainSchema string
-	DomainName   string
-	Direction    ParameterDirection
-	IsNull       bool
-	AllowNull    bool
-	IsJson       bool
-	ColAlias     string
-	IsXmlType    bool
-	Precision    uint8
-	Scale        uint8
+	describedZero bool
+	Name          string
+	SchemaName    string
+	DomainSchema  string
+	DomainName    string
+	Direction     ParameterDirection
+	IsNull        bool
+	AllowNull     bool
+	IsJson        bool
+	ColAlias      string
+	IsXmlType     bool
+	Precision     uint8
+	Scale         uint8
 	//MaxNoOfArrayElements int
 
 	Value             driver.Value
@@ -79,6 +80,7 @@ type ParameterInfo struct {
 
 // load get parameter information form network session
 func (par *ParameterInfo) load(conn *Connection) error {
+	par.describedZero = false
 	session := conn.session
 	par.getDataFromServer = true
 	dataType, err := session.GetByte()
@@ -140,6 +142,7 @@ func (par *ParameterInfo) load(conn *Connection) error {
 	if err != nil {
 		return err
 	}
+	par.describedZero = par.MaxLen == 0
 	switch par.DataType {
 	case oraTypes.ROWID:
 		par.MaxLen = 128
@@ -637,10 +640,10 @@ func (par *ParameterInfo) decodeParameterValue(connection *Connection) error {
 }
 
 func (par *ParameterInfo) decodeColumnValue(connection *Connection, udt bool) error {
-	// Scalar fetched character columns described with zero length contain no CLR.
+	// These scalar fetched columns contain no CLR when described with zero length.
 	// Keep parameter, UDT and array decoding on their existing paths.
 	if !udt && par.ArraySize == 0 && !par.IsUDTPar && !par.IsArrayPar &&
-		(par.DataType == oraTypes.CHAR || par.DataType == oraTypes.NCHAR) && par.MaxLen == 0 {
+		par.describedZero && (par.DataType == oraTypes.CHAR || par.DataType == oraTypes.NCHAR || par.DataType == oraTypes.NUMBER || par.DataType == oraTypes.TimeStampTZ_DTY || par.DataType == oraTypes.TIMESTAMPTZ) {
 		par.BValue = nil
 		par.oPrimValue = nil
 		par.IsNull = true

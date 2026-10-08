@@ -12,12 +12,13 @@ import (
 )
 
 type NativeDiagnosticEvent struct {
-	Stage      string `json:"stage"`
-	Type       string `json:"type"`
-	Size       string `json:"size"`
-	FromServer bool   `json:"from_server"`
-	Ordinal    string `json:"ordinal,omitempty"`
-	Boundary   string `json:"boundary,omitempty"`
+	Stage         string `json:"stage"`
+	Type          string `json:"type"`
+	Size          string `json:"size"`
+	FromServer    bool   `json:"from_server"`
+	DescribedZero bool   `json:"described_zero"`
+	Ordinal       string `json:"ordinal,omitempty"`
+	Boundary      string `json:"boundary,omitempty"`
 }
 type nativeDiagnosticRecorder struct {
 	events  []NativeDiagnosticEvent
@@ -43,6 +44,14 @@ func (r *nativeDiagnosticRecorder) add(stage string, column *ParameterInfo) {
 			event.Type = "number"
 		case oraTypes.CHAR, oraTypes.NCHAR:
 			event.Type = "character"
+		case oraTypes.TIMESTAMP, oraTypes.TimeStampDTY:
+			event.Type = "timestamp"
+		case oraTypes.TIMESTAMPTZ:
+			event.Type = "timestamp_tz"
+		case oraTypes.TimeStampTZ_DTY:
+			event.Type = "timestamp_tz_dty"
+		case oraTypes.TimeStampLTZ, oraTypes.TimeStampLTZ_DTY:
+			event.Type = "timestamp_ltz"
 		case oraTypes.RAW:
 			event.Type = "raw"
 		default:
@@ -59,6 +68,7 @@ func (r *nativeDiagnosticRecorder) add(stage string, column *ParameterInfo) {
 			event.Size = "large"
 		}
 		event.FromServer = column.getDataFromServer
+		event.DescribedZero = column.describedZero
 	}
 	r.events = append(r.events, event)
 }

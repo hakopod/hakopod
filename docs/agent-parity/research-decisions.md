@@ -40,11 +40,12 @@ Its Example 7-48 invokes an autonomous function from `SELECT`. The function's co
 [SET TRANSACTION](https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/SET-TRANSACTION.html) configures the current transaction.
 These properties do not establish read-only protection against autonomous functions.
 
-The candidate Oracle query mode therefore requires explicit write permission and nontransactional execution.
+The Oracle query mode therefore requires explicit write permission and nontransactional execution.
 It refuses read-only and transactional requests before runtime access and advertises no transaction guarantee.
-Native acceptance must confirm autonomous persistence after parent rollback and after a function commits and raises an error.
-The production query adapter must report the latter outcome as unknown.
-The capability remains disabled until those checks and the remaining driver, limit, cancellation and cleanup checks pass.
+Native Free acceptance confirmed autonomous persistence after parent rollback and after a function commits and raises an error.
+The production query adapter reported the latter outcome as unknown.
+Driver, limit, observed cancellation and cleanup checks also passed, as recorded in the verification record.
+Query support is limited to the pinned Free 23.26 standalone configuration. Enterprise remains unsupported.
 
 ## Vitess transaction scope
 

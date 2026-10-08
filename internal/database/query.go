@@ -152,3 +152,15 @@ func CapabilitiesForQuery(engine string) QueryCapabilities {
 	}
 	return c
 }
+
+// CapabilitiesForQuerySpec limits Oracle queries to the qualified Free configuration.
+// Engine-only discovery remains conservative because it has no edition or version.
+func CapabilitiesForQuerySpec(spec Spec) QueryCapabilities {
+	capabilities := CapabilitiesForQuery(spec.Engine)
+	if spec.Engine == "oracle" && spec.Oracle != nil && spec.Oracle.Edition == "free" &&
+		spec.Version == "23.26" && spec.Mode == "standalone" && spec.Shards == 1 && spec.Replicas == 0 &&
+		spec.TLSRequired() && spec.Oracle.Validate(spec.Version, spec.Mode) == nil {
+		capabilities.Supported = true
+	}
+	return capabilities
+}

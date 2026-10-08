@@ -125,6 +125,7 @@ func TestStatementReadNullAndNumberColumnSequences(t *testing.T) {
 			stmt := &defaultStmt{connection: conn, columns: make([]ParameterInfo, len(scenario.types))}
 			for i, typ := range scenario.types {
 				stmt.columns[i].DataType = typ
+				stmt.columns[i].describedZero = typ == oraTypes.CHAR || typ == oraTypes.NCHAR
 				stmt.columns[i].CharsetForm = 1
 				stmt.columns[i].getDataFromServer = true
 			}
@@ -151,6 +152,7 @@ func TestStatementReadZeroLengthCharacterNull(t *testing.T) {
 			conn := &Connection{session: session, tracer: trace.NilTracer(), cStrConv: converters.NewStringConverter(873), nStrConv: converters.NewStringConverter(873), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{typ: &parameter_coder.StringParameter{}}}
 			stmt := &defaultStmt{connection: conn, columns: []ParameterInfo{{getDataFromServer: true}}}
 			stmt.columns[0].DataType = typ
+			stmt.columns[0].describedZero = true
 			stmt.columns[0].CharsetForm = 1
 			result := &ResultSet{columnCount: 1}
 			if err := stmt.read(result); err != nil {
@@ -194,6 +196,7 @@ func TestZeroLengthCharacterNullRemovesStaleValue(t *testing.T) {
 		conn := &Connection{session: session, connOption: &configurations.ConnectionConfig{}, cStrConv: converters.NewStringConverter(873), nStrConv: converters.NewStringConverter(873), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{typ: &parameter_coder.StringParameter{}}}
 		par := ParameterInfo{oPrimValue: "previous"}
 		par.DataType = typ
+		par.describedZero = true
 		par.CharsetForm = 1
 		par.BValue = []byte("previous")
 		if par.decodeColumnValue(conn, false) != nil || !par.IsNull || par.oPrimValue != nil || par.BValue != nil {
@@ -232,6 +235,7 @@ func TestZeroLengthCharacterFetchOverridesSeededCoder(t *testing.T) {
 		conn := &Connection{session: session, oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{typ: coder}}
 		par := &ParameterInfo{}
 		par.DataType = typ
+		par.describedZero = true
 		if err := par.decodeColumnValue(conn, false); err != nil || !par.IsNull {
 			t.Fatal("described null did not bypass seeded coder")
 		}
@@ -277,6 +281,7 @@ func TestZeroLengthCharacterFetchGuardExclusions(t *testing.T) {
 			conn := &Connection{session: session, connOption: &configurations.ConnectionConfig{}, cStrConv: converters.NewStringConverter(873), nStrConv: converters.NewStringConverter(873), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{oraTypes.CHAR: coder}}
 			par := &ParameterInfo{}
 			par.DataType = oraTypes.CHAR
+			par.describedZero = true
 			par.CharsetForm = 1
 			udt := false
 			switch kind {
@@ -296,5 +301,77 @@ func TestZeroLengthCharacterFetchGuardExclusions(t *testing.T) {
 				t.Fatal("excluded path claimed described NULL")
 			}
 		})
+	}
+}
+
+// These synthetic columns explicitly represent successful zero-length describe.
+func TestStatementReadDescribedScalarNullOrders(t *testing.T) {
+	for _, typ := range []uint16{oraTypes.CHAR, oraTypes.NCHAR, oraTypes.NUMBER, oraTypes.TimeStampTZ_DTY, oraTypes.TIMESTAMPTZ} {
+		for _, first := range []bool{false, true} {
+			encoded := network.NewSession(&configurations.ConnectionConfig{}, trace.NilTracer())
+			output := &bytes.Buffer{}
+			encoded.SaveState(&network.SessionState{InBuffer: &bytes.Buffer{}, OutBuffer: output})
+			number := &parameter_coder.NumberParameter{}
+			if err := number.Encode(int64(42), nil); err != nil {
+				t.Fatal("number fixture encoding")
+			}
+			encoded.PutBytes(7)
+			encoded.PutClr(number.BValue)
+			encoded.PutBytes(9)
+			conn := &Connection{session: nullTestSession(output.Bytes()), tracer: trace.NilTracer(), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{oraTypes.NUMBER: &parameter_coder.NumberParameter{}}}
+			columns := make([]ParameterInfo, 2)
+			nullIndex := 1
+			if first {
+				nullIndex = 0
+			}
+			columns[nullIndex] = ParameterInfo{describedZero: true, getDataFromServer: true, oPrimValue: "stale"}
+			columns[nullIndex].DataType = typ
+			columns[nullIndex].BValue = []byte("stale")
+			if typ == oraTypes.TimeStampTZ_DTY {
+				columns[nullIndex].MaxLen = int64(converters.MAX_LEN_TIMESTAMP)
+			}
+			columns[1-nullIndex].DataType = oraTypes.NUMBER
+			columns[1-nullIndex].MaxLen = 22
+			columns[1-nullIndex].getDataFromServer = true
+			stmt := &defaultStmt{connection: conn, columns: columns}
+			result := &ResultSet{columnCount: 2}
+			if err := stmt.read(result); err != nil || len(result.rows) != 1 || result.rows[0][nullIndex] != nil || result.rows[0][1-nullIndex] == nil || !stmt.columns[nullIndex].IsNull || stmt.columns[nullIndex].BValue != nil {
+				t.Fatal("described scalar NULL corrupted row")
+			}
+		}
+	}
+}
+
+func TestZeroLengthCharacterDescribeFlagLifecycle(t *testing.T) {
+	for _, typ := range []uint16{oraTypes.NUMBER, oraTypes.TimeStampTZ_DTY, oraTypes.TIMESTAMPTZ} {
+		for _, length := range []int{0, 13} {
+			encoded := network.NewSession(&configurations.ConnectionConfig{}, trace.NilTracer())
+			output := &bytes.Buffer{}
+			encoded.SaveState(&network.SessionState{InBuffer: &bytes.Buffer{}, OutBuffer: output})
+			encoded.PutBytes(byte(typ), 0, 0)
+			if typ == oraTypes.NUMBER {
+				encoded.PutInt(0, 2, true, true)
+			} else {
+				encoded.PutBytes(0)
+			}
+			encoded.PutInt(length, 4, true, true)
+			// Fail subsequent metadata parsing deliberately, after the original length.
+			par := &ParameterInfo{}
+			conn := &Connection{session: nullTestSession(output.Bytes())}
+			if par.load(conn) == nil || par.describedZero != (length == 0) {
+				t.Fatal("original describe length was not retained")
+			}
+			if typ == oraTypes.TimeStampTZ_DTY && par.MaxLen != int64(converters.MAX_LEN_TIMESTAMP) {
+				t.Fatal("timestamp normalization fixture differs")
+			}
+			conn.session = nullTestSession(nil)
+			if par.load(conn) == nil || par.describedZero {
+				t.Fatal("failed reload retained describe state")
+			}
+		}
+	}
+	par := &ParameterInfo{describedZero: true}
+	if clone := par.clone(); clone.describedZero {
+		t.Fatal("describe state escaped into parameter clone")
 	}
 }

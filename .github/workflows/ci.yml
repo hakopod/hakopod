@@ -98,7 +98,9 @@ jobs:
       - run: go test ./...
       - name: Oracle decoder receive limits and private diagnostics
         working-directory: third_party/go-ora-v3
-        run: go test -tags hakopod_native_acceptance . ./network -count=1
+        run: |
+          go test . ./network -count=1
+          go test -tags hakopod_native_acceptance . ./network -count=1
       - name: Check signup build policies
         run: |
           go test -tags=hakopod_cloud ./cmd/hakopod-server

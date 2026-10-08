@@ -24,10 +24,10 @@ func (c *Client) QueryDatabase(ctx context.Context, d database.Resource, q datab
 	if err := q.Validate(); err != nil {
 		return empty, err
 	}
-	if !database.CapabilitiesForQuery(d.Spec.Engine).Supported {
+	if !database.CapabilitiesForQuerySpec(d.Spec).Supported {
 		return empty, &database.QueryError{Code: "database_query_engine_unsupported", Outcome: "not_started"}
 	}
-	capabilities := database.CapabilitiesForQuery(d.Spec.Engine)
+	capabilities := database.CapabilitiesForQuerySpec(d.Spec)
 	if q.IsReadOnly() && !capabilities.ReadOnlySupported {
 		return empty, &database.QueryError{Code: "database_query_read_only_unsupported", Outcome: "not_started"}
 	}
