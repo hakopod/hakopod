@@ -42,6 +42,9 @@ func (c *Client) applyScheduledJob(ctx context.Context, t Target, name string, s
 	if err := c.prepareContainerDaemon(ctx, t, name, s, d); err != nil {
 		return err
 	}
+	if err := c.prepareRuntimeProfile(ctx, t, name, s, d); err != nil {
+		return err
+	}
 	if err := c.prepareRegistryCredential(ctx, t, name, s, d); err != nil {
 		return err
 	}

@@ -84,6 +84,9 @@ func (c *Client) runJob(ctx context.Context, t Target, name string, s spec.Servi
 		if err := c.prepareContainerDaemon(ctx, t, name, s, d); err != nil {
 			return err
 		}
+		if err := c.prepareRuntimeProfile(ctx, t, name, s, d); err != nil {
+			return err
+		}
 		if err := c.prepareRegistryCredential(ctx, t, name, s, d); err != nil {
 			return err
 		}

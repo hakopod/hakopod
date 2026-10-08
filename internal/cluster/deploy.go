@@ -441,6 +441,9 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	if err := c.prepareContainerDaemon(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}
+	if err := c.prepareRuntimeProfile(ctx, t, name, svc, wanted); err != nil {
+		return 0, err
+	}
 	if err := c.prepareRegistryCredential(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}

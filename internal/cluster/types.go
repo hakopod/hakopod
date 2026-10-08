@@ -67,6 +67,8 @@ type Options struct {
 	// ContainerDaemonBindings are installation-owned grants to a container
 	// daemon reached over the network with mutual TLS.
 	ContainerDaemonBindings []ContainerDaemonBinding
+	// RuntimeProfileBindings grant exact services access to installed runtimes.
+	RuntimeProfileBindings  []RuntimeProfileBinding
 	ManagedActions          *ManagedActionsInstallation
 	SupervisorURL           string
 	ProxyNamespace          string
@@ -269,6 +271,10 @@ func newClient(kubeconfig string, verified *rest.Config, options Options) (*Clie
 		return nil, err
 	}
 	options.ContainerDaemonBindings = append([]ContainerDaemonBinding(nil), options.ContainerDaemonBindings...)
+	if err := validateRuntimeProfileInstallation(options); err != nil {
+		return nil, err
+	}
+	options.RuntimeProfileBindings = append([]RuntimeProfileBinding(nil), options.RuntimeProfileBindings...)
 	if err := ValidateManagedActionsInstallation(options.ManagedActions); err != nil {
 		return nil, err
 	}
