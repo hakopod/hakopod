@@ -28743,6 +28743,23 @@
         ],
         "additionalProperties": false
       },
+      "DatabaseClickHouseConfig": {
+        "type": "object",
+        "properties": {
+          "access_profile": {
+            "type": "string",
+            "enum": [
+              "application",
+              "tenant_admin"
+            ],
+            "description": "application is the default. tenant_admin allows a trusted service to provision read-only tenant users on a dedicated standalone instance. Backups exclude tenant access entities."
+          }
+        },
+        "required": [
+          "access_profile"
+        ],
+        "additionalProperties": false
+      },
       "DatabaseOracleConfig": {
         "type": "object",
         "properties": {
@@ -28992,6 +29009,9 @@
           },
           "oracle": {
             "$ref": "#/components/schemas/DatabaseOracleConfig"
+          },
+          "clickhouse": {
+            "$ref": "#/components/schemas/DatabaseClickHouseConfig"
           },
           "vitess": {
             "$ref": "#/components/schemas/DatabaseVitessConfig"
