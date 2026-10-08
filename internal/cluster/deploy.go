@@ -223,6 +223,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err := c.waitRetiredPods(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
+	if err := c.cleanupRetiredSecrets(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
 	if err := c.cleanupFiles(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}

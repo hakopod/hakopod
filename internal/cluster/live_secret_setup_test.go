@@ -90,5 +90,19 @@ func TestLiveDeploymentSecretSetup(t *testing.T) {
 	if err != nil || result.Status != "healthy" {
 		t.Fatalf("saved values did not reach the real job: %s, %v", result.Status, err)
 	}
-	t.Log("Missing values blocked runtime mutation; scoped creation preserved credentials; the real job verified environment and file values")
+	retired := target
+	retired.Revision++
+	retired.Previous = &app
+	retired.Spec = spec.Application{Name: app.Name, Services: map[string]spec.Service{}}
+	result, err = c.Deploy(ctx, retired, nil)
+	if err != nil || result.Status != "empty" {
+		t.Fatal("service retirement did not finish", result.Status, err)
+	}
+	if _, err = c.kube.CoreV1().Secrets(Namespace(target.ApplicationID)).Get(ctx, "verify-environment", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatal("retired service retained its generated credential", err)
+	}
+	if _, err = c.GetPlatformSecret(ctx, workloadSecretName(target.Project, target.Environment, app.Name, "password")); err != nil {
+		t.Fatal("retirement removed reusable platform secret", err)
+	}
+	t.Log("Missing values blocked mutation; real job verified values; retirement removed only its generated environment credential")
 }
