@@ -36,6 +36,21 @@ type queryRollbackConn struct {
 func (c queryRollbackConn) Prepare(string) (driver.Stmt, error) {
 	return queryRollbackStmt{fail: c.execFail}, nil
 }
+func (c queryRollbackConn) ExecContext(ctx context.Context, statement string, args []driver.NamedValue) (driver.Result, error) {
+	if statement != "ROLLBACK" {
+		return nil, driver.ErrSkip
+	}
+	if c.fail {
+		return nil, errors.New("rollback disconnected")
+	}
+	return driver.RowsAffected(0), nil
+}
+func (c queryRollbackConn) QueryContext(ctx context.Context, statement string, args []driver.NamedValue) (driver.Rows, error) {
+	if statement != "SHOW COUNT(*) WARNINGS" {
+		return nil, driver.ErrSkip
+	}
+	return &mysqlRollbackCountRows{count: 0}, nil
+}
 func (c queryRollbackConn) Close() error { return nil }
 func (c queryRollbackConn) Begin() (driver.Tx, error) {
 	if c.begins != nil {

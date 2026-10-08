@@ -195,12 +195,12 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	if kind != "read" {
 		execution, e := stmt.ExecContext(ctx, args...)
 		if e != nil {
-			outcome := sqlRollbackOutcome(tx)
+			outcome := sqlDriverRollbackOutcome(ctx, tx, engine)
 			return result, &database.QueryError{Code: sqlQueryFailureCode(engine, e), Outcome: outcome}
 		}
 		result.RowsAffected, _ = execution.RowsAffected()
 		if err = check(ctx); err != nil {
-			outcome := sqlRollbackOutcome(tx)
+			outcome := sqlDriverRollbackOutcome(ctx, tx, engine)
 			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: outcome}
 		}
 		if tx != nil {
@@ -215,13 +215,13 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	}
 	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
-		outcome := sqlRollbackOutcome(tx)
+		outcome := sqlDriverRollbackOutcome(ctx, tx, engine)
 		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: outcome}
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
-		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: sqlRollbackOutcome(tx)}
+		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: sqlDriverRollbackOutcome(ctx, tx, engine)}
 	}
 	types, _ := rows.ColumnTypes()
 	for i, name := range columns {
@@ -234,7 +234,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	metadata, _ := json.Marshal(result)
 	used := len(metadata) + 256
 	if used > q.MaxBytes {
-		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: sqlRollbackOutcome(tx)}
+		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: sqlDriverRollbackOutcome(ctx, tx, engine)}
 	}
 	for rows.Next() {
 		if len(result.Rows) >= q.MaxRows {
@@ -271,7 +271,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	if err = check(ctx); err != nil {
 		outcome := "read"
 		if !q.IsReadOnly() {
-			outcome = sqlRollbackOutcome(tx)
+			outcome = sqlDriverRollbackOutcome(ctx, tx, engine)
 		}
 		return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: outcome}
 	}
@@ -279,11 +279,11 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "unknown"}
 	}
 	if result.Truncated && !q.IsReadOnly() {
-		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: sqlRollbackOutcome(tx)}
+		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: sqlDriverRollbackOutcome(ctx, tx, engine)}
 	}
 	if !q.IsReadOnly() {
 		if err = check(ctx); err != nil {
-			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: sqlRollbackOutcome(tx)}
+			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: sqlDriverRollbackOutcome(ctx, tx, engine)}
 		}
 		if tx != nil {
 			if err = tx.Commit(); err != nil {
@@ -310,4 +310,28 @@ func (c *Client) verifySQLQueryCredential(ctx context.Context, d database.Resour
 		return queryUnavailable()
 	}
 	return nil
+}
+
+// Inspect MySQL rollback diagnostics before database/sql closes prepared statements.
+func sqlDriverRollbackOutcome(parent context.Context, tx *sql.Tx, engine string) string {
+	if engine != "mysql" {
+		return sqlRollbackOutcome(tx)
+	}
+	if tx == nil {
+		return "unknown"
+	}
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "ROLLBACK"); err != nil {
+		return "unknown"
+	}
+	var warnings int64
+	if err := tx.QueryRowContext(ctx, "SHOW COUNT(*) WARNINGS").Scan(&warnings); err != nil || warnings != 0 {
+		return "unknown"
+	}
+	if err := tx.Rollback(); err != nil {
+		return "unknown"
+	}
+	return "rolled_back"
 }
