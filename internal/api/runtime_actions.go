@@ -68,7 +68,7 @@ func (s *Server) runtimeAction(w http.ResponseWriter, r *http.Request, action st
 		return
 	}
 	artifact := resolved.Services[name]
-	if svc.Job != nil && (svc.Job.Schedule == nil || !power) {
+	if svc.Job != nil && ((svc.Job.Schedule == nil && svc.Job.Invocation == nil) || !power) {
 		problem(w, 409, "deployment_job", "Deployment jobs do not support runtime actions")
 		return
 	}
