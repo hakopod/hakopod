@@ -11,7 +11,7 @@ func TestQueryTransactionScopes(t *testing.T) {
 		}
 		if engine == "vitess" {
 			want = "single_shard"
-			if c.Supported || c.CrossShardDML == nil || *c.CrossShardDML {
+			if !c.Supported || !c.ReadOnlySupported || !c.TransactionalDML || len(c.ExecutionModes) != 2 || c.ExecutionModes[0] != "transaction" || c.ExecutionModes[1] != "nontransactional" || c.CrossShardDML == nil || *c.CrossShardDML {
 				t.Fatal("Vitess exceeded qualified scope")
 			}
 		} else if c.CrossShardDML != nil {
