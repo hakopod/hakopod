@@ -93,6 +93,10 @@ func (c *Client) oracleTLSConfig(ctx context.Context, d database.Resource) (*tls
 }
 
 func (c *Client) oracleApplicationConnection(ctx context.Context, d database.Resource, m database.Member, secure bool) (*sql.DB, error) {
+	return c.oracleApplicationConnectionOptions(ctx, d, m, secure, false)
+}
+
+func (c *Client) oracleApplicationConnectionOptions(ctx context.Context, d database.Resource, m database.Member, secure, query bool) (*sql.DB, error) {
 	secret, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
 	if err != nil || secret.Labels[databaseOwner] != d.ID || secret.Labels[managedBy] != "hakopod" || len(secret.Data["password"]) < 32 || len(secret.Data["password"]) > 128 {
 		return nil, fmt.Errorf("Oracle application credentials are unavailable")
@@ -100,6 +104,9 @@ func (c *Client) oracleApplicationConnection(ctx context.Context, d database.Res
 	// Negotiate each physical connection. Replaying a cached fast-login cookie
 	// is not reliable after an Oracle 26ai listener restart or identity renewal.
 	options := map[string]string{"CONNECTION TIMEOUT": "8", "TIMEOUT": "10", "SSL VERIFY": "true", "FAST LOGIN": "false"}
+	if query {
+		options["PREFETCH_ROWS"] = "1"
+	}
 	if secure {
 		options["SSL"] = "enable"
 	}
