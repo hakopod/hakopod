@@ -106,8 +106,14 @@ func TestManagedVitessQueryLive(t *testing.T) {
 		out := &databaseBoundedWriter{limit: 1024}
 		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
 		probeErr := c.DatabaseExec(probeCtx, d, tablet, vitessLocalCommand("vt_dba", "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID<>CONNECTION_ID() AND COMMAND='Query' AND INFO LIKE '%hakopod_vitess_started_probe%'"), nil, out)
+		probeContextDone := probeCtx.Err() != nil
 		probeCancel()
 		if probeErr != nil {
+			category := "other"
+			if probeContextDone {
+				category = "context_done"
+			}
+			t.Logf("Vitess synthetic observer category=%s context_done=%t", category, probeContextDone)
 			t.Fatal("tablet execution observer unavailable")
 		}
 		started = strings.TrimSpace(out.String()) == "1"
@@ -229,22 +235,42 @@ func TestManagedVitessShardedQueryLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkVitessShardRouting(t, ctx, c, d, observed)
-	cross, err := query("UPDATE records SET label=?", "cross-shard committed")
-	if err != nil || cross.Outcome != "committed" || cross.RowsAffected != 32 {
-		t.Fatal("cross-shard commit", err, cross.Outcome, cross.RowsAffected)
-	}
-	verifyLabels := func(expected string) {
+	snapshot := func() database.QueryResult {
 		t.Helper()
-		check, e := queryVitessSQLFixture(ctx, c, d, database.QueryRequest{SQL: "SELECT COUNT(*) FROM records WHERE label=?", Parameters: []any{expected}})
-		if e != nil || len(check.Rows) != 1 || len(check.Rows[0]) != 1 || check.Rows[0][0] == nil || *check.Rows[0][0] != "32" {
-			t.Fatal("cross-shard label readback", e)
+		r, e := queryVitessSQLFixture(ctx, c, d, database.QueryRequest{SQL: "SELECT id,payload,label FROM records ORDER BY id"})
+		if e != nil || len(r.Rows) != 32 {
+			t.Fatal("complete shard snapshot failed")
+		}
+		return r
+	}
+	before := snapshot()
+	for _, mode := range []string{"transaction", "nontransactional"} {
+		_, e := queryVitessSQLFixture(ctx, c, d, database.QueryRequest{SQL: "UPDATE records SET label=?", Parameters: []any{"rejected scatter"}, ReadOnly: &write, ExecutionMode: mode})
+		var failure *database.QueryError
+		wantOutcome := "unknown"
+		if mode == "transaction" {
+			wantOutcome = "rolled_back"
+		}
+		if !errors.As(e, &failure) || failure.Code != "database_query_failed" || failure.Outcome != wantOutcome {
+			t.Fatal("cross-shard DML lacked server rejection outcome", mode)
+		}
+		if !reflect.DeepEqual(before.Rows, snapshot().Rows) {
+			t.Fatal("rejected cross-shard DML changed data", mode)
 		}
 	}
-	verifyLabels("cross-shard committed")
-	revoked := database.QueryRequest{SQL: "UPDATE records SET label='revoked'", ReadOnly: &write}
+	one, e := query("UPDATE records SET label=? WHERE id=?", "single-shard committed", json.Number("1"))
+	if e != nil || one.Outcome != "committed" || one.RowsAffected != 1 {
+		t.Fatal("single-shard commit failed")
+	}
+	afterCommit := snapshot()
+	expectedCommit := snapshotRowsWithLabel(before.Rows, "1", "single-shard committed")
+	if !reflect.DeepEqual(expectedCommit, afterCommit.Rows) {
+		t.Fatal("single-shard commit changed unexpected data")
+	}
+	revoked := database.QueryRequest{SQL: "UPDATE records SET label=? WHERE id=?", Parameters: []any{"revoked", json.Number("1")}, ReadOnly: &write}
 	revoked.Validate()
 	calls := 0
-	_, err = c.querySQLDriver(ctx, d, revoked, func(context.Context) error {
+	_, e = c.querySQLDriver(ctx, d, revoked, func(context.Context) error {
 		calls++
 		if calls >= 3 {
 			return context.Canceled
@@ -252,26 +278,38 @@ func TestManagedVitessShardedQueryLive(t *testing.T) {
 		return nil
 	})
 	var denied *database.QueryError
-	if !errors.As(err, &denied) || denied.Code != "database_query_authority_changed" || denied.Outcome != "rolled_back" || calls != 3 {
-		t.Fatal("sharded revoke", err, calls)
+	if !errors.As(e, &denied) || denied.Code != "database_query_authority_changed" || denied.Outcome != "rolled_back" || calls != 3 {
+		t.Fatal("single-shard revoke failed")
 	}
-	r, err = queryVitessSQLFixture(ctx, c, d, read)
-	if err != nil || len(r.Rows) != 1 || r.Rows[0][0] == nil || *r.Rows[0][0] != "32" {
-		t.Fatal("sharded revoke persisted", err)
+	if !reflect.DeepEqual(afterCommit.Rows, snapshot().Rows) {
+		t.Fatal("revoked single-shard write changed data")
 	}
-	verifyLabels("cross-shard committed")
-	nontransactional := database.QueryRequest{SQL: "UPDATE records SET label=?", Parameters: []any{"cross-shard applied"}, ReadOnly: &write, ExecutionMode: "nontransactional"}
-	applied, e := queryVitessSQLFixture(ctx, c, d, nontransactional)
-	if e != nil || applied.Outcome != "applied" || applied.RowsAffected != 32 {
-		t.Fatal("cross-shard nontransactional outcome", e, applied.Outcome, applied.RowsAffected)
+	applied, e := queryVitessSQLFixture(ctx, c, d, database.QueryRequest{SQL: "UPDATE records SET label=? WHERE id=?", Parameters: []any{"single-shard applied", json.Number("1")}, ReadOnly: &write, ExecutionMode: "nontransactional"})
+	if e != nil || applied.Outcome != "applied" || applied.RowsAffected != 1 {
+		t.Fatal("single-shard nontransactional write failed")
 	}
-	verifyLabels("cross-shard applied")
+	final := snapshot()
+	if !reflect.DeepEqual(snapshotRowsWithLabel(afterCommit.Rows, "1", "single-shard applied"), final.Rows) {
+		t.Fatal("single-shard applied write changed unexpected data")
+	}
 	limit := database.QueryRequest{SQL: "SELECT id FROM records ORDER BY id", MaxRows: 2}
 	r, err = queryVitessSQLFixture(ctx, c, d, limit)
 	if err != nil || len(r.Rows) != 2 || !r.Truncated {
 		t.Fatal("sharded limit", err)
 	}
-	t.Log("Two-shard Vitess routing, bound writes, rollback and bounded results passed")
+	t.Log("Two-shard Vitess reads, single-shard writes and rejected cross-shard persistence controls passed")
+}
+
+func snapshotRowsWithLabel(rows [][]*string, id, label string) [][]*string {
+	expected := make([][]*string, len(rows))
+	for i, row := range rows {
+		expected[i] = append([]*string(nil), row...)
+		if len(row) == 3 && row[0] != nil && *row[0] == id {
+			value := label
+			expected[i][2] = &value
+		}
+	}
+	return expected
 }
 
 // Diagnostics use only a fixed synthetic SELECT and never print SQL, result
