@@ -8,6 +8,8 @@ import { FormError, FormPage, FormSection } from '../components/form-page'
 import { ErrorState, Loading, Note } from '../components/shared'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import { TOMLEditor } from '../components/toml-editor'
+import { supportsSQLGrammar, type SQLDialect } from '../lib/sql-language'
 import { Textarea } from '../components/ui/textarea'
 import { SelectField } from '../components/ui/select'
 
@@ -35,6 +37,7 @@ function QueryPage({ id }: { id: string }) {
   useResourceScope(d)
   const [sql, setSQL] = useState('')
   const [parameters, setParameters] = useState('[]')
+  const parameterField = useRef<HTMLTextAreaElement>(null)
   const [mode, setMode] = useState('read')
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('transaction')
   const [maxRows, setMaxRows] = useState('100')
@@ -213,6 +216,12 @@ function QueryPage({ id }: { id: string }) {
         </span>
         <span>{d.spec.engine}</span>
       </div>
+      {capability?.cross_shard_dml === false && (
+        <Note>
+          Data changes must target one shard, including nontransactional requests. Reads may span
+          shards. Schema changes can partially apply.
+        </Note>
+      )}
       {capabilities.isPending ? (
         <Loading />
       ) : capabilities.error ? (
@@ -291,25 +300,31 @@ function QueryPage({ id }: { id: string }) {
             )}
             <label>
               SQL
-              <Textarea
-                required
+              <TOMLEditor
+                language="sql"
+                dialect={d.spec.engine as SQLDialect}
+                label="SQL statement"
+                describedBy="sql-instruction"
+                onExit={() => parameterField.current?.focus()}
                 value={sql}
-                rows={8}
                 disabled={busy}
-                className="font-mono"
-                aria-describedby="sql-instruction"
-                onChange={(event) => {
-                  setSQL(event.target.value)
+                onChange={(value) => {
+                  setSQL(value)
                   invalidateReview()
                 }}
               />
             </label>
             <p id="sql-instruction" className="text-sm text-muted-foreground">
-              {parameterInstruction(capability.parameter_style)}
+              {parameterInstruction(capability.parameter_style)}{' '}
+              {supportsSQLGrammar(d.spec.engine)
+                ? 'Grammar hints are advisory and may flag valid bind placeholders or server extensions.'
+                : 'Grammar lint is unavailable for this dialect. Highlighting and keyword completion remain available.'}{' '}
+              The server validates execution. Press Escape to move to Parameters.
             </p>
             <label>
               Parameters
               <Textarea
+                ref={parameterField}
                 value={parameters}
                 rows={3}
                 disabled={busy}
@@ -328,7 +343,9 @@ function QueryPage({ id }: { id: string }) {
               <Note>
                 {executionMode === 'nontransactional'
                   ? 'This statement runs without a transaction. Changes can persist if execution fails or the connection closes. The API cannot roll them back.'
-                  : 'Writes commit one transaction. Check the statement and target before execution. A lost connection during commit can leave the outcome unknown.'}
+                  : capability.transaction_scope === 'single_shard'
+                    ? 'Writes commit one transaction on one shard. Check the statement and target before execution. A lost connection during commit can leave the outcome unknown.'
+                    : 'Writes commit one transaction. Check the statement and target before execution. A lost connection during commit can leave the outcome unknown.'}
               </Note>
             )}
             {capability.ddl_commit === 'implicit_commit' && (
@@ -365,7 +382,9 @@ function QueryPage({ id }: { id: string }) {
                 </p>
                 <p>
                   {review.executionMode === 'transaction'
-                    ? 'One transaction'
+                    ? capability.transaction_scope === 'single_shard'
+                      ? 'One transaction on one shard'
+                      : 'One transaction'
                     : 'Without a transaction'}{' '}
                   · Maximum {review.maxRows} result rows
                 </p>
