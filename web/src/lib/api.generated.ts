@@ -6497,6 +6497,13 @@ export interface components {
             /** @enum {string} */
             mode: "required";
         };
+        DatabaseClickHouseConfig: {
+            /**
+             * @description application is the default. tenant_admin allows a trusted service to provision read-only tenant users on a dedicated standalone instance. Backups exclude tenant access entities.
+             * @enum {string}
+             */
+            access_profile: "application" | "tenant_admin";
+        };
         DatabaseOracleConfig: {
             /** @enum {string} */
             edition: "free" | "enterprise";
@@ -6568,6 +6575,7 @@ export interface components {
             tls?: components["schemas"]["DatabaseTLSConfig"];
             pooling?: components["schemas"]["DatabasePooling"];
             oracle?: components["schemas"]["DatabaseOracleConfig"];
+            clickhouse?: components["schemas"]["DatabaseClickHouseConfig"];
             vitess?: components["schemas"]["DatabaseVitessConfig"];
         };
         DatabaseMember: {
