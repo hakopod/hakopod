@@ -153,3 +153,31 @@ test('new key route refuses unavailable URL scope and the header uses that scope
   assert.ok(page.indexOf("selected.status !== 'ready'") < page.indexOf('<CreateKey'))
   assert.ok(shell.includes("scopedListPage || location.pathname === '/settings/keys/new'"))
 })
+
+
+test('scope deletion transports retain authentication, origin and confirmation', async (t) => {
+  for (const path of ['projects/demo', 'projects/demo/environments/staging']) {
+    const body = JSON.stringify({ confirm_name: path.endsWith('staging') ? 'staging' : 'demo' })
+    const input = new Request(`http://127.0.0.1/api/${path}`, {
+      method: 'DELETE', headers: { Origin: 'http://127.0.0.1' }, body,
+    })
+    assert.equal((await proxy({ request: input.clone(), params: { _splat: path } })).status, 401)
+    input.headers.set('Cookie', sessionCookie(input, sealSession('fixture-token')).split(';')[0])
+    const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+      assert.equal(new URL(String(url)).pathname, `/api/v1/${path}`)
+      assert.equal(init?.method, 'DELETE')
+      assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer fixture-token')
+      assert.equal(init?.body, body)
+      return Response.json({ deleted: true })
+    })
+    assert.equal((await proxy({ request: input, params: { _splat: path } })).status, 200)
+    const foreign = new Request(`http://127.0.0.1/api/${path}`, {
+      method: 'DELETE', headers: { Origin: 'https://other.example' }, body,
+    })
+    assert.equal((await proxy({ request: foreign, params: { _splat: path } })).status, 403)
+    assert.equal(mocked.mock.callCount(), 1)
+    mocked.mock.restore()
+  }
+  for (const path of ['projects/demo/environments/staging/delete', 'projects/demo/members/user'])
+    assert.equal(allowed.some((pattern) => pattern.test(path)), false, path)
+})
