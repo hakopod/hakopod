@@ -8,6 +8,7 @@ import (
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -138,6 +139,7 @@ func TestSessionRuntimeRequiresRunscAndPinnedGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	class.Handler = "runsc"
+	class.Overhead = &nodev1.Overhead{PodFixed: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("50Mi")}}
 	if _, err = c.kube.NodeV1().RuntimeClasses().Update(ctx, class, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +164,48 @@ func TestSessionCapacityIncludesConcurrentWorkers(t *testing.T) {
 	profile := spec.EffectiveResources(target.Spec.Services["worker"])
 	cpu := resource.MustParse(profile.CPURequest)
 	memory := resource.MustParse(profile.MemoryRequest)
-	if got.CPURequestMillis != cpu.MilliValue()*spec.MaxSandboxSessions || got.MemoryRequestBytes != memory.Value()*spec.MaxSandboxSessions {
+	if got.CPURequestMillis != (max(cpu.MilliValue(), sessionGuardCPURequestMillis)+sessionRuntimeCPUOverheadMillis)*spec.MaxSandboxSessions || got.MemoryRequestBytes != (max(memory.Value(), sessionGuardMemoryRequestBytes)+sessionRuntimeMemoryOverheadBytes)*spec.MaxSandboxSessions {
 		t.Fatal("session concurrency was omitted from capacity", got)
+	}
+}
+
+func TestSessionCapacityIncludesGuardAndRuntimeOnSelectedNode(t *testing.T) {
+	_, target := sessionTemplateFixture(t)
+	service := target.Spec.Services["worker"]
+	service.Resources = &spec.Resources{CPURequest: "1m", MemoryRequest: "1Mi"}
+	cpu, memory := scheduledPodRequests(service, nil)
+	if cpu.MilliValue() != 70 || memory.Value() != 82<<20 {
+		t.Fatal("guard initialization or runtime overhead omitted", cpu.String(), memory.String())
+	}
+	node := func(name, cpu, memory string) *corev1.Node {
+		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu), corev1.ResourceMemory: resource.MustParse(memory)}}}
+	}
+	target.Spec.Services["worker"] = service
+	c := &Client{kube: fake.NewClientset(node("tiny", "60m", "80Mi"))}
+	report, err := c.Preflight(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	has := func(code, status string) bool {
+		for _, check := range report.Checks {
+			if check.Code == code && check.Status == status {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("service_capacity", "blocked") {
+		t.Fatal("single worker overhead did not block undersized node", report)
+	}
+	service.NodeName = "one"
+	service.Resources = &spec.Resources{CPURequest: "200m", MemoryRequest: "128Mi"}
+	target.Spec.Services["worker"] = service
+	c.kube = fake.NewClientset(node("one", "1", "1Gi"), node("two", "1", "1Gi"))
+	report, err = c.Preflight(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !has("resources", "passed") || !has("node_capacity", "blocked") {
+		t.Fatal("pinned session workers incorrectly used aggregate cluster capacity", report)
 	}
 }

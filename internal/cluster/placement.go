@@ -236,14 +236,13 @@ func (c *Client) validatePlacement(ctx context.Context, t Target) error {
 
 // Pinned workloads compete on their selected node, not the cluster total.
 func pinnedRequests(s spec.Service, policy *WorkloadPolicy) (int64, int64) {
-	p := spec.EffectiveResources(s)
-	if policy != nil && policy.MemoryRequest != "" {
-		p.MemoryRequest = policy.MemoryRequest
-	}
-	cpu, mem := quantityValues(p.CPURequest, p.MemoryRequest)
+	cpu, memory := scheduledPodRequests(s, policy)
 	replicas := max(s.Replicas, 1)
+	if s.Session != nil {
+		replicas = spec.MaxSandboxSessions
+	}
 	if s.Autoscaling != nil {
 		replicas = max(replicas, s.Autoscaling.MaxReplicas)
 	}
-	return cpu * int64(replicas), mem * int64(replicas)
+	return cpu.MilliValue() * int64(replicas), memory.Value() * int64(replicas)
 }
