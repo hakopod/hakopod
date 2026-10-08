@@ -20,6 +20,7 @@ OWNER = "io.hakopod.rabbit-mount-owner"
 CLUSTER = "hakopod-dev"
 CONTEXT = "k3d-hakopod-dev"
 K3S = "rancher/k3s:v1.35.8-k3s1@sha256:59fe491fd3b73204e499e40b325240d85c42c7189c3ae50150d37b78243f3b32"
+TOOLS = "ghcr.io/k3d-io/k3d-tools:5.9.0@sha256:f18c1e21aba123fe6ff315c514a0feffc005f587aa3db773e89489c2118842dd"
 IDENTIFIER = re.compile(r"[a-f0-9]{64}")
 
 
@@ -65,17 +66,21 @@ class Fixture:
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 16443))
 
-    def verify_node(self, identifier):
+    def verify_node(self, identifier, *, helper=False):
         require(IDENTIFIER.fullmatch(identifier), "Development node identity is not exact")
         objects = json.loads(self.run(["docker", "container", "inspect", identifier]))
         require(len(objects) == 1, "Development node inspection is ambiguous")
         node = objects[0]
         labels = node.get("Config", {}).get("Labels", {})
-        require(node.get("Id") == identifier and node.get("Name") == "/k3d-hakopod-dev-server-0" and
+        name = "/k3d-hakopod-dev-tools" if helper else "/k3d-hakopod-dev-server-0"
+        require(node.get("Id") == identifier and node.get("Name") == name and
                 labels.get(OWNER) == self.owner and labels.get("k3d.cluster") == CLUSTER and
                 node.get("State", {}).get("Running") is True, "Development node identity or owner changed")
         network = node.get("NetworkSettings", {}).get("Networks", {}).get(self.network, {})
         require(network.get("NetworkID") == self.report.get("network_id"), "Development node network changed")
+        if helper:
+            require(node.get("Config", {}).get("Image") == TOOLS and not node.get("Mounts"),
+                    "Development helper image or mounts changed")
         return node
 
     def verify_cluster(self):
@@ -90,6 +95,15 @@ class Fixture:
         identifier = self.run(["docker", "network", "create", "--label", OWNER + "=" + self.owner, self.network]).strip()
         require(IDENTIFIER.fullmatch(identifier), "Docker network identity was not exact")
         self.report["network_id"] = identifier
+        # k3d 5.9 always needs a tools node, even without an image volume. Own a
+        # bounded helper before cluster creation; no Docker socket is required.
+        helper = self.run(["docker", "run", "--detach", "--name", "k3d-hakopod-dev-tools", "--network", self.network,
+                           "--label", OWNER + "=" + self.owner, "--label", "app=k3d", "--label", "k3d.cluster=" + CLUSTER,
+                           "--cpus", "0.1", "--memory", "64m", "--memory-swap", "64m", "--pids-limit", "32",
+                           "--user", "65532:65532", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
+                           TOOLS, "noop"], timeout=90).strip()
+        self.report["helper_id"] = helper
+        self.verify_node(helper, helper=True)
         self.cluster_attempted = True
         self.save()
         self.run([self.k3d, "cluster", "create", CLUSTER, "--servers", "1", "--agents", "0", "--image", K3S,
@@ -187,7 +201,8 @@ class Fixture:
                     labels = item["Config"]["Labels"] if kind == "container" else item["Labels"]
                     require(IDENTIFIER.fullmatch(identifier) and labels.get(OWNER) == self.owner, "Cleanup owner changed")
                     if kind == "container":
-                        require(item["Name"] == "/k3d-hakopod-dev-server-0" and labels.get("k3d.cluster") == CLUSTER, "Unexpected owned container")
+                        require(item["Name"] in ("/k3d-hakopod-dev-server-0", "/k3d-hakopod-dev-tools") and
+                                labels.get("k3d.cluster") == CLUSTER, "Unexpected owned container")
                         self.run(["docker", "container", "rm", "--force", "--volumes", identifier], timeout=30, cleanup=True)
                     else:
                         require(item["Name"] == self.network and not item.get("Containers"), "Owned network still has attached resources")

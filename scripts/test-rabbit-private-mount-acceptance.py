@@ -28,7 +28,7 @@ class FakeFixture(fixture_module.Fixture):
         if args[:3] == ["docker", "container", "rm"]:
             if self.fail_container_remove:
                 raise RuntimeError("container removal failed")
-            self.objects["container"] = []
+            self.objects["container"] = [item for item in self.objects["container"] if item["Id"] != args[-1]]
             return ""
         if args[:3] == ["docker", "network", "rm"]:
             self.objects["network"] = []
@@ -70,6 +70,14 @@ class OwnershipTests(unittest.TestCase):
         self.assertFalse(self.fixture.report["cleanup_ok"])
         self.assertFalse(any(call[:3] == ["docker", "container", "rm"] for call in self.fixture.commands))
         self.assertEqual(len(self.fixture.objects["container"]), 1)
+
+    def test_owned_helper_cleanup_uses_exact_id(self):
+        self.fixture.owned()
+        self.fixture.objects["container"].append({"Id": "c" * 64, "Name": "/k3d-hakopod-dev-tools",
+                                                  "Config": {"Labels": {fixture_module.OWNER: self.fixture.owner, "k3d.cluster": "hakopod-dev"}}})
+        self.fixture.cleanup()
+        self.assertTrue(self.fixture.report["cleanup_ok"])
+        self.assertIn(["docker", "container", "rm", "--force", "--volumes", "c" * 64], self.fixture.commands)
 
     def test_network_with_attached_resources_is_preserved(self):
         self.fixture.owned()
@@ -116,6 +124,23 @@ class OwnershipTests(unittest.TestCase):
         self.fixture.kube = lambda _args: json.dumps({"metadata": {"uid": "replaced"}})
         with self.assertRaisesRegex(RuntimeError, "cluster identity changed"):
             self.fixture.verify_cluster()
+
+    def test_helper_image_and_mounts_must_match(self):
+        self.fixture.owned()
+        node = self.fixture.objects["container"][0]
+        node.update(Name="/k3d-hakopod-dev-tools", State={"Running": True}, Mounts=[])
+        node["Config"]["Image"] = fixture_module.TOOLS
+        node["NetworkSettings"] = {"Networks": {self.fixture.network: {"NetworkID": "b" * 64}}}
+        self.fixture.report["network_id"] = "b" * 64
+        self.fixture.run = lambda _args, **_kwargs: json.dumps([node])
+        self.fixture.verify_node("a" * 64, helper=True)
+        node["Mounts"] = [{"Destination": "/var/run/docker.sock"}]
+        with self.assertRaisesRegex(RuntimeError, "helper image or mounts changed"):
+            self.fixture.verify_node("a" * 64, helper=True)
+        node["Mounts"] = []
+        node["Config"]["Image"] = "foreign"
+        with self.assertRaisesRegex(RuntimeError, "helper image or mounts changed"):
+            self.fixture.verify_node("a" * 64, helper=True)
 
 
 if __name__ == "__main__":
