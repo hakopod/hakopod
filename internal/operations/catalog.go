@@ -28,6 +28,8 @@ type RequestFunc func(context.Context, string, string, any, string, any) error
 type Scope struct{ Project, Environment string }
 type Operation struct {
 	ID           string         `json:"id"`
+	Summary      string         `json:"summary,omitempty"`
+	Description  string         `json:"description,omitempty"`
 	Method       string         `json:"method"`
 	Path         string         `json:"path"`
 	Mutating     bool           `json:"mutating"`
@@ -75,6 +77,8 @@ func init() {
 			}
 			var entry struct {
 				ID          string      `json:"operationId"`
+				Summary     string      `json:"summary"`
+				Description string      `json:"description"`
 				Policy      Policy      `json:"x-hakopod-agent"`
 				Parameters  []parameter `json:"parameters"`
 				RequestBody struct {
@@ -87,7 +91,7 @@ func init() {
 			if err := json.Unmarshal(raw, &entry); err != nil {
 				panic(err)
 			}
-			op := Operation{ID: entry.ID, Method: strings.ToUpper(method), Path: path, Mutating: method != "get", Parameters: entry.Parameters, Body: entry.RequestBody.Content["application/json"].Schema, bodyRequired: entry.RequestBody.Required}
+			op := Operation{ID: entry.ID, Summary: entry.Summary, Description: entry.Description, Method: strings.ToUpper(method), Path: path, Mutating: method != "get", Parameters: entry.Parameters, Body: entry.RequestBody.Content["application/json"].Schema, bodyRequired: entry.RequestBody.Required}
 			op.Policy = entry.Policy
 			op.Policy, op.Exclusion = classify(op)
 			op.Available = op.Exclusion == ""
