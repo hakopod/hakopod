@@ -14,6 +14,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE_PARSER = runpy.run_path(str(ROOT / "release/managed-runtime-availability.py"))
+COMPAT = runpy.run_path(str(ROOT / "release/runtime-source-compatibility.py"))
 GATE_PATH = "internal/cluster/database_oracle_free_qualification.go"
 SHA = re.compile(r"[0-9a-f]{64}")
 UPSTREAM = "ff6f9178c1650df30afbf203ebdb633e9b80760a"
@@ -79,6 +80,7 @@ def source_files(root):
         "scripts/run-development-oracle-free-http-acceptance.py",
         "scripts/oracle-free-http-fixtures.py",
         "release/managed-runtime-availability.py",
+        "release/runtime-source-compatibility.py",
         "release/verify-oracle-free-runtime.py", "release/record-oracle-free-qualification.py"))
     total, result = 0, {}
     for path in sorted(paths):
@@ -125,6 +127,17 @@ def source_images(root):
     }
 
 
+def protected_source(path):
+    return (path in {"go.mod", "go.sum", *BUILD_INPUTS, "installer/oracle_free_controller.py",
+                     "scripts/run-development-oracle-free-acceptance.py"}
+            or path.startswith(("auth/", "patches/oracle-operator/"))
+            or path.startswith("internal/") and not path.startswith("internal/api/")
+            or "oracle" in path.lower() and not path.startswith("internal/api/") and path not in {
+                "release/verify-oracle-free-runtime.py", "release/record-oracle-free-qualification.py",
+                "scripts/run-development-oracle-free-http-acceptance.py",
+                "scripts/oracle-free-http-fixtures.py"})
+
+
 def accepted_events(events, required, package="github.com/hakopod/hakopod/internal/cluster"):
     if not isinstance(events, list) or not 1 <= len(events) <= 512:
         raise ValueError("Oracle native test events are missing or oversized")
@@ -147,9 +160,12 @@ def accepted_events(events, required, package="github.com/hakopod/hakopod/intern
     return passed
 
 
-def validate_acceptance(acceptance, sources, images):
-    expected = {"schema_version", "context", "execution", "platform", "source_files", "images", "attempts"}
-    if not isinstance(acceptance, dict) or set(acceptance) != expected or type(acceptance["schema_version"]) is not int or acceptance["schema_version"] != 1:
+def validate_acceptance(acceptance, sources, images, root=ROOT):
+    version = acceptance.get("schema_version") if isinstance(acceptance, dict) else None
+    expected = ({"schema_version", "context", "execution", "platform", "source_files", "images", "attempts"}
+                if version == 1 else {"schema_version", "context", "execution", "platform", "source_files",
+                                      "qualified_source_files", "qualified_manifest_sha256", "images", "attempts"})
+    if not isinstance(acceptance, dict) or set(acceptance) != expected or type(version) is not int or version not in (1, 2):
         raise ValueError("Oracle native acceptance schema is invalid")
     if acceptance["context"] != "k3d-hakopod-dev" or acceptance["execution"] != "native" or acceptance["platform"] != "linux/amd64" or acceptance["source_files"] != sources or acceptance["images"] != images:
         raise ValueError("Oracle native evidence belongs to another source, image or cluster")
@@ -157,10 +173,15 @@ def validate_acceptance(acceptance, sources, images):
     if not isinstance(attempts, list) or len(attempts) != len(ALL_TESTS):
         raise ValueError("Oracle requires three cluster cases and native HTTP/API acceptance")
     seen = set()
-    source_sha = hashlib.sha256(json.dumps(sources, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    qualified = acceptance.get("qualified_source_files", sources)
+    if version == 2:
+        COMPAT["validate"](root, "oracle-free", qualified, sources, protected_source,
+                           acceptance.get("qualified_manifest_sha256"))
     for attempt in attempts:
         fields = {"case", "exit_code", "source_manifest_sha256", "source_manifest_after_sha256", "log_sha256",
                   "test_events", "cluster_uid", "node_uids", "sidb_crd_uid", "cleanup"}
+        if version == 2:
+            fields.add("source_files")
         if isinstance(attempt, dict) and attempt.get("case") == "http-api":
             fields.add("host_fixture_receipt_sha256")
         if not isinstance(attempt, dict) or set(attempt) != fields:
@@ -169,7 +190,10 @@ def validate_acceptance(acceptance, sources, images):
         if not isinstance(case, str) or case not in ALL_TESTS or case in seen:
             raise ValueError("Oracle native cases are unknown or duplicated")
         seen.add(case)
-        if type(attempt["exit_code"]) is not int or attempt["exit_code"] != 0 or attempt["source_manifest_sha256"] != source_sha or attempt["source_manifest_after_sha256"] != source_sha or not isinstance(attempt["log_sha256"], str) or not SHA.fullmatch(attempt["log_sha256"]):
+        attempt_sources = attempt.get("source_files", sources)
+        expected_sources = sources if case == "http-api" else qualified
+        source_sha = hashlib.sha256(json.dumps(attempt_sources, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if attempt_sources != expected_sources or type(attempt["exit_code"]) is not int or attempt["exit_code"] != 0 or attempt["source_manifest_sha256"] != source_sha or attempt["source_manifest_after_sha256"] != source_sha or not isinstance(attempt["log_sha256"], str) or not SHA.fullmatch(attempt["log_sha256"]):
             raise ValueError("Oracle native attempt failed or its source changed")
         for key in ("cluster_uid", "sidb_crd_uid"):
             if not isinstance(attempt[key], str) or not re.fullmatch(r"[a-f0-9-]{36}", attempt[key]):
@@ -257,7 +281,7 @@ def validate_metadata(directory, root=ROOT):
     expected = {"bin/manager": binaries["/manager"], "upstream.patch": file_hash(directory / "operator-upstream.patch"), "crds/singleinstancedatabases.yaml": SIDB_SHA256}
     if artifacts != expected or file_hash(directory / "sidb-v4.yaml") != SIDB_SHA256:
         raise ValueError("Oracle native operator artifacts differ from its source build")
-    validate_acceptance(read_json(directory / "native-acceptance.json"), sources, images)
+    validate_acceptance(read_json(directory / "native-acceptance.json"), sources, images, root)
     return manifest
 
 

@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import runpy
 import tempfile
 import unittest
 from unittest import mock
@@ -12,6 +13,7 @@ from unittest import mock
 SPEC = importlib.util.spec_from_file_location("oracle_release", Path(__file__).with_name("verify-oracle-free-runtime.py"))
 ORACLE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ORACLE)
+RECORDER = runpy.run_path(str(Path(__file__).with_name("record-oracle-free-qualification.py")))
 
 
 def sha(raw):
@@ -34,6 +36,7 @@ class OracleQualification(unittest.TestCase):
                      "scripts/oracle-free-http-fixtures.py",
                      "installer/oracle_free_controller.py", "release/verify-oracle-free-runtime.py",
                      "release/managed-runtime-availability.py",
+                     "release/runtime-source-compatibility.py",
                      "release/record-oracle-free-qualification.py"]:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,8 +106,44 @@ class OracleQualification(unittest.TestCase):
         self.manifest["files"] = {name: ORACLE.file_hash(self.directory / name) for name in ORACLE.FILES}
         (self.directory / "manifest.json").write_text(json.dumps(self.manifest))
 
+    def compatibility(self, current, changes):
+        path = self.root / "release/managed-oracle-free/source-compatibility.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"schema_version": 1, "runtime": "oracle-free",
+            "qualified_release": {"tag": "v0.1.0-alpha.56", "commit": "a" * 40,
+                "manifest_sha256": ORACLE.file_hash(self.directory / "manifest.json")},
+            "reviewed_release": "v0.1.0-alpha.57", "control_plane_commit": "b" * 40,
+            "regression_evidence": {"url": "https://github.com/hakopod/hakopod/actions/runs/123",
+                                    "tests": ["TestManagedOracleFreeHTTPLive"]},
+            "bootstrap": None,
+            "delta": {"baseline_sha256": ORACLE.COMPAT["canonical_hash"](self.sources),
+                      "current_sha256": ORACLE.COMPAT["canonical_hash"](current), "changes": changes}}))
+
     def test_complete_native_qualification_is_accepted(self):
         self.assertEqual(ORACLE.validate_metadata(self.directory, self.root), self.manifest)
+
+    def test_historical_manifest_is_semantically_bound_to_cluster_reports(self):
+        self.assertEqual(RECORDER["validate_qualified_manifest"](
+            self.directory / "manifest.json", self.sources, self.images), self.manifest)
+        mutations = (
+            lambda value: value.update(schema_version=2),
+            lambda value: value["source"].update(repository="https://github.com/apecloud/myduckserver"),
+            lambda value: value["source"].update(revision="f" * 40),
+            lambda value: value.update(source_files={}),
+            lambda value: value["images"]["operator"].update(reference=ORACLE.PACKAGE + "@sha256:" + "f" * 64),
+            lambda value: value.update(files={}),
+        )
+        original = (self.directory / "manifest.json").read_text()
+        for mutate in mutations:
+            value = copy.deepcopy(self.manifest)
+            mutate(value)
+            (self.directory / "manifest.json").write_text(json.dumps(value))
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "Historical Oracle manifest"):
+                RECORDER["validate_qualified_manifest"](self.directory / "manifest.json", self.sources, self.images)
+        (self.directory / "manifest.json").write_text('{"schema_version":1,"schema_version":1}')
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            RECORDER["validate_qualified_manifest"](self.directory / "manifest.json", self.sources, self.images)
+        (self.directory / "manifest.json").write_text(original)
 
     def test_closed_gate_cannot_qualify(self):
         with mock.patch.object(ORACLE.runpy, "run_path", return_value={"release_availability": lambda root: {"oracle-free": False}}):
@@ -259,6 +298,35 @@ class OracleQualification(unittest.TestCase):
         self.acceptance["attempts"][-1]["cleanup"].pop("host_fixtures")
         with self.assertRaisesRegex(ValueError, "cleanup"):
             ORACLE.validate_acceptance(self.acceptance, self.sources, self.images)
+
+    def test_mixed_record_reuses_cluster_cases_only_with_fresh_http_source(self):
+        path = self.root / "internal/api/oracle_observation.go"
+        path.parent.mkdir(parents=True, exist_ok=True); path.write_text("package api\n")
+        current = ORACLE.source_files(self.root)
+        self.compatibility(current, [{"path": "internal/api/oracle_observation.go", "before": None,
+            "after": current["internal/api/oracle_observation.go"],
+            "reason": "Oracle API observation changes only the freshly executed HTTP acceptance phase."}])
+        mixed = copy.deepcopy(self.acceptance)
+        mixed.update(schema_version=2, source_files=current, qualified_source_files=self.sources,
+                     qualified_manifest_sha256=ORACLE.file_hash(self.directory / "manifest.json"))
+        for attempt in mixed["attempts"]:
+            attempt["source_files"] = current if attempt["case"] == "http-api" else self.sources
+            identity = sha(json.dumps(attempt["source_files"], sort_keys=True, separators=(",", ":")).encode())
+            attempt["source_manifest_sha256"] = attempt["source_manifest_after_sha256"] = identity
+        ORACLE.validate_acceptance(mixed, current, self.images, self.root)
+        mixed["attempts"][0]["source_files"] = current
+        with self.assertRaisesRegex(ValueError, "source changed"):
+            ORACLE.validate_acceptance(mixed, current, self.images, self.root)
+
+    def test_oracle_compatibility_rejects_protected_runtime_delta(self):
+        path = self.root / "internal/cluster/new-runtime.go"; path.write_text("package cluster\n")
+        current = ORACLE.source_files(self.root)
+        self.compatibility(current, [{"path": "internal/cluster/new-runtime.go", "before": None,
+            "after": current["internal/cluster/new-runtime.go"],
+            "reason": "Protected Oracle runtime changes require fresh cluster qualification evidence."}])
+        with self.assertRaisesRegex(ValueError, "require new qualification"):
+            ORACLE.COMPAT["validate"](self.root, "oracle-free", self.sources, current,
+                                      ORACLE.protected_source, ORACLE.file_hash(self.directory / "manifest.json"))
 
     def test_cleanup_and_source_after_are_required(self):
         for field, value in (("source_manifest_after_sha256", "9" * 64), ("exit_code", 1), ("node_uids", {"production": "c" * 36}),

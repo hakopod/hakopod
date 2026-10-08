@@ -14,6 +14,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 GATES = runpy.run_path(str(ROOT / "release/managed-runtime-availability.py"))
+COMPAT = runpy.run_path(str(ROOT / "release/runtime-source-compatibility.py"))
 GATE_PATH = "internal/database/myduck_qualification.go"
 UPSTREAM = "6e3427591fd8895df9585969e7256f958fb639bb"
 PACKAGE = "ghcr.io/hakopod/managed-myduck"
@@ -79,7 +80,8 @@ def source_files(root):
     root = Path(root)
     paths = {root / name for name in ("go.mod", "go.sum", *BUILD_INPUTS,
         "release/verify-myduck-runtime.py", "release/record-myduck-qualification.py",
-        "release/managed-runtime-availability.py", "scripts/run-development-myduck-acceptance.py",
+        "release/managed-runtime-availability.py", "release/runtime-source-compatibility.py",
+        "scripts/run-development-myduck-acceptance.py",
         "scripts/run-development-oracle-free-acceptance.py", "release/verify-oracle-free-runtime.py",
         "scripts/run-development-vitess-acceptance.py")}
     for name in ("api", "auth", "cmd/hakopod-server", "cmd/hakopod-myduck-storage", "internal", "templates", "patches/myduck"):
@@ -119,6 +121,14 @@ def source_images(root):
     if len(values) != 1 or not re.fullmatch(re.escape(PACKAGE) + r"@sha256:[a-f0-9]{64}", values[0]):
         raise ValueError("MyDuck requires one pinned managed image")
     return {"runtime": values[0]}
+
+
+def protected_source(path):
+    return (path in {"go.mod", "go.sum", *BUILD_INPUTS,
+                     "release/managed-runtime-availability.py", "scripts/run-development-myduck-acceptance.py"}
+            or path.startswith(("auth/", "patches/myduck/", "cmd/hakopod-myduck-storage/"))
+            or "myduck" in path.lower() and path not in {
+                "release/verify-myduck-runtime.py", "release/record-myduck-qualification.py"})
 
 
 def source_hash(sources):
@@ -205,8 +215,10 @@ def validate_metadata(directory, root=ROOT):
     if not GATES["_gate"](Path(root) / GATE_PATH, "MyDuckRuntimeQualified", "const"):
         raise ValueError("MyDuck release gate is closed")
     sources, images = source_files(root), source_images(root)
-    if manifest["source_files"] != sources or manifest["source"] != {"repository": "https://github.com/apecloud/myduckserver", "revision": UPSTREAM}:
+    if manifest["source"] != {"repository": "https://github.com/apecloud/myduckserver", "revision": UPSTREAM}:
         raise ValueError("MyDuck source changed after qualification")
+    COMPAT["validate"](root, "myduck", manifest["source_files"], sources, protected_source,
+                       file_hash(directory / "manifest.json"))
     if not isinstance(manifest["files"], dict) or set(manifest["files"]) != FILES or any(manifest["files"][name] != file_hash(directory / name) for name in FILES):
         raise ValueError("MyDuck evidence changed after qualification")
     items = manifest["images"]
@@ -227,10 +239,10 @@ def validate_metadata(directory, root=ROOT):
             or receipt["source_build_manifest_sha256"] != file_hash(directory / "source-build-manifest.json")
             or receipt["platform"] != "linux/amd64" or receipt["config_user"] != "1000:1000"
             or receipt["entrypoint"] != ["/usr/local/bin/myduckserver"]
-            or receipt["labels"] != image_labels(sources)
+            or receipt["labels"] != image_labels(manifest["source_files"])
             or not isinstance(receipt["archive_sha256"], str) or not SHA.fullmatch(receipt["archive_sha256"])):
         raise ValueError("MyDuck packaging provenance differs from qualification")
-    validate_acceptance(read_json(directory / "native-acceptance.json"), sources, images)
+    validate_acceptance(read_json(directory / "native-acceptance.json"), manifest["source_files"], images)
     return manifest
 
 
