@@ -161,7 +161,7 @@ func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d 
 	started := time.Now()
 	parent := ctx
 	ctx, stopDiagnostic := context.WithTimeout(parent, 20*time.Second)
-	defer func() { stopDiagnostic() }()
+	defer stopDiagnostic()
 	report := func(phase string, err error) {
 		code := 0
 		var native *oranetwork.OracleError
@@ -176,7 +176,8 @@ func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d 
 	t.Logf("Oracle synthetic observation_elapsed=%s error_type=%T error_class=%s error_hash=%s context_done=%t", time.Since(observationStart), observationErr, oracleDiagnosticErrorClass(observationErr), oracleDiagnosticErrorHash(observationErr), observationContext.Err() != nil)
 	stopObservation()
 	stopDiagnostic()
-	ctx, stopDiagnostic = context.WithTimeout(parent, 20*time.Second)
+	ctx, stopDirect := context.WithTimeout(parent, 20*time.Second)
+	defer stopDirect()
 	client, err := c.oracleApplicationConnectionOptions(ctx, d, member, true, true)
 	if err != nil {
 		report("connect", err)
@@ -232,7 +233,7 @@ func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d 
 	tx.Rollback()
 	conn.Close()
 	client.Close()
-	stopDiagnostic()
+	stopDirect()
 	ctx, stopExecutor := context.WithTimeout(parent, 20*time.Second)
 	defer stopExecutor()
 	q := database.QueryRequest{SQL: "SELECT CAST(:1 AS NUMBER(30,0)), NULL FROM dual", Parameters: []any{json.Number("9007199254740993")}}
