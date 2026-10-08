@@ -8,7 +8,11 @@ tests and documentation were excluded; generated character conversion tables
 remain necessary production code.
 
 The Hakopod patch adds `network.Session.SetReadLimit(int)` and
-`network.ErrReadLimit`. Zero preserves upstream behavior. The limit checks
+`network.ErrReadLimit`. Zero preserves upstream behavior. The limit also caps cumulative wire bytes across the session after SetReadLimit,
+counting each packet header and body once in readAll. Decode helpers do not
+consume that budget a second time. SetReadLimit resets the budget. The query
+adapter uses QueryMaxBytes (2 MiB), including protocol metadata overhead.
+The limit checks
 packet allocations, read allocations, CLR chunk accumulation, session input
 buffer appends and LOB buffer appends before allocating or appending. Arithmetic
 checks reject negative and overflowing lengths even when no limit is configured.

@@ -67,3 +67,23 @@ func TestReadLimitPacketAccumulation(t *testing.T) {
 		t.Fatal("packet append accepted")
 	}
 }
+
+func TestReadLimitCumulativeReceiveBudget(t *testing.T) {
+	s := limitedSession(12, nil)
+	for i := 0; i < 3; i++ {
+		if err := s.consumeReceive(4); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !errors.Is(s.consumeReceive(1), ErrReadLimit) {
+		t.Fatal("cumulative receive exceeded bound")
+	}
+	s.SetReadLimit(12)
+	if err := s.consumeReceive(12); err != nil {
+		t.Fatal("reset did not restore budget", err)
+	}
+	s.SetReadLimit(0)
+	if err := s.consumeReceive(100); err != nil {
+		t.Fatal("zero changed defaults", err)
+	}
+}

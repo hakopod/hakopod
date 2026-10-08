@@ -46,6 +46,7 @@ type Session struct {
 	sslConn           *tls.Conn
 	reader            *bufio.Reader
 	remainingBytes    int
+	receiveRemaining  int
 	lastPacket        bytes.Buffer
 	Context           *SessionContext
 	sendPcks          []PacketInterface
@@ -873,6 +874,9 @@ func (session *Session) readAll(size int) error {
 	// session.mu.Lock()
 	// defer session.mu.Unlock()
 	index := 0
+	if err := session.consumeReceive(size); err != nil {
+		return err
+	}
 	if err := session.CheckReadSize(session.lastPacket.Len(), size); err != nil {
 		return err
 	}

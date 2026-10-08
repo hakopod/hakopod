@@ -30,7 +30,15 @@
  			return
 --- a/network/session.go
 +++ b/network/session.go
-@@ -773,6 +773,9 @@
+@@ -46,6 +46,7 @@
+ 	sslConn           *tls.Conn
+ 	reader            *bufio.Reader
+ 	remainingBytes    int
++	receiveRemaining  int
+ 	lastPacket        bytes.Buffer
+ 	Context           *SessionContext
+ 	sendPcks          []PacketInterface
+@@ -773,6 +774,9 @@
  func (session *Session) read(numBytes int) ([]byte, error) {
  	var err error
  	var pck PacketInterface
@@ -40,17 +48,20 @@
  	ret := make([]byte, numBytes)
  	index := 0
  	actualRead, err := session.inBuffer.Read(ret)
-@@ -870,6 +873,9 @@
+@@ -870,6 +874,12 @@
  	// session.mu.Lock()
  	// defer session.mu.Unlock()
  	index := 0
++	if err := session.consumeReceive(size); err != nil {
++		return err
++	}
 +	if err := session.CheckReadSize(session.lastPacket.Len(), size); err != nil {
 +		return err
 +	}
  	tempBuffer := make([]byte, size)
  	var err error
  	var temp int
-@@ -1023,6 +1029,9 @@
+@@ -1023,6 +1033,9 @@
  				session.Disconnect()
  				return nil, driver.ErrBadConn
  			}
@@ -74,7 +85,7 @@
  }
 --- /dev/null
 +++ b/network/read_limit.go
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,39 @@
 +package network
 +
 +import "errors"
@@ -87,6 +98,7 @@
 +// concurrent session operations. A rejected connection must be discarded.
 +func (session *Session) SetReadLimit(limit int) {
 +	session.ReadLimit = limit
++	session.receiveRemaining = limit
 +}
 +
 +// CheckReadSize checks an allocation or append without overflowing arithmetic.
@@ -96,6 +108,20 @@
 +	}
 +	if session.ReadLimit > 0 && (current > session.ReadLimit || added > session.ReadLimit-current) {
 +		return ErrReadLimit
++	}
++	return nil
++}
++
++// consumeReceive runs only when allocating a wire read, not in decode helpers.
++func (session *Session) consumeReceive(size int) error {
++	if size < 0 {
++		return ErrReadLimit
++	}
++	if session.ReadLimit > 0 {
++		if size > session.receiveRemaining {
++			return ErrReadLimit
++		}
++		session.receiveRemaining -= size
 +	}
 +	return nil
 +}
