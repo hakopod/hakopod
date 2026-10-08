@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	mysql "github.com/go-sql-driver/mysql"
 	"github.com/hakopod/hakopod/internal/database"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
@@ -187,6 +189,8 @@ func TestManagedMySQLQueryLive(t *testing.T) {
 	}
 	t.Logf("Cancellation after server execution returned in %s", time.Since(cancellationStarted))
 
+	mysqlNontransactionalTableProbe(t, ctx, native)
+
 	// Check the server boundary directly, without the API statement classifier.
 	connection, e := native.Conn(ctx)
 	if e != nil {
@@ -225,4 +229,94 @@ func queryMySQLFixture(ctx context.Context, c *Client, d database.Resource, q da
 		return database.QueryResult{}, err
 	}
 	return c.querySQLDriver(ctx, d, q, func(context.Context) error { return nil })
+}
+
+// A successful ROLLBACK alone does not prove that every table engine undid a write.
+func mysqlNontransactionalTableProbe(t *testing.T, parent context.Context, native *sql.DB) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	conn, err := native.Conn(ctx)
+	if err != nil {
+		t.Fatal("nontransactional engine probe connection")
+	}
+	defer conn.Close()
+	report := func(phase string, err error) {
+		var backend *mysql.MySQLError
+		code := uint16(0)
+		if errors.As(err, &backend) {
+			code = backend.Number
+		}
+		t.Logf("MySQL synthetic engine phase=%s error_type=%T mysql_code=%d", phase, err, code)
+	}
+	if _, err = conn.ExecContext(ctx, "CREATE TABLE app.hakopod_myisam_probe(value INT PRIMARY KEY) ENGINE=MyISAM"); err != nil {
+		report("create_refused", err)
+		t.Fatal("MyISAM creation refused; inspect sanitized backend code before qualifying engine boundary")
+	}
+	var engine string
+	if err = conn.QueryRowContext(ctx, "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA='app' AND TABLE_NAME='hakopod_myisam_probe'").Scan(&engine); err != nil || engine != "MyISAM" {
+		t.Fatal("MyISAM positive control was not created")
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal("nontransactional engine probe begin")
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO app.hakopod_myisam_probe VALUES (1)"); err != nil {
+		report("write_refused", err)
+		var backend *mysql.MySQLError
+		verifiedEngineRefusal := errors.As(err, &backend) && backend.Number == 3098
+		tx.Rollback()
+		if !verifiedEngineRefusal {
+			t.Fatal("MyISAM write refusal does not prove the engine boundary")
+		}
+		// ER_BEFORE_DML_VALIDATION_ERROR (3098) is emitted by Group Replication
+		// for unsupported non-InnoDB tables. Prove this session still writes InnoDB.
+		if _, err = conn.ExecContext(ctx, "INSERT INTO app.hakopod_query_fixture_v2 VALUES (987654321)"); err != nil {
+			report("innodb_positive_write", err)
+			t.Fatal("InnoDB positive write control failed")
+		}
+		var positive int
+		if conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM app.hakopod_query_fixture_v2 WHERE value=987654321").Scan(&positive) != nil || positive != 1 {
+			t.Fatal("InnoDB positive readback control failed")
+		}
+		var count int
+		if conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM app.hakopod_myisam_probe").Scan(&count) != nil || count != 0 {
+			t.Fatal("refused MyISAM write did not preserve empty table")
+		}
+		t.Log("MySQL refused native MyISAM DML and persisted row count stayed zero")
+		return
+	}
+	if err = tx.Rollback(); err != nil {
+		report("rollback", err)
+		t.Fatal("nontransactional engine probe rollback unavailable")
+	}
+	rows, err := conn.QueryContext(ctx, "SHOW WARNINGS")
+	if err != nil {
+		t.Fatal("rollback warning observation unavailable")
+	}
+	incomplete := false
+	for rows.Next() {
+		var level, privateMessage string
+		var code int
+		if rows.Scan(&level, &code, &privateMessage) != nil {
+			rows.Close()
+			t.Fatal("rollback warning decode unavailable")
+		}
+		if code == 1196 {
+			incomplete = true
+		}
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if rowErr != nil {
+		t.Fatal("rollback warning rows unavailable")
+	}
+	var count int
+	if conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM app.hakopod_myisam_probe").Scan(&count) != nil {
+		t.Fatal("rollback persistence observation unavailable")
+	}
+	t.Logf("MySQL synthetic engine rollback_acknowledged=true incomplete_warning=%t persisted_rows=%d", incomplete, count)
+	if count != 0 {
+		t.Fatal("MyISAM write persisted despite acknowledged rollback; universal rollback outcome is unqualified")
+	}
 }
