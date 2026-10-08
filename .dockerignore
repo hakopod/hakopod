@@ -2,7 +2,8 @@
 **/.git
 private
 packages
-third_party
+third_party/*
+!third_party/go-ora-v3
 .local
 work
 bin
