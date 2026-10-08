@@ -96,6 +96,8 @@ hakopod api call getDatabaseQueryCapabilities --project demo --environment devel
 The response also specifies parameter syntax, execution modes and transaction guarantees.
 An unsupported engine or mode is rejected before connection. The current [verification record](agent-control-verification.md) lists qualified engines.
 
+MyDuck uses its PostgreSQL endpoint with `$1` parameters and only `nontransactional` execution. It cannot enforce read-only queries: CLI and MCP callers must explicitly enable writes and supply the reviewed revision. Query capability discovery returns these same guarantees.
+
 For PostgreSQL, save a query in a file:
 
 ```sql

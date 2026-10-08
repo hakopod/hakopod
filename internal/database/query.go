@@ -128,10 +128,12 @@ func CapabilitiesForQuery(engine string) QueryCapabilities {
 		c.TransactionalDML = true
 		c.DDLCommit = "implicit_commit"
 	case "duckdb":
-		c.ApplicationIdentity = "root (managed application owner)"
-		c.ParameterStyle = "?"
-		c.ReadOnlyEnforcement = "runtime_verification_required"
-		c.DDLCommit = "runtime_specific"
+		c.Supported = true
+		c.ExecutionModes = []string{"nontransactional"}
+		c.ApplicationIdentity = "postgres (managed application owner)"
+		c.ParameterStyle = "$1"
+		c.ReadOnlyEnforcement = "unsupported"
+		c.DDLCommit = "nontransactional"
 	case "clickhouse":
 		c.Supported = true
 		c.ReadOnlySupported = true
