@@ -28,6 +28,7 @@ export function databaseEngineDefaults(spec: DatabaseSpec, engine: DatabaseSpec[
   const mode = engine === 'oracle' || engine === 'duckdb' ? 'standalone' : spec.mode
   return {
     ...spec, engine, mode, version: databaseVersions(engine)[0], pooling: undefined,
+    clickhouse: engine === 'clickhouse' ? spec.clickhouse : undefined,
     oracle: engine === 'oracle' ? { edition: 'free' } : undefined,
     vitess: engine === 'vitess' ? spec.vitess || { tables: [], backup_destination_id: '', backup_destination_revision: 0 } : undefined,
     shards: engine === 'redis' && mode === 'cluster' ? 3 : 1,
@@ -74,6 +75,8 @@ export function databaseCreateIssue(spec: DatabaseSpec, step: number): string | 
     if (!Number.isInteger(spec.storage_gib) || spec.storage_gib < 1 || spec.storage_gib > 1024) return 'Storage must be between 1 and 1024 GiB per member.'
   }
   if (step === 3) {
+    if (spec.clickhouse && (spec.engine !== 'clickhouse' || !['application', 'tenant_admin'].includes(spec.clickhouse.access_profile))) return 'Choose a valid ClickHouse access profile.'
+    if (spec.clickhouse?.access_profile === 'tenant_admin' && spec.mode !== 'standalone') return 'Tenant administration requires a dedicated standalone ClickHouse instance.'
     if (spec.tls?.mode !== 'required') return 'New databases require verified TLS connections.'
     if (spec.engine === 'vitess') {
       const config = spec.vitess

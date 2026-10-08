@@ -149,3 +149,12 @@ test('Vitess copied endpoints retain the tablet routing target', () => {
   assert.equal(endpointAddress({ ...endpoint, purpose: 'read_write' }, 'vitess'), 'database.hdb-fixture.svc:3306/app@primary')
   assert.equal(endpointAddress(endpoint, 'mysql'), 'database.hdb-fixture.svc:3306')
 })
+
+
+test('ClickHouse tenant administration is standalone-only and cleared when the engine changes', () => {
+  const spec = databaseEngineDefaults(initialDatabaseSpec, 'clickhouse')
+  spec.clickhouse = { access_profile: 'tenant_admin' }
+  assert.equal(databaseCreateIssue(spec, 3), undefined)
+  assert.match(databaseCreateIssue({ ...spec, mode: 'cluster' }, 3) || '', /dedicated standalone/)
+  assert.equal(databaseEngineDefaults(spec, 'postgresql').clickhouse, undefined)
+})
