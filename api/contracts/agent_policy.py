@@ -2622,6 +2622,11 @@ POLICIES = {'acceptHumanInvite': {'boundary': 'identity',
                        'review': 'none',
                        'sensitive_fields': []}}
 
+# Invocations require application authority and owner headers from a trusted caller.
+# Generic agent dispatch cannot supply that authority on behalf of a tenant.
+for operation, permission in [('createJobInvocation','jobs:invoke'),('listJobInvocations','jobs:read'),('getJobInvocation','jobs:read'),('cancelJobInvocation','jobs:cancel'),('getJobInvocationLogs','jobs:logs')]:
+    POLICIES[operation] = {'boundary':'project','category':'write' if operation in ('createJobInvocation','cancelJobInvocation') else 'read','exposure':'dedicated','permissions':[permission],'review':'none','prerequisite':'Use an application-scoped machine key and a verified owner scope.','sensitive_fields':['inputs']}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

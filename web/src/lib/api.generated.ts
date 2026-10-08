@@ -4779,6 +4779,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/services/{service}/invocations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find job receipts for the exact owner and correlation identifier.
+         * @description Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.
+         */
+        get: operations["listJobInvocations"];
+        put?: never;
+        /**
+         * Queue one execution of the reviewed job template.
+         * @description Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.
+         */
+        post: operations["createJobInvocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/invocations/{invocation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one job receipt for its creating identity and owner.
+         * @description Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.
+         */
+        get: operations["getJobInvocation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/invocations/{invocation}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request cancellation of one owned job invocation.
+         * @description Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.
+         */
+        post: operations["cancelJobInvocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/invocations/{invocation}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the encrypted terminal output for one owned job invocation.
+         * @description Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.
+         */
+        get: operations["getJobInvocationLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6457,6 +6541,7 @@ export interface components {
             timeout_seconds?: number;
             retries?: number;
             schedule?: components["schemas"]["JobSchedule"];
+            invocation?: components["schemas"]["JobInvocation"];
         };
         ConfigurationFile: {
             mount_path: string;
@@ -8586,6 +8671,45 @@ export interface components {
             status: string;
             source_revision: number;
             destination_revision: number;
+        };
+        JobInvocation: {
+            allowed_identities: string[];
+            input_keys: string[];
+            /** @default 65536 */
+            max_input_bytes: number;
+            /** @default 16 */
+            queue_limit: number;
+        };
+        JobInvocationReceipt: {
+            id: string;
+            application_id: string;
+            service: string;
+            revision: number;
+            image: string;
+            correlation_id: string;
+            /** @enum {string} */
+            status: "queued" | "starting" | "running" | "succeeded" | "failed" | "cancelled";
+            message?: string;
+            cancel_requested?: boolean;
+            cleanup_pending: boolean;
+            input_bytes?: number;
+            log_truncated?: boolean;
+            exit_code?: number;
+            /** Format: date-time */
+            created_at?: string;
+            started_at?: string | null;
+            finished_at?: string | null;
+            /** Format: date-time */
+            expires_at?: string;
+        };
+        JobInvocationCreate: {
+            expected_revision: number;
+            expected_image: string;
+            correlation_id: string;
+            owner_scope: string;
+            inputs: {
+                [key: string]: unknown;
+            };
         };
     };
     responses: never;
@@ -20324,6 +20448,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Deployment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listJobInvocations: {
+        parameters: {
+            query: {
+                correlation_id: string;
+                active?: boolean;
+            };
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["JobInvocationReceipt"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createJobInvocation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobInvocationCreate"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInvocationReceipt"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getJobInvocation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+                invocation: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInvocationReceipt"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelJobInvocation: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+                invocation: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInvocationReceipt"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getJobInvocationLogs: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+                invocation: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        text: string;
+                        truncated: boolean;
+                    };
                 };
             };
             /** @description Error */
