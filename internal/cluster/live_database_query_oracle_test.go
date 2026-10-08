@@ -41,6 +41,7 @@ func TestManagedOracleQueryLive(t *testing.T) {
 		t.Helper()
 		result, err := queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: sql, Parameters: args, ReadOnly: &write, ExecutionMode: "nontransactional"})
 		if err != nil {
+			oracleSafeQueryFailure(t, "adapter_read", err)
 			t.Fatal("Oracle acceptance operation failed")
 		}
 		return result
@@ -282,6 +283,8 @@ func oracleDiagnosticErrorClass(err error) string {
 	switch err.Error() {
 	case "attempt to set timeout on closed connection", "attempt to write on closed connection", "closed connection":
 		return "closed_connection"
+	case "TTC error: received code 3 during response reading":
+		return "ttc_response_code_3"
 	case "incorrect format for DBTimeZone":
 		return "timezone_decode"
 	default:
@@ -391,4 +394,151 @@ func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *C
 		t.Fatal("Oracle in-flight cancellation exceeded five seconds")
 	}
 	t.Logf("Oracle cancellation after server execution returned in %s", time.Since(began))
+}
+
+// Only static categories are reported. Backend text and result bodies stay private.
+func oracleSafeQueryFailure(t *testing.T, phase string, err error) {
+	t.Helper()
+	code, outcome := "unclassified", "unclassified"
+	var failure *database.QueryError
+	if errors.As(err, &failure) {
+		switch failure.Code {
+		case "database_query_unavailable", "database_query_failed", "database_query_statement_unsupported", "database_query_result_limit", "database_query_authority_changed", "database_query_read_only_unsupported", "database_query_execution_mode_unsupported":
+			code = failure.Code
+		}
+		switch failure.Outcome {
+		case "not_started", "unknown", "rolled_back":
+			outcome = failure.Outcome
+		}
+	}
+	kind, oracleCode := "other", "none"
+	var native *oranetwork.OracleError
+	if err == nil {
+		kind = "none"
+	} else if errors.As(err, &failure) {
+		kind = "query_error"
+	} else if errors.As(err, &native) {
+		kind = "oracle_error"
+		switch native.ErrCode {
+		case 1013, 14551, 14552, 20001, 6550, 904, 942:
+			oracleCode = strconv.Itoa(native.ErrCode)
+		default:
+			oracleCode = "other"
+		}
+	}
+	t.Logf("Oracle synthetic phase=%s type=%s class=%s code=%s oracle_code=%s outcome=%s", phase, kind, oracleDiagnosticErrorClass(err), code, oracleCode, outcome)
+}
+
+func TestManagedOracleIsolatedQueryDiagnosticLive(t *testing.T) {
+	if os.Getenv("HAKOPOD_ORACLE_ISOLATED_QUERY_TEST") != "1" {
+		t.Skip("set HAKOPOD_ORACLE_ISOLATED_QUERY_TEST=1 for owned development diagnostics")
+	}
+	if os.Getenv("HAKOPOD_KEEP_DATABASE_FIXTURES") != "" || os.Getenv("HAKOPOD_ORACLE_FIXTURE_ID") != "" {
+		t.Fatal("diagnostics require a fresh fixture and normal cleanup")
+	}
+	path := os.Getenv("HAKOPOD_TEST_KUBECONFIG")
+	config, err := clientcmd.LoadFromFile(path)
+	if err != nil || config.CurrentContext != "k3d-hakopod-dev" {
+		t.Fatal("diagnostic development context")
+	}
+	c, err := New(path, developmentDatabaseOptions(t))
+	if err != nil {
+		t.Fatal("diagnostic client")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Minute)
+	defer cancel()
+	d, observed := newOracleFixture(t, ctx, c, "")
+	if len(observed.Members) != 1 || observed.Members[0].UID == "" || !observed.Members[0].Ready {
+		t.Fatal("diagnostic requires one ready owned Oracle member")
+	}
+	if _, _, err = c.databaseExecTarget(ctx, d, observed.Members[0]); err != nil {
+		t.Fatal("diagnostic member ownership validation failed")
+	}
+	write := false
+	for _, probe := range []struct {
+		name, statement string
+		args            []any
+	}{
+		{"literal_number", "SELECT CAST(1 AS NUMBER(30,0)) FROM dual", nil},
+		{"untyped_null", "SELECT NULL FROM dual", nil},
+		{"typed_null", "SELECT CAST(NULL AS NUMBER(30,0)) FROM dual", nil},
+		{"bound_number", "SELECT CAST(:1 AS NUMBER(30,0)) FROM dual", []any{json.Number("9007199254740993")}},
+		{"bound_number_null", "SELECT CAST(:1 AS NUMBER(30,0)), NULL FROM dual", []any{json.Number("9007199254740993")}},
+	} {
+		q := database.QueryRequest{SQL: probe.statement, Parameters: probe.args, ReadOnly: &write, ExecutionMode: "nontransactional"}
+		if q.Validate() != nil {
+			t.Fatal("diagnostic request invalid")
+		}
+		_, adapterErr := queryOracleSQLFixture(ctx, c, d, q)
+		oracleSafeQueryFailure(t, probe.name+"_adapter", adapterErr)
+		step, stop := context.WithTimeout(ctx, 20*time.Second)
+		native, e := c.oracleApplicationConnectionOptions(step, d, observed.Members[0], true, true)
+		phase := "connect"
+		if e == nil {
+			var conn *sql.Conn
+			conn, e = native.Conn(step)
+			phase = "connection"
+			if e == nil {
+				phase = "decoder_bound"
+				e = boundOracleQueryConnection(conn)
+				if e == nil {
+					phase, e = oracleIsolatedDirectQuery(step, conn, q)
+				}
+				conn.Close()
+			}
+			native.Close()
+		}
+		stop()
+		oracleSafeQueryFailure(t, probe.name+"_direct_"+phase, e)
+	}
+}
+
+func oracleIsolatedDirectQuery(ctx context.Context, conn *sql.Conn, q database.QueryRequest) (string, error) {
+	statement, err := conn.PrepareContext(ctx, q.SQL)
+	if err != nil {
+		return "prepare", err
+	}
+	defer statement.Close()
+	args := make([]any, len(q.Parameters))
+	for i, value := range q.Parameters {
+		if number, ok := value.(json.Number); ok {
+			args[i] = string(number)
+		} else {
+			args[i] = value
+		}
+	}
+	rows, err := statement.QueryContext(ctx, args...)
+	if err != nil {
+		return "query", err
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return "columns", err
+	}
+	if len(columns) < 1 || len(columns) > 2 {
+		return "column_width", errors.New("diagnostic column width")
+	}
+	count := 0
+	for rows.Next() {
+		count++
+		if count > 1 {
+			return "row_bound", errors.New("diagnostic row bound")
+		}
+		values := make([]sql.NullString, len(columns))
+		targets := make([]any, len(columns))
+		for i := range values {
+			targets[i] = &values[i]
+		}
+		if err = rows.Scan(targets...); err != nil {
+			return "scan", err
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return "rows", err
+	}
+	if count != 1 {
+		return "row_count", errors.New("diagnostic row count")
+	}
+	return "complete", nil
 }
