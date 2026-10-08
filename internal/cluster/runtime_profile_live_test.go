@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -15,6 +16,37 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+func cleanupRuntimeProfileFixtureClass(ctx context.Context, c *Client, expected *nodev1.RuntimeClass) error {
+	classes := c.kube.NodeV1().RuntimeClasses()
+	current, err := classes.Get(ctx, expected.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	marker := expected.Labels["hakopod.io/runtime-fixture"]
+	if marker == "" || current.Labels["hakopod.io/runtime-fixture"] != marker || current.Handler != expected.Handler || (expected.UID != "" && current.UID != expected.UID) {
+		return fmt.Errorf("fixture RuntimeClass ownership changed")
+	}
+	if err := classes.Delete(ctx, current.Name, deleteOptions(current)); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return wait.PollUntilContextCancel(ctx, 250*time.Millisecond, true, func(ctx context.Context) (bool, error) {
+		found, err := classes.Get(ctx, expected.Name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if found.UID != current.UID {
+			return false, fmt.Errorf("another RuntimeClass replaced the deleted fixture")
+		}
+		return false, nil
+	})
+}
 
 // This gate verifies runtime selection through the real reconciler. It does not
 // qualify a custom handler's kernel limits. The fixture uses the installed runc.
@@ -49,10 +81,8 @@ func TestLiveRuntimeProfileWorkloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	class, err := c.kube.NodeV1().RuntimeClasses().Create(ctx, &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: className, Labels: map[string]string{"hakopod.io/runtime-fixture": id}}, Handler: "runc"}, metav1.CreateOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	class := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: className, Labels: map[string]string{"hakopod.io/runtime-fixture": id}}, Handler: "runc"}
+	// Register cleanup before creation. A lost response must not orphan the class.
 	t.Cleanup(func() {
 		clean, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -80,14 +110,15 @@ func TestLiveRuntimeProfileWorkloads(t *testing.T) {
 			t.Error("fixture namespace cleanup did not finish", err)
 			return
 		}
-		if err := c.kube.NodeV1().RuntimeClasses().Delete(clean, className, deleteOptions(class)); err != nil {
-			t.Error(err)
-			return
-		}
-		if _, err := c.kube.NodeV1().RuntimeClasses().Get(clean, className, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
-			t.Error("fixture RuntimeClass still exists")
+		if err := cleanupRuntimeProfileFixtureClass(clean, c, class); err != nil {
+			t.Error("fixture RuntimeClass cleanup did not finish", err)
 		}
 	})
+	createdClass, err := c.kube.NodeV1().RuntimeClasses().Create(ctx, class, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	class = createdClass
 	if result, err := c.Deploy(ctx, target, nil); err != nil || result.Status != "healthy" {
 		t.Fatal("runtime-profile deployment did not become healthy", err, result.Status)
 	}

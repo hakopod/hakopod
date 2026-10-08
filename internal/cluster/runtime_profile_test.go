@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/spec"
+	corev1 "k8s.io/api/core/v1"
 	nodev1 "k8s.io/api/node/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -84,6 +87,89 @@ func TestRuntimeProfilePreservesPodSecurityAndPlacement(t *testing.T) {
 	}
 }
 
+func TestRuntimeProfileRejectsUnsupportedClassState(t *testing.T) {
+	for name, change := range map[string]func(*nodev1.RuntimeClass){
+		"terminating": func(class *nodev1.RuntimeClass) {
+			now := metav1.Now()
+			class.DeletionTimestamp = &now
+		},
+		"overhead": func(class *nodev1.RuntimeClass) {
+			class.Overhead = &nodev1.Overhead{PodFixed: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Mi")}}
+		},
+		"node selector": func(class *nodev1.RuntimeClass) {
+			class.Scheduling = &nodev1.Scheduling{NodeSelector: map[string]string{"runtime": "bounded"}}
+		},
+		"tolerations": func(class *nodev1.RuntimeClass) {
+			class.Scheduling = &nodev1.Scheduling{Tolerations: []corev1.Toleration{{Key: "runtime", Operator: corev1.TolerationOpExists}}}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			c, target, binding := runtimeProfileFixture(t)
+			class, err := c.kube.NodeV1().RuntimeClasses().Get(ctx, binding.RuntimeClass, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			change(class)
+			if _, err := c.kube.NodeV1().RuntimeClasses().Update(ctx, class, metav1.UpdateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.ValidateRuntimeProfiles(ctx, target.Project, target.Environment, target.Spec); err == nil {
+				t.Fatal("an unsupported RuntimeClass passed acceptance")
+			}
+			svc := target.Spec.Services["api"]
+			if _, err := c.applyDeployment(ctx, target, "api", svc); err == nil {
+				t.Fatal("an unsupported RuntimeClass reached deployment")
+			}
+		})
+	}
+}
+
+func TestRuntimeProfileDeploymentSwitchAndRemoval(t *testing.T) {
+	ctx := context.Background()
+	c, target, binding := runtimeProfileFixture(t)
+	svc := target.Spec.Services["api"]
+	if _, err := c.applyDeployment(ctx, target, "api", svc); err != nil {
+		t.Fatal(err)
+	}
+	api := c.kube.AppsV1().Deployments(Namespace(target.ApplicationID))
+	current, err := api.Get(ctx, "api", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Spec.Template.Annotations["reloader.example/restartedAt"] = "keep"
+	if _, err := api.Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	binding.Name, binding.RuntimeClass = "other-worker", "other-runtime"
+	c.options.RuntimeProfileBindings = append(c.options.RuntimeProfileBindings, binding)
+	if _, err := c.kube.NodeV1().RuntimeClasses().Create(ctx, &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: binding.RuntimeClass}, Handler: binding.Handler}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, profile := range []string{binding.Name, ""} {
+		svc.RuntimeProfile = profile
+		target.Spec.Services["api"] = svc
+		if _, err := c.applyDeployment(ctx, target, "api", svc); err != nil {
+			t.Fatal(err)
+		}
+		current, err := api.Get(ctx, "api", metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pod := current.Spec.Template
+		if pod.Annotations["reloader.example/restartedAt"] != "keep" {
+			t.Fatal("runtime selection removed another controller's annotation")
+		}
+		if profile == "" {
+			if _, present := pod.Annotations[runtimeProfileAnnotation]; present || pod.Spec.RuntimeClassName != nil {
+				t.Fatal("removing the profile retained its runtime or annotation")
+			}
+		} else if pod.Annotations[runtimeProfileAnnotation] != profile || pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName != binding.RuntimeClass {
+			t.Fatal("switching the profile retained the previous runtime or annotation")
+		}
+	}
+}
+
 func TestRuntimeProfileInstallationBoundaries(t *testing.T) {
 	_, _, binding := runtimeProfileFixture(t)
 	for _, options := range []Options{
@@ -141,5 +227,45 @@ func TestRuntimeProfileBindingFiles(t *testing.T) {
 	}
 	if _, err := ReadRuntimeProfileBindingsFile(""); err != nil {
 		t.Fatal("an optional file was required", err)
+	}
+}
+
+func TestRuntimeProfileFixtureCleanupOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		knownUID  bool
+		replaced  bool
+		unrelated bool
+	}{
+		{name: "acknowledged creation", knownUID: true},
+		{name: "lost creation response"},
+		{name: "replaced class", knownUID: true, replaced: true},
+		{name: "unrelated class", unrelated: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: "fixture", Labels: map[string]string{"hakopod.io/runtime-fixture": "unique-marker"}}, Handler: "runc"}
+			current := expected.DeepCopy()
+			current.UID = "original"
+			if tc.knownUID {
+				expected.UID = current.UID
+			}
+			if tc.replaced {
+				current.UID = "replacement"
+			}
+			if tc.unrelated {
+				current.Labels = nil
+			}
+			c := &Client{kube: fake.NewClientset(current)}
+			ctx := context.Background()
+			err := cleanupRuntimeProfileFixtureClass(ctx, c, expected)
+			_, getErr := c.kube.NodeV1().RuntimeClasses().Get(ctx, expected.Name, metav1.GetOptions{})
+			if tc.replaced || tc.unrelated {
+				if err == nil || getErr != nil {
+					t.Fatal("cleanup did not preserve an unowned class", err, getErr)
+				}
+			} else if err != nil || !apierrors.IsNotFound(getErr) {
+				t.Fatal("cleanup left the owned fixture", err, getErr)
+			}
+		})
 	}
 }

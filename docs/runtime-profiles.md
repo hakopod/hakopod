@@ -5,8 +5,8 @@ RuntimeClass. The service selects a short alias in its application TOML.
 
 ## Operator setup
 
-1. Install and verify the runtime handler on its target nodes.
-2. Create the matching RuntimeClass with the required node scheduling rules.
+1. Install and verify the runtime handler on each eligible node.
+2. Create the matching RuntimeClass without scheduling rules or pod overhead.
 3. Save this binding in `/etc/hakopod/runtime-profiles.toml`, owned by the server user with mode `0600`.
 
 ```toml
@@ -32,6 +32,8 @@ file = "/etc/hakopod/runtime-profiles.toml"
 
 Files use strict version-1 TOML, at most 64 KiB and 64 unique bindings.
 Each grant names one exact project, environment, application and service.
+The file must belong to root or the server user. Parent directories must remain
+under trusted operator control. Group and other users must not have write access.
 
 ## Application
 
@@ -49,8 +51,8 @@ one-time jobs and scheduled jobs use the selected runtime.
 Profiles are unavailable for managed-cloud installations, hosted workload
 policies, serverless services and Managed Actions. Preview creation and service
 transfer cannot copy an existing grant into another application.
-RuntimeClasses with pod overhead are also rejected until planning accounts for
-that additional resource reservation.
+RuntimeClasses with pod overhead or scheduling rules are rejected until planning
+accounts for them. Use the service's existing placement settings to select nodes.
 
 ## Limits and changes
 

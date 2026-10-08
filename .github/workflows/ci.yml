@@ -24,6 +24,11 @@ jobs:
           cache: npm
           cache-dependency-path: packages/sdk/package-lock.json
       - run: npm ci
+      - name: Check the generated API contract
+        working-directory: .
+        run: |
+          python3 api/generate.py
+          git diff --exit-code -- api/openapi.json
       - run: npm test
       - run: npm run check:generated
       - run: npm pack --dry-run
@@ -137,6 +142,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Check generated dashboard contracts
+        run: |
+          pnpm generate:api
+          git diff --exit-code -- src/lib/api.generated.ts src/lib/editor-schema.json
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build

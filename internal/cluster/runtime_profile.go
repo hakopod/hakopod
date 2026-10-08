@@ -15,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
+const runtimeProfileAnnotation = "hakopod.io/runtime-profile"
+
 // RuntimeProfileBinding grants one service access to an installed runtime.
 // The operator owns the handler configuration and its kernel controls.
 type RuntimeProfileBinding struct {
@@ -66,6 +68,9 @@ func ReadRuntimeProfileBindingsFile(path string) ([]RuntimeProfileBinding, error
 	if err != nil || !os.SameFile(initial, info) || !info.Mode().IsRegular() || info.Size() > 64<<10 || info.Mode().Perm()&0022 != 0 {
 		return nil, fmt.Errorf("runtime profile bindings require a regular file of at most 64 KiB without group or other write access")
 	}
+	if !runtimeProfileFileOwnerAllowed(info) {
+		return nil, fmt.Errorf("the runtime profile bindings file must belong to root or the server user")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, (64<<10)+1))
 	if err != nil || len(data) > 64<<10 {
 		return nil, fmt.Errorf("cannot read the bounded runtime profile bindings file")
@@ -115,6 +120,9 @@ func (c *Client) resolveRuntimeProfile(ctx context.Context, project, environment
 		if class.Overhead != nil && len(class.Overhead.PodFixed) != 0 {
 			return RuntimeProfileBinding{}, fmt.Errorf("runtime profiles do not yet support RuntimeClass pod overhead")
 		}
+		if class.Scheduling != nil && (len(class.Scheduling.NodeSelector) != 0 || len(class.Scheduling.Tolerations) != 0) {
+			return RuntimeProfileBinding{}, fmt.Errorf("runtime profiles do not yet support RuntimeClass scheduling rules")
+		}
 		return binding, nil
 	}
 	return RuntimeProfileBinding{}, fmt.Errorf("runtime profile is not approved for this project, environment, application and service")
@@ -152,6 +160,6 @@ func (c *Client) prepareRuntimeProfile(ctx context.Context, t Target, name strin
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations["hakopod.io/runtime-profile"] = binding.Name
+	pod.Annotations[runtimeProfileAnnotation] = binding.Name
 	return nil
 }
