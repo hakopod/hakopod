@@ -86,3 +86,15 @@ func TestResourceDeletionAPIReviewAndPermissions(t *testing.T) {
 	h.call("DELETE", "/projects/delete-api", owner, map[string]string{"confirm_name": "delete-api"}, 200)
 	h.call("POST", "/projects", owner, map[string]string{"name": "delete-api", "environment": "test"}, 409)
 }
+
+func TestOwnerReplacesEmptyDemoWithNamedProject(t *testing.T) {
+	h := newAuthHarness(t, nil)
+	owner := h.owner()
+	h.call("DELETE", "/projects/demo/environments/development", owner, map[string]string{"confirm_name": "wrong"}, 409)
+	h.call("DELETE", "/projects/demo/environments/development", owner, map[string]string{"confirm_name": "development"}, 200)
+	h.call("POST", "/projects/demo/environments", owner, map[string]string{"name": "development"}, 409)
+	h.call("DELETE", "/projects/demo", owner, map[string]string{"confirm_name": "demo"}, 200)
+	h.call("POST", "/projects", owner, map[string]string{"name": "my-workspace", "environment": "production", "display_name": "My workspace"}, 201)
+	h.call("DELETE", "/projects/my-workspace/environments/production", owner, map[string]string{"confirm_name": "production"}, 200)
+	h.call("DELETE", "/projects/my-workspace/environments/production", owner, map[string]string{"confirm_name": "production"}, 404)
+}

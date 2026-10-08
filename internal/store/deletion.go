@@ -149,17 +149,8 @@ func (s *Store) DeleteEmptyProject(ctx context.Context, p Principal, name, confi
 			return fmt.Errorf("%w: complete first-time administrator setup before deleting the default project", ErrConflict)
 		}
 	}
-	var used bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM applications WHERE project=$1)
- OR EXISTS(SELECT 1 FROM build_configs WHERE project=$1)
- OR EXISTS(SELECT 1 FROM runtime_resources WHERE project=$1)
- OR EXISTS(SELECT 1 FROM retained_application_data WHERE project=$1 AND status<>'deleted')
- OR EXISTS(SELECT 1 FROM secret_provider_scopes WHERE project=$1)
- OR EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1)`, name).Scan(&used); err != nil {
+	if err = emptyScope(ctx, tx, name, ""); err != nil {
 		return err
-	}
-	if used {
-		return fmt.Errorf("%w: delete applications, reclaim their retained data, delete builds and networks and remove secret-provider scope grants first; personal workspaces cannot be deleted", ErrConflict)
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO retired_resource_names(kind,project,name,resource_id) VALUES('project',$1,$1,$1)`, name); err != nil {
 		return err
@@ -217,5 +208,94 @@ func deleteApplicationMetadata(ctx context.Context, tx pgx.Tx, a Application) er
 		}
 	}
 
+	return nil
+}
+
+// DeleteEmptyEnvironment removes scope metadata only. Resource cleanup must finish first.
+func (s *Store) DeleteEmptyEnvironment(ctx context.Context, p Principal, project, environment, confirmation string) error {
+	if !p.CanManageProject(project) || !p.Allows("deployments:write", project, environment, "") {
+		return ErrForbidden
+	}
+	if environment != confirmation {
+		return fmt.Errorf("%w: confirm the environment ID", ErrConflict)
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var locked string
+	// The parent lock serializes environment creation and project deletion.
+	if err = tx.QueryRow(ctx, "SELECT name FROM projects WHERE name=$1 FOR UPDATE", project).Scan(&locked); err != nil {
+		return err
+	}
+	if err = tx.QueryRow(ctx, "SELECT name FROM environments WHERE project=$1 AND name=$2 FOR UPDATE", project, environment).Scan(&locked); err != nil {
+		return err
+	}
+	if project == "demo" && environment == "development" {
+		var protected bool
+		if err = tx.QueryRow(ctx, "SELECT NOT EXISTS(SELECT 1 FROM identities WHERE owner AND NOT disabled)").Scan(&protected); err != nil {
+			return err
+		}
+		if protected {
+			return fmt.Errorf("%w: complete first-time administrator setup before deleting the default development environment", ErrConflict)
+		}
+	}
+	var personalDefault bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1) AND $2='development'", project, environment).Scan(&personalDefault); err != nil {
+		return err
+	}
+	if personalDefault {
+		return fmt.Errorf("%w: the personal workspace development environment cannot be deleted", ErrConflict)
+	}
+	if err = emptyScope(ctx, tx, project, environment); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO retired_resource_names(kind,project,environment,name,resource_id) VALUES('environment',$1,$2,$2,$1||'/'||$2)`, project, environment); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE api_keys SET revoked_at=COALESCE(revoked_at,now()) WHERE project=$1 AND environment=$2`, project, environment); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, "DELETE FROM environments WHERE project=$1 AND name=$2", project, environment); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'environment.delete',$3,$4)`, p.ID, p.KeyID, project+"/"+environment, JSON(map[string]string{"project": project, "environment": environment})); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func emptyScope(ctx context.Context, tx pgx.Tx, project, environment string) error {
+	var personal bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM personal_workspaces WHERE project=$1)", project).Scan(&personal); err != nil {
+		return err
+	}
+	if personal && environment == "" {
+		return fmt.Errorf("%w: personal workspace scopes cannot be deleted", ErrConflict)
+	}
+	var used bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM applications WHERE project=$1 AND ($2='' OR environment=$2))
+ OR EXISTS(SELECT 1 FROM build_configs WHERE project=$1 AND ($2='' OR environment=$2))
+ OR EXISTS(SELECT 1 FROM runtime_resources WHERE project=$1 AND ($2='' OR environment=$2))
+ OR EXISTS(SELECT 1 FROM retained_application_data WHERE project=$1 AND ($2='' OR environment=$2) AND status<>'deleted')
+ OR EXISTS(SELECT 1 FROM secret_provider_scopes WHERE project=$1 AND ($2='' OR cardinality(environments)=0 OR $2=ANY(environments)))
+ OR EXISTS(SELECT 1 FROM managed_databases WHERE project=$1 AND ($2='' OR environment=$2) AND deleted_at IS NULL)
+ OR EXISTS(SELECT 1 FROM external_databases WHERE project=$1 AND ($2='' OR environment=$2) AND deleted_at IS NULL)
+ OR EXISTS(SELECT 1 FROM managed_platforms WHERE project=$1 AND ($2='' OR environment=$2) AND deleted_at IS NULL)
+ OR EXISTS(SELECT 1 FROM managed_capacity_scopes WHERE project=$1 AND ($2='' OR environment=$2))
+ OR EXISTS(SELECT 1 FROM managed_platform_reviews WHERE project=$1 AND ($2='' OR environment=$2) AND consumed_at IS NULL AND expires_at>now())
+ OR EXISTS(SELECT 1 FROM managed_platform_recovery_reviews WHERE project=$1 AND ($2='' OR environment=$2) AND consumed_at IS NULL AND expires_at>now())
+ OR EXISTS(SELECT 1 FROM managed_platform_recovery_operations WHERE project=$1 AND ($2='' OR environment=$2) AND (status IN ('queued','running') OR cleanup_required))
+ OR EXISTS(SELECT 1 FROM managed_database_operations o JOIN managed_databases d ON d.id=o.database_id WHERE d.project=$1 AND ($2='' OR d.environment=$2) AND o.status IN ('queued','running'))
+ OR EXISTS(SELECT 1 FROM external_database_operations o JOIN external_databases d ON d.id=o.database_id WHERE d.project=$1 AND ($2='' OR d.environment=$2) AND o.status IN ('queued','running'))
+ OR EXISTS(SELECT 1 FROM managed_platform_operations o JOIN managed_platforms p ON p.id=o.platform_id WHERE p.project=$1 AND ($2='' OR p.environment=$2) AND o.status IN ('queued','running'))
+ OR EXISTS(SELECT 1 FROM managed_platform_maintenance m JOIN managed_platforms p ON p.id=m.platform_id WHERE p.project=$1 AND ($2='' OR p.environment=$2) AND m.status='running')
+ OR EXISTS(SELECT 1 FROM managed_platform_runtime_mutations m JOIN managed_platforms p ON p.id=m.platform_id WHERE p.project=$1 AND ($2='' OR p.environment=$2) AND m.completed_at IS NULL)`, project, environment).Scan(&used); err != nil {
+		return err
+	}
+	if used {
+		return fmt.Errorf("%w: remove resources, reclaim retained data, remove scope grants and finish pending reviews or operations before deleting this scope", ErrConflict)
+	}
 	return nil
 }
