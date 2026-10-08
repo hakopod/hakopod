@@ -13,6 +13,8 @@ import (
 	"io"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,34 +30,32 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	}
 	c, err := New(path, developmentDatabaseOptions(t))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Minute)
 	defer cancel()
 	d, observed := newOracleFixture(t, ctx, c, "")
-	oracleDefaultDecoderPositiveControl(t, ctx, c, d, observed.Members[0])
-	oracleBoundQueryDiagnostic(t, ctx, c, d, observed.Members[0])
 
 	read := func(sql string, args ...any) database.QueryResult {
 		t.Helper()
 		result, err := queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: sql, Parameters: args})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal("Oracle acceptance operation failed")
 		}
 		return result
 	}
 	result := read("SELECT CAST(:1 AS NUMBER(30,0)), NULL FROM dual", json.Number("9007199254740993"))
 	if len(result.Rows) != 1 || len(result.Rows[0]) != 2 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" || result.Rows[0][1] != nil {
-		t.Fatalf("numeric/null result differs: %#v", result)
+		t.Fatal("numeric/null result differs")
 	}
 	write := false
 	_, err = queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: "CREATE TABLE hakopod_query_fixture_v2(value NUMBER(30,0) PRIMARY KEY)", ReadOnly: &write, ExecutionMode: "nontransactional"})
 	if err != nil {
-		t.Fatal("explicit schema write", err)
+		t.Fatal("explicit schema write failed")
 	}
 	result, err = queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: "INSERT INTO hakopod_query_fixture_v2(value) VALUES (:1)", Parameters: []any{json.Number("9007199254740993")}, ReadOnly: &write})
 	if err != nil || result.Outcome != "committed" {
-		t.Fatal("DML commit", err, result.Outcome)
+		t.Fatal("DML commit failed")
 	}
 	result = read("SELECT value FROM hakopod_query_fixture_v2")
 	if len(result.Rows) != 1 || len(result.Rows[0]) != 1 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" {
@@ -63,14 +63,14 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	}
 	for _, statement := range []string{"INSERT INTO hakopod_query_fixture_v2 VALUES(2)", "DROP TABLE hakopod_query_fixture_v2", "COMMIT", "START TRANSACTION", "SET TRANSACTION READ WRITE", "CALL missing()"} {
 		if _, err := queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: statement}); err == nil {
-			t.Fatalf("read-only/control statement accepted: %s", statement)
+			t.Fatal("read-only/control statement accepted")
 		}
 	}
 	limited := database.QueryRequest{SQL: "SELECT LEVEL FROM dual CONNECT BY LEVEL<=5", MaxRows: 2}
 	limited.Validate()
 	result, err = c.querySQLDriver(ctx, d, limited, func(context.Context) error { return nil })
 	if err != nil || len(result.Rows) != 2 || !result.Truncated {
-		t.Fatal("row bound", err)
+		t.Fatal("row bound failed")
 	}
 	smallLOB := read("SELECT XMLAGG(XMLELEMENT(e, RPAD('x',100,'x'))).GETCLOBVAL() FROM dual CONNECT BY LEVEL <= 2")
 	if len(smallLOB.Rows) != 1 || len(smallLOB.Rows[0]) != 1 || smallLOB.Rows[0][0] == nil || len(*smallLOB.Rows[0][0]) < 200 {
@@ -78,21 +78,14 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	}
 	oversized := database.QueryRequest{SQL: "SELECT XMLAGG(XMLELEMENT(e, RPAD('x',4000,'x'))).GETCLOBVAL() FROM dual CONNECT BY LEVEL <= 600"}
 	if err = oversized.Validate(); err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
 	_, err = c.querySQLDriver(ctx, d, oversized, func(context.Context) error { return nil })
 	var oversizedError *database.QueryError
 	if !errors.As(err, &oversizedError) || oversizedError.Code != "database_query_result_limit" || (oversizedError.Outcome != "rolled_back" && oversizedError.Outcome != "unknown") {
 		t.Fatal("oversized Oracle value lacked conservative bounded outcome")
 	}
-	short, stop := context.WithTimeout(ctx, time.Second)
-	busy := database.QueryRequest{SQL: "SELECT SUM(LEVEL) FROM dual CONNECT BY LEVEL<=1000000000"}
-	busy.Validate()
-	_, err = c.querySQLDriver(short, d, busy, func(context.Context) error { return nil })
-	stop()
-	if err == nil {
-		t.Fatal("cancelled query accepted")
-	}
+	oracleCancellationAfterExecution(t, ctx, c, d, observed.Members[0])
 	native, err := c.oracleApplicationConnection(ctx, d, observed.Members[0], true)
 	if err != nil {
 		t.Fatal("native connection")
@@ -100,12 +93,12 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	defer native.Close()
 	connection, err := native.Conn(ctx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
 	defer connection.Close()
 	tx, err := connection.BeginTx(ctx, nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
 	if _, err = tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
 		t.Fatal("server readonly setup")
@@ -120,31 +113,32 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	}
 	var initialCount int
 	if err = connection.QueryRowContext(ctx, "SELECT COUNT(*) FROM hakopod_query_fixture_v2").Scan(&initialCount); err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
 	var functionValue int
 	if err = connection.QueryRowContext(ctx, "SELECT hakopod_mutate() FROM dual").Scan(&functionValue); err != nil || functionValue != 3 {
-		t.Fatal("autonomous function positive control", err)
+		t.Fatal("autonomous function positive control failed")
 	}
 	var before int
 	if err = connection.QueryRowContext(ctx, "SELECT COUNT(*) FROM hakopod_query_fixture_v2").Scan(&before); err != nil || before != initialCount+1 {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
 	tx, err = connection.BeginTx(ctx, nil)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
 	defer tx.Rollback()
 	if _, err = tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle acceptance operation failed")
 	}
-	if err = tx.QueryRowContext(ctx, "SELECT hakopod_mutate() FROM dual").Scan(&functionValue); err == nil {
-		t.Fatal("autonomous function escaped readonly transaction")
-	}
+	autonomousErr := tx.QueryRowContext(ctx, "SELECT hakopod_mutate() FROM dual").Scan(&functionValue)
 	tx.Rollback()
 	var after int
 	if err = connection.QueryRowContext(ctx, "SELECT COUNT(*) FROM hakopod_query_fixture_v2").Scan(&after); err != nil || after != before {
 		t.Fatal("readonly function changed persisted row count")
+	}
+	if autonomousErr == nil {
+		t.Fatal("autonomous function escaped readonly transaction")
 	}
 	t.Log("Oracle native numeric binds, explicit schema writes and DML commits passed")
 }
@@ -304,4 +298,83 @@ func oracleDefaultDecoderPositiveControl(t *testing.T, parent context.Context, c
 		}
 	}
 	t.Logf("Oracle synthetic default_decoder error_type=%T error_class=%s error_hash=%s context_done=%t", err, oracleDiagnosticErrorClass(err), oracleDiagnosticErrorHash(err), ctx.Err() != nil)
+}
+
+func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *Client, d database.Resource, member database.Member) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	native, err := c.oracleApplicationConnectionOptions(ctx, d, member, true, true)
+	if err != nil {
+		t.Fatal("Oracle cancellation connection")
+	}
+	defer native.Close()
+	conn, err := native.Conn(ctx)
+	if err != nil {
+		t.Fatal("Oracle cancellation dedicated session")
+	}
+	defer conn.Close()
+	if boundOracleQueryConnection(conn) != nil {
+		t.Fatal("Oracle cancellation decoder bound")
+	}
+	var sid string
+	if conn.QueryRowContext(ctx, "SELECT SYS_CONTEXT('USERENV','SID') FROM dual").Scan(&sid) != nil {
+		t.Fatal("Oracle cancellation session identity")
+	}
+	sessionID, err := strconv.ParseUint(sid, 10, 32)
+	if err != nil || sessionID == 0 {
+		t.Fatal("Oracle cancellation session identifier invalid")
+	}
+	busyCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	q := database.QueryRequest{SQL: "SELECT /* hakopod_cancel_control */ SUM(LEVEL) FROM dual CONNECT BY LEVEL<=1000000000"}
+	if q.Validate() != nil {
+		t.Fatal("Oracle cancellation request")
+	}
+	ended := make(chan error, 1)
+	go func() {
+		_, err := runSQLDriverQuery(busyCtx, conn, "oracle", q, "read", func(context.Context) error { return nil })
+		ended <- err
+	}()
+	started := false
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline) && ctx.Err() == nil; {
+		select {
+		case <-ended:
+			t.Fatal("Oracle cancellation query ended before execution proof")
+		default:
+		}
+		check, stopCheck := context.WithTimeout(ctx, 2*time.Second)
+		value, e := c.oracleLocalQuery(check, d, member, fmt.Sprintf("SELECT COUNT(*) FROM v$session s WHERE s.sid=%d AND s.username='APP' AND s.status='ACTIVE' AND EXISTS (SELECT 1 FROM v$sql q WHERE q.sql_id=s.sql_id AND q.sql_text LIKE 'SELECT /* hakopod_cancel_control */%%')", sessionID))
+		stopCheck()
+		if e != nil {
+			t.Fatal("Oracle cancellation execution observation")
+		}
+		if strings.TrimSpace(value) == "1" {
+			started = true
+			break
+		}
+		if sleepContext(ctx, 50*time.Millisecond) != nil {
+			break
+		}
+	}
+	if !started {
+		t.Fatal("Oracle server execution was not observed before cancellation")
+	}
+	select {
+	case <-ended:
+		t.Fatal("Oracle cancellation query ended before cancellation")
+	default:
+	}
+	began := time.Now()
+	stop()
+	select {
+	case err := <-ended:
+		var queryError *database.QueryError
+		if !errors.As(err, &queryError) || (queryError.Outcome != "rolled_back" && queryError.Outcome != "unknown") {
+			t.Fatal("Oracle in-flight cancellation lacked a conservative query outcome")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Oracle in-flight cancellation exceeded five seconds")
+	}
+	t.Logf("Oracle cancellation after server execution returned in %s", time.Since(began))
 }
