@@ -20,6 +20,23 @@ import (
 func cleanupRuntimeProfileFixtureClass(ctx context.Context, c *Client, expected *nodev1.RuntimeClass) error {
 	classes := c.kube.NodeV1().RuntimeClasses()
 	current, err := classes.Get(ctx, expected.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) && expected.UID == "" {
+		// A timed-out create can still commit. Bound the readback, but do not
+		// turn an unresolved creation into a claim of confirmed cleanup.
+		probe, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		err = wait.PollUntilContextCancel(probe, 100*time.Millisecond, false, func(ctx context.Context) (bool, error) {
+			var readErr error
+			current, readErr = classes.Get(ctx, expected.Name, metav1.GetOptions{})
+			if apierrors.IsNotFound(readErr) {
+				return false, nil
+			}
+			return readErr == nil, readErr
+		})
+		if err != nil {
+			return fmt.Errorf("fixture creation is unresolved; RuntimeClass cleanup is unconfirmed: %w", err)
+		}
+	}
 	if apierrors.IsNotFound(err) {
 		return nil
 	}

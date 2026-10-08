@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +15,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	kubetesting "k8s.io/client-go/testing"
 )
 
 func runtimeProfileFixture(t *testing.T) (*Client, Target, RuntimeProfileBinding) {
@@ -268,4 +272,38 @@ func TestRuntimeProfileFixtureCleanupOwnership(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRuntimeProfileFixtureAmbiguousCreation(t *testing.T) {
+	expected := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: "fixture", Labels: map[string]string{"hakopod.io/runtime-fixture": "unique-marker"}}, Handler: "runc"}
+	t.Run("unconfirmed absence", func(t *testing.T) {
+		c := &Client{kube: fake.NewClientset()}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		if err := cleanupRuntimeProfileFixtureClass(ctx, c, expected); err == nil || !strings.Contains(err.Error(), "unconfirmed") {
+			t.Fatal("an unresolved creation was reported as cleaned", err)
+		}
+	})
+	t.Run("delayed creation", func(t *testing.T) {
+		current := expected.DeepCopy()
+		current.UID = "delayed"
+		kube := fake.NewClientset(current)
+		reads := 0
+		kube.PrependReactor("get", "runtimeclasses", func(kubetesting.Action) (bool, runtime.Object, error) {
+			reads++
+			if reads == 1 {
+				return true, nil, apierrors.NewNotFound(schema.GroupResource{Group: "node.k8s.io", Resource: "runtimeclasses"}, expected.Name)
+			}
+			return false, nil, nil
+		})
+		c := &Client{kube: kube}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := cleanupRuntimeProfileFixtureClass(ctx, c, expected); err != nil {
+			t.Fatal("delayed fixture creation was not reconciled", err)
+		}
+		if _, err := kube.NodeV1().RuntimeClasses().Get(ctx, expected.Name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+			t.Fatal("delayed fixture remains", err)
+		}
+	})
 }
