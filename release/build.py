@@ -42,7 +42,7 @@ def output(args):
 
 def fingerprint():
     files=set()
-    for folder in ('cmd','internal','api','auth','templates'):
+    for folder in ('cmd','internal','api','auth','templates','third_party/go-ora-v3'):
         files.update(p for p in (ROOT/folder).rglob('*') if p.is_file() and '.git' not in p.parts and '__pycache__' not in p.parts and p.suffix != '.pyc')
     files.update(ROOT/p for p in ('go.mod','go.sum','web/package.json','web/pnpm-lock.yaml','LICENSE','NOTICE'))
     digest=hashlib.sha256()
@@ -53,6 +53,13 @@ def fingerprint():
         manifest[relative]=value
         digest.update((relative+'\0'+value+'\n').encode())
     return digest.hexdigest(),manifest
+
+def stage_source(source, manifest):
+    """Copy the exact fingerprinted inputs, including local Go replacements."""
+    for relative in manifest:
+        target=source/relative
+        target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(ROOT/relative,target)
 
 def archive(source,destination,epoch):
     with destination.open('wb') as stream:
@@ -104,10 +111,7 @@ def main():
     for attempt in range(3):
         before,manifest=fingerprint()
         if source.exists():shutil.rmtree(source)
-        for relative in manifest:
-            target=source/relative
-            target.parent.mkdir(parents=True,exist_ok=True)
-            shutil.copyfile(ROOT/relative,target)
+        stage_source(source,manifest)
         for filename in ('LICENSE','NOTICE'):shutil.copyfile(ROOT/filename,source/filename)
         if fingerprint()[0]==before:break
     else:raise SystemExit('Source is changing during snapshot creation; retry after the current edit completes')
