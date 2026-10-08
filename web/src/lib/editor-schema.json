@@ -816,6 +816,12 @@
         "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$",
         "description": "Name of an operator-approved container daemon binding for this service. Empty leaves it unbound."
       },
+      "runtime_profile": {
+        "type": "string",
+        "maxLength": 63,
+        "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$",
+        "description": "Self-hosted: approved runtime alias for this exact service scope. Empty uses the installation's normal runtime policy."
+      },
       "serverless": {
         "$ref": "#/components/schemas/Serverless"
       }
