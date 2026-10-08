@@ -74,13 +74,17 @@ func sandboxCleanupAllowed(obj *unstructured.Unstructured, kind schema.GroupReso
 				return false
 			}
 			for _, field := range []string{"secrets", "imagePullSecrets"} {
-				v, _, _ := unstructured.NestedSlice(obj.Object, field)
-				if len(v) > 0 {
+				v, _, err := unstructured.NestedSlice(obj.Object, field)
+				if err != nil || len(v) > 0 {
 					return false
 				}
 			}
 			return true
 		case "configmaps":
+			binary, _, binaryErr := unstructured.NestedMap(obj.Object, "binaryData")
+			if binaryErr != nil || len(binary) != 0 {
+				return false
+			}
 			data, _, err := unstructured.NestedStringMap(obj.Object, "data")
 			return err == nil && name == "kube-root-ca.crt" && len(data) == 1 && data["ca.crt"] != ""
 		case "secrets":

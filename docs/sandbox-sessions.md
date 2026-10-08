@@ -27,13 +27,17 @@ Base path:
 
 Every request requires the creating identity and owner scope. Calls and heartbeats also require the expected generation. A repeated call ID is rejected: an interrupted connection can leave execution uncertain, so clients must not replay code automatically.
 
-Limits: eight active sessions per application, one active session per owner/runtime key, one active call per session, two calls per API process, 48 MiB input, 52 MiB output and 150 seconds per call. Sessions expire after at most one hour; idle timeout is at most 15 minutes. Closed receipts remain for 24 hours.
+Limits: eight active sessions per application, one active session per owner/runtime key, one active call per session, two calls per API process, 48 MiB input, 52 MiB combined stdout/stderr output and 150 seconds per call. Sessions expire after at most one hour; idle timeout is at most 15 minutes. Closed receipts remain for 24 hours.
 
 `closing` with `cleanup_pending=true` means deletion is not confirmed. `closed` confirms cleanup. Credentials, expiry, missing containers and changed generations fail closed; they do not silently recreate a kernel.
 
 The process guard uses Linux `RLIMIT_NPROC`, which counts tasks for a real UID. It is not a Kubernetes per-Pod PIDs control. The native gVisor qualification must demonstrate that one session reaching its UID limit does not prevent another tenant session from starting processes. Ordinary shared-kernel execution is not an accepted fallback.
 
 The operator sets `HAKOPOD_SESSION_GUARD_IMAGE` to a digest-pinned Hakopod server image containing `/hakopod-session-guard`. TOML configuration uses `[sandbox_sessions]` with `guard_image`. Each template requires a runtime profile bound to the `runsc` handler. The capacity plan includes eight concurrent workers per template; the application admission limit remains eight sessions in total. Each worker reserves the larger of its request and the guard initialization request (50m CPU, 32 MiB), plus the RuntimeClass overhead (20m CPU, 50 MiB).
+
+Private worker images can use `registry_credential`. The kubelet receives an immutable pull secret; the worker cannot read it. Credential rotation invalidates the session. Create a new session after rotation.
+
+Namespace cleanup stops if it finds unexpected resources or cannot complete resource discovery. Operators must resolve these conditions before the receipt can become `closed`.
 
 The guarded readiness command must confirm that the kernel can accept calls. A startup probe runs it until success or the two-minute startup deadline. The probe does not run notebook code.
 
