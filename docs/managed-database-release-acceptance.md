@@ -1,5 +1,50 @@
 # Managed database release acceptance
 
+## Alpha.58 qualification in progress
+
+Vitess qualification passed on October 8, 2026, in the named `k3d-hakopod-dev`
+development cluster. MyDuck and Oracle Free qualification remain in progress.
+Installer acceptance, publication and production deployment are separate gates.
+
+The five native cases used source `e8164b49f5e2cac321309d7dc3a72da4f5656ec5`.
+The HTTP case used source `693a72810db0f4b53fc285944d4e566959a8c046` with the same
+native source inventory and pinned runtime images. Every case verified its
+source inventory before and after execution. Independent checks confirmed that
+the fixture namespaces, pods, persistent volume claims and backing volumes were absent.
+
+| Vitess case | Runner seconds | Protected log SHA-256 |
+| --- | ---: | --- |
+| Lifecycle | 1006.460 | `75d241723579204fe0664ab1ee887c54a90be0a185b42e3236d091d95729f8e6` |
+| Recovery | 616.569 | `f150da94f48572069e09cc427dc2046d44b0fc32028e7f5ffba0d6d37e08b5e4` |
+| Reseed | 421.230 | `c0ea29c7118ac05a26080654b2d93f8b84e897ba4788d1a4e98d09f8d5f73cd9` |
+| Revocation | 279.676 | `c5c1cdcc996fea88fbf4fe3dade3c1f2a94d5928a0225120a59958dcbbfdde91` |
+| Scale | 799.157 | `d772bf8e04184cab885d4341c1b2650ceb6ba334a145f5295c7319e1126db8bc` |
+| HTTP/API | 911.545 | `ecb9e987b68c6d391e276634e110fb960db6988abaa899f469abec0c02d1dc77` |
+
+The HTTP case verified scoped credentials, SQL, backup and restore, replacement
+topology, an application query through a reviewed binding, and scoped deletion.
+Its first attempt correctly returned `403` because the test key lacked the new
+explicit credential grant. The corrected fixture passed. Failed infrastructure
+and fixture attempts remain separate from accepted results.
+
+The [native manifest](../release/managed-vitess/manifest.json),
+[native record](../release/managed-vitess/native-acceptance.json) and
+[HTTP record](../release/managed-vitess-http/evidence.json) retain the original
+accepted evidence. The [candidate compatibility review](../release/managed-vitess/source-compatibility.json)
+records separate native and HTTP commits and exact evidence hashes. It permits
+only the reviewed source delta: two other-engine HTTP test fixtures and the
+verifier's candidate identity format. Production Vitess code, images and native
+assertions are unchanged by that delta. The verifier rejects unreviewed changes
+and changes to protected runtime, dependency and controller inputs.
+
+The candidate identity format passed 50 focused tests on the development VM.
+The existing runtime CI result covers the unchanged credential authorization
+policy. These are separate checks. The five native cases were retained after
+the fixture corrections, without another native run.
+
+The development workers shared one physical VM. These results do not establish
+independent-host, zone or provider availability.
+
 ## MyDuck and Oracle Database Free — alpha.56
 
 ### MyDuck
@@ -32,9 +77,9 @@ case preserved its source and cluster baselines and left no helper process
 running. The canonical qualification record and release manifest bind these
 results to the shipped source and image:
 
-- [MyDuck native acceptance record](../release/managed-myduck/native-acceptance.json),
+- [MyDuck native acceptance record](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/release/managed-myduck/native-acceptance.json),
   SHA-256 `a0b6a0b88ceb2909ff351e7dfa30cb0cd41ea8332a9af9ffd69d60960f207107`
-- [MyDuck release manifest](../release/managed-myduck/manifest.json),
+- [MyDuck release manifest](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/release/managed-myduck/manifest.json),
   SHA-256 `0fb4844daeb313f4e540e90676aeb92107a3f375136078552bf1b181c4c66930`
 
 The release contract is one persistent instance with no replica, failover,
@@ -69,9 +114,9 @@ and after execution. The lifecycle, recovery and controller-loss native cases
 passed. The HTTP/API authorization, lifecycle, backup/restore,
 binding/revocation and deletion phases passed.
 
-- [Oracle qualification record](../release/managed-oracle-free/native-acceptance.json),
+- [Oracle qualification record](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/release/managed-oracle-free/native-acceptance.json),
   SHA-256 `7db0aa74e096f6c90078a949838a1d67dc2f298c790a9f9876bfbd209ce50eb1`
-- [Oracle release manifest](../release/managed-oracle-free/manifest.json),
+- [Oracle release manifest](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/release/managed-oracle-free/manifest.json),
   SHA-256 `b15ba8f99e9f046e8ec63bde1413f800632433de69e747140ed98d6d8f6302fb`
 
 Oracle Database Free is proprietary, no-cost software. The release provides one
@@ -96,7 +141,7 @@ placement acceptance.
 Alpha.56 retains the Vitess runtime and operator from alpha.55, including their
 image digests, build inputs and installer. The original native and HTTP evidence
 is preserved byte for byte. The
-[source compatibility review](../release/managed-vitess/source-compatibility.json)
+[source compatibility review](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/release/managed-vitess/source-compatibility.json)
 records every reviewed source change with its before and after hashes.
 Packaging rejects an unrecorded change or a change to Vitess's runtime,
 dependency versions, build inputs or controller.
@@ -118,8 +163,8 @@ The runtime was
 `ghcr.io/hakopod/managed-vitess-runtime@sha256:b62641ca2ce73662b3a16a154d7ab918fae6aa3b7dd0424f897d2e83ade5247a`
 and the operator was
 `ghcr.io/hakopod/managed-vitess-operator@sha256:275c3ce3794dc5be502450cef38b7ac632a81a4b2f2834f7889b83e28a3cae9b`.
-The [manifest](../release/managed-vitess/manifest.json) and
-[native record](../release/managed-vitess/native-acceptance.json) bind source
+The [manifest](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.55/release/managed-vitess/manifest.json) and
+[native record](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.55/release/managed-vitess/native-acceptance.json) bind source
 files, binary checksums, image digests and structural test results. Anonymous
 pulls of both images passed, and their binaries matched the recorded checksums.
 The manifest SHA-256 is
@@ -152,7 +197,7 @@ inspection, a bound application query with TLS hostname verification and scoped
 application and database deletion. The wrapper confirmed source integrity,
 runtime and label restoration, and no remaining fixture namespaces or volumes.
 
-The [HTTP evidence](../release/managed-vitess-http/evidence.json) SHA-256 is
+The [HTTP evidence](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.55/release/managed-vitess-http/evidence.json) SHA-256 is
 `f702587ade68b3a2d7c7c511c45d8e68fd6bcef455379ff42ccc6f952fc22f6b`.
 The canonical release verifier accepted that report. Its wrapper receipt has
 SHA-256 `aaed7b9ee266d88acb1f6581b0ee9b7d949ca98019086eea444df6b88cdb2bac`.
