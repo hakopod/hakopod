@@ -63,6 +63,7 @@
   "deleteCustomRole": "Delete the custom role.",
   "deleteDeploymentNotification": "Delete the notification target for application deployments.",
   "deleteEmptyApplication": "Delete an empty application record.",
+  "deleteEmptyEnvironment": "Delete an empty environment after confirming its ID.",
   "deleteEmptyProject": "Delete an empty project record.",
   "deleteExternalDatabase": "Request deletion of the legacy external database registration.",
   "deleteGitConnection": "Delete the Git connection.",

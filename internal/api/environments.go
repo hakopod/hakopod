@@ -34,6 +34,16 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	var retired bool
+	err = tx.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM retired_resource_names WHERE kind='environment' AND project=$1 AND environment=$2 AND name=$2)", project, in.Name).Scan(&retired)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if retired {
+		problem(w, 409, "retired_environment", "This environment ID was deleted. Choose a new ID.")
+		return
+	}
 	var count int
 	var duplicate bool
 	if err = tx.QueryRow(r.Context(), "SELECT count(*),COALESCE(bool_or(name=$2),false) FROM environments WHERE project=$1", project, in.Name).Scan(&count, &duplicate); err != nil {
