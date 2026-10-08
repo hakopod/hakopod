@@ -4366,6 +4366,8 @@ export interface components {
             node_name?: string;
             /** @description Name of an operator-approved container daemon binding for this service. Empty leaves it unbound. */
             container_daemon?: string;
+            /** @description Self-hosted: approved runtime alias for this exact service scope. Empty uses the installation's normal runtime policy. */
+            runtime_profile?: string;
             serverless?: components["schemas"]["Serverless"];
         };
         Spec: {

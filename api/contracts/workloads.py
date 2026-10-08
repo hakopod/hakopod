@@ -28,6 +28,7 @@ schemas["Service"]["properties"]["private_egress"] = {"type": "array", "maxItems
 
 schemas["Service"]["properties"]["node_name"] = {**S,"maxLength":253,"description":"Exact Kubernetes node name. Uses scheduler affinity; never bypasses taints, runtime policy or resource checks."}
 schemas["Service"]["properties"]["container_daemon"] = {**S,"maxLength":63,"pattern":"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$","description":"Name of an operator-approved container daemon binding for this service. Empty leaves it unbound."}
+schemas["Service"]["properties"]["runtime_profile"] = {**S,"maxLength":63,"pattern":"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$","description":"Self-hosted: approved runtime alias for this exact service scope. Empty uses the installation's normal runtime policy."}
 
 schemas["PlacementNode"] = obj({"name":S,"architecture":S,"available":B,"reason":S}, ["name","architecture","available","reason"])
 route("/placement/nodes", "get", "listPlacementNodes", obj({"items":array(ref("PlacementNode")),"serverless_available":B},["items","serverless_available"]), scope=True)
