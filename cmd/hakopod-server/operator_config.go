@@ -83,6 +83,9 @@ type operatorConfig struct {
 	ContainerDaemons struct {
 		File *string `toml:"file"`
 	} `toml:"container_daemons"`
+	RuntimeProfiles struct {
+		File *string `toml:"file"`
+	} `toml:"runtime_profiles"`
 	ManagedActions struct {
 		File *string `toml:"file"`
 	} `toml:"managed_actions"`
@@ -233,6 +236,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"smtp.password_file", "HAKOPOD_SMTP_PASSWORD_FILE", c.SMTP.PasswordFile, true, true, true},
 		{"aws.identities_file", "HAKOPOD_AWS_IDENTITIES_FILE", c.AWS.IdentitiesFile, true, true, false},
 		{"container_daemons.file", "HAKOPOD_CONTAINER_DAEMONS_FILE", c.ContainerDaemons.File, true, true, false},
+		{"runtime_profiles.file", "HAKOPOD_RUNTIME_PROFILES_FILE", c.RuntimeProfiles.File, true, true, false},
 		{"managed_actions.file", "HAKOPOD_MANAGED_ACTIONS_FILE", c.ManagedActions.File, true, true, false},
 		{"backups.pg_dump_path", "HAKOPOD_PG_DUMP_PATH", c.Backups.PGDumpPath, false, false, false},
 		{"backups.vitess_approvals_file", "HAKOPOD_VITESS_BACKUP_APPROVALS_FILE", c.Backups.VitessApprovalsFile, true, true, false},
@@ -317,6 +321,9 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 	// container daemon, so bindings configured there are dead configuration.
 	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_DEDICATED_TCP_NODE") == "" && get("HAKOPOD_CONTAINER_DAEMONS_FILE") != "" {
 		return nil, fmt.Errorf("managed-cloud installations cannot configure container daemon bindings without a dedicated BYO node")
+	}
+	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_RUNTIME_PROFILES_FILE") != "" {
+		return nil, fmt.Errorf("runtime profile bindings require a self-hosted installation")
 	}
 	if _, err := authConfigFrom(get); err != nil {
 		return nil, err

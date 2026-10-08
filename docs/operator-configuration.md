@@ -59,6 +59,7 @@ The available settings map to the same environment options used by the server:
 | `smtp.security` (`starttls` by default, or `tls`) | `HAKOPOD_SMTP_SECURITY` |
 | `smtp.username`, `password_file` | `HAKOPOD_SMTP_USERNAME`, `HAKOPOD_SMTP_PASSWORD_FILE` |
 | `container_daemons.file` | `HAKOPOD_CONTAINER_DAEMONS_FILE` |
+| `runtime_profiles.file` | `HAKOPOD_RUNTIME_PROFILES_FILE` |
 | `backups.pg_dump_path` | `HAKOPOD_PG_DUMP_PATH` |
 | `backups.state_dir` | `HAKOPOD_BACKUP_STATE_DIR` |
 | `backups.managed_postgres` | `HAKOPOD_MANAGED_POSTGRES` |
@@ -69,6 +70,10 @@ above: mode `0600` or `0400` and at most 64 KiB. Startup refuses the file when a
 managed-cloud installation has no dedicated BYO node, because such an
 installation never grants a binding. See
 [container daemon access](container-daemon-access.md).
+
+`runtime_profiles.file` grants exact services access to installed RuntimeClasses
+on self-hosted installations. See [runtime profiles](runtime-profiles.md) for the
+binding format, node requirements and revocation behavior.
 
 Production dashboard origins require HTTPS. A non-loopback API listener requires
 TLS files or explicit trust in an HTTPS reverse proxy. Public ports are 1–65535;
