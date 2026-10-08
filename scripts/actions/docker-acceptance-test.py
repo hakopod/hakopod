@@ -28,6 +28,76 @@ def writer(code):
     return spawn
 
 
+class WorkspaceCleanupTests(unittest.TestCase):
+    uid = '01234567-1234-5678-90ab-0123456789ab'
+
+    def test_failed_gate_preserves_thirty_probes_and_original_waits(self):
+        pod = {'metadata': {'uid': self.uid}}
+        with patch.object(acceptance, 'state', return_value=pod), patch.object(acceptance, 'kube'), \
+                patch.object(acceptance, 'REPORT', {}), patch.object(acceptance.time, 'sleep') as sleep, \
+                patch.object(acceptance, 'command', return_value=SimpleNamespace(returncode=0, stdout='present\n', stderr='')) as probe, \
+                patch.object(acceptance, 'workspace_cleanup_diagnostics', return_value={'status': 'completed'}) as diagnostics:
+            with self.assertRaisesRegex(RuntimeError, 'removal was not verified'):
+                acceptance.delete_pod('fixture')
+            self.assertEqual(probe.call_count, 30)
+            self.assertEqual(sleep.call_count, 30)
+            self.assertTrue(all(call.args == (2,) for call in sleep.call_args_list))
+            diagnostics.assert_called_once_with(self.uid, [])
+            failure = acceptance.REPORT['workspace_cleanup_failures'][0]
+            self.assertEqual(failure['pod_uid'], self.uid)
+            self.assertEqual(len(failure['probes']), 30)
+            self.assertEqual(failure['probes'][0]['outcome'], 'present')
+
+    def test_success_does_not_collect_failure_metadata(self):
+        with patch.object(acceptance, 'state', return_value={'metadata': {'uid': self.uid}}), \
+                patch.object(acceptance, 'kube'), patch.object(acceptance, 'record') as record, \
+                patch.object(acceptance, 'command', return_value=SimpleNamespace(returncode=0, stdout='absent\n', stderr='')), \
+                patch.object(acceptance, 'workspace_cleanup_diagnostics') as diagnostics:
+            acceptance.delete_pod('fixture')
+            diagnostics.assert_not_called()
+            self.assertEqual(record.call_args.args[0], 'private-workspace-removed')
+
+    def test_node_access_error_is_not_reported_as_retained_workspace(self):
+        result = SimpleNamespace(returncode=1, stdout='', stderr='Error: No such container: private-token')
+        self.assertEqual(acceptance.node_error_class(result), 'node-missing')
+        result.stderr = 'unrecognized secret-bearing error'
+        self.assertEqual(acceptance.node_error_class(result), 'node-exec-failed')
+
+    def test_timeout_still_collects_metadata_without_exposing_exception(self):
+        with patch.object(acceptance, 'state', return_value={'metadata': {'uid': self.uid}}), \
+                patch.object(acceptance, 'kube'), patch.object(acceptance, 'REPORT', {}), \
+                patch.object(acceptance, 'command', side_effect=subprocess.TimeoutExpired('secret-command', 1)), \
+                patch.object(acceptance, 'workspace_cleanup_diagnostics', return_value={'status': 'completed'}):
+            with self.assertRaisesRegex(RuntimeError, 'removal was not verified'):
+                acceptance.delete_pod('fixture')
+            encoded = json.dumps(acceptance.REPORT)
+            self.assertNotIn('secret-command', encoded)
+            self.assertIn('TimeoutExpired', encoded)
+
+    def test_diagnostics_filter_output_and_bound_command(self):
+        result = SimpleNamespace(returncode=0, stdout='path workspace present\nsecret=private\nprocess 123\ndiagnostics-complete\n', stderr='private-error')
+        with patch.object(acceptance.subprocess, 'run', return_value=result) as run:
+            diagnostic = acceptance.workspace_cleanup_diagnostics(self.uid, ['a' * 64])
+            self.assertEqual(run.call_args.kwargs['timeout'], 15)
+            self.assertEqual(diagnostic['metadata'], ['path workspace present', 'process 123', 'diagnostics-complete'])
+            self.assertTrue(diagnostic['filtered_or_truncated'])
+            self.assertNotIn('private', json.dumps(diagnostic))
+            script = run.call_args.args[0][5]
+            self.assertNotIn('/environ', script)
+            self.assertNotIn('/cmdline', script)
+            self.assertIn('4096', script)
+            self.assertIn('64', script)
+        with self.assertRaisesRegex(AssertionError, 'UID'):
+            acceptance.workspace_cleanup_diagnostics('not-a-uid', [])
+        with self.assertRaisesRegex(AssertionError, 'container ID'):
+            acceptance.workspace_cleanup_diagnostics(self.uid, ['bad'])
+
+    def test_diagnostic_timeout_is_redacted(self):
+        with patch.object(acceptance.subprocess, 'run', side_effect=subprocess.TimeoutExpired('secret-command', 15)):
+            self.assertEqual(acceptance.workspace_cleanup_diagnostics(self.uid, []),
+                {'status': 'diagnostic-command-failed', 'error_type': 'TimeoutExpired'})
+
+
 class CaptureTests(unittest.TestCase):
     def test_success_requires_complete_clean_capture(self):
         valid = {'started': True, 'stdout_bytes': 100, 'exit_code': 0}
