@@ -68,7 +68,9 @@ type Options struct {
 	// daemon reached over the network with mutual TLS.
 	ContainerDaemonBindings []ContainerDaemonBinding
 	// RuntimeProfileBindings grant exact services access to installed runtimes.
-	RuntimeProfileBindings  []RuntimeProfileBinding
+	RuntimeProfileBindings []RuntimeProfileBinding
+	// SessionGuardImage is an operator-owned digest image containing /hakopod-session-guard.
+	SessionGuardImage       string
 	ManagedActions          *ManagedActionsInstallation
 	SupervisorURL           string
 	ProxyNamespace          string
@@ -271,6 +273,9 @@ func newClient(kubeconfig string, verified *rest.Config, options Options) (*Clie
 		return nil, err
 	}
 	options.ContainerDaemonBindings = append([]ContainerDaemonBinding(nil), options.ContainerDaemonBindings...)
+	if err := validateSessionGuardImage(options.SessionGuardImage); err != nil {
+		return nil, err
+	}
 	if err := validateRuntimeProfileInstallation(options); err != nil {
 		return nil, err
 	}
