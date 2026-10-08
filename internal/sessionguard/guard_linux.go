@@ -32,7 +32,7 @@ func applyLimits() error {
 	}
 	return nil
 }
-func execute(args []string) error {
+func execute(args []string, readyToken string) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := applyLimits(); err != nil {
@@ -41,6 +41,14 @@ func execute(args []string) error {
 	executable, err := exec.LookPath(args[0])
 	if err != nil {
 		return fmt.Errorf("fixed worker executable is unavailable")
+	}
+	if err = restrictSockets(); err != nil {
+		return err
+	}
+	if readyToken != "" {
+		if _, err := fmt.Fprintf(os.Stdout, "HAKOPOD_SESSION_READY %s\n", readyToken); err != nil {
+			return fmt.Errorf("cannot confirm session input readiness")
+		}
 	}
 	if err = unix.Exec(executable, args, os.Environ()); err != nil {
 		return fmt.Errorf("cannot start the fixed worker executable")
