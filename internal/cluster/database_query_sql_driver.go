@@ -58,7 +58,7 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 	var client *sql.DB
 	switch d.Spec.Engine {
 	case "oracle":
-		client, err = c.oracleApplicationConnection(ctx, d, member, true)
+		client, err = c.oracleApplicationConnectionOptions(ctx, d, member, true, true)
 	case "duckdb":
 		// The managed MyDuck runtime currently exposes an owner credential. Do not
 		// claim server-enforced read-only mode before the runtime proves support.
@@ -101,6 +101,11 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 		return database.QueryResult{}, queryUnavailable()
 	}
 	defer connection.Close()
+	if d.Spec.Engine == "oracle" {
+		if err = boundOracleQueryConnection(connection); err != nil {
+			return database.QueryResult{}, queryUnavailable()
+		}
+	}
 	secret, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
 	if err != nil {
 		return database.QueryResult{}, queryUnavailable()
@@ -157,6 +162,9 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	}
 	stmt, err := prepare(ctx, q.SQL)
 	if err != nil {
+		if sqlQueryFailureCode(engine, err) == "database_query_result_limit" {
+			return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "not_started"}
+		}
 		return result, &database.QueryError{Code: "database_query_statement_unsupported", Outcome: "not_started"}
 	}
 	defer stmt.Close()
@@ -175,7 +183,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		execution, e := stmt.ExecContext(ctx, args...)
 		if e != nil {
 			outcome := sqlRollbackOutcome(tx)
-			return result, &database.QueryError{Code: "database_query_failed", Outcome: outcome}
+			return result, &database.QueryError{Code: sqlQueryFailureCode(engine, e), Outcome: outcome}
 		}
 		result.RowsAffected, _ = execution.RowsAffected()
 		if err = check(ctx); err != nil {
@@ -184,7 +192,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		}
 		if tx != nil {
 			if err = tx.Commit(); err != nil {
-				return result, &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
+				return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: "unknown"}
 			}
 			result.Outcome = "committed"
 		} else {
@@ -195,12 +203,12 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
 		outcome := sqlRollbackOutcome(tx)
-		return result, &database.QueryError{Code: "database_query_failed", Outcome: outcome}
+		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: outcome}
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
-		return result, &database.QueryError{Code: "database_query_failed", Outcome: sqlRollbackOutcome(tx)}
+		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: sqlRollbackOutcome(tx)}
 	}
 	types, _ := rows.ColumnTypes()
 	for i, name := range columns {
@@ -226,7 +234,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 			targets[i] = &values[i]
 		}
 		if err = rows.Scan(targets...); err != nil {
-			return result, &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
+			return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: "unknown"}
 		}
 		row := make([]*string, len(columns))
 		for i, v := range values {
@@ -244,7 +252,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		result.Rows = append(result.Rows, row)
 	}
 	if err = rows.Err(); err != nil {
-		return result, &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
+		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: "unknown"}
 	}
 	rows.Close()
 	if err = check(ctx); err != nil {
@@ -266,7 +274,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		}
 		if tx != nil {
 			if err = tx.Commit(); err != nil {
-				return result, &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
+				return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: "unknown"}
 			}
 			result.Outcome = "committed"
 		} else {
