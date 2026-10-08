@@ -3,8 +3,10 @@ FROM golang:1.26.8-alpine@sha256:ce864e7223ac17b1775e6fd0b4c0db580c2eb50e7953a42
 ENV GOMEMLIMIT=256MiB GOMAXPROCS=2
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY third_party/go-ora-v3 ./third_party/go-ora-v3
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd ./cmd
+COPY auth ./auth
 COPY internal ./internal
 COPY templates ./templates
 COPY api ./api
@@ -16,6 +18,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /out/hakopod-server /hakopod-server
 COPY --from=build /src/LICENSE /src/NOTICE /licenses/hakopod/
+COPY --from=build /src/third_party/go-ora-v3/LICENSE /src/third_party/go-ora-v3/HAKOPOD.md /licenses/go-ora/
 COPY --from=build /src/templates/LICENSE /src/templates/LICENSE-Dokploy /src/templates/NOTICE /src/templates/THIRD_PARTY_NOTICES.md /licenses/hakopod-templates/
 ENV GOMEMLIMIT=192MiB GOMAXPROCS=2 HAKOPOD_LISTEN=0.0.0.0:8080
 USER 65532:65532

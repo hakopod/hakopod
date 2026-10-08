@@ -11,6 +11,8 @@ This review was performed on 2026-09-12 against the actual Go module cache, inst
 | Hakopod | Apache-2.0; preserve root LICENSE and NOTICE |
 | Go standard library | BSD-3-Clause; compiler-distribution LICENSE included with binary notices |
 | pgx, go-toml | MIT; upstream copyright and license files preserved |
+| go-ora/v3 | MIT; the local receive-limit fork preserves the upstream license and documents its changes in `third_party/go-ora-v3/HAKOPOD.md` |
+| santhosh-tekuri/jsonschema/v6 | Apache-2.0; pinned schema validator added on 2026-10-08 |
 | Kubernetes api/apimachinery/client-go | Apache-2.0 with additional upstream notices for included third-party files; preserve those notices |
 | React/React DOM, TanStack Start/Router/Query, Radix | MIT; upstream package notices retained where provided |
 | Tailwind CSS, Vite, React Vite plugin, openapi-typescript, openapi-fetch, srvx, clsx, tailwind-merge | MIT |
@@ -18,6 +20,8 @@ This review was performed on 2026-09-12 against the actual Go module cache, inst
 | React and Node TypeScript declarations | MIT |
 
 The direct license declarations were checked from the installed package metadata and upstream license files. Versions are fixed in `go.mod`/`go.sum` and `web/pnpm-lock.yaml`; the release inventory records versions individually.
+
+The go-ora fork and schema validator entries were checked on 2026-10-08. The other dated inventories remain historical records.
 
 ## Transitive Go modules
 
