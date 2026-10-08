@@ -197,24 +197,26 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       data = {
         engine: fixtureEngine,
         supported: scenario !== 'unsupported',
+        transaction_scope: fixtureEngine === 'vitess' ? 'single_shard' : fixtureEngine === 'duckdb' || fixtureEngine === 'clickhouse' ? 'none' : 'connection',
+        ...(fixtureEngine === 'vitess' ? { cross_shard_dml: false } : {}),
         read_only_supported: fixtureEngine !== 'duckdb',
         execution_modes:
           scenario === 'unsupported'
             ? []
             : fixtureEngine === 'duckdb' || fixtureEngine === 'clickhouse'
               ? ['nontransactional']
-              : fixtureEngine === 'mysql'
+              : (fixtureEngine === 'mysql' || fixtureEngine === 'vitess')
                 ? ['transaction', 'nontransactional']
                 : ['transaction'],
         application_identity: 'app',
-        parameter_style: fixtureEngine === 'mysql' ? '?' : '$1',
+        parameter_style: (fixtureEngine === 'mysql' || fixtureEngine === 'vitess') ? '?' : '$1',
         read_only_enforcement: fixtureEngine === 'duckdb' ? 'unavailable' : 'server_transaction',
         transactional_dml: fixtureEngine !== 'duckdb' && fixtureEngine !== 'clickhouse',
         transactional_ddl: fixtureEngine === 'postgresql',
         ddl_commit:
           fixtureEngine === 'duckdb' || fixtureEngine === 'clickhouse'
             ? 'nontransactional'
-            : fixtureEngine === 'mysql'
+            : (fixtureEngine === 'mysql' || fixtureEngine === 'vitess')
               ? 'implicit_commit'
               : 'transaction',
         cancellation: 'Artificial capability: close the connection and check unknown outcomes.',

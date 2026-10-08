@@ -1,3 +1,4 @@
+import '../lib/sql-language.test'
 import '../lib/toml-language.test'
 import '../lib/framework-recipes.test'
 import '../lib/key-lifetime.test'
