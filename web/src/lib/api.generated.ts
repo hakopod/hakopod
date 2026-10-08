@@ -5922,7 +5922,19 @@ export interface components {
             since_seconds?: number;
             limit?: number;
         };
-        InstallationLogQueryResult: components["schemas"]["LogQueryResult"] & {
+        InstallationLogQueryResult: {
+            entries: components["schemas"]["LogEntry"][];
+            histogram: {
+                /** Format: date-time */
+                timestamp: string;
+                count: number;
+            }[];
+            scanned: number;
+            matched: number;
+            truncated: boolean;
+            pods: number;
+            window_seconds: number;
+            warnings: string[];
             source: string;
             /** Format: date-time */
             observed_at: string;
@@ -6980,10 +6992,33 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
-        ManagedPlatformRecoveryRequest: components["schemas"]["ManagedPlatformRecoveryIntent"] & {
+        ManagedPlatformRecoveryRequest: {
+            /** @enum {string} */
+            kind: "backup" | "restore";
+            project: string;
+            environment: string;
+            source_platform_id: string;
+            target_platform_id?: string;
+            artifact_id?: string;
+            destination_id?: string;
+            destination_revision?: number;
+            expected_source_revision: number;
+            expected_target_revision?: number;
             confirm_target_name?: string;
         };
-        ManagedPlatformRecoveryAcceptRequest: components["schemas"]["ManagedPlatformRecoveryRequest"] & {
+        ManagedPlatformRecoveryAcceptRequest: {
+            /** @enum {string} */
+            kind: "backup" | "restore";
+            project: string;
+            environment: string;
+            source_platform_id: string;
+            target_platform_id?: string;
+            artifact_id?: string;
+            destination_id?: string;
+            destination_revision?: number;
+            expected_source_revision: number;
+            expected_target_revision?: number;
+            confirm_target_name?: string;
             review: components["schemas"]["ManagedPlatformRecoveryReview"];
         };
         ManagedPlatformRecoveryOperation: {
@@ -12840,7 +12875,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -12878,7 +12915,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -18342,7 +18381,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {
@@ -18443,7 +18484,9 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    [key: string]: unknown;
+                };
             };
         };
         responses: {

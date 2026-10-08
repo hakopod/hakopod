@@ -15,6 +15,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sijms/go-ora/v3 v3.0.1
 	go.mongodb.org/mongo-driver/v2 v2.9.1
 	go.yaml.in/yaml/v3 v3.0.5

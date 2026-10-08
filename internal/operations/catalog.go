@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"net/url"
 	"regexp"
 	"sort"
@@ -67,7 +66,9 @@ var contractSHA256 string
 func init() {
 	sum := sha256.Sum256(contract.OpenAPI)
 	contractSHA256 = hex.EncodeToString(sum[:])
-	if err := json.Unmarshal(contract.OpenAPI, &doc); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(contract.OpenAPI))
+	decoder.UseNumber()
+	if err := decoder.Decode(&doc); err != nil {
 		panic(err)
 	}
 	for path, methods := range doc.Paths {
@@ -88,7 +89,9 @@ func init() {
 					} `json:"content"`
 				} `json:"requestBody"`
 			}
-			if err := json.Unmarshal(raw, &entry); err != nil {
+			decoder := json.NewDecoder(bytes.NewReader(raw))
+			decoder.UseNumber()
+			if err := decoder.Decode(&entry); err != nil {
 				panic(err)
 			}
 			op := Operation{ID: entry.ID, Summary: entry.Summary, Description: entry.Description, Method: strings.ToUpper(method), Path: path, Mutating: method != "get", Parameters: entry.Parameters, Body: entry.RequestBody.Content["application/json"].Schema, bodyRequired: entry.RequestBody.Required}
@@ -99,11 +102,16 @@ func init() {
 		}
 	}
 	sort.Slice(catalog, func(i, j int) bool { return catalog[i].ID < catalog[j].ID })
+	if err := compileCatalogSchemas(); err != nil {
+		panic(err)
+	}
 }
 func Catalog() []Operation {
 	raw, _ := json.Marshal(catalog)
 	var out []Operation
-	_ = json.Unmarshal(raw, &out)
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	_ = decoder.Decode(&out)
 	return out
 }
 func Decode(raw []byte, out any) error {
@@ -219,7 +227,7 @@ func invoke(ctx context.Context, request RequestFunc, scope Scope, allowWrite bo
 					if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
 						return nil, errors.New("invalid numeric query parameter")
 					}
-					value = n
+					value = json.Number(v)
 				case "boolean":
 					b, err := strconv.ParseBool(v)
 					if err != nil {
@@ -331,132 +339,6 @@ func resolve(s map[string]any) map[string]any {
 		return doc.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")]
 	}
 	return s
-}
-func validate(v any, s map[string]any, depth int) error {
-	if depth > 32 {
-		return errors.New("JSON nesting exceeds limit")
-	}
-	s = resolve(s)
-	var numeric float64
-	isNumeric := false
-	switch n := v.(type) {
-	case json.Number:
-		parsed, err := strconv.ParseFloat(string(n), 64)
-		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
-			return errors.New("invalid JSON number")
-		}
-		numeric = parsed
-		isNumeric = true
-	case float64:
-		numeric = n
-		isNumeric = true
-	}
-	if choices, ok := s["enum"].([]any); ok {
-		matched := false
-		for _, choice := range choices {
-			vb, _ := json.Marshal(v)
-			cb, _ := json.Marshal(choice)
-			if bytes.Equal(vb, cb) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return errors.New("value is outside the contract choices")
-		}
-	}
-	if x, ok := v.(string); ok {
-		if min, ok := s["minLength"].(float64); ok && len(x) < int(min) {
-			return errors.New("string is too short")
-		}
-		if max, ok := s["maxLength"].(float64); ok && len(x) > int(max) {
-			return errors.New("string is too long")
-		}
-	}
-	if x := numeric; isNumeric {
-		if min, ok := s["minimum"].(float64); ok && x < min {
-			return errors.New("number is below minimum")
-		}
-		if max, ok := s["maximum"].(float64); ok && x > max {
-			return errors.New("number exceeds maximum")
-		}
-	}
-	if choices, ok := s["oneOf"].([]any); ok {
-		for _, c := range choices {
-			if m, ok := c.(map[string]any); ok && validate(v, m, depth+1) == nil {
-				return nil
-			}
-		}
-		return errors.New("body does not match contract")
-	}
-	switch s["type"] {
-	case "object":
-		m, ok := v.(map[string]any)
-		if !ok {
-			return errors.New("expected JSON object")
-		}
-		props, _ := s["properties"].(map[string]any)
-		required, _ := s["required"].([]any)
-		for _, r := range required {
-			if _, ok := m[r.(string)]; !ok {
-				return fmt.Errorf("missing body field %s", r)
-			}
-		}
-		for k, x := range m {
-			if field, ok := props[k].(map[string]any); ok {
-				if err := validate(x, field, depth+1); err != nil {
-					return err
-				}
-			} else {
-				switch a := s["additionalProperties"].(type) {
-				case map[string]any:
-					if err := validate(x, a, depth+1); err != nil {
-						return err
-					}
-				case bool:
-					if !a {
-						return fmt.Errorf("unknown body field %s", k)
-					}
-				default:
-					return fmt.Errorf("unknown body field %s", k)
-				}
-			}
-		}
-	case "array":
-		a, ok := v.([]any)
-		if !ok || len(a) > 1000 {
-			return errors.New("invalid or oversized array")
-		}
-		items, _ := s["items"].(map[string]any)
-		for _, x := range a {
-			if err := validate(x, items, depth+1); err != nil {
-				return err
-			}
-		}
-	case "string":
-		if x, ok := v.(string); !ok || len(x) > MaxBytes {
-			return errors.New("invalid string")
-		}
-	case "boolean":
-		if _, ok := v.(bool); !ok {
-			return errors.New("expected boolean")
-		}
-	case "integer":
-		if n, ok := v.(json.Number); ok {
-			r, valid := new(big.Rat).SetString(string(n))
-			if !valid || !r.IsInt() {
-				return errors.New("expected integer")
-			}
-		}
-		if !isNumeric || math.Trunc(numeric) != numeric {
-			return errors.New("expected integer")
-		}
-	case "number":
-		if !isNumeric {
-			return errors.New("expected number")
-		}
-	}
-	return nil
 }
 func checkScope(v any, s Scope) error {
 	switch x := v.(type) {
