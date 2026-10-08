@@ -331,7 +331,7 @@ func Normalize(input Application) (Application, error) {
 		}
 		if err := validateMembers(svc.DependsOn, field+".depends_on", func(n string) bool {
 			dependency, ok := app.Services[n]
-			return ok && n != name && (dependency.Job == nil || dependency.Job.Schedule == nil && dependency.Job.Invocation == nil)
+			return ok && n != name && dependency.Session == nil && (dependency.Job == nil || dependency.Job.Schedule == nil && dependency.Job.Invocation == nil)
 		}); err != nil {
 			return Application{}, err
 		}

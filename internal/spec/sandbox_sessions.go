@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const MaxSandboxSessions = 8
+
 // SandboxSession configures a fixed worker and helper for isolated stateful execution.
 type SandboxSession struct {
 	AllowedIdentities []string `json:"allowed_identities" toml:"allowed_identities"`

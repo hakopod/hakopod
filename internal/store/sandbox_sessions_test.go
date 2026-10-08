@@ -243,3 +243,42 @@ func TestSessionConcurrentQuotaAndLostLease(t *testing.T) {
 		t.Fatal("expired lease retained side-effect authority", err)
 	}
 }
+
+func TestSessionReceiptDeletionWaitsForCleanup(t *testing.T) {
+	db, _, p, d, in, owner := sessionFixture(t)
+	ctx := context.Background()
+	created, err := db.CreateSession(ctx, p, d.ApplicationID, "worker", owner, "delete-fixture", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := db.Application(ctx, d.ApplicationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = deleteApplicationMetadata(ctx, tx, app); !errors.Is(err, ErrConflict) {
+		t.Fatal("active session did not fence application removal", err)
+	}
+	_ = tx.Rollback(ctx)
+	if _, err = db.Pool.Exec(ctx, "UPDATE sandbox_sessions SET status='closed',cleanup_pending=false,closed_at=now() WHERE id=$1", created.ID); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = db.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if err = deleteApplicationMetadata(ctx, tx, app); err != nil {
+		t.Fatal("cleaned session receipt prevented application removal", err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var remaining int
+	if err = db.Pool.QueryRow(ctx, "SELECT count(*) FROM sandbox_sessions WHERE application_id=$1", d.ApplicationID).Scan(&remaining); err != nil || remaining != 0 {
+		t.Fatal("session receipt remained", remaining, err)
+	}
+}
