@@ -157,6 +157,9 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 	if d.Spec.Engine == "clickhouse" {
 		plan.Warnings = append(plan.Warnings, "Use the ClickHouse native protocol with TLS and the mounted CA. Replication is asynchronous. Sharded queries require Distributed tables; a cluster endpoint does not automatically rewrite SQL or distribute table data.")
 	}
+	if d.Spec.ClickHouseTenantAdmin() {
+		plan.Warnings = append(plan.Warnings, "This login can create and delete tenant users and quotas on this ClickHouse instance and delegate SELECT on app.*. Use it only in trusted provisioning services. Data backups do not include tenant access entities; recreate their credentials and row policies before enabling tenant reads after restore.")
+	}
 	if d.Recovery != nil {
 		plan.Warnings = append(plan.Warnings, "Writes after the captured recovery point are absent from this copy. Pause source writes and take a fresh capture before final cutover when necessary.")
 	}

@@ -24,9 +24,8 @@ func (c *Client) observeClickHouseDatabase(ctx context.Context, d database.Resou
 	if err := clickhouseClientIdentityConfigured(object, d); err != nil {
 		return err
 	}
-	state, _, _ := unstructured.NestedString(object.Object, "status", "status")
-	if state != "Completed" {
-		return fmt.Errorf("waiting for ClickHouse controller reconciliation")
+	if !clickhouseRevisionCompleted(object, d.Revision) {
+		return fmt.Errorf("waiting for ClickHouse controller reconciliation of revision %d", d.Revision)
 	}
 	if err := c.observeClickHouseKeeper(ctx, d, o); err != nil {
 		return err
@@ -308,4 +307,13 @@ func (c *Client) renewClickHouseIdentity(ctx context.Context, d database.Resourc
 	// ClickHouse reloads certificate files on new TLS connections. Verification
 	// still checks the served fingerprint, including every data and Keeper node.
 	return nil
+}
+
+// A previously completed task must not qualify newly requested grants or topology.
+func clickhouseRevisionCompleted(object *unstructured.Unstructured, revision int64) bool {
+	state, _, _ := unstructured.NestedString(object.Object, "status", "status")
+	task, _, _ := unstructured.NestedString(object.Object, "status", "taskID")
+	completed, _, _ := unstructured.NestedStringSlice(object.Object, "status", "taskIDsCompleted")
+	expected := fmt.Sprintf("revision-%d", revision)
+	return state == "Completed" && task == expected && slices.Contains(completed, expected)
 }

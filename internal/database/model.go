@@ -21,21 +21,22 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$`)
 // Spec is a versioned desired configuration. Replicas belong to the database
 // controller: they are never derived from an application's service count.
 type Spec struct {
-	SchemaVersion int           `json:"schema_version" toml:"schema_version"`
-	Name          string        `json:"name" toml:"name"`
-	Engine        string        `json:"engine" toml:"engine"`
-	Version       string        `json:"version" toml:"version"`
-	Mode          string        `json:"mode" toml:"mode"`
-	Replicas      int           `json:"replicas" toml:"replicas"`
-	Shards        int           `json:"shards" toml:"shards"`
-	CPU           string        `json:"cpu" toml:"cpu"`
-	Memory        string        `json:"memory" toml:"memory"`
-	StorageGiB    int64         `json:"storage_gib" toml:"storage_gib"`
-	Placement     Placement     `json:"placement,omitempty" toml:"placement"`
-	TLS           *TLSConfig    `json:"tls,omitempty" toml:"tls"`
-	Pooling       *Pooling      `json:"pooling,omitempty" toml:"pooling"`
-	Oracle        *OracleConfig `json:"oracle,omitempty" toml:"oracle"`
-	Vitess        *VitessConfig `json:"vitess,omitempty" toml:"vitess"`
+	SchemaVersion int               `json:"schema_version" toml:"schema_version"`
+	Name          string            `json:"name" toml:"name"`
+	Engine        string            `json:"engine" toml:"engine"`
+	Version       string            `json:"version" toml:"version"`
+	Mode          string            `json:"mode" toml:"mode"`
+	Replicas      int               `json:"replicas" toml:"replicas"`
+	Shards        int               `json:"shards" toml:"shards"`
+	CPU           string            `json:"cpu" toml:"cpu"`
+	Memory        string            `json:"memory" toml:"memory"`
+	StorageGiB    int64             `json:"storage_gib" toml:"storage_gib"`
+	Placement     Placement         `json:"placement,omitempty" toml:"placement"`
+	TLS           *TLSConfig        `json:"tls,omitempty" toml:"tls"`
+	Pooling       *Pooling          `json:"pooling,omitempty" toml:"pooling"`
+	ClickHouse    *ClickHouseConfig `json:"clickhouse,omitempty" toml:"clickhouse"`
+	Oracle        *OracleConfig     `json:"oracle,omitempty" toml:"oracle"`
+	Vitess        *VitessConfig     `json:"vitess,omitempty" toml:"vitess"`
 }
 
 // Placement restricts scheduling within one Kubernetes cluster. Spread is a
@@ -57,6 +58,11 @@ func (s Spec) Validate() error {
 	}
 	if s.TLS != nil && s.TLS.Mode != "required" {
 		return fmt.Errorf("tls.mode must be required")
+	}
+	if s.ClickHouse != nil {
+		if err := s.validateClickHouseAccess(); err != nil {
+			return err
+		}
 	}
 	if s.Engine != "oracle" && s.Oracle != nil {
 		return fmt.Errorf("oracle configuration belongs only to Oracle databases")
@@ -340,8 +346,14 @@ func PlanResize(db Resource, next Spec, evidence *BackupEvidence, now time.Time)
 	if db.Spec.Engine == "mongodb" && (db.Spec.CPU != next.CPU || db.Spec.Memory != next.Memory || db.Spec.StorageGiB != next.StorageGiB) {
 		return p, fmt.Errorf("MongoDB member resources are fixed at creation; restore into a separate database to change capacity")
 	}
-	if db.Spec.Engine == "clickhouse" && !db.Spec.Equal(next) {
+	if db.Spec.Engine == "clickhouse" && !db.Spec.clickHouseSameCapacity(next) {
 		return p, fmt.Errorf("ClickHouse capacity is fixed at creation; restore into a separate database to change its shard layout or resources")
+	}
+	if db.Spec.ClickHouseTenantAdmin() && !next.ClickHouseTenantAdmin() {
+		return p, fmt.Errorf("ClickHouse tenant administration cannot be disabled in place; migrate to a separate database and revoke existing tenant credentials")
+	}
+	if !db.Spec.ClickHouseTenantAdmin() && next.ClickHouseTenantAdmin() {
+		p.Warnings = append(p.Warnings, "The application login will manage SQL users and quotas on this dedicated ClickHouse instance. It may delegate SELECT on app.*. Data backups exclude tenant users, quotas and row policies; provision them again after restore.")
 	}
 	if db.Spec.Engine == "vitess" && !db.Spec.Equal(next) {
 		return p, fmt.Errorf("Vitess capacity and routing schema are fixed at creation; restore into a separate database before a reviewed migration")
