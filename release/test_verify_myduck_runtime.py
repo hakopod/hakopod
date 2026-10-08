@@ -20,6 +20,7 @@ class MyDuckQualificationTest(unittest.TestCase):
         self.output.mkdir()
         paths = {"go.mod", "go.sum", *MODULE["BUILD_INPUTS"], "release/verify-myduck-runtime.py",
             "release/record-myduck-qualification.py", "release/managed-runtime-availability.py",
+            "release/runtime-source-compatibility.py",
             "scripts/run-development-myduck-acceptance.py", "scripts/run-development-vitess-acceptance.py",
             "scripts/run-development-oracle-free-acceptance.py", "release/verify-oracle-free-runtime.py"}
         for name in paths:
@@ -71,6 +72,21 @@ class MyDuckQualificationTest(unittest.TestCase):
     def json(self, name, value):
         (self.output / name).write_text(json.dumps(value))
 
+    def compatibility(self, current, changes, bootstrap=None):
+        path = self.root / "release/managed-myduck/source-compatibility.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        qualified_tag = bootstrap["base_release"] if bootstrap is not None else "v0.1.0-alpha.56"
+        qualified_commit = bootstrap["base_commit"] if bootstrap is not None else "a" * 40
+        path.write_text(json.dumps({"schema_version": 1, "runtime": "myduck",
+            "qualified_release": {"tag": qualified_tag, "commit": qualified_commit,
+                "manifest_sha256": MODULE["file_hash"](self.output / "manifest.json")},
+            "reviewed_release": "v0.1.0-alpha.57", "control_plane_commit": "b" * 40,
+            "regression_evidence": {"url": "https://github.com/hakopod/hakopod/actions/runs/123",
+                                    "tests": ["TestManagedMyDuckAPICompatibility"]},
+            "bootstrap": bootstrap,
+            "delta": {"baseline_sha256": MODULE["COMPAT"]["canonical_hash"](self.sources),
+                      "current_sha256": MODULE["COMPAT"]["canonical_hash"](current), "changes": changes}}))
+
     def test_valid_native_metadata_and_exact_gate_normalization(self):
         self.assertEqual(MODULE["validate_metadata"](self.output, self.root), self.manifest)
         gate = self.root / MODULE["GATE_PATH"]
@@ -96,6 +112,97 @@ class MyDuckQualificationTest(unittest.TestCase):
         self.write("internal/new_runtime.go", "package internal\n")
         with self.assertRaisesRegex(ValueError, "source changed"):
             MODULE["validate_metadata"](self.output, self.root)
+
+    def test_exact_reviewed_api_delta_reuses_historical_qualification(self):
+        self.write("internal/api/oracle_only.go", "package api\n")
+        path = self.root / "internal/api/oracle_only.go"
+        current = MODULE["source_files"](self.root)
+        self.compatibility(current, [{"path": "internal/api/oracle_only.go", "before": None,
+            "after": current["internal/api/oracle_only.go"],
+            "reason": "Oracle-only API observation does not alter MyDuck runtime or image behavior."}])
+        self.assertEqual(MODULE["validate_metadata"](self.output, self.root), self.manifest)
+
+    def test_compatibility_rejects_protected_and_unmatched_deltas(self):
+        path = self.root / "internal/cluster/database_myduck.go"
+        before = self.sources["internal/cluster/database_myduck.go"]
+        path.write_text(path.read_text() + "// changed\n")
+        current = MODULE["source_files"](self.root)
+        self.compatibility(current, [{"path": "internal/cluster/database_myduck.go", "before": before,
+            "after": current["internal/cluster/database_myduck.go"],
+            "reason": "A protected MyDuck runtime change must never reuse historical native evidence."}])
+        with self.assertRaisesRegex(ValueError, "require new qualification"):
+            MODULE["validate_metadata"](self.output, self.root)
+        path.write_text(path.read_text().replace("// changed\n", ""))
+        self.write("internal/api/unlisted.go", "package api\n")
+        with self.assertRaisesRegex(ValueError, "outside the reviewed delta"):
+            MODULE["validate_metadata"](self.output, self.root)
+
+    def test_trust_roots_require_exact_one_time_bootstrap(self):
+        changes = []
+        for name in sorted(MODULE["COMPAT"]["BOOTSTRAP_CHANGED"]["myduck"]):
+            before = self.sources.get(name)
+            self.write(name, "reviewed alpha57 trust root " + name + "\n")
+            after = MODULE["file_hash"](self.root / name)
+            changes.append({"path": name, "before": before, "after": after,
+                            "reason": "Authenticated Git review approved this exact alpha57 validator bootstrap."})
+        current = MODULE["source_files"](self.root)
+        bootstrap = {"base_release": "v0.1.0-alpha.56", "base_commit": "e45bcf285eabec001e9161878c6696ce7814e54f",
+                     "reviewed_release": "v0.1.0-alpha.57", "trust_anchor": "authenticated-git-review",
+                     "trust_paths": sorted(MODULE["COMPAT"]["BOOTSTRAP_CHANGED"]["myduck"])}
+        self.compatibility(current, changes, bootstrap)
+        MODULE["COMPAT"]["validate"](self.root, "myduck", self.sources, current,
+                                      MODULE["protected_source"], MODULE["file_hash"](self.output / "manifest.json"))
+        self.compatibility(current, changes, None)
+        with self.assertRaisesRegex(ValueError, "trust-root changes"):
+            MODULE["COMPAT"]["validate"](self.root, "myduck", self.sources, current,
+                                          MODULE["protected_source"], MODULE["file_hash"](self.output / "manifest.json"))
+        for field, value in (("base_commit", "f" * 40), ("reviewed_release", "v0.1.0-alpha.58"),
+                             ("trust_paths", bootstrap["trust_paths"][:-1])):
+            wrong = copy.deepcopy(bootstrap); wrong[field] = value
+            self.compatibility(current, changes, wrong)
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "bootstrap identity"):
+                MODULE["COMPAT"]["validate"](self.root, "myduck", self.sources, current,
+                                              MODULE["protected_source"], MODULE["file_hash"](self.output / "manifest.json"))
+
+    def test_myduck_recorder_is_never_a_bootstrap_change(self):
+        name = "release/record-myduck-qualification.py"
+        before = self.sources[name]
+        self.write(name, "changed recorder\n")
+        current = MODULE["source_files"](self.root)
+        changes = [{"path": name, "before": before, "after": current[name],
+                    "reason": "The MyDuck recorder is an unchanged trust root outside this bootstrap."}]
+        self.compatibility(current, changes, None)
+        with self.assertRaisesRegex(ValueError, "trust-root changes"):
+            MODULE["COMPAT"]["validate"](self.root, "myduck", self.sources, current,
+                                          MODULE["protected_source"], MODULE["file_hash"](self.output / "manifest.json"))
+        bootstrap = {"base_release": "v0.1.0-alpha.56", "base_commit": "e45bcf285eabec001e9161878c6696ce7814e54f",
+                     "reviewed_release": "v0.1.0-alpha.57", "trust_anchor": "authenticated-git-review",
+                     "trust_paths": sorted(MODULE["COMPAT"]["BOOTSTRAP_CHANGED"]["myduck"])}
+        self.compatibility(current, changes, bootstrap)
+        with self.assertRaisesRegex(ValueError, "outside the fixed alpha.57 bootstrap"):
+            MODULE["COMPAT"]["validate"](self.root, "myduck", self.sources, current,
+                                          MODULE["protected_source"], MODULE["file_hash"](self.output / "manifest.json"))
+
+    def test_compatibility_schema_and_paths_are_strict(self):
+        self.write("internal/api/oracle_only.go", "package api\n")
+        path = self.root / "internal/api/oracle_only.go"
+        current = MODULE["source_files"](self.root)
+        change = {"path": "internal/api/oracle_only.go", "before": None,
+                  "after": current["internal/api/oracle_only.go"],
+                  "reason": "Oracle-only API observation leaves MyDuck runtime behavior unchanged."}
+        self.compatibility(current, [change])
+        record_path = self.root / "release/managed-myduck/source-compatibility.json"
+        record = json.loads(record_path.read_text())
+        record["schema_version"] = True; record_path.write_text(json.dumps(record))
+        with self.assertRaisesRegex(ValueError, "Invalid myduck compatibility"):
+            MODULE["COMPAT"]["validate"](self.root, "myduck", self.sources, current,
+                                          MODULE["protected_source"], MODULE["file_hash"](self.output / "manifest.json"))
+        for unsafe in ("internal/api/" + "x" * 501, "internal/api/bad\nname.go"):
+            record["schema_version"] = 1; record["delta"]["changes"][0]["path"] = unsafe
+            record_path.write_text(json.dumps(record))
+            with self.subTest(unsafe=unsafe), self.assertRaisesRegex(ValueError, "unsafe"):
+                MODULE["COMPAT"]["validate"](self.root, "myduck", self.sources, current,
+                                              MODULE["protected_source"], MODULE["file_hash"](self.output / "manifest.json"))
 
     def test_skips_incomplete_cases_forged_success_and_residue_are_rejected(self):
         mutations = [lambda value: value["attempts"].pop(),
