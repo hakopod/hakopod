@@ -12,6 +12,7 @@ import (
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/pelletier/go-toml/v2"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -21,13 +22,14 @@ const runtimeProfileAnnotation = "hakopod.io/runtime-profile"
 // RuntimeProfileBinding grants one service access to an installed runtime.
 // The operator owns the handler configuration and its kernel controls.
 type RuntimeProfileBinding struct {
-	Name         string `toml:"name" json:"name"`
-	Project      string `toml:"project" json:"project"`
-	Environment  string `toml:"environment" json:"environment"`
-	Application  string `toml:"application" json:"application"`
-	Service      string `toml:"service" json:"service"`
-	RuntimeClass string `toml:"runtime_class" json:"runtime_class"`
-	Handler      string `toml:"handler" json:"handler"`
+	sessionOverhead corev1.ResourceList
+	Name            string `toml:"name" json:"name"`
+	Project         string `toml:"project" json:"project"`
+	Environment     string `toml:"environment" json:"environment"`
+	Application     string `toml:"application" json:"application"`
+	Service         string `toml:"service" json:"service"`
+	RuntimeClass    string `toml:"runtime_class" json:"runtime_class"`
+	Handler         string `toml:"handler" json:"handler"`
 }
 
 func ValidateRuntimeProfileBindings(bindings []RuntimeProfileBinding) error {
@@ -123,9 +125,17 @@ func (c *Client) resolveRuntimeProfile(ctx context.Context, project, environment
 		if err != nil || class.DeletionTimestamp != nil || class.Handler != binding.Handler {
 			return RuntimeProfileBinding{}, fmt.Errorf("the approved RuntimeClass is unavailable or its handler does not match")
 		}
-		// The application planner does not include RuntimeClass overhead yet.
-		// Refuse it instead of approving an understated resource reservation.
-		if class.Overhead != nil && len(class.Overhead.PodFixed) != 0 {
+		// Session planning and Kubernetes scheduling reserve the same fixed overhead.
+		if svc.Session != nil {
+			if class.Overhead == nil {
+				return RuntimeProfileBinding{}, fmt.Errorf("session RuntimeClass requires 20m CPU and 50Mi memory overhead")
+			}
+			cpu, memory, valid := managedPlatformSandboxOverhead(class.Overhead.PodFixed)
+			if !valid || cpu != sessionRuntimeCPUOverheadMillis || memory != sessionRuntimeMemoryOverheadBytes {
+				return RuntimeProfileBinding{}, fmt.Errorf("session RuntimeClass requires exactly 20m CPU and 50Mi memory overhead")
+			}
+			binding.sessionOverhead = class.Overhead.PodFixed.DeepCopy()
+		} else if class.Overhead != nil && len(class.Overhead.PodFixed) != 0 {
 			return RuntimeProfileBinding{}, fmt.Errorf("runtime profiles do not yet support RuntimeClass pod overhead")
 		}
 		if class.Scheduling != nil && (len(class.Scheduling.NodeSelector) != 0 || len(class.Scheduling.Tolerations) != 0) {
