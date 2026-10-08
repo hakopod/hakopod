@@ -22,7 +22,7 @@ Dynamic calls and alternate transports require manual review. Counts do not prov
 The Go source inventory accounts for 340 literal API route declarations: 326 match OpenAPI and 14 have explicit exclusions.
 CI rejects a new literal route without a contract or documented exclusion. Multiplexed and dynamic routes require separate review.
 
-Contract SHA-256: `12cae5438d4025679662cc726fd5087c0902923849cdab6a65012e79213a2155`.
+Contract SHA-256: `b48753dc789938539799820a0cee9ac7ae0cde9e974c2b90647969d554c4c666`.
 See [the inventory](agent-parity/coverage-matrix.md), [generation process](agent-parity/contract-generation.md) and [connection workflows](agent-parity/connection-workflows.md).
 
 ## Implemented boundaries
@@ -68,8 +68,8 @@ Source edits, source generation, formatting and inspection ran locally. Snapshot
 | `agent-cloud-rebased-v1` | After rebase onto Cloud main 570504, full Cloud Go, composed production build, typecheck, 2 grant dependency tests, server tests and 238 UI tests passed. Engine source was copied from the platform working tree. |
 | `agent-cloud-terminal-native-v8` | Final Cloud gateway/server race tests passed in 5.281 and 7.751 seconds. Covers terminal response validation, caller binding, revocation, reservation cleanup and hosted browser routing. Combined hosted and connected-node native polling passed in 74.78 seconds. |
 
-The committed platform snapshot `9c6bad12` passed CI run `37702379506`, including full Go, separate native-acceptance build, vet, command builds, script checks, dashboard and SDK. Its amd64/arm64 template and Managed Actions runtime acceptance also passed. PostgreSQL network, ingress and certificate acceptance passed. Later changes require their own final results.
-Cloud commit `3d89b96` contains the terminal mapping and gateway fixes. Separate commit `57941ca` pins platform `9c6bad12`. Final Cloud CI remains pending.
+The committed platform snapshot `e9b00927` passed CI run `37705921191`, including full Go, separate native-acceptance build, the Oracle decoder tests, vet, command builds, script checks, dashboard and SDK. Its amd64/arm64 template and Managed Actions runtime acceptance also passed. PostgreSQL network, ingress and certificate acceptance passed. The later checkpoint `2e3952cc` is pushed and has a separate CI run. Later changes require their own final results.
+Cloud commit `3d89b96` contains the terminal mapping and gateway fixes. Separate commit `57941ca` pins platform `9c6bad12`. Cloud run `37703834911` passed service and dashboard smoke checks, API tests, recovery transport and toolkit checks. Hosted packaging failed because Vitess source did not match its reviewed qualification delta. This remains a qualification blocker.
 Cloud snapshot manifest SHA-256: `733f67092275b98550ab66ab3d9000c38c42cfc29939bc349f45e5997372e3c7`.
 Cloud terminal v8 manifest SHA-256: `7078674f4856addb1cbb430a93fbc1b1914fb67662af7f7c4d387fd7190624ab`.
 
@@ -87,7 +87,7 @@ Tests use only `k3d-hakopod-dev` and owned disposable resources.
 | ClickHouse | Native v4 passed JSONCompact numeric/null preservation, read-only insert refusal, result limits, cancellation and normal namespace cleanup. Nontransactional execution only. |
 | MyDuck | Diagnostic runs found that MySQL prepared INSERT binds fail and reported read-only modes permit writes. A later low-level PostgreSQL protocol attempt also failed bound writes. The high-level PostgreSQL driver path and final nontransactional acceptance remain pending. |
 | Oracle | A fresh Oracle Free fixture completed initialization, then failed its first bound query. A diagnostic must identify the driver phase and error before qualification. Execution remains disabled. |
-| Vitess | Standalone native v3 passed in 379.89 seconds, including binds, writes, readback, read-only refusal, confirmed rollback and owned cleanup. Final v4 reached the query assertions but failed to observe server execution before cancellation. Its owned namespace and volumes were removed. The corrected final observer and sharded acceptance remain pending. Execution remains disabled. |
+| Vitess | Standalone v5 passed in 271.70 seconds, including actual tablet execution before cancellation, binds, writes, readback, read-only refusal, rollback, limits and owned cleanup. The two-shard v5 test failed during the first query's connection setup, before it could establish transaction behavior. Its owned namespace and volumes were removed. The query setup diagnostic and final sharded acceptance remain pending. Execution remains disabled. |
 
 `TestDatabaseQueryAPIMCPLive` adds a disposable PostgreSQL fixture through the canonical HTTP API and HTTP MCP transport.
 Its source review and gate-unset VM compilation passed. Native execution remains pending.
