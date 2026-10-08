@@ -22,6 +22,7 @@ import (
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/dnsprovider"
 	"github.com/hakopod/hakopod/internal/platformbackup"
+	"github.com/hakopod/hakopod/internal/sandbox"
 	"github.com/hakopod/hakopod/internal/serverlogs"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -29,8 +30,10 @@ import (
 )
 
 type Server struct {
-	databaseImports  chan struct{}
-	tlsIssuerChanges chan struct{}
+	sessionCalls       chan struct{}
+	sessionTestRuntime sandbox.Runtime
+	databaseImports    chan struct{}
+	tlsIssuerChanges   chan struct{}
 	// CloudControlPlane enables shared auth settings only in the trusted Cloud embedding.
 	CloudControlPlane bool
 	// OperatorRuntime is set only by the trusted Cloud embedding, never an HTTP request.
@@ -103,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	s.nativeProbes = make(chan struct{}, 1)
 	s.databaseImports = make(chan struct{}, 2)
 	s.tlsIssuerChanges = make(chan struct{}, 2)
+	s.sessionCalls = make(chan struct{}, 2)
 	mux := http.NewServeMux()
 	s.registerNeonProxyControlPlane(mux)
 	s.registerNeonController(mux)
@@ -146,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerBuildRoutes(routes)
 	s.registerRuntimeRoutes(routes)
 	s.registerInvocationRoutes(routes)
+	s.registerSessionRoutes(routes)
 	s.registerMCPRoutes(routes)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/certificates", s.backendCertificates)
 	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/certificates", s.uploadBackendCertificate)
