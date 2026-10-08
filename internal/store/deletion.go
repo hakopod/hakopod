@@ -178,6 +178,9 @@ func (s *Store) RetiredName(ctx context.Context, kind, project, environment, nam
 }
 
 func deleteApplicationMetadata(ctx context.Context, tx pgx.Tx, a Application) error {
+	if err := fenceSessionsForDeployment(ctx, tx, a.ID); err != nil {
+		return err
+	}
 	id := a.ID
 	var err error
 	if _, err = tx.Exec(ctx, `INSERT INTO retired_resource_names(kind,project,environment,name,resource_id) VALUES('application',$1,$2,$3,$4)`, a.Project, a.Environment, a.Name, id); err != nil {
@@ -195,6 +198,7 @@ func deleteApplicationMetadata(ctx context.Context, tx pgx.Tx, a Application) er
 		`DELETE FROM application_sources WHERE application_id=$1`,
 		`DELETE FROM build_runs WHERE build_id IN (SELECT id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))`,
 		`DELETE FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4)`,
+		`DELETE FROM sandbox_sessions WHERE application_id=$1 AND status='closed' AND NOT cleanup_pending`,
 		`DELETE FROM deployment_events WHERE deployment_id IN (SELECT id FROM deployments WHERE application_id=$1)`,
 		`DELETE FROM deployments WHERE application_id=$1`,
 		`DELETE FROM applications WHERE id=$1`,

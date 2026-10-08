@@ -51,3 +51,11 @@ func TestSessionSpecificationIsStableAndRejectsAmbientAuthority(t *testing.T) {
 		t.Fatal("injected application environment accepted")
 	}
 }
+
+func TestSessionCannotBeAServiceDependency(t *testing.T) {
+	app := sessionSpecFixture()
+	app.Services["api"] = Service{Image: "example/api:1", DependsOn: []string{"worker"}}
+	if _, err := Normalize(app); err == nil {
+		t.Fatal("service dependency accepted a session template")
+	}
+}
