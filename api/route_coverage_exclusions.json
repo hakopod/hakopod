@@ -1,0 +1,16 @@
+{
+  "GET /api/v1/integrations/slack/callback": "Slack OAuth callback. The provider returns the human authorization state through the dedicated connection flow.",
+  "GET /api/v1/internal/neon/proxy/get_endpoint_access_control": "Internal Neon proxy protocol. It requires an enrolled proxy token.",
+  "GET /api/v1/internal/neon/proxy/wake_compute": "Internal Neon proxy protocol. It requires an enrolled proxy token.",
+  "GET /api/v1/managed-platform-recovery-operations/{id}/native-cancellation-receipt": "Native acceptance probe. Only the separately tagged acceptance build registers this route.",
+  "GET /api/v1/managed-platform-recovery-operations/{id}/native-receipt": "Native acceptance probe. Only the separately tagged acceptance build registers this route.",
+  "GET /api/v1/openapi.json": "Download the contract document. This route does not represent a managed resource operation.",
+  "POST /api/v1/build-registry/authorize": "Internal registry authorization protocol for scoped image access.",
+  "POST /api/v1/external-databases": "Retired creation route. The handler rejects new changes with HTTP 503 after authorization.",
+  "POST /api/v1/integrations/slack/cloud-events/ack": "Internal Cloud Slack relay protocol. Workspace integration owns event delivery.",
+  "POST /api/v1/integrations/slack/cloud-events/claim": "Internal Cloud Slack relay protocol. Workspace integration owns event delivery.",
+  "POST /api/v1/managed-platforms/{id}/native-migrate": "Native acceptance probe. Only the separately tagged acceptance build registers this route.",
+  "POST /api/v1/managed-platforms/{id}/native-probe": "Native acceptance probe. Only the separately tagged acceptance build registers this route.",
+  "PUT /api/v1/integrations/slack/cloud-events/source": "Internal Cloud Slack relay protocol. Workspace integration owns event delivery.",
+  "PUT /api/v1/internal/neon/storage-controller/{platform}/{revision}/{notification}": "Internal Neon storage notification protocol. The enrolled controller signs the notification."
+}
