@@ -438,22 +438,25 @@ type databaseProvisioningRuntime interface {
 }
 
 func reconcileDatabaseProvisioning(ctx context.Context, runtime databaseProvisioningRuntime, d database.Resource, phase string, password []byte, before func() error, finish func(string, string, string, database.Observation)) {
-	// Vitess reconciliation and native health each need their own bounded step.
+	// Vitess and Oracle reconciliation and health checks each need their own bounded step.
 	// Persist the handoff so a process restart cannot spend the observation budget
 	// applying the same resources again. A pending observation returns to apply.
-	if d.Spec.Engine != "vitess" || phase != "observing" {
+	splitObservation := d.Spec.Engine == "vitess" || d.Spec.Engine == "oracle"
+	if !splitObservation || phase != "observing" {
 		if err := runtime.ApplyDatabase(ctx, d, password, before); err != nil {
 			finish("failed", "reconcile", "Database resources could not be reconciled. Verify controller availability, capacity and ownership.", d.Observation)
 			return
 		}
-		if d.Spec.Engine == "vitess" {
+		if splitObservation {
 			finish("queued", "observing", "Waiting for database health checks.", d.Observation)
 			return
 		}
-	} else if err := runtime.ReconcileVitessBackupAuthority(ctx, d, before); err != nil {
+	} else if d.Spec.Engine == "vitess" {
 		// A restart may load different storage approvals between the two steps.
-		finish("failed", "reconcile", "Vitess native backup authority could not be verified.", d.Observation)
-		return
+		if err := runtime.ReconcileVitessBackupAuthority(ctx, d, before); err != nil {
+			finish("failed", "reconcile", "Vitess native backup authority could not be verified.", d.Observation)
+			return
+		}
 	}
 	observed, err := runtime.ObserveDatabase(ctx, d)
 	if err != nil {
