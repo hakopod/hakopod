@@ -439,21 +439,121 @@ def image_observation(expected):
     (OUTPUT / f'image-{expected}.log').write_text(result.stdout + result.stderr)
 
 
+def node_error_class(result):
+    """Classify node access errors without retaining raw stderr or command output."""
+    if result.returncode == 0:
+        return 'completed'
+    error = result.stderr.lower()
+    for needle, classification in [('no such container', 'node-missing'), ('is not running', 'node-stopped'),
+            ('permission denied', 'permission-denied'), ('cannot connect', 'daemon-unavailable'),
+            ('executable file not found', 'executable-missing'), ('context deadline', 'deadline-exceeded')]:
+        if needle in error:
+            return classification
+    return 'node-exec-failed'
+
+
+def workspace_cleanup_diagnostics(uid, container_ids):
+    """Collect only this deleted Pod's metadata; never read workspace files or argv."""
+    assert re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uid), 'invalid fixture Pod UID'
+    assert len(container_ids) <= 16 and all(re.fullmatch(r'[0-9a-f]{64}', value) for value in container_ids), 'invalid fixture container ID'
+    # The shell emits fixed fields. It never emits cgroup paths, mount paths,
+    # process names, argv, environment, directory entries, or file contents.
+    script = r'''uid=$1
+pod=/var/lib/kubelet/pods/$uid
+workspace=$pod/volumes/kubernetes.io~empty-dir/runner
+for target in pod workspace; do
+  if [ "$target" = pod ]; then path=$pod; else path=$workspace; fi
+  if [ -e "$path" ] || [ -L "$path" ]; then
+    printf 'path %s present\n' "$target"
+    stat -c "stat $target %a %u %g %s" "$path" 2>/dev/null || printf 'stat-error %s\n' "$target"
+  else printf 'path %s absent\n' "$target"; fi
+done
+awk -v uid="$uid" -v w="$workspace" '
+  index($5, "/pods/" uid "/") || $5 == "/var/lib/kubelet/pods/" uid {
+    total++; if (total <= 64) {
+      for (i=7;i<=NF;i++) if ($i == "-") {
+        printf "mount %s %s %s %s %d\n", $1,$2,$3,$(i+1),($5 == w); break
+      }
+    }
+  }
+  END {printf "mount-count %d\n",total}
+' /proc/self/mountinfo 2>/dev/null || printf 'mount-scan-error\n'
+count=0
+matched=0
+underscored=$(printf '%s' "$uid" | tr '-' '_')
+for proc in /proc/[0-9]*; do
+  count=$((count + 1))
+  if [ "$count" -gt 4096 ]; then printf 'process-scan-truncated\n'; break; fi
+  if grep -q -e "pod$uid" -e "pod$underscored" "$proc/cgroup" 2>/dev/null; then
+    matched=$((matched + 1))
+    if [ "$matched" -le 64 ]; then
+      pid=${proc#/proc/}
+      printf 'process %s\n' "$pid"
+    fi
+  fi
+done
+printf 'process-count %s\n' "$matched"
+shift
+if [ "$#" -gt 0 ]; then
+  ids=$(printf '%s\n' "$@")
+  if tasks=$(ctr -n k8s.io tasks list 2>/dev/null); then
+    printf '%s\n' "$tasks" | awk -v ids="$ids" '
+    BEGIN {n=split(ids,a,"\n");for(i=1;i<=n;i++) wanted[a[i]]=1}
+    $1 in wanted {printf "task %s %s %s\n",$1,$2,$3}
+    '
+  else printf 'task-scan-error\n'; fi
+fi
+printf 'diagnostics-complete\n'
+'''
+    try:
+        result = subprocess.run(['docker', 'exec', NODE, 'sh', '-c', script, 'workspace-diagnostics', uid, *container_ids],
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+    except (subprocess.TimeoutExpired, OSError) as error:
+        return {'status': 'diagnostic-command-failed', 'error_type': type(error).__name__}
+    allowed = re.compile(r'(?:path (?:pod|workspace) (?:present|absent)|stat (?:pod|workspace) [0-7]+ [0-9]+ [0-9]+ [0-9]+|'
+        r'stat-error (?:pod|workspace)|mount [0-9]+ [0-9]+ [0-9]+:[0-9]+ [a-zA-Z0-9_.-]+ [01]|'
+        r'mount-count [0-9]+|mount-scan-error|task-scan-error|process [0-9]+|process-count [0-9]+|process-scan-truncated|'
+        r'task [0-9a-f]{64} [0-9]+ (?:RUNNING|STOPPED|PAUSED|UNKNOWN)|diagnostics-complete)')
+    lines = result.stdout.splitlines()
+    return {'status': node_error_class(result), 'exit_code': result.returncode,
+            'metadata': [line for line in lines[:256] if allowed.fullmatch(line)],
+            'complete': result.returncode == 0 and lines[-1:] == ['diagnostics-complete'],
+            'filtered_or_truncated': len(lines) > 256 or any(not allowed.fullmatch(line) for line in lines)}
+
+
 def delete_pod(namespace, credential_config=True):
-    uid = state(namespace)['metadata']['uid']
+    pod = state(namespace)
+    uid = pod['metadata']['uid']
+    assert re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', uid), 'invalid fixture Pod UID'
+    container_ids = sorted({item['containerID'].removeprefix('containerd://')
+        for key in ('containerStatuses', 'initContainerStatuses') for item in pod.get('status', {}).get(key, [])
+        if re.fullmatch(r'containerd://[0-9a-f]{64}', item.get('containerID', ''))})
     workspace = f'/var/lib/kubelet/pods/{uid}/volumes/kubernetes.io~empty-dir/runner'
     kube(['-n', namespace, 'delete', 'pod', 'actions-runtime-fixture', '--wait=true', '--timeout=60s'], timeout=75)
     if credential_config:
         kube(['-n', namespace, 'delete', 'secret', 'actions-runtime-fixture', '--wait=true'])
     started = time.monotonic()
-    for _ in range(30):
-        if command(['docker', 'exec', NODE, 'test', '!', '-e', workspace], check=False).returncode == 0:
-            if SHARED_WORKSPACE:
-                SHARED_WORKSPACE.removed(uid)
-            record('private-workspace-removed', started, pod_uid=uid)
-            return
-        time.sleep(2)
-    raise RuntimeError('the deleted pod still has a private workspace on the disposable node')
+    probes = []
+    try:
+        for _ in range(30):
+            result = command(['docker', 'exec', NODE, 'sh', '-c',
+                'if [ -e "$1" ] || [ -L "$1" ]; then printf "present\\n"; else printf "absent\\n"; fi',
+                'workspace-probe', workspace], check=False)
+            outcome = node_error_class(result)
+            if result.returncode == 0:
+                outcome = result.stdout.strip() if result.stdout in ('present\n', 'absent\n') else 'invalid-probe-output'
+            probes.append({'exit_code': result.returncode, 'outcome': outcome})
+            if outcome == 'absent':
+                if SHARED_WORKSPACE:
+                    SHARED_WORKSPACE.removed(uid)
+                record('private-workspace-removed', started, pod_uid=uid)
+                return
+            time.sleep(2)
+    except (subprocess.TimeoutExpired, TimeoutError, OSError) as error:
+        probes.append({'outcome': 'probe-command-failed', 'error_type': type(error).__name__})
+    REPORT.setdefault('workspace_cleanup_failures', []).append({'pod_uid': uid, 'namespace': namespace,
+        'probes': probes, 'diagnostics': workspace_cleanup_diagnostics(uid, container_ids)})
+    raise RuntimeError('private workspace removal was not verified before the cleanup deadline; inspect workspace_cleanup_failures')
 
 
 def restart_docker(namespace, timeout=120, capture=None):
