@@ -198,13 +198,17 @@ func TestManagedVitessShardedQueryLive(t *testing.T) {
 	c := fixtures.c
 	d, password := newVitessFixture(t, ctx, fixtures, "cluster", 2)
 	observed := waitVitessFixture(t, ctx, c, d, password)
+	vitessQueryPhaseDiagnostic(t, ctx, c, d, observed, password)
 	write := false
 	query := func(statement string, parameters ...any) (database.QueryResult, error) {
 		return queryVitessSQLFixture(ctx, c, d, database.QueryRequest{SQL: statement, Parameters: parameters, ReadOnly: &write})
 	}
 	schema := database.QueryRequest{SQL: "CREATE TABLE records (id BIGINT NOT NULL PRIMARY KEY, payload VARBINARY(16) NOT NULL, label VARCHAR(80) CHARACTER SET utf8mb4 NOT NULL)", ReadOnly: &write, ExecutionMode: "nontransactional"}
-	if _, err := queryVitessSQLFixture(ctx, c, d, schema); err != nil {
-		t.Fatal("sharded schema", err)
+	schemaStarted := time.Now()
+	_, schemaErr := queryVitessSQLFixture(ctx, c, d, schema)
+	logVitessQueryPhase(t, ctx, "schema_adapter", schemaStarted, schemaErr)
+	if schemaErr != nil {
+		t.Fatal("sharded schema", schemaErr)
 	}
 	for i := 1; i <= 32; i++ {
 		r, err := query("INSERT INTO records(id,payload,label) VALUES (?,?,?)", json.Number(fmt.Sprint(i)), "payload", "नमस्ते / 東京")
@@ -265,4 +269,75 @@ func TestManagedVitessShardedQueryLive(t *testing.T) {
 		t.Fatal("sharded limit", err)
 	}
 	t.Log("Two-shard Vitess routing, bound writes, rollback and bounded results passed")
+}
+
+// Diagnostics use only a fixed synthetic SELECT and never print SQL, result
+// bodies, credentials or backend error text. Each connection path retains the
+// same twenty-second bound as the production query adapter.
+func vitessQueryPhaseDiagnostic(t *testing.T, ctx context.Context, c *Client, d database.Resource, observed database.Observation, password []byte) {
+	t.Helper()
+	observationCtx, stopObservation := context.WithTimeout(ctx, 20*time.Second)
+	started := time.Now()
+	current, err := c.ObserveDatabase(observationCtx, d)
+	logVitessQueryPhase(t, observationCtx, "observe", started, err)
+	t.Logf("Vitess synthetic observation ready=%t members=%d routing_present=%t", current.Status == "ready", len(current.Members), current.Routing != nil)
+	stopObservation()
+	if observed.Routing == nil || len(observed.Routing.Members) == 0 {
+		return
+	}
+	directCtx, stopDirect := context.WithTimeout(ctx, 20*time.Second)
+	defer stopDirect()
+	started = time.Now()
+	trust, err := c.DatabaseTrust(directCtx, d)
+	logVitessQueryPhase(t, directCtx, "trust", started, err)
+	if err != nil {
+		return
+	}
+	started = time.Now()
+	identity, err := redisTLSConfig(trust, "database."+DatabaseNamespace(d.ID)+".svc")
+	logVitessQueryPhase(t, directCtx, "tls_config", started, err)
+	if err != nil {
+		return
+	}
+	started = time.Now()
+	client, err := c.vitessGatewayClientWithReadTimeout(directCtx, d, observed.Routing.Members[0], "app@primary", password, identity, 20*time.Second)
+	logVitessQueryPhase(t, directCtx, "connector", started, err)
+	if err != nil {
+		return
+	}
+	defer client.Close()
+	started = time.Now()
+	connection, err := client.Conn(directCtx)
+	logVitessQueryPhase(t, directCtx, "connect", started, err)
+	if err != nil {
+		return
+	}
+	defer connection.Close()
+	q := database.QueryRequest{SQL: "SELECT 1"}
+	if err = q.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	checks := 0
+	started = time.Now()
+	_, err = runSQLDriverQuery(directCtx, connection, "vitess", q, "read", func(step context.Context) error {
+		checks++
+		t.Logf("Vitess synthetic authority_check=%d elapsed=%s context_done=%t", checks, time.Since(started), step.Err() != nil)
+		return step.Err()
+	})
+	logVitessQueryPhase(t, directCtx, "direct_executor", started, err)
+	adapterCtx, stopAdapter := context.WithTimeout(ctx, 20*time.Second)
+	defer stopAdapter()
+	started = time.Now()
+	_, err = queryVitessSQLFixture(adapterCtx, c, d, q)
+	logVitessQueryPhase(t, adapterCtx, "read_adapter", started, err)
+}
+
+func logVitessQueryPhase(t *testing.T, ctx context.Context, phase string, started time.Time, err error) {
+	t.Helper()
+	code, outcome := "", ""
+	var problem *database.QueryError
+	if errors.As(err, &problem) {
+		code, outcome = problem.Code, problem.Outcome
+	}
+	t.Logf("Vitess synthetic phase=%s elapsed=%s error_type=%T code=%s outcome=%s context_done=%t", phase, time.Since(started), err, code, outcome, ctx.Err() != nil)
 }
