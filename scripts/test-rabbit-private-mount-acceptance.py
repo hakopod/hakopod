@@ -74,7 +74,7 @@ class OwnershipTests(unittest.TestCase):
     def test_owned_helper_cleanup_uses_exact_id(self):
         self.fixture.owned()
         self.fixture.objects["container"].append({"Id": "c" * 64, "Name": "/k3d-hakopod-dev-tools",
-                                                  "Config": {"Labels": {fixture_module.OWNER: self.fixture.owner, "k3d.cluster": "hakopod-dev"}}})
+                                                  "Config": {"Labels": {fixture_module.OWNER: self.fixture.owner, fixture_module.HELPER_CLUSTER: "hakopod-dev"}}})
         self.fixture.cleanup()
         self.assertTrue(self.fixture.report["cleanup_ok"])
         self.assertIn(["docker", "container", "rm", "--force", "--volumes", "c" * 64], self.fixture.commands)
@@ -129,6 +129,8 @@ class OwnershipTests(unittest.TestCase):
         self.fixture.owned()
         node = self.fixture.objects["container"][0]
         node.update(Name="/k3d-hakopod-dev-tools", State={"Running": True}, Mounts=[])
+        node["Config"]["Labels"].pop("k3d.cluster")
+        node["Config"]["Labels"][fixture_module.HELPER_CLUSTER] = "hakopod-dev"
         node["Config"]["Image"] = fixture_module.TOOLS
         node["NetworkSettings"] = {"Networks": {self.fixture.network: {"NetworkID": "b" * 64}}}
         self.fixture.report["network_id"] = "b" * 64
