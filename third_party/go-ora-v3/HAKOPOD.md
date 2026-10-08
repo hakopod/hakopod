@@ -43,12 +43,14 @@ before processing later columns. It also rejects a nonempty value for this
 NULL-only type. Tests call the actual decoder and check subsequent field
 alignment, stale value removal and receive-limit enforcement.
 
-The zero-length character patch removes the CHAR/NCHAR shortcut that skipped
-CLR consumption when metadata reported zero maximum length. RAW behavior remains
-unchanged. Deterministic regressions cover NULL/NUMBER ordering, following-field
-alignment, stale values, receive limits, fixed CLR fields and array sentinels.
-The native numeric/NULL query still fails. These decoder changes do not qualify
-Oracle query support.
+The scalar fetched-character candidate handles CHAR/NCHAR columns described
+with zero maximum length as NULL without consuming row bytes. It clears prior
+values before returning and applies only outside UDT and array paths. The
+upstream BasicRead shortcut is restored; positive-length parameter, fixed CLR
+and array paths retain their existing reads. Tests distinguish described NULL
+columns with no CLR from positive-length character fields carrying a NULL CLR.
+This candidate is not a proven decoder fix. Full native acceptance is required
+before any Oracle capability is enabled.
 
 Native diagnostic helpers require the `hakopod_native_acceptance` build tag.
 They collect only bounded, static categories on an explicitly captured statement.
@@ -57,15 +59,15 @@ Default-build protocol hooks are empty. Preserve the diagnostic helpers and
 privacy tests when updating the driver.
 
 When updating the driver, review and reapply `receive-limit.patch`,
-`diagnostics.patch`, `null-decoder.patch` and `zero-length-character.patch`
+`diagnostics.patch`, `null-decoder.patch` and `scalar-character-fetch.patch`
 where upstream still requires them.
 Inspect all allocation and accumulation paths. Run these adversarial tests and
 real Oracle query acceptance. CI tests the nested module explicitly:
 
 ```
 cd third_party/go-ora-v3
-go test . ./network -run '^Test(ReadLimit|LobReadLimit|DriverDiagnostics|DecodePrimValueUntypedNull|StatementRead|ZeroLengthCharacter)' -count=1
-go test -tags hakopod_native_acceptance . -run '^Test(OracleMetadataRecorderPrivacyAndBound|OracleBoundary)' -count=1
+go test . ./network -count=1
+go test -tags hakopod_native_acceptance . ./network -count=1
 ```
 
 The tests need no database. Root-module `go test ./...` excludes this nested

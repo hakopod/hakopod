@@ -1,0 +1,20 @@
+diff --git a/parameter.go b/parameter.go
+index 3b39e981..96a9347b 100644
+--- a/parameter.go
++++ b/parameter.go
+@@ -637,6 +637,15 @@ func (par *ParameterInfo) decodeParameterValue(connection *Connection) error {
+ }
+ 
+ func (par *ParameterInfo) decodeColumnValue(connection *Connection, udt bool) error {
++	// Scalar fetched character columns described with zero length contain no CLR.
++	// Keep parameter, UDT and array decoding on their existing paths.
++	if !udt && par.ArraySize == 0 && !par.IsUDTPar && !par.IsArrayPar &&
++		(par.DataType == oraTypes.CHAR || par.DataType == oraTypes.NCHAR) && par.MaxLen == 0 {
++		par.BValue = nil
++		par.oPrimValue = nil
++		par.IsNull = true
++		return nil
++	}
+ 	// var err error
+ 	//if !udt && connection.connOption.Lob == configurations.INLINE && (par.isLobType()) {
+ 	//	session := connection.session

@@ -50,6 +50,16 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	if len(result.Rows) != 1 || len(result.Rows[0]) != 2 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" || result.Rows[0][1] != nil {
 		t.Fatal("numeric/null result differs")
 	}
+	for _, statement := range []string{
+		"SELECT 1, CARDINALITY(NULL) FROM dual",
+		"SELECT 1, LENGTHB(NULL) FROM dual",
+		"SELECT 1, TO_UTC_TIMESTAMP_TZ(NULL) FROM dual",
+	} {
+		result = read(statement)
+		if len(result.Rows) != 1 || len(result.Rows[0]) != 2 || result.Rows[0][0] == nil || *result.Rows[0][0] != "1" || result.Rows[0][1] != nil {
+			t.Fatal("scalar function NULL row differs")
+		}
+	}
 	_, err = queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: "CREATE TABLE hakopod_query_fixture_v2(value NUMBER(30,0) PRIMARY KEY)", ReadOnly: &write, ExecutionMode: "nontransactional"})
 	if err != nil {
 		t.Fatal("explicit schema write failed")
