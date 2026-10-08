@@ -637,6 +637,15 @@ func (par *ParameterInfo) decodeParameterValue(connection *Connection) error {
 }
 
 func (par *ParameterInfo) decodeColumnValue(connection *Connection, udt bool) error {
+	// Scalar fetched character columns described with zero length contain no CLR.
+	// Keep parameter, UDT and array decoding on their existing paths.
+	if !udt && par.ArraySize == 0 && !par.IsUDTPar && !par.IsArrayPar &&
+		(par.DataType == oraTypes.CHAR || par.DataType == oraTypes.NCHAR) && par.MaxLen == 0 {
+		par.BValue = nil
+		par.oPrimValue = nil
+		par.IsNull = true
+		return nil
+	}
 	// var err error
 	//if !udt && connection.connOption.Lob == configurations.INLINE && (par.isLobType()) {
 	//	session := connection.session

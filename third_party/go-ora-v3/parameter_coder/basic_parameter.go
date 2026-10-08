@@ -41,6 +41,9 @@ func (basic *BasicParameter) Write(session network.SessionWriter) error {
 	return nil
 }
 func (basic *BasicParameter) BasicRead(session network.SessionReader) ([]byte, error) {
+	if (basic.DataType == types.NCHAR || basic.DataType == types.CHAR) && basic.MaxLen == 0 {
+		return nil, nil
+	}
 	if basic.DataType == types.RAW && basic.MaxLen == 0 {
 		return nil, nil
 	}
