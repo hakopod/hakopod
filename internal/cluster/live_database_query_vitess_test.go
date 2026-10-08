@@ -75,11 +75,7 @@ func TestManagedVitessQueryLive(t *testing.T) {
 		t.Fatal("cancellation session unavailable")
 	}
 	defer cancelConnection.Close()
-	var connectionID int64
-	if e = cancelConnection.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connectionID); e != nil {
-		t.Fatal("capture cancellation connection unavailable")
-	}
-	request := database.QueryRequest{SQL: "SELECT SLEEP(15)"}
+	request := database.QueryRequest{SQL: "SELECT SLEEP(15), 'hakopod_vitess_started_probe'"}
 	if e = request.Validate(); e != nil {
 		t.Fatal(e)
 	}
@@ -92,46 +88,26 @@ func TestManagedVitessQueryLive(t *testing.T) {
 	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
 		select {
 		case earlyErr := <-cancelled:
-			t.Fatalf("query finished before observed execution: error_type=%T", earlyErr)
+			var problem *database.QueryError
+			if errors.As(earlyErr, &problem) {
+				t.Fatalf("query finished before observed execution: code=%s outcome=%s", problem.Code, problem.Outcome)
+			}
+			t.Fatalf("query finished before observed execution: error_present=%t", earlyErr != nil)
 		default:
 		}
-		processes, probeErr := native.QueryContext(ctx, "SHOW FULL PROCESSLIST")
+		primaries, primaryErr := vitessObservedPrimaries(d, observed)
+		if primaryErr != nil || len(primaries) != 1 {
+			t.Fatal("primary tablet unavailable")
+		}
+		tablet := primaries[0]
+		out := &databaseBoundedWriter{limit: 1024}
+		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
+		probeErr := c.DatabaseExec(probeCtx, d, tablet, vitessLocalCommand("vt_dba", "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID<>CONNECTION_ID() AND COMMAND='Query' AND INFO LIKE '%hakopod_vitess_started_probe%'"), nil, out)
+		probeCancel()
 		if probeErr != nil {
-			t.Fatal("execution observer unavailable")
+			t.Fatal("tablet execution observer unavailable")
 		}
-		columns, probeErr := processes.Columns()
-		if probeErr != nil {
-			processes.Close()
-			t.Fatal("execution columns unavailable")
-		}
-		for processes.Next() {
-			values := make([]sql.NullString, len(columns))
-			args := make([]any, len(columns))
-			for i := range values {
-				args[i] = &values[i]
-			}
-			if probeErr = processes.Scan(args...); probeErr != nil {
-				processes.Close()
-				t.Fatal("execution scan unavailable")
-			}
-			matches, executing := false, false
-			for i, column := range columns {
-				if strings.EqualFold(column, "id") && values[i].Valid && values[i].String == fmt.Sprint(connectionID) {
-					matches = true
-				}
-				if strings.EqualFold(column, "info") && values[i].Valid && strings.Contains(strings.ToUpper(values[i].String), "SLEEP") {
-					executing = true
-				}
-			}
-			if matches && executing {
-				started = true
-			}
-		}
-		probeErr = processes.Err()
-		processes.Close()
-		if probeErr != nil {
-			t.Fatal("execution observer stream unavailable")
-		}
+		started = strings.TrimSpace(out.String()) == "1"
 		if started {
 			break
 		}
