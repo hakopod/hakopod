@@ -479,7 +479,7 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 			wanted.Spec.Template.Annotations = map[string]string{}
 		}
 		for key, value := range current.Spec.Template.Annotations {
-			if key != "hakopod.io/restart-nonce" {
+			if key != "hakopod.io/restart-nonce" && key != runtimeProfileAnnotation {
 				wanted.Spec.Template.Annotations[key] = value
 			}
 		}
