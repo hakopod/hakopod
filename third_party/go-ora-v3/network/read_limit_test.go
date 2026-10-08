@@ -1,10 +1,12 @@
 package network
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"github.com/sijms/go-ora/v3/configurations"
 	"github.com/sijms/go-ora/v3/trace"
+	"net"
 	"testing"
 )
 
@@ -85,5 +87,25 @@ func TestReadLimitCumulativeReceiveBudget(t *testing.T) {
 	s.SetReadLimit(0)
 	if err := s.consumeReceive(100); err != nil {
 		t.Fatal("zero changed defaults", err)
+	}
+}
+
+func TestReadLimitManyWireReadsStopBeforeAllocation(t *testing.T) {
+	s := limitedSession(12, nil)
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	s.conn = client
+	s.reader = bufio.NewReader(client)
+	go func() { _, _ = server.Write(make([]byte, 12)) }()
+	for i := 0; i < 3; i++ {
+		s.lastPacket.Reset()
+		if err := s.readAll(4); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.lastPacket.Reset()
+	if !errors.Is(s.readAll(4), ErrReadLimit) {
+		t.Fatal("extra wire body accepted")
 	}
 }
