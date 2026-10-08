@@ -108,6 +108,9 @@ func MoveService(source, destination Application, name, targetName string) (Appl
 	}
 	// A container daemon grant names an exact application and service, so it
 	// cannot follow the service to another one.
+	if svc.RuntimeProfile != "" {
+		return Application{}, Application{}, fmt.Errorf("the runtime profile belongs to the source application. Obtain a destination grant before creating the destination service")
+	}
 	if svc.TLS != nil || len(svc.CertificateMounts) > 0 || svc.AWSIdentity != "" || svc.ContainerDaemon != "" || len(svc.PublicTCP) > 0 {
 		return Application{}, Application{}, fmt.Errorf("this service has application-bound certificates, identity, a container daemon binding or public TCP; migrate those settings explicitly before moving")
 	}

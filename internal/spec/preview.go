@@ -30,6 +30,9 @@ func ValidatePreview(a Application) error {
 		}
 		// A preview is a separate scope, so it cannot inherit a grant that names
 		// the original application and service.
+		if s.RuntimeProfile != "" {
+			return fmt.Errorf("previews cannot inherit a runtime profile grant from the original application")
+		}
 		if len(s.PublicTCP) > 0 || len(s.CertificateMounts) > 0 || s.AWSIdentity != "" || s.ContainerDaemon != "" || s.TLS != nil {
 			return fmt.Errorf("previews do not expose public TCP or inherit certificates, AWS identities or container daemon bindings")
 		}
