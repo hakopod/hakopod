@@ -439,3 +439,34 @@ test('SQL and pod execution preserve exact bearer requests and reject other meth
   }
   assert.equal(mocked.mock.callCount(), 2)
 })
+
+
+test('invocation transport preserves owner authority and rejects browser credentials and unregistered methods', async (t) => {
+  const base = `applications/${app}/services/worker/invocations`
+  const id = 'b'.repeat(32)
+  const cases = [[base, 'POST'], [base, 'GET'], [`${base}/${id}`, 'GET'], [`${base}/${id}/cancel`, 'POST'], [`${base}/${id}/logs`, 'GET']]
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    const target = new URL(String(url))
+    assert.ok(cases.some(([path, method]) => target.pathname === `/api/v1/${path}` && init?.method === method))
+    assert.equal(target.search, '?correlation_id=execution-1&active=true')
+    const headers = new Headers(init?.headers)
+    assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
+    assert.equal(headers.get('X-Hakopod-Owner-Scope'), 'tenant-1')
+    assert.equal(headers.get('Idempotency-Key'), 'retry-1')
+    assert.equal(headers.get('Cookie'), null)
+    if (init?.method === 'POST') assert.equal(new TextDecoder().decode(init.body as Uint8Array), '{"inputs":{}}')
+    return Response.json({ cleanup_pending: true }, { status: 202 })
+  })
+  for (const [path, method] of cases) {
+    const response = await request(`${path}?correlation_id=execution-1&active=true`, method, method === 'POST' ? '{"inputs":{}}' : undefined,
+      { Cookie: 'ambient-session', 'X-Hakopod-Owner-Scope': 'tenant-1', 'Idempotency-Key': 'retry-1' })
+    assert.equal(response.status, 202)
+    assert.equal(response.headers.get('Cache-Control'), 'no-store')
+    assert.equal((await request(path, method, method === 'POST' ? '{}' : undefined, { Authorization: '', Cookie: 'ambient-session' })).status, 401)
+    assert.equal((await request(path, 'DELETE', '{}')).status, 405)
+    const browserRequest = new Request(`https://dashboard.example/api/${path}`, { headers: { Cookie: 'ambient-session' } })
+    assert.equal((await proxy({ request: browserRequest, params: { _splat: path } })).status, 404)
+  }
+  assert.equal((await request(`${base}/${id}/exec`, 'POST', '{}')).status, 404)
+  assert.equal(mocked.mock.callCount(), cases.length)
+})

@@ -4,9 +4,14 @@ import test from 'node:test'
 import { allowed, proxy } from './api-proxy.ts'
 import { sealSession, sessionCookie } from './session.ts'
 
-// These endpoints have their own session-sealing/signature-aware transports.
+// These endpoints use dedicated authentication transports.
 const alternate = new Set([
   '/mcp',
+  // Trusted invocation callers use the bearer API, not browser session cookies.
+  '/applications/{id}/services/{service}/invocations',
+  '/applications/{id}/services/{service}/invocations/{invocation}',
+  '/applications/{id}/services/{service}/invocations/{invocation}/cancel',
+  '/applications/{id}/services/{service}/invocations/{invocation}/logs',
   '/auth/setup',
   '/auth/login',
   '/auth/logout',
