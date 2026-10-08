@@ -86,6 +86,8 @@ type QueryCapabilities struct {
 	ApplicationIdentity string   `json:"application_identity"`
 	ParameterStyle      string   `json:"parameter_style"`
 	ReadOnlyEnforcement string   `json:"read_only_enforcement"`
+	TransactionScope    string   `json:"transaction_scope"`
+	CrossShardDML       *bool    `json:"cross_shard_dml,omitempty"`
 	TransactionalDML    bool     `json:"transactional_dml"`
 	TransactionalDDL    bool     `json:"transactional_ddl"`
 	DDLCommit           string   `json:"ddl_commit"`
@@ -100,7 +102,7 @@ func SQLQueryEngine(engine string) bool {
 	return false
 }
 func CapabilitiesForQuery(engine string) QueryCapabilities {
-	c := QueryCapabilities{ExecutionModes: []string{}, ApplicationIdentity: "app", Engine: engine, Cancellation: "The connection closes on cancellation. Check unknown write outcomes before retrying."}
+	c := QueryCapabilities{ExecutionModes: []string{}, ApplicationIdentity: "app", TransactionScope: "none", Engine: engine, Cancellation: "The connection closes on cancellation. Check unknown write outcomes before retrying."}
 	switch engine {
 	case "postgresql":
 		c.Supported = true
@@ -109,6 +111,7 @@ func CapabilitiesForQuery(engine string) QueryCapabilities {
 		c.ParameterStyle = "$1"
 		c.ReadOnlyEnforcement = "server_transaction"
 		c.TransactionalDML = true
+		c.TransactionScope = "connection"
 		c.TransactionalDDL = true
 		c.DDLCommit = "transaction"
 	case "mysql", "vitess":
@@ -120,7 +123,13 @@ func CapabilitiesForQuery(engine string) QueryCapabilities {
 		c.ParameterStyle = "?"
 		c.ReadOnlyEnforcement = "server_transaction"
 		c.TransactionalDML = true
+		c.TransactionScope = "connection"
 		c.DDLCommit = "implicit_commit"
+		if engine == "vitess" {
+			c.TransactionScope = "single_shard"
+			no := false
+			c.CrossShardDML = &no
+		}
 	case "oracle":
 		c.ExecutionModes = []string{"nontransactional"}
 		c.ApplicationIdentity = "APP"

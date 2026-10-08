@@ -49,7 +49,9 @@ schemas["DatabaseQueryCapabilities"] = obj({
     "read_only_supported": {"type": "boolean", "description": "The engine enforces read-only execution. If false, every SQL request requires explicit write access."},
     "execution_modes": {"type": "array", "items": {"type": "string", "enum": ["transaction", "nontransactional"]}},
     "application_identity": S, "parameter_style": S, "read_only_enforcement": S,
+    "transaction_scope": {"type": "string", "enum": ["none", "connection", "single_shard"], "description": "Scope of transaction guarantees. Scatter reads do not imply a globally synchronized snapshot."},
+    "cross_shard_dml": {"type": "boolean", "description": "Whether data changes may span shards. If false, data changes must target one shard, including nontransactional requests. Schema changes can partially apply."},
     "transactional_dml": B, "transactional_ddl": B, "ddl_commit": S, "cancellation": S,
-}, ["engine", "supported", "read_only_supported", "execution_modes", "application_identity", "parameter_style", "read_only_enforcement", "transactional_dml", "transactional_ddl", "ddl_commit", "cancellation"])
+}, ["engine", "supported", "read_only_supported", "execution_modes", "application_identity", "parameter_style", "read_only_enforcement", "transactional_dml", "transactional_ddl", "ddl_commit", "cancellation", "transaction_scope"])
 route("/databases/{id}/query-capabilities", "get", "getDatabaseQueryCapabilities", ref("DatabaseQueryCapabilities"))
 paths["/databases/{id}/query-capabilities"]["get"]["description"] = "Read SQL execution support, modes, parameter format, and transaction behavior for this database engine. Requires access to read the database."
