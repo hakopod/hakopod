@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"database/sql/driver"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -1537,13 +1536,7 @@ func (conn *Connection) PrepareContext(ctx context.Context, query string) (drive
 	//}
 	if conn.State != Opened || !conn.session.Connected {
 		if !conn.session.Connected {
-			t := time.Now().Local()
-			err := conn.OpenWithContext(ctx)
-			if err != nil {
-				fmt.Printf("[%s][oracle] bad connection, reconnect error [ela: %v][err: %v]\n", time.Now().Format("2006-01-02 15:04:05.000"), time.Since(t), err)
-			} else {
-				fmt.Printf("[%s][oracle] bad connection, reconnect successful [ela: %v]\n", time.Now().Format("2006-01-02 15:04:05.000"), time.Since(t))
-			}
+			_ = conn.OpenWithContext(ctx)
 		}
 		return nil, driver.ErrBadConn
 	}
@@ -1619,13 +1612,9 @@ func (conn *Connection) ProcessTCCResponse(msgCode uint8) error {
 				return err
 			}
 			if size > 0 {
-				bty, err := session.GetBytes(size)
+				_, err := session.GetBytes(size)
 				if err != nil {
 					return err
-				}
-				if len(bty) >= 8 {
-					queryID := binary.LittleEndian.Uint64(bty[size-8:])
-					_, _ = os.Stderr.WriteString(fmt.Sprintln("query ID: ", queryID))
 				}
 			}
 		}
@@ -1661,12 +1650,9 @@ func (conn *Connection) ProcessTCCResponse(msgCode uint8) error {
 			}
 		}
 	case 15:
-		warning, err := network.NewWarningObject(session)
+		_, err := network.NewWarningObject(session)
 		if err != nil {
 			return err
-		}
-		if warning != nil {
-			_, _ = os.Stderr.WriteString(fmt.Sprintln(warning))
 		}
 	case 23:
 		opCode, err := session.GetByte()

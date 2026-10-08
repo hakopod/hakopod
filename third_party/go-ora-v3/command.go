@@ -901,7 +901,6 @@ func (stmt *defaultStmt) read(resultSet *ResultSet) (err error) {
 					}
 					if len(bty) >= 8 {
 						stmt.queryID = binary.LittleEndian.Uint64(bty[size-8:])
-						fmt.Println("query ID: ", stmt.queryID)
 					}
 				}
 			}
@@ -1106,11 +1105,10 @@ func (stmt *defaultStmt) requestCustomTypeInfo(typeName string) error {
 	if err != nil {
 		return err
 	}
-	data, err := session.GetBytes(0x10)
+	_, err = session.GetBytes(0x10)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%#v\n", data)
 	session.LoadState()
 	return nil
 }

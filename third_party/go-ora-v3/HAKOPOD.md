@@ -1,4 +1,4 @@
-# Oracle receive limits
+# Oracle receive limits and diagnostics
 
 This directory contains the production sources of github.com/sijms/go-ora/v3
 v3.0.1, with its upstream LICENSE. Upstream module checksum:
@@ -28,13 +28,20 @@ packet/chunk lengths and collects LOB values before database/sql returns a row.
 Checking the result after Scan cannot protect those allocations. No public
 upstream receive-limit option was available in this version.
 
+The diagnostics patch removes unconditional output from the connection and
+statement code. Server warning text, query identifiers, protocol bytes and
+reconnection errors must not enter standard output or standard error.
+The driver still consumes those protocol fields and returns errors normally.
+Explicit driver tracing retains its upstream behavior. Hakopod does not enable
+driver tracing for managed queries or accept tracing options from query callers.
+
 When updating the driver, reapply the small decoder patch, inspect all allocation
 and accumulation paths, and run these adversarial tests plus real Oracle query
 acceptance. The nested module is tested explicitly in CI:
 
 ```
 cd third_party/go-ora-v3
-go test . ./network -run '^Test(ReadLimit|LobReadLimit)' -count=1
+go test . ./network -run '^Test(ReadLimit|LobReadLimit|DriverDiagnostics)' -count=1
 ```
 
 The tests need no database. Root-module `go test ./...` excludes this nested
