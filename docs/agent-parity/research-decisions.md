@@ -33,6 +33,31 @@ The useful patterns were direct client connection instructions, explanations of 
 The investigation did not establish that Openship uses K3s. It also did not establish a general performance or usability advantage.
 Catalog entries were not treated as proof of managed database lifecycle support.
 
+## Oracle execution guarantees
+
+Oracle's [autonomous transaction documentation](https://docs.oracle.com/en/database/oracle/oracle-database/26/lnpls/autonomous-transactions.html) states that transaction properties apply only within the transaction that sets them.
+Its Example 7-48 invokes an autonomous function from `SELECT`. The function's committed insert survives rollback of the calling transaction.
+[SET TRANSACTION](https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/SET-TRANSACTION.html) configures the current transaction.
+These properties do not establish read-only protection against autonomous functions.
+
+The candidate Oracle query mode therefore requires explicit write permission and nontransactional execution.
+It refuses read-only and transactional requests before runtime access and advertises no transaction guarantee.
+Native acceptance must confirm autonomous persistence after parent rollback and after a function commits and raises an error.
+The production query adapter must report the latter outcome as unknown.
+The capability remains disabled until those checks and the remaining driver, limit, cancellation and cleanup checks pass.
+
+## Vitess transaction scope
+
+The managed gateway retains Vitess SINGLE mode. The pinned [session implementation](https://github.com/vitessio/vitess/blob/0f1ed062dec171e0adfab796110549752901e299/go/vt/vtgate/executorcontext/safe_session.go#L545-L577) rejects more than one writable shard.
+Vitess starts an [implicit transaction](https://github.com/vitessio/vitess/blob/0f1ed062dec171e0adfab796110549752901e299/go/vt/vtgate/plan_execute.go#L351-L391) for ordinary autocommit statements.
+Its [DML implementation](https://github.com/vitessio/vitess/blob/0f1ed062dec171e0adfab796110549752901e299/go/vt/vtgate/engine/dml.go#L109-L113) permits the single-shard optimization unless an override applies.
+Hakopod rejects the override that enables multiple shards. A nontransactional request does not grant cross-shard DML.
+
+The contract therefore reports `transaction_scope=single_shard` and `cross_shard_dml=false`.
+Reads can span shards, but this does not promise a globally synchronized snapshot.
+The [DDL path](https://github.com/vitessio/vitess/blob/0f1ed062dec171e0adfab796110549752901e299/go/vt/vtgate/engine/send.go#L198-L204) commits the parent transaction. Schema changes can partially apply.
+The SQL page states these limits before query entry. Native acceptance checks single-shard persistence and rejected cross-shard writes against complete dataset snapshots.
+
 ## What still needs customer evidence
 
 The current positioning hypothesis is less operational effort with retained control.
