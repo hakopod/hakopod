@@ -1,0 +1,59 @@
+name: Rabbit private Secret mounts
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/rabbit-private-mounts.yml'
+      - 'scripts/rabbit-private-mount-acceptance.py'
+      - 'scripts/test-rabbit-private-mount-acceptance.py'
+permissions:
+  contents: read
+concurrency:
+  group: rabbit-private-mounts-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  mounted-keys:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 768MiB
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check fixture ownership and failure cleanup
+        run: python3 -B -m unittest discover -s scripts -p 'test-rabbit-private-mount-acceptance.py' -v
+      - name: Check out the reviewed public Rabbit fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: SyneHQ/rabbit.go
+          ref: 8162af729aedc5a6684f8e5f36afe13a44ba5340
+          path: .local/rabbit-source
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.26.8'
+          cache-dependency-path: .local/rabbit-source/server/go.sum
+      - name: Build the exact mounted-file test binary
+        working-directory: .local/rabbit-source/server
+        run: go test -p=2 -c -o "$RUNNER_TEMP/rabbit-mounted.test" ./internal/server
+      - name: Install checksum-pinned development cluster tooling
+        run: scripts/local-tools.sh
+      - name: Qualify nonroot Secret SubPath and FSGroup files
+        run: |
+          python3 -B scripts/rabbit-private-mount-acceptance.py \
+            --root "$RUNNER_TEMP/rabbit-private-mounts" \
+            --k3d "$GITHUB_WORKSPACE/.local/bin/k3d" \
+            --binary "$RUNNER_TEMP/rabbit-mounted.test"
+      - name: Retain sanitized acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rabbit-private-mount-evidence
+          path: |
+            ${{ runner.temp }}/rabbit-private-mounts/report.json
+            ${{ runner.temp }}/rabbit-private-mounts/probe.log
+          if-no-files-found: error
+          retention-days: 7
