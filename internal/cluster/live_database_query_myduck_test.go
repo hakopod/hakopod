@@ -117,7 +117,7 @@ func TestManagedMyDuckQueryLive(t *testing.T) {
 	cancelled := make(chan error, 1)
 	const marker = "hakopod_myduck_cancel_after_start"
 	go func() {
-		_, executionErr := queryMyDuckSQLFixture(cancelCtx, c, d, database.QueryRequest{SQL: "SELECT SLEEP(15) /* " + marker + " */", ReadOnly: &write, ExecutionMode: "nontransactional"})
+		_, executionErr := queryMyDuckSQLFixture(cancelCtx, c, d, database.QueryRequest{SQL: "SELECT '" + marker + "', SUM(SIN(i::DOUBLE)) FROM range(100000000) t(i)", ReadOnly: &write, ExecutionMode: "nontransactional"})
 		cancelled <- executionErr
 	}()
 	started := false
@@ -140,6 +140,11 @@ func TestManagedMyDuckQueryLive(t *testing.T) {
 	}
 	if !started {
 		t.Fatal("query never reached observed server execution")
+	}
+	select {
+	case earlyErr := <-cancelled:
+		t.Fatalf("query finished after marker before cancellation: error_type=%T", earlyErr)
+	default:
 	}
 	cancelQuery()
 	select {
