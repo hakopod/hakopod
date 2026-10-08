@@ -234,6 +234,9 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	var cleanupPending bool
 	// The application row is locked. Dispatch uses the same row and the runtime
 	// advisory lock; a new revision cannot overtake an active invocation.
+	if err = fenceSessionsForDeployment(ctx, tx, a.ID); err != nil {
+		return Deployment{}, err
+	}
 	if err = fenceInvocationsForDeployment(ctx, tx, a.ID); err != nil {
 		return Deployment{}, err
 	}
@@ -396,7 +399,7 @@ func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 		}
 		release := func() { releaseClaimConnection(conn) }
 		var invocationActive bool
-		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM job_invocations WHERE application_id=$1 AND (status IN ('starting','running') OR cleanup_pending))`, v.app).Scan(&invocationActive); err != nil {
+		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM job_invocations WHERE application_id=$1 AND (status IN ('starting','running') OR cleanup_pending)) OR EXISTS(SELECT 1 FROM sandbox_sessions WHERE application_id=$1 AND (status<>'closed' OR cleanup_pending))`, v.app).Scan(&invocationActive); err != nil {
 			release()
 			return nil, err
 		}
