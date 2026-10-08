@@ -18,6 +18,9 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 	if q.ExecutionMode != "nontransactional" {
 		return result, &database.QueryError{Code: "database_query_nontransactional_mode_required", Outcome: "not_started"}
 	}
+	if !myduckSingleStatement(q.SQL) {
+		return result, &database.QueryError{Code: "database_query_statement_syntax_unsupported", Outcome: "not_started"}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	observation, err := c.ObserveDatabase(ctx, d)

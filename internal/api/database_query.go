@@ -161,6 +161,8 @@ func writeDatabaseQueryError(w http.ResponseWriter, id string, e *database.Query
 		message = "SQL queries are unavailable for this database engine. Read its query capabilities before execution."
 	case "database_query_statement_unsupported":
 		message = "This SQL statement is unavailable through the query API. Submit one statement supported by this engine."
+	case "database_query_statement_syntax_unsupported":
+		message = "This statement syntax is unsupported. Use one statement with standard quoted strings and identifiers. Put other values in bound parameters."
 	case "database_query_nontransactional_mode_required":
 		message = "This statement cannot run in a transaction. Review the statement with execution_mode set to nontransactional."
 	case "database_query_read_only_mode_unavailable":
