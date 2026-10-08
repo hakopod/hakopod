@@ -40,7 +40,7 @@ func TestManagedOracleQueryLive(t *testing.T) {
 		return result
 	}
 	result := read("SELECT CAST(:1 AS NUMBER(30,0)), NULL FROM dual", json.Number("9007199254740993"))
-	if len(result.Rows) != 1 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" || result.Rows[0][1] != nil {
+	if len(result.Rows) != 1 || len(result.Rows[0]) != 2 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" || result.Rows[0][1] != nil {
 		t.Fatalf("numeric/null result differs: %#v", result)
 	}
 	write := false
@@ -53,7 +53,7 @@ func TestManagedOracleQueryLive(t *testing.T) {
 		t.Fatal("DML commit", err, result.Outcome)
 	}
 	result = read("SELECT value FROM hakopod_query_fixture_v2")
-	if len(result.Rows) != 1 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" {
+	if len(result.Rows) != 1 || len(result.Rows[0]) != 1 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" {
 		t.Fatal("write readback")
 	}
 	for _, statement := range []string{"INSERT INTO hakopod_query_fixture_v2 VALUES(2)", "DROP TABLE hakopod_query_fixture_v2", "COMMIT", "START TRANSACTION", "SET TRANSACTION READ WRITE", "CALL missing()"} {
@@ -154,6 +154,9 @@ func queryOracleSQLFixture(ctx context.Context, c *Client, d database.Resource, 
 func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d database.Resource, member database.Member) {
 	t.Helper()
 	started := time.Now()
+	parent := ctx
+	ctx, stopDiagnostic := context.WithTimeout(parent, 20*time.Second)
+	defer func() { stopDiagnostic() }()
 	report := func(phase string, err error) {
 		code := 0
 		var native *oranetwork.OracleError
@@ -163,8 +166,12 @@ func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d 
 		t.Logf("Oracle synthetic phase=%s error_type=%T oracle_code=%d elapsed=%s context_done=%t", phase, err, code, time.Since(started), ctx.Err() != nil)
 	}
 	observationStart := time.Now()
-	_, observationErr := c.ObserveDatabase(ctx, d)
-	t.Logf("Oracle synthetic observation_elapsed=%s error_type=%T context_done=%t", time.Since(observationStart), observationErr, ctx.Err() != nil)
+	observationContext, stopObservation := context.WithTimeout(parent, 20*time.Second)
+	_, observationErr := c.ObserveDatabase(observationContext, d)
+	t.Logf("Oracle synthetic observation_elapsed=%s error_type=%T context_done=%t", time.Since(observationStart), observationErr, observationContext.Err() != nil)
+	stopObservation()
+	stopDiagnostic()
+	ctx, stopDiagnostic = context.WithTimeout(parent, 20*time.Second)
 	client, err := c.oracleApplicationConnectionOptions(ctx, d, member, true, true)
 	if err != nil {
 		report("connect", err)
@@ -215,6 +222,14 @@ func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d 
 		}
 	}
 	report("rows_complete", rows.Err())
+	rows.Close()
+	statement.Close()
+	tx.Rollback()
+	conn.Close()
+	client.Close()
+	stopDiagnostic()
+	ctx, stopExecutor := context.WithTimeout(parent, 20*time.Second)
+	defer stopExecutor()
 	q := database.QueryRequest{SQL: "SELECT CAST(:1 AS NUMBER(30,0)), NULL FROM dual", Parameters: []any{json.Number("9007199254740993")}}
 	if err = q.Validate(); err != nil {
 		t.Fatal(err)
