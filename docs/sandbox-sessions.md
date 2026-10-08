@@ -25,6 +25,8 @@ Base path:
 | Call fixed helper | `POST /{session}/call` with binary input |
 | Close | `DELETE /{session}` |
 
+The authenticated machine caller supplies `X-Hakopod-Owner-Scope`; it is not an end-user authentication token. Your trusted application must derive this scope from its authenticated user. Keep the application machine key on the server: a holder can select any owner scope allowed under that machine identity.
+
 Every request requires the creating identity and owner scope. Calls and heartbeats also require the expected generation. A repeated call ID is rejected: an interrupted connection can leave execution uncertain, so clients must not replay code automatically.
 
 Limits: eight active sessions per application, one active session per owner/runtime key, one active call per session, two calls per API process, 48 MiB input, 52 MiB combined stdout/stderr output and 150 seconds per call. Sessions expire after at most one hour; idle timeout is at most 15 minutes. Closed receipts remain for 24 hours.
