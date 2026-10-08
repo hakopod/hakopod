@@ -44,7 +44,7 @@ type Record struct {
 	ClosedAt                                            *time.Time       `json:"closed_at,omitempty"`
 	IdentityID, KeyID, OwnerHash, RuntimeHash           string           `json:"-"`
 	Project, Environment, ApplicationName, DeploymentID string           `json:"-"`
-	NamespaceUID, PodUID, ContainerID                   string           `json:"-"`
+	NamespaceUID, PodUID, ContainerID, ImageID          string           `json:"-"`
 	CallToken, CallRequestID, CallKeyID                 string           `json:"-"`
 	CallUntil                                           time.Time        `json:"-"`
 	LeaseToken                                          string           `json:"-"`
@@ -59,8 +59,8 @@ type CreateRequest struct {
 }
 
 type RuntimeState struct {
-	NamespaceUID, PodUID, ContainerID string
-	Ready                             bool
+	NamespaceUID, PodUID, ContainerID, ImageID string
+	Ready                                      bool
 }
 
 // Runtime accepts only immutable server-owned templates. Calls never select a command.

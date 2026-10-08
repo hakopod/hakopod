@@ -12,6 +12,7 @@ const MaxSandboxSessions = 8
 type SandboxSession struct {
 	AllowedIdentities []string `json:"allowed_identities" toml:"allowed_identities"`
 	HelperCommand     []string `json:"helper_command" toml:"helper_command"`
+	ReadyCommand      []string `json:"ready_command" toml:"ready_command"`
 	IdleSeconds       int64    `json:"idle_seconds,omitempty" toml:"idle_seconds"`
 	LifetimeSeconds   int64    `json:"lifetime_seconds,omitempty" toml:"lifetime_seconds"`
 }
@@ -31,11 +32,14 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 		}
 		seen[id] = true
 	}
-	if len(cfg.HelperCommand) == 0 || len(svc.Command) == 0 {
-		return fmt.Errorf("session requires a fixed worker command and helper_command")
+	if len(cfg.HelperCommand) == 0 || len(cfg.ReadyCommand) == 0 || len(svc.Command) == 0 {
+		return fmt.Errorf("session requires a fixed worker command, helper_command and ready_command")
 	}
 	if err := ValidateCommand(cfg.HelperCommand, nil); err != nil {
 		return fmt.Errorf("session.helper_command: %w", err)
+	}
+	if err := ValidateCommand(cfg.ReadyCommand, nil); err != nil {
+		return fmt.Errorf("session.ready_command: %w", err)
 	}
 	if cfg.IdleSeconds == 0 {
 		cfg.IdleSeconds = 900
@@ -57,6 +61,20 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 	}
 	if len(app.Env) != 0 {
 		return fmt.Errorf("session applications cannot define shared environment variables")
+	}
+	for _, key := range []string{"HAKOPOD_POD_UID", "HAKOPOD_SESSION_GENERATION"} {
+		if _, supplied := svc.Env[key]; supplied {
+			return fmt.Errorf("session environment must not override %s", key)
+		}
+	}
+	for _, mount := range svc.TemporaryMounts {
+		if !mount.Memory {
+			return fmt.Errorf("session temporary mounts require memory=true for an enforced capacity limit")
+		}
+		const guardPath = "/run/hakopod-session"
+		if mount.MountPath == guardPath || strings.HasPrefix(mount.MountPath, guardPath+"/") || strings.HasPrefix(guardPath, mount.MountPath+"/") {
+			return fmt.Errorf("session temporary mounts must not overlap /run/hakopod-session")
+		}
 	}
 	if svc.Replicas > 1 || svc.Healthcheck != "" || svc.Readiness != nil || svc.UpdateStrategy != "" {
 		return fmt.Errorf("session cannot configure replicas, readiness, healthcheck or update strategy")

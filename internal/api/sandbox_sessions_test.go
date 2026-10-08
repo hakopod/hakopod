@@ -25,6 +25,8 @@ type sandboxRuntimeFixture struct {
 	starts, calls, cleanups int
 	cleanupReady            bool
 	replacement             bool
+	started                 chan struct{}
+	exited                  chan struct{}
 }
 
 func (f *sandboxRuntimeFixture) StartSession(ctx context.Context, r sandbox.Record, before func(context.Context) error) (sandbox.RuntimeState, error) {
@@ -32,13 +34,19 @@ func (f *sandboxRuntimeFixture) StartSession(ctx context.Context, r sandbox.Reco
 		return sandbox.RuntimeState{}, err
 	}
 	f.starts++
-	return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "pod-fixture", ContainerID: "container-fixture", Ready: true}, nil
+	if f.started != nil {
+		close(f.started)
+		defer close(f.exited)
+		<-ctx.Done()
+		return sandbox.RuntimeState{}, ctx.Err()
+	}
+	return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "pod-fixture", ContainerID: "container-fixture", Ready: true, ImageID: "image-fixture"}, nil
 }
 func (f *sandboxRuntimeFixture) ObserveSession(context.Context, sandbox.Record) (sandbox.RuntimeState, error) {
 	if f.replacement {
-		return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "replacement", ContainerID: "container-fixture", Ready: true}, fmt.Errorf("kernel changed")
+		return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "replacement", ContainerID: "container-fixture", Ready: true, ImageID: "image-fixture"}, fmt.Errorf("kernel changed")
 	}
-	return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "pod-fixture", ContainerID: "container-fixture", Ready: true}, nil
+	return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "pod-fixture", ContainerID: "container-fixture", Ready: true, ImageID: "image-fixture"}, nil
 }
 func (f *sandboxRuntimeFixture) CallSession(ctx context.Context, r sandbox.Record, in io.Reader, out io.Writer) error {
 	f.calls++
@@ -61,7 +69,7 @@ func sessionAPIFixture(t *testing.T) (*Server, store.Principal, store.Deployment
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, err := spec.Normalize(spec.Application{Name: "session-api", Services: map[string]spec.Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{admin.ID}, HelperCommand: []string{"helper"}}}}})
+	app, err := spec.Normalize(spec.Application{Name: "session-api", Services: map[string]spec.Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{admin.ID}, ReadyCommand: []string{"ready"}, HelperCommand: []string{"helper"}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,5 +247,35 @@ func TestSessionOutputReportsFlushFailureAndMissingDeadlines(t *testing.T) {
 		if err == nil {
 			t.Fatal("unbounded or disconnected response accepted")
 		}
+	}
+}
+
+func TestSessionControllerShutdownJoinsRuntimeWorkers(t *testing.T) {
+	s, p, d, in, fake := sessionAPIFixture(t)
+	owner, _ := sandbox.HashKey("tenant-a")
+	if _, err := s.Store.CreateSession(context.Background(), p, d.ApplicationID, "worker", owner, "shutdown-fixture", in); err != nil {
+		t.Fatal(err)
+	}
+	fake.started = make(chan struct{})
+	fake.exited = make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { defer close(done); s.RunSessions(ctx) }()
+	select {
+	case <-fake.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runtime did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session controller did not stop")
+	}
+	select {
+	case <-fake.exited:
+	default:
+		t.Fatal("controller returned before its runtime worker stopped")
 	}
 }

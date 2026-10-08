@@ -20,7 +20,7 @@ func sessionFixture(t *testing.T) (*Store, Principal, Principal, Deployment, san
 	admin := bootstrapPrincipal(t, db)
 	ctx := context.Background()
 	app := emptyTestSpec()
-	app.Services = map[string]spec.Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{admin.ID}, HelperCommand: []string{"helper"}}}}
+	app.Services = map[string]spec.Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{admin.ID}, ReadyCommand: []string{"ready"}, HelperCommand: []string{"helper"}}}}
 	normalized, err := spec.Normalize(app)
 	if err != nil {
 		t.Fatal(err)
@@ -117,11 +117,14 @@ func TestSessionGenerationCallReplayAndCancellation(t *testing.T) {
 	if err = db.CheckSessionLease(ctx, lease); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.SaveSessionRuntime(ctx, lease, sandbox.RuntimeState{NamespaceUID: "ns-a", PodUID: "pod-a", ContainerID: "container-a", Ready: true}); err != nil {
+	if err = db.SaveSessionRuntime(ctx, lease, sandbox.RuntimeState{NamespaceUID: "ns-a", PodUID: "pod-a", ContainerID: "container-a", Ready: true, ImageID: "image-fixture"}); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.SaveSessionRuntime(ctx, lease, sandbox.RuntimeState{NamespaceUID: "ns-a", PodUID: "pod-b", ContainerID: "container-a", Ready: true}); !errors.Is(err, ErrClaimLost) {
+	if err = db.SaveSessionRuntime(ctx, lease, sandbox.RuntimeState{NamespaceUID: "ns-a", PodUID: "pod-b", ContainerID: "container-a", Ready: true, ImageID: "image-fixture"}); !errors.Is(err, ErrClaimLost) {
 		t.Fatal("pod replacement accepted", err)
+	}
+	if err = db.SaveSessionRuntime(ctx, lease, sandbox.RuntimeState{NamespaceUID: "ns-a", PodUID: "pod-a", ContainerID: "container-a", ImageID: "replacement-image", Ready: true}); !errors.Is(err, ErrClaimLost) {
+		t.Fatal("runtime image replacement accepted", err)
 	}
 	if _, err = db.ClaimSessionCall(ctx, p, d.ApplicationID, "worker", owner, created.ID, "wrong-generation", "call-1", strings.Repeat("a", 64)); !errors.Is(err, ErrConflict) {
 		t.Fatal("wrong generation accepted", err)
@@ -236,7 +239,7 @@ func TestSessionConcurrentQuotaAndLostLease(t *testing.T) {
 	if _, err = db.Pool.Exec(ctx, `UPDATE sandbox_sessions SET lease_until=now()-interval '1 second' WHERE id=$1`, lease.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.SaveSessionRuntime(ctx, lease, sandbox.RuntimeState{NamespaceUID: "old", PodUID: "old", ContainerID: "old", Ready: true}); !errors.Is(err, ErrClaimLost) {
+	if err = db.SaveSessionRuntime(ctx, lease, sandbox.RuntimeState{NamespaceUID: "old", PodUID: "old", ContainerID: "old", Ready: true, ImageID: "image-fixture"}); !errors.Is(err, ErrClaimLost) {
 		t.Fatal("expired lease changed runtime", err)
 	}
 	if err = db.CheckSessionLease(ctx, lease); !errors.Is(err, ErrClaimLost) {

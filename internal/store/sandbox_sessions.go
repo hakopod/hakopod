@@ -15,11 +15,11 @@ func SessionAuthority(p Principal, a Application, service, permission string) bo
 	return ok && sandbox.AllowsIdentity(svc.Session, p.ID) && (p.Admin || p.Email == "") && p.CredentialType == "machine" && p.KeyID != "" && p.Project == a.Project && p.Environment == a.Environment && p.Application == a.Name && contains(p.Permissions, permission) && p.Allows(permission, a.Project, a.Environment, a.Name)
 }
 
-const sessionCols = `j.id,j.application_id,j.deployment_id,j.service,j.revision,j.image,j.generation,j.identity_id,j.key_id,j.owner_hash,j.runtime_hash,j.status,j.message,j.cleanup_pending,j.namespace_uid,j.pod_uid,j.container_id,j.source,j.call_token,j.call_request_id,j.call_until,j.lease_token,j.lease_until,j.created_at,j.idle_until,j.expires_at,j.closed_at,a.project,a.environment,a.name`
+const sessionCols = `j.id,j.application_id,j.deployment_id,j.service,j.revision,j.image,j.generation,j.identity_id,j.key_id,j.owner_hash,j.runtime_hash,j.status,j.message,j.cleanup_pending,j.namespace_uid,j.pod_uid,j.container_id,j.image_id,j.source,j.call_token,j.call_request_id,j.call_until,j.lease_token,j.lease_until,j.created_at,j.idle_until,j.expires_at,j.closed_at,a.project,a.environment,a.name`
 
 func scanSession(row scanner) (sandbox.Record, error) {
 	var v sandbox.Record
-	err := row.Scan(&v.ID, &v.ApplicationID, &v.DeploymentID, &v.Service, &v.Revision, &v.Image, &v.Generation, &v.IdentityID, &v.KeyID, &v.OwnerHash, &v.RuntimeHash, &v.Status, &v.Message, &v.CleanupPending, &v.NamespaceUID, &v.PodUID, &v.ContainerID, &v.Source, &v.CallToken, &v.CallRequestID, &v.CallUntil, &v.LeaseToken, &v.LeaseUntil, &v.CreatedAt, &v.IdleUntil, &v.ExpiresAt, &v.ClosedAt, &v.Project, &v.Environment, &v.ApplicationName)
+	err := row.Scan(&v.ID, &v.ApplicationID, &v.DeploymentID, &v.Service, &v.Revision, &v.Image, &v.Generation, &v.IdentityID, &v.KeyID, &v.OwnerHash, &v.RuntimeHash, &v.Status, &v.Message, &v.CleanupPending, &v.NamespaceUID, &v.PodUID, &v.ContainerID, &v.ImageID, &v.Source, &v.CallToken, &v.CallRequestID, &v.CallUntil, &v.LeaseToken, &v.LeaseUntil, &v.CreatedAt, &v.IdleUntil, &v.ExpiresAt, &v.ClosedAt, &v.Project, &v.Environment, &v.ApplicationName)
 	return v, err
 }
 func sessionCredential(ctx context.Context, q interface {

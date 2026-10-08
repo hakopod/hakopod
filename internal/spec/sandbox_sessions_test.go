@@ -7,7 +7,7 @@ import (
 )
 
 func sessionSpecFixture() Application {
-	return Application{Name: "sessions", Services: map[string]Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"python", "-I", "-m", "worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &SandboxSession{AllowedIdentities: []string{strings.Repeat("a", 32)}, HelperCommand: []string{"python", "-I", "-m", "helper"}}}}}
+	return Application{Name: "sessions", Services: map[string]Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"python", "-I", "-m", "worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &SandboxSession{AllowedIdentities: []string{strings.Repeat("a", 32)}, ReadyCommand: []string{"ready"}, HelperCommand: []string{"python", "-I", "-m", "helper"}}}}}
 }
 func TestSessionSpecificationIsStableAndRejectsAmbientAuthority(t *testing.T) {
 	original := sessionSpecFixture()
@@ -30,10 +30,17 @@ func TestSessionSpecificationIsStableAndRejectsAmbientAuthority(t *testing.T) {
 		"mutable-image":      func(s *Service) { s.Image = "example/worker:latest" },
 		"unbounded-lifetime": func(s *Service) { s.Session.LifetimeSeconds = 3601 },
 		"wildcard-identity":  func(s *Service) { s.Session.AllowedIdentities = []string{"*"} },
+		"missing-ready":      func(s *Service) { s.Session.ReadyCommand = nil },
 		"missing-helper":     func(s *Service) { s.Session.HelperCommand = nil },
 		"root":               func(s *Service) { s.RunAsUser = 0 },
 		"ordinary-runtime":   func(s *Service) { s.RuntimeProfile = "" },
-		"persistent-volume":  func(s *Service) { s.Volume = &Volume{MountPath: "/data", SizeGiB: 1} },
+		"reserved-env":       func(s *Service) { s.Env = map[string]string{"HAKOPOD_POD_UID": "other"} },
+		"disk-temporary":     func(s *Service) { s.TemporaryMounts = []TemporaryMount{{MountPath: "/workspace", SizeMiB: 32}} },
+		"guard-overlap": func(s *Service) {
+			s.TemporaryMounts = []TemporaryMount{{MountPath: "/run/hakopod-session", SizeMiB: 32, Memory: true}}
+		},
+		"guard-parent":      func(s *Service) { s.TemporaryMounts = []TemporaryMount{{MountPath: "/run", SizeMiB: 32, Memory: true}} },
+		"persistent-volume": func(s *Service) { s.Volume = &Volume{MountPath: "/data", SizeGiB: 1} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			app := sessionSpecFixture()

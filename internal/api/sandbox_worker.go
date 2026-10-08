@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/sandbox"
@@ -26,8 +27,12 @@ func (s *Server) RunSessions(ctx context.Context) {
 	if runtime == nil {
 		return
 	}
+	var workers sync.WaitGroup
+	defer workers.Wait()
 	for lane := 0; lane < 2; lane++ {
+		workers.Add(1)
 		go func() {
+			defer workers.Done()
 			for ctx.Err() == nil {
 				record, err := s.Store.ClaimSession(ctx)
 				if err == nil {

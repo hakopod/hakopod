@@ -71,10 +71,10 @@ func (s *Store) SaveSessionRuntime(ctx context.Context, r sandbox.Record, state 
 	if state.NamespaceUID == "" {
 		return fmt.Errorf("session runtime returned no namespace identity")
 	}
-	if state.Ready && (state.PodUID == "" || state.ContainerID == "") {
+	if state.Ready && (state.PodUID == "" || state.ContainerID == "" || state.ImageID == "") {
 		return fmt.Errorf("ready session has no container identity")
 	}
-	tag, err := s.Pool.Exec(ctx, `UPDATE sandbox_sessions SET namespace_uid=$3,pod_uid=$4,container_id=$5,cleanup_pending=false,status=CASE WHEN $6 THEN 'ready' ELSE 'starting' END,message=CASE WHEN $6 THEN 'Session is ready' ELSE 'Session is starting' END WHERE id=$1 AND lease_token=$2 AND lease_until>now() AND status IN ('starting','ready') AND (namespace_uid='' OR namespace_uid=$3) AND (pod_uid='' OR pod_uid=$4) AND (container_id='' OR container_id=$5)`, r.ID, r.LeaseToken, state.NamespaceUID, state.PodUID, state.ContainerID, state.Ready)
+	tag, err := s.Pool.Exec(ctx, `UPDATE sandbox_sessions SET namespace_uid=$3,pod_uid=$4,container_id=$5,image_id=$7,cleanup_pending=false,status=CASE WHEN $6 THEN 'ready' ELSE 'starting' END,message=CASE WHEN $6 THEN 'Session is ready' ELSE 'Session is starting' END WHERE id=$1 AND lease_token=$2 AND lease_until>now() AND status IN ('starting','ready') AND (namespace_uid='' OR namespace_uid=$3) AND (pod_uid='' OR pod_uid=$4) AND (container_id='' OR container_id=$5) AND (image_id='' OR image_id=$7)`, r.ID, r.LeaseToken, state.NamespaceUID, state.PodUID, state.ContainerID, state.Ready, state.ImageID)
 	if err != nil {
 		return err
 	}
