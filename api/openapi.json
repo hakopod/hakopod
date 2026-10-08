@@ -61,7 +61,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Read the current identity, credential type, permissions and scope."
       }
     },
     "/projects": {
@@ -121,7 +122,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "List projects."
       },
       "post": {
         "operationId": "createProject",
@@ -218,7 +220,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Create a project."
       }
     },
     "/applications": {
@@ -296,7 +299,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List applications."
       }
     },
     "/applications/{id}": {
@@ -344,7 +348,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the application."
       },
       "delete": {
         "operationId": "deleteEmptyApplication",
@@ -428,7 +433,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete an empty application record."
       }
     },
     "/plan": {
@@ -477,7 +483,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a deployment plan for the application."
       }
     },
     "/deployments": {
@@ -537,7 +544,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request an application deployment."
       }
     },
     "/deployments/{id}": {
@@ -585,7 +593,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the deployment."
       }
     },
     "/idempotency/{key}": {
@@ -631,7 +640,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Find the deployment associated with an idempotency key."
       }
     },
     "/applications/{id}/rollback": {
@@ -712,7 +722,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request deployment of a previous application revision."
       }
     },
     "/deployments/{id}/cancel": {
@@ -783,7 +794,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request cancellation of a deployment."
       }
     },
     "/nodes": {
@@ -840,7 +852,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List nodes."
       }
     },
     "/keys": {
@@ -892,7 +905,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List automation key metadata."
       },
       "post": {
         "operationId": "createKey",
@@ -942,7 +956,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create an automation key with the requested scope and permissions."
       }
     },
     "/keys/{id}": {
@@ -998,7 +1013,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Revoke the specified automation key."
       }
     },
     "/keys/{id}/rotate": {
@@ -1059,7 +1075,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Rotate the specified automation key."
       }
     },
     "/audit": {
@@ -1111,7 +1128,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List audit events."
       }
     },
     "/applications/{id}/logs": {
@@ -1182,7 +1200,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read or follow logs for an application service."
       }
     },
     "/deployments/{id}/events": {
@@ -1228,7 +1247,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Stream events for the specified deployment."
       }
     },
     "/applications/{id}/actions": {
@@ -1304,7 +1324,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read Managed Actions state for the application."
       }
     },
     "/actions/capabilities": {
@@ -1410,7 +1431,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read available Managed Actions capabilities."
       }
     },
     "/applications/{id}/actions/{service}/jobs": {
@@ -1499,7 +1521,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List Managed Actions jobs."
       }
     },
     "/applications/{id}/actions/{service}/jobs/{slot}/logs": {
@@ -1615,7 +1638,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read logs for the specified Managed Actions job."
       }
     },
     "/applications/{id}/actions/{service}/jobs/{slot}/cancel": {
@@ -1695,7 +1719,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request cancellation of a Managed Actions job."
       }
     },
     "/applications/{id}/actions/{service}/hold": {
@@ -1771,7 +1796,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the provider hold for the Managed Actions service."
       }
     },
     "/applications/{id}/actions/{service}/hold/release": {
@@ -1869,7 +1895,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Release the provider hold for the Managed Actions service."
       }
     },
     "/applications/{id}/services/{service}/exec": {
@@ -1934,7 +1961,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Run a command in the specified owned pod and container."
       }
     },
     "/databases/{id}/query": {
@@ -1998,7 +2026,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Run one SQL statement with the database's enabled modes and limits."
       }
     },
     "/databases/{id}/query-capabilities": {
@@ -2048,7 +2077,8 @@
           "resource_parameter": "id",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read enabled SQL modes and guarantees for the database."
       }
     },
     "/alarms": {
@@ -2137,7 +2167,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List alarms."
       }
     },
     "/alarms/{id}/acknowledge": {
@@ -2196,7 +2227,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Acknowledge the specified alarm."
       }
     },
     "/alarms/{id}/read": {
@@ -2255,7 +2287,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Mark the specified alarm as read."
       }
     },
     "/alarm-settings": {
@@ -2316,7 +2349,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read alarm settings for the selected scope."
       },
       "put": {
         "operationId": "putAlarmSettings",
@@ -2385,7 +2419,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Save alarm settings for the selected scope."
       }
     },
     "/audit/history": {
@@ -2459,7 +2494,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List audit history for the specified identity."
       }
     },
     "/audit/export": {
@@ -2525,7 +2561,8 @@
           "prerequisite": "Use audit_export for one bounded CSV page. Use next_cursor to resume the export.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Export a page of audit history as CSV."
       }
     },
     "/auth/status": {
@@ -2563,7 +2600,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read authentication status and available login methods."
       }
     },
     "/auth/setup": {
@@ -2631,7 +2669,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create the initial installation owner through setup."
       }
     },
     "/auth/login": {
@@ -2695,7 +2734,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Authenticate a human identity with a password."
       }
     },
     "/auth/logout": {
@@ -2754,7 +2794,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "End the current human authentication session."
       }
     },
     "/auth/sessions": {
@@ -2803,7 +2844,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List authentication sessions for the current identity."
       }
     },
     "/auth/sessions/{id}": {
@@ -2858,7 +2900,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Revoke the specified human authentication session."
       }
     },
     "/auth/security": {
@@ -2895,7 +2938,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read security settings for the current account."
       }
     },
     "/auth/mfa/totp/start": {
@@ -2968,7 +3012,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start registration of an authenticator app."
       }
     },
     "/auth/mfa/totp/confirm": {
@@ -3044,7 +3089,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Confirm registration of an authenticator app."
       }
     },
     "/auth/mfa/totp/disable": {
@@ -3113,7 +3159,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Disable authentication with an authenticator app."
       }
     },
     "/auth/mfa/complete": {
@@ -3174,7 +3221,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete the additional authentication required after provider login."
       }
     },
     "/auth/invites/accept": {
@@ -3244,7 +3292,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Accept an invitation for the current identity."
       }
     },
     "/auth/device/start": {
@@ -3308,7 +3357,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start a device request for human authorization."
       }
     },
     "/auth/device/token": {
@@ -3365,7 +3415,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the approval state of a device authorization request."
       }
     },
     "/auth/device": {
@@ -3411,7 +3462,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the device request and its requested permissions."
       }
     },
     "/auth/device/approve": {
@@ -3489,7 +3541,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Approve the device request through human consent."
       }
     },
     "/auth/oauth/{provider}/start": {
@@ -3559,7 +3612,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start authentication with the identity provider."
       }
     },
     "/auth/oauth/{provider}/callback": {
@@ -3653,7 +3707,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete authentication with the identity provider."
       }
     },
     "/auth/passkeys/register/start": {
@@ -3716,7 +3771,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start registration of a passkey."
       }
     },
     "/auth/passkeys/register/finish": {
@@ -3790,7 +3846,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete registration of a passkey."
       }
     },
     "/auth/passkeys/login/start": {
@@ -3841,7 +3898,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start authentication with a passkey."
       }
     },
     "/auth/passkeys/login/finish": {
@@ -3903,7 +3961,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete authentication with a passkey."
       }
     },
     "/auth/passkeys/{id}": {
@@ -3980,7 +4039,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the passkey."
       }
     },
     "/users": {
@@ -4040,7 +4100,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "List users."
       }
     },
     "/users/{id}": {
@@ -4129,7 +4190,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Update the user."
       }
     },
     "/teams": {
@@ -4189,7 +4251,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "List teams."
       },
       "post": {
         "operationId": "createTeam",
@@ -4254,7 +4317,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Create a team."
       }
     },
     "/teams/{id}": {
@@ -4320,7 +4384,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Delete the team."
       }
     },
     "/teams/{id}/members": {
@@ -4389,7 +4454,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "List team members."
       }
     },
     "/teams/{id}/members/{user}": {
@@ -4482,7 +4548,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Set the identity's membership and role in the team."
       }
     },
     "/teams/{id}/invites": {
@@ -4568,7 +4635,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Create an invitation to the team."
       }
     },
     "/projects/{project}/invites": {
@@ -4651,7 +4719,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Create an invitation to the project."
       }
     },
     "/projects/{project}/members": {
@@ -4720,7 +4789,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "List project members."
       },
       "put": {
         "operationId": "setProjectMember",
@@ -4809,7 +4879,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Set the identity's membership and role in the project."
       }
     },
     "/auth/register": {
@@ -4883,7 +4954,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start registration of a human account."
       }
     },
     "/auth/register/verify": {
@@ -4940,7 +5012,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Verify the account registration token."
       }
     },
     "/auth/password/forgot": {
@@ -5006,7 +5079,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request password recovery for a human account."
       }
     },
     "/auth/password/reset": {
@@ -5076,7 +5150,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Set a new password with the recovery token."
       }
     },
     "/auth/invites/inspect": {
@@ -5133,7 +5208,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read invitation details before acceptance."
       }
     },
     "/auth/onboarding": {
@@ -5170,7 +5246,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read onboarding state for the current identity."
       },
       "post": {
         "operationId": "completeOnboarding",
@@ -5231,7 +5308,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete onboarding for the current identity."
       }
     },
     "/backup-destinations": {
@@ -5284,7 +5362,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List backup destinations."
       },
       "post": {
         "operationId": "createBackupDestination",
@@ -5335,7 +5414,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a backup destination."
       }
     },
     "/backup-destinations/{id}": {
@@ -5397,7 +5477,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update the backup destination."
       },
       "delete": {
         "operationId": "deleteBackupDestination",
@@ -5474,7 +5555,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the backup destination."
       }
     },
     "/backup-destinations/{id}/test": {
@@ -5555,7 +5637,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Test the backup destination."
       }
     },
     "/backup-targets": {
@@ -5612,7 +5695,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List resources available as backup targets."
       }
     },
     "/backups": {
@@ -5683,7 +5767,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List backup jobs."
       },
       "post": {
         "operationId": "createBackup",
@@ -5760,7 +5845,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a database backup."
       }
     },
     "/backups/{id}": {
@@ -5810,7 +5896,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the backup job."
       }
     },
     "/backups/{id}/cancel": {
@@ -5874,7 +5961,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request cancellation of a backup job."
       }
     },
     "/backup-artifacts": {
@@ -5945,7 +6033,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List backup artifacts."
       }
     },
     "/backup-artifacts/{id}": {
@@ -5995,7 +6084,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the backup artifact."
       },
       "delete": {
         "operationId": "deleteBackupArtifact",
@@ -6072,7 +6162,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the backup artifact."
       }
     },
     "/backup-artifacts/{id}/restore-plan": {
@@ -6148,7 +6239,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a plan to restore the selected backup."
       }
     },
     "/backup-artifacts/{id}/restore": {
@@ -6232,7 +6324,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request restoration of the reviewed backup."
       }
     },
     "/backup-schedules": {
@@ -6285,7 +6378,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List backup schedules."
       },
       "post": {
         "operationId": "createBackupSchedule",
@@ -6338,7 +6432,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a backup schedule."
       }
     },
     "/backup-schedules/{id}": {
@@ -6402,7 +6497,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update the backup schedule."
       },
       "delete": {
         "operationId": "deleteBackupSchedule",
@@ -6479,7 +6575,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the backup schedule."
       }
     },
     "/builds": {
@@ -6547,7 +6644,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List source build configurations."
       },
       "post": {
         "operationId": "createSourceBuild",
@@ -6597,7 +6695,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a source build configuration."
       }
     },
     "/builds/{id}": {
@@ -6645,7 +6744,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the source build configuration."
       },
       "put": {
         "operationId": "updateSourceBuild",
@@ -6704,7 +6804,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update the source build configuration."
       }
     },
     "/builds/{id}/preview": {
@@ -6765,7 +6866,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Preview the generated build workflow."
       }
     },
     "/builds/{id}/install": {
@@ -6832,7 +6934,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Install the generated build workflow in the source repository."
       }
     },
     "/builds/{id}/run": {
@@ -6912,7 +7015,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a new run of the source build."
       }
     },
     "/builds/{id}/runs": {
@@ -6972,7 +7076,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List source build runs."
       }
     },
     "/builds/{id}/runs/{run}": {
@@ -7028,7 +7133,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of a source build run."
       }
     },
     "/builds/{id}/runs/{run}/deploy": {
@@ -7105,7 +7211,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request deployment of a verified source build."
       }
     },
     "/builds/{id}/runs/{run}/cancel": {
@@ -7183,7 +7290,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request cancellation of a source build run."
       }
     },
     "/builds/{id}/runs/{run}/plan": {
@@ -7250,7 +7358,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a deployment plan for a source build."
       }
     },
     "/cloud/capabilities": {
@@ -7306,7 +7415,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read capabilities exposed by the current Cloud connection."
       }
     },
     "/compose/convert": {
@@ -7359,7 +7469,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Convert a Docker Compose configuration to a Hakopod specification."
       }
     },
     "/applications/{id}/services/{service}/delivery": {
@@ -7415,7 +7526,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read delivery status for the service."
       }
     },
     "/applications/{id}/services/{service}/certificates": {
@@ -7483,7 +7595,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List backend certificates for the service."
       },
       "post": {
         "operationId": "uploadBackendCertificate",
@@ -7545,7 +7658,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Upload a backend certificate for the service."
       }
     },
     "/applications/{id}/notifications": {
@@ -7591,7 +7705,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List notification targets for application deployments."
       },
       "post": {
         "operationId": "createDeploymentNotification",
@@ -7645,7 +7760,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a notification target for application deployments."
       }
     },
     "/applications/{id}/notifications/{target}": {
@@ -7709,7 +7825,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update the notification target for application deployments."
       },
       "delete": {
         "operationId": "deleteDeploymentNotification",
@@ -7789,7 +7906,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the notification target for application deployments."
       }
     },
     "/applications/{id}/notifications/{target}/test": {
@@ -7875,7 +7993,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Send a test notification to the configured deployment target."
       }
     },
     "/dns-providers": {
@@ -8202,7 +8321,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List application domains."
       },
       "post": {
         "operationId": "beginDomainVerification",
@@ -8271,7 +8391,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start verification of an application domain."
       }
     },
     "/applications/{id}/domains/{hostname}/verify": {
@@ -8340,7 +8461,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Verify the application domain."
       }
     },
     "/applications/{id}/domains/dns-providers": {
@@ -8400,7 +8522,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List DNS providers available to the application."
       }
     },
     "/applications/{id}/domains/dns-records": {
@@ -8480,7 +8603,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create DNS records for the application domain."
       }
     },
     "/git/connections": {
@@ -8535,7 +8659,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List Git connections."
       },
       "post": {
         "operationId": "createGitConnection",
@@ -8588,7 +8713,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a Git connection."
       }
     },
     "/git/connections/{id}": {
@@ -8642,7 +8768,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the Git connection."
       },
       "put": {
         "operationId": "updateGitConnection",
@@ -8706,7 +8833,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update the Git connection."
       },
       "delete": {
         "operationId": "deleteGitConnection",
@@ -8775,7 +8903,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the Git connection."
       }
     },
     "/webhooks/git/{connection}": {
@@ -8843,7 +8972,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Receive an authenticated webhook for the specified Git connection."
       }
     },
     "/webhooks/github-app/{app}": {
@@ -8911,7 +9041,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Receive an authenticated GitHub App webhook."
       }
     },
     "/git/connections/{id}/authorize": {
@@ -8970,7 +9101,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start authorization of the Git connection with its provider."
       }
     },
     "/git/connections/{id}/oauth/complete": {
@@ -9026,7 +9158,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete the authorization callback for the specified Git connection."
       }
     },
     "/git/oauth/complete": {
@@ -9073,7 +9206,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete the Git provider authorization callback."
       }
     },
     "/git/github/start": {
@@ -9136,7 +9270,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start GitHub App registration from a generated manifest."
       }
     },
     "/git/github/complete": {
@@ -9183,7 +9318,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete GitHub App registration from its manifest callback."
       }
     },
     "/git/connections/{id}/github/setup": {
@@ -9242,7 +9378,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Resume the GitHub App setup."
       }
     },
     "/git/github/install/complete": {
@@ -9302,7 +9439,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Complete the GitHub App installation callback."
       }
     },
     "/git/setup": {
@@ -9345,7 +9483,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read setup status for the Git provider."
       }
     },
     "/git/connections/{id}/repositories": {
@@ -9408,7 +9547,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List Git repositories."
       }
     },
     "/installation/status": {
@@ -9449,7 +9589,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the installation status."
       }
     },
     "/installation/logs": {
@@ -9490,7 +9631,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the installation logs."
       }
     },
     "/installation/setup": {
@@ -9531,7 +9673,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read setup settings for the installation."
       }
     },
     "/installation/upgrade": {
@@ -9604,7 +9747,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request an upgrade of the installation."
       }
     },
     "/applications/{id}/domains/{hostname}": {
@@ -9688,7 +9832,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Discard the domain verification."
       }
     },
     "/installation/logs/query": {
@@ -9739,7 +9884,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Query installation logs with the supplied filters and limits."
       }
     },
     "/installation/login-providers/{provider}": {
@@ -9797,7 +9943,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the installation's login provider settings."
       },
       "put": {
         "operationId": "putInstallationLoginProvider",
@@ -9871,7 +10018,8 @@
             "client_secret",
             "clear_secret"
           ]
-        }
+        },
+        "summary": "Save the installation's login provider settings."
       }
     },
     "/installation/smtp": {
@@ -9914,7 +10062,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the installation's SMTP settings."
       },
       "put": {
         "operationId": "putInstallationSMTP",
@@ -9973,7 +10122,8 @@
             "client_secret",
             "clear_secret"
           ]
-        }
+        },
+        "summary": "Save the installation's SMTP settings."
       }
     },
     "/installation/smtp/test": {
@@ -10029,7 +10179,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Send a test message with the installation's SMTP configuration."
       }
     },
     "/license": {
@@ -10077,7 +10228,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Read the license status."
       },
       "put": {
         "operationId": "activateLicense",
@@ -10146,7 +10298,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Activate the installation license."
       },
       "delete": {
         "operationId": "removeLicense",
@@ -10211,7 +10364,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Remove the installation license."
       }
     },
     "/databases": {
@@ -10279,7 +10433,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List managed databases."
       },
       "post": {
         "operationId": "createManagedDatabase",
@@ -10354,7 +10509,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request creation of a managed database."
       }
     },
     "/database-placement/nodes": {
@@ -10426,7 +10582,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List candidate nodes for managed database placement."
       }
     },
     "/databases/{id}": {
@@ -10474,7 +10631,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the managed database."
       },
       "delete": {
         "operationId": "deleteManagedDatabase",
@@ -10553,7 +10711,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request deletion of the managed database."
       }
     },
     "/databases/{id}/operations": {
@@ -10613,7 +10772,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List database operations."
       }
     },
     "/databases/{id}/public-endpoint-capabilities": {
@@ -10662,7 +10822,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read supported options for publishing a database endpoint."
       }
     },
     "/databases/{id}/public-endpoints": {
@@ -10722,7 +10883,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List public endpoints for the managed database."
       },
       "post": {
         "operationId": "publishDatabasePublicEndpoint",
@@ -10808,7 +10970,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request publication of a reviewed database endpoint."
       }
     },
     "/databases/{id}/public-endpoint-plan": {
@@ -10867,7 +11030,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for publishing a database endpoint."
       }
     },
     "/databases/{id}/public-endpoints/{endpoint}": {
@@ -10954,7 +11118,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request closure of the database endpoint and its existing sessions."
       }
     },
     "/database-public-endpoint-operations/{id}": {
@@ -11004,7 +11169,8 @@
           "resource_parameter": "id",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the operation for a public database endpoint."
       }
     },
     "/databases/{id}/connections": {
@@ -11052,7 +11218,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List application bindings to the managed database."
       }
     },
     "/databases/{id}/trust": {
@@ -11100,7 +11267,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read public certificate trust information for the database."
       }
     },
     "/databases/{id}/credentials": {
@@ -11180,7 +11348,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Return credentials for the managed database."
       }
     },
     "/databases/{id}/resize-plan": {
@@ -11260,7 +11429,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for resizing the managed database."
       }
     },
     "/databases/{id}/resize": {
@@ -11345,7 +11515,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a reviewed resize of the managed database."
       }
     },
     "/databases/{id}/resize-retry-plan": {
@@ -11431,7 +11602,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for retrying a managed database resize."
       }
     },
     "/databases/{id}/resize-retry": {
@@ -11522,7 +11694,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a reviewed retry of a managed database resize."
       }
     },
     "/databases/{id}/switchover-plan": {
@@ -11592,7 +11765,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for an Oracle database switchover."
       }
     },
     "/databases/{id}/switchover": {
@@ -11679,7 +11853,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a reviewed Oracle database switchover."
       }
     },
     "/databases/{id}/switchover-retry": {
@@ -11756,7 +11931,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a retry of an Oracle database switchover."
       }
     },
     "/databases/{id}/restore-plan": {
@@ -11823,7 +11999,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a recovery plan for the managed database."
       }
     },
     "/databases/{id}/connection-plan": {
@@ -11929,7 +12106,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for an application binding to a managed database."
       }
     },
     "/databases/{id}/connect": {
@@ -12010,7 +12188,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Replace a reviewed application binding to a managed database."
       }
     },
     "/databases/{id}/inspect": {
@@ -12089,7 +12268,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Record the caller's inspection of restored database data."
       }
     },
     "/backup-imports": {
@@ -12151,7 +12331,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for importing a database archive."
       }
     },
     "/backup-imports/{id}": {
@@ -12200,7 +12381,8 @@
           "review": "none",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the database import."
       }
     },
     "/backup-imports/{id}/archive": {
@@ -12257,7 +12439,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Upload the archive for the database import."
       }
     },
     "/databases/{id}/metrics": {
@@ -12318,7 +12501,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read recorded metrics for the managed database."
       }
     },
     "/external-databases": {
@@ -12386,7 +12570,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List external databases."
       }
     },
     "/external-databases/{id}": {
@@ -12434,7 +12619,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the external database."
       },
       "put": {
         "operationId": "rotateExternalDatabaseCredentials",
@@ -12521,7 +12707,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request credential rotation for the legacy external database registration."
       },
       "delete": {
         "operationId": "deleteExternalDatabase",
@@ -12600,7 +12787,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request deletion of the legacy external database registration."
       }
     },
     "/external-databases/{id}/connections": {
@@ -12648,7 +12836,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List application bindings to the legacy external database."
       }
     },
     "/external-databases/{id}/trust": {
@@ -12696,7 +12885,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read certificate trust information for a legacy external database."
       }
     },
     "/external-databases/{id}/connection-plan": {
@@ -12778,7 +12968,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for an application binding to a legacy external database."
       }
     },
     "/external-databases/{id}/connect": {
@@ -12859,7 +13050,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a reviewed application binding to a legacy external database."
       }
     },
     "/external-database-operations/{id}": {
@@ -12909,7 +13101,8 @@
           "resource_parameter": "id",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the operation for a legacy external database."
       }
     },
     "/managed-platforms": {
@@ -12978,7 +13171,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List managed platforms."
       }
     },
     "/managed-platforms/catalog": {
@@ -13035,7 +13229,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the catalog of managed platform types."
       }
     },
     "/managed-platforms/{id}": {
@@ -13083,7 +13278,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the managed platform."
       }
     },
     "/managed-platforms/{id}/trust": {
@@ -13132,7 +13328,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read public certificate trust information for the managed platform."
       }
     },
     "/managed-platforms/{id}/operations": {
@@ -13192,7 +13389,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List managed platform operations."
       }
     },
     "/managed-platform-operations/{id}": {
@@ -13240,7 +13438,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the managed platform operation."
       }
     },
     "/managed-platforms/reviews": {
@@ -13290,7 +13489,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for a managed platform change."
       }
     },
     "/managed-platforms/operations": {
@@ -13351,7 +13551,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a managed platform change from a saved review."
       }
     },
     "/managed-platforms/{id}/recovery-operations": {
@@ -13412,7 +13613,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List recovery operations for the managed platform."
       }
     },
     "/managed-platform-recovery-operations/{id}": {
@@ -13461,7 +13663,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the recovery operation for a managed platform."
       }
     },
     "/managed-platform-recovery/reviews": {
@@ -13510,7 +13713,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a review for recovery of a managed platform."
       }
     },
     "/managed-platform-recovery/operations": {
@@ -13570,7 +13774,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request managed platform recovery from a saved review."
       }
     },
     "/managed-platform-recovery-operations/{id}/cancel": {
@@ -13628,7 +13833,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request cancellation of a recovery operation for a managed platform."
       }
     },
     "/applications/{id}/provenance": {
@@ -13676,7 +13882,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the provenance records for an application."
       }
     },
     "/mcp": {
@@ -13854,7 +14061,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Process an MCP protocol message for the current session."
       },
       "delete": {
         "operationId": "closeMCPSession",
@@ -13992,7 +14200,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Close the MCP session."
       }
     },
     "/applications/{id}/logs/query": {
@@ -14050,7 +14259,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Query application logs with the supplied filters and limits."
       }
     },
     "/applications/{id}/services/{service}/terminal": {
@@ -14117,7 +14327,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Open a terminal session in an application container."
       }
     },
     "/applications/{id}/services/{service}/terminal/{session}/output": {
@@ -14183,7 +14394,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Stream output from the specified application terminal session."
       }
     },
     "/applications/{id}/services/{service}/terminal/{session}/input": {
@@ -14264,7 +14476,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Send input or a resize request to the application terminal session."
       }
     },
     "/applications/{id}/services/{service}/terminal/{session}": {
@@ -14322,7 +14535,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Close the specified application terminal session."
       }
     },
     "/applications/{id}/services/{service}/terminal/{session}/poll": {
@@ -14394,7 +14608,8 @@
           "prerequisite": "Use the bounded terminal tools with separate terminal opt-in.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read retained application terminal output from the supplied cursor."
       }
     },
     "/roles": {
@@ -14454,7 +14669,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "List custom roles."
       },
       "post": {
         "operationId": "createCustomRole",
@@ -14530,7 +14746,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Create a custom role."
       }
     },
     "/roles/{role}": {
@@ -14617,7 +14834,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Update the custom role."
       },
       "delete": {
         "operationId": "deleteCustomRole",
@@ -14700,7 +14918,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Delete the custom role."
       }
     },
     "/organization/security": {
@@ -14748,7 +14967,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Read security settings for the organization."
       },
       "put": {
         "operationId": "updateOrganizationSecurity",
@@ -14817,7 +15037,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Update security settings for the organization."
       }
     },
     "/auth/mfa/verify": {
@@ -14882,7 +15103,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Verify additional authentication for the current session."
       }
     },
     "/auth/profile": {
@@ -14919,7 +15141,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the current identity's profile."
       },
       "patch": {
         "operationId": "updateProfile",
@@ -14964,7 +15187,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update the current identity's profile."
       }
     },
     "/teams/{id}/members/{user}/username": {
@@ -15048,7 +15272,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Set the identity's username within the team."
       }
     },
     "/host-access": {
@@ -15089,7 +15314,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read host access grants."
       }
     },
     "/host-access/{user}": {
@@ -15167,7 +15393,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Grant access to the specified hosts."
       }
     },
     "/host-access/{user}/{node}": {
@@ -15234,7 +15461,8 @@
           "review": "canonical",
           "scope_requirement": "installation_owner",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Revoke the host access."
       }
     },
     "/nodes/{node}/terminal": {
@@ -15320,7 +15548,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Open a terminal session on the specified authorized host."
       }
     },
     "/nodes/{node}/terminal/{session}/output": {
@@ -15376,7 +15605,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Stream output from the specified host terminal session."
       }
     },
     "/nodes/{node}/terminal/{session}/input": {
@@ -15453,7 +15683,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Send input or a resize request to the host terminal session."
       }
     },
     "/nodes/{node}/terminal/{session}": {
@@ -15507,7 +15738,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Close the specified host terminal session."
       }
     },
     "/nodes/{node}/terminal/{session}/poll": {
@@ -15570,7 +15802,8 @@
           "prerequisite": "Use the bounded terminal tools with separate terminal opt-in.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read retained host terminal output from the supplied cursor."
       }
     },
     "/projects/{project}/environments": {
@@ -15659,7 +15892,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Create an environment in the project."
       }
     },
     "/settings/haproxy": {
@@ -15707,7 +15941,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Read the proxy configuration."
       },
       "patch": {
         "operationId": "setProxy",
@@ -15798,7 +16033,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Save the proxy configuration."
       }
     },
     "/requests": {
@@ -15908,7 +16144,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List observed application requests."
       }
     },
     "/applications/{id}/services/{service}/requests/routing": {
@@ -15964,7 +16201,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read observed request routing for the service."
       }
     },
     "/projects/{id}": {
@@ -16049,7 +16287,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Delete an empty project record."
       }
     },
     "/storage/retained": {
@@ -16120,7 +16359,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List retained volumes for the application."
       }
     },
     "/storage/retained/{id}": {
@@ -16200,7 +16440,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request deletion of retained volumes for the application."
       }
     },
     "/deployments/{id}/volume-cleanup": {
@@ -16270,7 +16511,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request another attempt to delete retained service volumes."
       }
     },
     "/applications/{id}/services/{service}/runtime": {
@@ -16326,7 +16568,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read observed runtime state for the service."
       }
     },
     "/applications/{id}/services/{service}/restart": {
@@ -16411,7 +16654,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a restart of the service."
       }
     },
     "/applications/{id}/services/{service}/scale": {
@@ -16500,7 +16744,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a scale change for the service."
       }
     },
     "/registries": {
@@ -16568,7 +16813,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List configured container registries."
       },
       "post": {
         "operationId": "createRegistry",
@@ -16615,7 +16861,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Store access settings for a container registry."
       }
     },
     "/registries/{name}": {
@@ -16673,7 +16920,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update access settings for the container registry."
       },
       "delete": {
         "operationId": "deleteRegistry",
@@ -16759,7 +17007,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete access settings for the container registry."
       }
     },
     "/registries/{name}/sync": {
@@ -16823,7 +17072,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Refresh workload copies of the stored container registry credentials."
       }
     },
     "/applications/{id}/services/{service}/tls": {
@@ -16879,7 +17129,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the service's TLS certificate configuration."
       },
       "post": {
         "operationId": "attachServiceTLS",
@@ -16975,7 +17226,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request attachment of a TLS certificate to the service."
       }
     },
     "/applications/{id}/tls/issuers": {
@@ -17023,7 +17275,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List TLS issuers available to the application."
       },
       "post": {
         "operationId": "createApplicationTLSIssuer",
@@ -17095,7 +17348,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a TLS issuer for the application."
       }
     },
     "/tls/issuers": {
@@ -17135,7 +17389,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List TLS issuers."
       },
       "post": {
         "operationId": "createTLSIssuer",
@@ -17199,7 +17454,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a TLS issuer for the installation."
       }
     },
     "/nodes/{name}/cordon": {
@@ -17271,7 +17527,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prevent new workloads from scheduling on the node."
       }
     },
     "/nodes/{name}/drain": {
@@ -17339,7 +17596,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Evict eligible workloads from the node."
       }
     },
     "/nodes/enrollments": {
@@ -17379,7 +17637,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List node enrollment requests."
       },
       "post": {
         "operationId": "createNodeEnrollment",
@@ -17436,7 +17695,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create an enrollment request for a node."
       }
     },
     "/nodes/enrollments/{id}": {
@@ -17494,7 +17754,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Revoke the specified node enrollment request."
       }
     },
     "/applications/{id}/services/{service}/stop": {
@@ -17579,7 +17840,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a stop of the service."
       }
     },
     "/applications/{id}/services/{service}/resume": {
@@ -17664,7 +17926,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request resumption of the service."
       }
     },
     "/database-operations/{id}": {
@@ -17714,7 +17977,8 @@
           "resource_parameter": "id",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the managed database operation."
       }
     },
     "/secret-providers": {
@@ -18041,7 +18305,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Read the dashboard appearance settings."
       },
       "patch": {
         "operationId": "setAppearance",
@@ -18097,7 +18362,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Save the dashboard appearance settings."
       }
     },
     "/integrations/slack": {
@@ -18137,7 +18403,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the Slack connection status."
       },
       "delete": {
         "operationId": "disconnectSlack",
@@ -18203,7 +18470,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Remove the Slack connection."
       }
     },
     "/integrations/slack/connect": {
@@ -18250,7 +18518,8 @@
           "prerequisite": "Complete the provider authorization flow with the exact actor session and provider state. Generic invocation cannot supply this proof.",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Start the Slack connection flow."
       }
     },
     "/integrations/slack/channels": {
@@ -18313,7 +18582,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List Slack channels."
       }
     },
     "/integrations/slack/channel": {
@@ -18363,7 +18633,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Select the Slack channel for notifications."
       }
     },
     "/integrations/slack/events": {
@@ -18413,7 +18684,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Select the event types sent to Slack."
       }
     },
     "/integrations/slack/deliveries": {
@@ -18461,7 +18733,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List Slack notification deliveries."
       }
     },
     "/integrations/slack/test": {
@@ -18520,7 +18793,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Send a test notification through the Slack integration."
       }
     },
     "/integrations/github": {
@@ -18560,7 +18834,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the GitHub integration status."
       },
       "put": {
         "operationId": "configureGitHub",
@@ -18620,7 +18895,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Configure the GitHub integration."
       }
     },
     "/applications/{id}/source": {
@@ -18668,7 +18944,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the application's source configuration."
       },
       "put": {
         "operationId": "setSource",
@@ -18763,7 +19040,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Save the application's source configuration."
       }
     },
     "/applications/{id}/source/plan": {
@@ -18824,7 +19102,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a deployment plan from the application source configuration."
       }
     },
     "/applications/{id}/source/deploy": {
@@ -18907,7 +19186,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a deployment from the application source configuration."
       }
     },
     "/webhooks/github": {
@@ -18967,7 +19247,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Receive an authenticated GitHub webhook."
       }
     },
     "/integrations/gitlab": {
@@ -19007,7 +19288,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the GitLab integration status."
       },
       "put": {
         "operationId": "configureGitLab",
@@ -19067,7 +19349,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Configure the GitLab integration."
       }
     },
     "/webhooks/gitlab": {
@@ -19127,7 +19410,8 @@
           "prerequisite": "Complete the dedicated identity or protocol flow.",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Receive an authenticated GitLab webhook."
       }
     },
     "/sources/plan": {
@@ -19180,7 +19464,8 @@
           "review": "canonical",
           "scope_requirement": "project_credential",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a deployment plan from a source repository."
       }
     },
     "/sources/deploy": {
@@ -19247,7 +19532,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request deployment from a reviewed source import."
       }
     },
     "/templates": {
@@ -19298,7 +19584,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List templates."
       }
     },
     "/templates/{id}/plan": {
@@ -19359,7 +19646,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a deployment plan from a template."
       }
     },
     "/templates/{id}/deploy": {
@@ -19445,7 +19733,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request an application deployment from a template."
       }
     },
     "/templates/{id}/secrets/{name}": {
@@ -19562,7 +19851,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Store the specified secret for a template deployment."
       }
     },
     "/showcase": {
@@ -19605,7 +19895,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the state of the demonstration application."
       }
     },
     "/showcase/remove": {
@@ -19681,7 +19972,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request removal of the reviewed demonstration application."
       }
     },
     "/virtual-networks": {
@@ -19753,7 +20045,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List virtual networks."
       },
       "post": {
         "operationId": "createVirtualNetwork",
@@ -19803,7 +20096,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a virtual network."
       }
     },
     "/virtual-networks/{name}": {
@@ -19867,7 +20161,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the virtual network."
       },
       "put": {
         "operationId": "updateVirtualNetwork",
@@ -19926,7 +20221,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Update the virtual network."
       },
       "delete": {
         "operationId": "deleteVirtualNetwork",
@@ -20019,7 +20315,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the virtual network."
       }
     },
     "/virtual-networks/{name}/candidates": {
@@ -20119,7 +20416,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List candidate application services for a virtual network."
       }
     },
     "/virtual-networks/plan": {
@@ -20171,7 +20469,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a plan for virtual network membership."
       }
     },
     "/applications/{id}/volume-resizes/plan": {
@@ -20239,7 +20538,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a plan to resize an application volume."
       }
     },
     "/applications/{id}/volume-resizes": {
@@ -20307,7 +20607,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a reviewed resize of an application volume."
       },
       "get": {
         "operationId": "listVolumeResizes",
@@ -20365,7 +20666,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List volume resize operations for the application."
       }
     },
     "/applications/{id}/volume-resizes/{resize}/{action}": {
@@ -20461,7 +20763,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Retry or cancel a volume resize, retain its original volume, or delete that volume."
       }
     },
     "/builds/detect": {
@@ -20503,7 +20806,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Detect the build framework from the source repository."
       }
     },
     "/applications/{id}/previews": {
@@ -20574,7 +20878,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List application previews."
       },
       "post": {
         "operationId": "createPreview",
@@ -20640,7 +20945,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a preview environment for the application."
       }
     },
     "/previews/{preview}": {
@@ -20690,7 +20996,8 @@
           "resource_parameter": "preview",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Read the preview."
       },
       "delete": {
         "operationId": "deletePreview",
@@ -20766,7 +21073,8 @@
           "resource_parameter": "preview",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request deletion of the preview."
       }
     },
     "/secrets": {
@@ -20842,7 +21150,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List secret metadata for workloads."
       }
     },
     "/secrets/{name}": {
@@ -20946,7 +21255,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Store the specified workload secret."
       },
       "delete": {
         "operationId": "deleteWorkloadSecret",
@@ -21023,7 +21333,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Delete the workload secret."
       },
       "post": {
         "operationId": "createWorkloadSecret",
@@ -21133,7 +21444,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Create a workload secret."
       }
     },
     "/placement/nodes": {
@@ -21223,7 +21535,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List candidate nodes for workload placement."
       }
     },
     "/deployment-secret-requirements": {
@@ -21308,7 +21621,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Check the secrets required by the proposed application specification."
       }
     },
     "/applications/{id}/name": {
@@ -21372,7 +21686,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Rename the application."
       }
     },
     "/applications/{id}/services/{service}/name": {
@@ -21444,7 +21759,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Rename the service."
       }
     },
     "/projects/{id}/name": {
@@ -21519,7 +21835,8 @@
             "client_secret",
             "secret"
           ]
-        }
+        },
+        "summary": "Rename the project."
       }
     },
     "/applications/{id}/services/{service}/move-plan": {
@@ -21588,7 +21905,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Prepare a plan to move an application service."
       }
     },
     "/applications/{id}/services/{service}/move": {
@@ -21667,7 +21985,8 @@
           },
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request a reviewed move of an application service."
       }
     },
     "/applications/{id}/service-moves": {
@@ -21727,7 +22046,8 @@
           "prerequisite": "",
           "review": "none",
           "sensitive_fields": []
-        }
+        },
+        "summary": "List service move operations for the application."
       }
     },
     "/applications/{id}/service-moves/{move}/finish": {
@@ -21793,7 +22113,8 @@
           "prerequisite": "",
           "review": "canonical",
           "sensitive_fields": []
-        }
+        },
+        "summary": "Request removal of the service from its source after the destination is ready."
       }
     }
   },

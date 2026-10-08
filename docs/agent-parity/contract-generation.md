@@ -4,6 +4,10 @@ OpenAPI is the shared interface contract. The feature definitions in `api/contra
 The dashboard types, SDK types, proxy routes and agent operation catalog use that document.
 Swagger UI can display this contract. It does not define authorization or execution behavior.
 
+Every operation has an explicit action summary in its feature contract or `api/operation-summaries.json`.
+Generation rejects missing or obsolete summary entries. It does not derive action descriptions from operation IDs.
+CLI and MCP discovery preserve this text. Detailed descriptions and policies specify additional conditions.
+
 ## Generated and maintained components
 
 | Component | Contract use |
@@ -47,7 +51,7 @@ An agent cannot use generated invocation to approve its own access.
 
 ## Update procedure
 
-1. Edit the feature contract and its agent policy.
+1. Edit the feature contract, its action summary and its agent policy.
 2. Run `python3 api/generate.py` to generate OpenAPI and agent proxy routes.
 3. Generate dashboard and SDK types with their package scripts.
 4. Run `python3 docs/agent-parity/coverage_inventory.py` to refresh the inventory.
