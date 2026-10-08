@@ -38,7 +38,7 @@ func (c *Client) selectVitessQueryTarget(ctx context.Context, d database.Resourc
 	if err != nil {
 		return nil, queryUnavailable()
 	}
-	if err = c.applyVitessIdentity(ctx, d, expected); err != nil || !reflect.DeepEqual(expected.Object["spec"], object.Object["spec"]) {
+	if err = c.applyVitessIdentity(ctx, d, expected); err != nil || !vitessQueryDesiredSpecMatches(expected, object) {
 		return nil, queryUnavailable()
 	}
 	policy, err := c.databasePolicy(ctx, d)
@@ -97,4 +97,63 @@ func (c *Client) verifyVitessQueryTarget(ctx context.Context, d database.Resourc
 		return queryUnavailable()
 	}
 	return nil
+}
+
+// Pinned source: planetscale/vitess-operator@10a3b742c02c38f97d554739d5a257197daa48f9,
+// deploy/crds/planetscale.com_vitessclusters.yaml (hexWidth and tabletPools.name).
+// The pinned operator CRD defaults equal.hexWidth to zero and tablet pool.name
+// to an empty string. Preserve exact comparison for every other desired field.
+func vitessQueryDesiredSpecMatches(expected, live *unstructured.Unstructured) bool {
+	desired := expected.DeepCopy()
+	actual := live.DeepCopy()
+	for _, object := range []*unstructured.Unstructured{desired, actual} {
+		keyspaces, found, err := unstructured.NestedSlice(object.Object, "spec", "keyspaces")
+		if err != nil || !found {
+			return false
+		}
+		for _, entry := range keyspaces {
+			keyspace, ok := entry.(map[string]any)
+			if !ok {
+				return false
+			}
+			partitions, ok := keyspace["partitionings"].([]any)
+			if !ok {
+				return false
+			}
+			for _, part := range partitions {
+				partition, ok := part.(map[string]any)
+				if !ok {
+					return false
+				}
+				equal, ok := partition["equal"].(map[string]any)
+				if !ok {
+					continue
+				}
+				if _, exists := equal["hexWidth"]; !exists {
+					equal["hexWidth"] = int64(0)
+				}
+				template, ok := equal["shardTemplate"].(map[string]any)
+				if !ok {
+					return false
+				}
+				pools, ok := template["tabletPools"].([]any)
+				if !ok {
+					return false
+				}
+				for _, entry := range pools {
+					pool, ok := entry.(map[string]any)
+					if !ok {
+						return false
+					}
+					if _, exists := pool["name"]; !exists {
+						pool["name"] = ""
+					}
+				}
+			}
+		}
+		if err = unstructured.SetNestedSlice(object.Object, keyspaces, "spec", "keyspaces"); err != nil {
+			return false
+		}
+	}
+	return reflect.DeepEqual(desired.Object["spec"], actual.Object["spec"])
 }
