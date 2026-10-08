@@ -67,6 +67,10 @@ jobs:
           set -o pipefail
           HAKOPOD_CATALOG_TEST=1 HAKOPOD_CATALOG_TEMPLATE=redis go test ./internal/cluster -run '^TestLiveCatalogTemplates$' -count=1 -json | tee .local/runtime-results/redis.jsonl
           HAKOPOD_SHARED_CATALOG_TEST=1 HAKOPOD_CATALOG_TEMPLATE=nginx go test ./internal/cluster -run '^TestLiveSharedCatalog$' -count=1 -json | tee .local/runtime-results/nginx.jsonl
+      - name: Verify approved runtimes on real workloads
+        run: |
+          set -o pipefail
+          HAKOPOD_RUNTIME_PROFILE_TEST=1 go test -p=1 ./internal/cluster -run '^TestLiveRuntimeProfileWorkloads$' -count=1 -json -timeout=8m | tee .local/runtime-results/runtime-profiles.jsonl
       - name: Verify Compose import and additive service deployment
         run: |
           set -o pipefail
