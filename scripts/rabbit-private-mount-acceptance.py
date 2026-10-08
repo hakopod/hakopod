@@ -38,9 +38,12 @@ class Fixture:
         self.network_attempted = False
         self.report = {"owner": self.owner, "accepted": False, "cleanup_ok": False}
 
-    def run(self, args, *, data=None, timeout=60, cleanup=False):
+    def run(self, args, *, data=None, timeout=60, cleanup=False, cluster_diagnostics=False):
         budget = timeout if cleanup else min(timeout, max(0.1, self.deadline - time.monotonic()))
         result = subprocess.run(args, input=data, capture_output=True, timeout=budget)
+        if result.returncode != 0 and cluster_diagnostics:
+            # Only cluster creation uses this path; never retain kubeconfig or Secret input.
+            self.report["cluster_creation_output"] = (result.stdout + result.stderr).decode(errors="replace")[-8192:]
         require(result.returncode == 0, Path(args[0]).name + " command failed with exit " + str(result.returncode))
         return result.stdout.decode()
 
@@ -94,7 +97,7 @@ class Fixture:
                   "--api-port", "127.0.0.1:16443", "--runtime-label", OWNER + "=" + self.owner + "@server:0",
                   "--k3s-arg", "--disable=traefik,servicelb,local-storage,metrics-server,coredns@server:0",
                   "--k3s-arg", "--secrets-encryption@server:0", "--k3s-arg", "--kubelet-arg=pod-max-pids=128@server:0",
-                  "--kubeconfig-update-default=false", "--kubeconfig-switch-context=false", "--wait", "--timeout", "180s"], timeout=210)
+                  "--kubeconfig-update-default=false", "--kubeconfig-switch-context=false", "--wait", "--timeout", "180s"], timeout=210, cluster_diagnostics=True)
         nodes = self.docker_objects("container")
         require(len(nodes) == 1 and nodes[0]["Config"]["Labels"].get("k3d.cluster") == CLUSTER,
                 "Created node ownership is ambiguous")
