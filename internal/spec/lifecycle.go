@@ -15,10 +15,21 @@ type JobSchedule struct {
 	Timezone     string `json:"timezone" toml:"timezone"`
 	HistoryLimit int32  `json:"history_limit" toml:"history_limit"`
 }
+
+// JobInvocation enables API execution of one fixed service template. Callers
+// supply only declared JSON inputs; they cannot change its image or command.
+type JobInvocation struct {
+	AllowedIdentities []string `json:"allowed_identities" toml:"allowed_identities"`
+	InputKeys         []string `json:"input_keys" toml:"input_keys"`
+	MaxInputBytes     int      `json:"max_input_bytes" toml:"max_input_bytes"`
+	QueueLimit        int      `json:"queue_limit" toml:"queue_limit"`
+}
+
 type Job struct {
-	Schedule       *JobSchedule `json:"schedule,omitempty" toml:"schedule"`
-	TimeoutSeconds int64        `json:"timeout_seconds" toml:"timeout_seconds"`
-	Retries        int32        `json:"retries" toml:"retries"`
+	Invocation     *JobInvocation `json:"invocation,omitempty" toml:"invocation"`
+	Schedule       *JobSchedule   `json:"schedule,omitempty" toml:"schedule"`
+	TimeoutSeconds int64          `json:"timeout_seconds" toml:"timeout_seconds"`
+	Retries        int32          `json:"retries" toml:"retries"`
 }
 
 // File mounts exactly one read-only file, not an operator host directory.
@@ -53,6 +64,61 @@ func SecretReferences(s Service) map[string]SecretRef {
 
 func normalizeJobAndFiles(s *Service) error {
 	if j := s.Job; j != nil {
+		if cfg := j.Invocation; cfg != nil {
+			if j.Schedule != nil || j.Retries != 0 {
+				return fmt.Errorf("job.invocation: schedules and automatic retries are not permitted")
+			}
+			if s.Volume != nil || len(s.Mounts) > 0 {
+				return fmt.Errorf("job.invocation: persistent volumes are not permitted; use bounded temporary mounts")
+			}
+			if len(cfg.AllowedIdentities) < 1 || len(cfg.AllowedIdentities) > 16 {
+				return fmt.Errorf("job.invocation.allowed_identities: require 1–16 machine identity IDs")
+			}
+			seen := map[string]bool{}
+			for _, id := range cfg.AllowedIdentities {
+				if len(id) != 32 || strings.Trim(id, "0123456789abcdef") != "" || seen[id] {
+					return fmt.Errorf("job.invocation.allowed_identities: require unique 32-character lowercase hexadecimal IDs")
+				}
+				seen[id] = true
+			}
+			if len(cfg.InputKeys) < 1 || len(cfg.InputKeys) > 16 {
+				return fmt.Errorf("job.invocation.input_keys: require 1–16 input keys")
+			}
+			seen = map[string]bool{}
+			for _, key := range cfg.InputKeys {
+				if len(key) > 64 || !namePattern.MatchString(key) || seen[key] {
+					return fmt.Errorf("job.invocation.input_keys: require unique valid names of at most 64 characters")
+				}
+				seen[key] = true
+			}
+			if cfg.MaxInputBytes == 0 {
+				cfg.MaxInputBytes = 64 << 10
+			}
+			if cfg.MaxInputBytes < 2 || cfg.MaxInputBytes > 128<<10 {
+				return fmt.Errorf("job.invocation.max_input_bytes: use 2–131072 bytes")
+			}
+			if cfg.QueueLimit == 0 {
+				cfg.QueueLimit = 16
+			}
+			if cfg.QueueLimit < 1 || cfg.QueueLimit > 64 {
+				return fmt.Errorf("job.invocation.queue_limit: use 1–64 pending jobs")
+			}
+			if len(s.Files)+len(s.TemporaryMounts)+len(s.CertificateMounts) >= 16 {
+				return fmt.Errorf("job.invocation: reserve one file mount for invocation input")
+			}
+			paths := []string{}
+			for _, file := range s.Files {
+				paths = append(paths, file.MountPath)
+			}
+			for _, mount := range s.TemporaryMounts {
+				paths = append(paths, mount.MountPath)
+			}
+			for _, path := range paths {
+				if path == "/run/hakopod/invocation" || strings.HasPrefix(path, "/run/hakopod/invocation/") || strings.HasPrefix("/run/hakopod/invocation", path+"/") {
+					return fmt.Errorf("job.invocation: mounts cannot overlap /run/hakopod/invocation")
+				}
+			}
+		}
 		if schedule := j.Schedule; schedule != nil {
 			if len(schedule.Cron) > 100 || len(strings.Fields(schedule.Cron)) != 5 {
 				return fmt.Errorf("job.schedule.cron: use a five-field cron expression")
