@@ -1,6 +1,6 @@
 # Sandbox sessions
 
-Status: implementation in progress. Native runtime qualification is required before deployment.
+Status: development-qualified on Linux amd64 with gVisor 20261005.0. Qualify the installed runtime before production use.
 
 Use a session when a worker must keep memory and files between calls, such as a notebook kernel. Deploy a fixed worker image, helper command and readiness command. Callers cannot choose a command or receive cluster credentials.
 
@@ -31,7 +31,7 @@ Limits: eight active sessions per application, one active session per owner/runt
 
 `closing` with `cleanup_pending=true` means deletion is not confirmed. `closed` confirms cleanup. Credentials, expiry, missing containers and changed generations fail closed; they do not silently recreate a kernel.
 
-The process guard uses Linux `RLIMIT_NPROC`, which counts tasks for a real UID. It is not a Kubernetes per-Pod PIDs control. The native gVisor qualification must demonstrate that one session reaching its UID limit does not prevent another tenant session from starting processes. Ordinary shared-kernel execution is not an accepted fallback.
+The process guard uses Linux `RLIMIT_NPROC`, which counts tasks for a real UID. It is not a Kubernetes per-Pod PIDs control. The native gVisor test saturates one session’s UID limit while another tenant starts a helper and child process. Ordinary shared-kernel execution is not an accepted fallback.
 
 The operator sets `HAKOPOD_SESSION_GUARD_IMAGE` to a digest-pinned Hakopod server image containing `/hakopod-session-guard`. TOML configuration uses `[sandbox_sessions]` with `guard_image`. Each template requires a runtime profile bound to the `runsc` handler. The capacity plan includes eight concurrent workers per template; the application admission limit remains eight sessions in total. Each worker reserves the larger of its request and the guard initialization request (50m CPU, 32 MiB), plus the RuntimeClass overhead (20m CPU, 50 MiB).
 
@@ -44,3 +44,5 @@ The guarded readiness command must confirm that the kernel can accept calls. A s
 Temporary mounts require `memory=true` and share the container memory limit. Their combined configured capacity is at most 128 MiB. `/run/hakopod-session` is reserved for the read-only process guard.
 
 Before executing worker code, the guard permits only UNIX sockets and denies IP sockets and io_uring. Kubernetes network policy adds a second boundary. Helper input remains blocked until the trusted guard confirms the expected Pod UID and generation. Kubernetes exec has no atomic UID precondition; session namespaces therefore allow no tenant Kubernetes access.
+
+Validation covers the full Go suite, guarded binary streams, container identity, resource accounting and cleanup. The native TLS/HTTP gate passed in 88.02 seconds with two persistent Python kernels, file/variable retention, tenant isolation, replay rejection and cancellation. Both container records used `io.containerd.runsc.v1`; all fixture namespaces and volumes were removed. ARM64 native execution remains unverified.
