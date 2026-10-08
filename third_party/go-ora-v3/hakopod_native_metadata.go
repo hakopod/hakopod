@@ -5,7 +5,10 @@ package go_ora
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
+	"github.com/sijms/go-ora/v3/network"
 	oraTypes "github.com/sijms/go-ora/v3/types"
+	"io"
 )
 
 type NativeDiagnosticEvent struct {
@@ -25,7 +28,7 @@ func (r *nativeDiagnosticRecorder) add(stage string, column *ParameterInfo) {
 		return
 	}
 	switch stage {
-	case "query_complete", "query_failed", "column", "rows_empty", "rows_present":
+	case "query_complete", "query_failed", "column", "rows_empty", "rows_present", "rows_complete", "rows_failed":
 	default:
 		stage = "other"
 	}
@@ -84,4 +87,90 @@ func NativeQueryMetadata(ctx context.Context, conn *Connection, statement string
 		}
 	}
 	return recorder.events
+}
+
+// NativeQueryMetadataCause reports only known static failure categories.
+func NativeQueryMetadataCause(ctx context.Context, conn *Connection, statement string, args []driver.NamedValue) ([]NativeDiagnosticEvent, string) {
+	recorder := &nativeDiagnosticRecorder{}
+	stmt := NewStmt(statement, conn)
+	defer stmt.Close()
+	rows, err := stmt.QueryContext(ctx, args)
+	if rows != nil {
+		defer rows.Close()
+	}
+	cause := "none"
+	if err != nil {
+		cause = "other"
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			cause = "deadline"
+		case errors.Is(err, context.Canceled):
+			cause = "cancelled"
+		case errors.Is(err, network.ErrReadLimit):
+			cause = "receive_limit"
+		}
+		if err.Error() == "TTC error: received code 3 during response reading" {
+			cause = "ttc_response_code_3"
+		}
+		recorder.add("query_failed", nil)
+	} else {
+		recorder.add("query_complete", nil)
+	}
+	for i := 0; i < len(stmt.columns) && len(recorder.events) < 16; i++ {
+		recorder.add("column", &stmt.columns[i])
+	}
+	if dataset, ok := rows.(*DataSet); ok && dataset != nil && dataset.currentResultSet() != nil {
+		if len(dataset.currentResultSet().rows) == 0 {
+			recorder.add("rows_empty", nil)
+		} else {
+			recorder.add("rows_present", nil)
+		}
+	}
+	if err == nil && rows != nil {
+		if len(stmt.columns) < 1 || len(stmt.columns) > 2 {
+			recorder.add("rows_failed", nil)
+			return recorder.events, "row_limit"
+		}
+		done := conn.session.StartContext(ctx)
+		defer conn.session.EndContext(done)
+		values := make([]driver.Value, 2)
+		count := 0
+		for calls := 0; calls < 2; calls++ {
+			nextErr := rows.Next(values)
+			clear(values)
+			if nextErr == io.EOF {
+				if count != 1 {
+					cause = "row_limit"
+					recorder.add("rows_failed", nil)
+					break
+				}
+				recorder.add("rows_complete", nil)
+				break
+			}
+			if nextErr != nil {
+				cause = "other"
+				if errors.Is(nextErr, context.DeadlineExceeded) {
+					cause = "deadline"
+				}
+				if errors.Is(nextErr, context.Canceled) {
+					cause = "cancelled"
+				}
+				if errors.Is(nextErr, network.ErrReadLimit) {
+					cause = "receive_limit"
+				}
+				if nextErr.Error() == "TTC error: received code 3 during response reading" {
+					cause = "ttc_response_code_3"
+				}
+				recorder.add("rows_failed", nil)
+				break
+			}
+			count++
+			if count > 1 {
+				cause = "row_limit"
+				recorder.add("rows_failed", nil)
+				break
+			}
+		}
+	}
+	return recorder.events, cause
 }
