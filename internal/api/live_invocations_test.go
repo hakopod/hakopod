@@ -75,7 +75,7 @@ func TestLiveInvocationHTTPQueueAndCleanup(t *testing.T) {
 		if apierrors.IsNotFound(e) {
 			return
 		}
-		if e != nil || ns.Labels["hakopod.io/application-id"] != d.ApplicationID {
+		if e != nil || ns.Labels["app.kubernetes.io/managed-by"] != "hakopod" || ns.Labels["hakopod.io/application-id"] != strings.TrimPrefix(namespace, "hp-") {
 			t.Error("namespace cleanup ownership could not be verified", e)
 			return
 		}
