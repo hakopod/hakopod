@@ -1,0 +1,26 @@
+{
+  "adjacent_metadata_validation": {
+    "myduck": true,
+    "vitess": true
+  },
+  "command": [
+    "/usr/bin/python3",
+    "/srv/hakopod-backup-scratch/oracle-final-metadata-4d5ff51-v1/derive-oracle-http-v2.py"
+  ],
+  "exit_status": 0,
+  "invocation_id": "b8c15da6a39b42db8932a88afff272d2",
+  "outputs": {
+    "manifest.json": "2eb026c46024bb2a41b319758d3ea74c2d6aafb4ce71e8ed0c91fd3d36ecd513",
+    "native-acceptance.json": "b89145dc27327bb821fd8115cc75823136f5b66d4e1dbe0a515a42a835dc06a2",
+    "oracle-http-v2-derivation.json": "ca4d982e76fbc645d5f820e3e1d17bdaa182e039ff8cb14387c38ef9090e609f"
+  },
+  "postprocessor_sha256": "4bf03cb049724fd7c31281db6cb6cadf3dbcc7161659fb8dbaa60e41cc113701",
+  "result": "success",
+  "schema_version": 1,
+  "tool_sha256": {
+    "docker": "5fbf1d65d05315a4e89f561fee89731cec1f95094b86a56fac47e240edbf7bac",
+    "kubectl": "fbecbfd375b3686002c2e81d51c390172f5ffba3d6b47920d55342cb03f557af",
+    "python3": "e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
+  },
+  "unit": "hakopod-oracle-v2-derive-retry-20261008.service"
+}
