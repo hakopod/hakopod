@@ -173,7 +173,11 @@ func TestManagedMyDuckHTTPLive(t *testing.T) {
 	server.ConfigureBackups(api.BackupConfig{DatabaseURL: dsn, StateDir: t.TempDir(), MaxBytes: 64 << 20})
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
-	client := backupRequestClient{t: t, server: httpServer, token: token}
+	_, credentialToken, err := db.CreateKey(ctx, principal, store.KeyInput{Name: "MyDuck HTTP credential fixture", Permissions: []string{"admin", "agent:admin", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := backupRequestClient{t: t, server: httpServer, token: credentialToken}
 	var destination struct {
 		Destination backup.Destination `json:"destination"`
 	}
