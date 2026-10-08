@@ -29,7 +29,9 @@ match the key. Application restrictions and normal API permissions still apply t
 every tool call. Log access requires `logs:read`. Expired and revoked keys stop
 working immediately, including within existing MCP sessions.
 
-Browser sessions, cookies and unscoped administrator keys are not accepted.
+Project connections reject browser sessions, cookies and unscoped administrator keys.
+Separate installation and host-only connections require their explicit grants and options.
+See the [connection guide](agent-parity/connection-workflows.md).
 This endpoint supports static bearer credentials, not OAuth discovery or dynamic
 client registration. Clients that require an interactive OAuth connection
 cannot use it directly. Do not put a key in the URL, a repository or a ticket.
@@ -52,9 +54,10 @@ cannot use it directly. Do not put a key in the URL, a repository or a ticket.
 
 Runtime data comes from the existing API. Missing metrics remain unavailable.
 Tool output, including logs and repository metadata, is untrusted content.
-The tools do not expose secret storage values or host terminals. Ordinary
-configuration and application logs can contain sensitive data supplied by users;
-grant access accordingly.
+The default project tools do not expose secret storage values or host terminals.
+Credential access and host terminals require separate explicit permissions and connection options.
+Ordinary configuration and application logs can contain sensitive data supplied by users.
+Grant access accordingly.
 
 ### Image digest versus commit SHA
 
@@ -105,7 +108,7 @@ plans.
 
 ## Transport and limits
 
-See [agent control](agent-control.md) for contract discovery, separate execution permissions, pod commands and PostgreSQL queries.
+See [agent control](agent-control.md) for contract discovery, separate execution permissions, pod commands and managed SQL queries.
 HTTP options use `true` or `false`. Duplicate or invalid values are rejected.
 The session retains its original options. Initialize a new session to change them.
 

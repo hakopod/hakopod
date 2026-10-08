@@ -99,8 +99,8 @@ routes and fail-fast specification retrieval before selected-service deployments
 
 ## Coding agents through MCP
 
-`hakopod mcp` runs a bounded MCP server over stdio. It requires an explicit project
-and environment and uses the CLI's saved credential or `HAKOPOD_API_KEY`.
+`hakopod mcp` runs a bounded MCP server over stdio. A project connection requires
+an explicit project and environment. It uses the CLI's saved credential or `HAKOPOD_API_KEY`.
 Use a short-lived project/environment-scoped key; keep credentials out of the
 repository and the MCP configuration itself.
 
@@ -124,8 +124,8 @@ metadata and plan TOML changes.
 
 Self-hosted installations also expose a [Streamable HTTP MCP endpoint](http-mcp.md)
 at `/api/v1/mcp?project=demo&environment=development`, using a scoped bearer key.
-Optional [agent control](agent-control.md) adds scoped pod commands, PostgreSQL queries and contract operation discovery.
-There is no host terminal or implicit local-file access. Returned application content,
+Optional [agent control](agent-control.md) adds scoped pod commands, managed SQL queries and contract operation discovery.
+Host terminals require a separate connection and explicit host access. The tools do not read local files implicitly. Returned application content,
 logs and query results are untrusted data.
 
 Deployment is absent by default. Add `--allow-deploy` only when the agent should
@@ -134,12 +134,12 @@ be able to deploy after review. `plan` returns a canonical plan and a ten-minute
 same idempotency key on retry. It cannot silently replace the reviewed TOML.
 
 Use the HTTPS API of a self-hosted installation with its scoped machine credential.
-Cloud's enrolled-worker control API is private and is not a public MCP endpoint.
+Cloud connections use workspace-bound CLI or automation credentials. Cloud's enrolled-worker control API remains private.
 `--workspace ID` (or `HAKOPOD_WORKSPACE`) forwards a Cloud workspace header for
-integrations already holding a Cloud bearer session; it does not grant access or
-turn a node key into a Cloud account token. Cloud account device-login and scoped
-Cloud automation credentials are not exposed by this release. Do not use a broad
-operator session as a replacement for a scoped automation key.
+integrations holding a Cloud credential. It does not grant access or turn a node
+key into a Cloud account token. Current workspace permissions and the credential's
+grants both apply. See the [verification record](agent-control-verification.md) for
+Cloud transport coverage and remaining limitations.
 
 ## Scheduled jobs
 
