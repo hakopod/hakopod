@@ -43,14 +43,16 @@ before processing later columns. It also rejects a nonempty value for this
 NULL-only type. Tests call the actual decoder and check subsequent field
 alignment, stale value removal and receive-limit enforcement.
 
-The scalar fetched-character candidate handles CHAR/NCHAR columns described
-with zero maximum length as NULL without consuming row bytes. It clears prior
+The scalar fetched-column patch handles CHAR/NCHAR, NUMBER and the two
+timezone timestamp types only when their original wire description has zero
+maximum length. It returns NULL without consuming row bytes. It clears prior
 values before returning and applies only outside UDT and array paths. The
 upstream BasicRead shortcut is restored; positive-length parameter, fixed CLR
 and array paths retain their existing reads. Tests distinguish described NULL
 columns with no CLR from positive-length character fields carrying a NULL CLR.
-This candidate is not a proven decoder fix. Full native acceptance is required
-before any Oracle capability is enabled.
+Full query acceptance passed on the pinned Oracle Free 23.26 standalone runtime.
+The result does not qualify Enterprise versions or customer images. See the
+repository's agent-control verification record for exact evidence and limits.
 
 Native diagnostic helpers require the `hakopod_native_acceptance` build tag.
 They collect only bounded, static categories on an explicitly captured statement.

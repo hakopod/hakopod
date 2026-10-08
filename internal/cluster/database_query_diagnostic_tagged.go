@@ -10,6 +10,8 @@ import (
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/sijms/go-ora/v3/network"
 	"io"
+	"net"
+	"sync"
 	"time"
 )
 
@@ -19,13 +21,19 @@ type sqlDiagnosticEvent struct {
 	ContextExpired                 bool
 }
 type sqlDiagnosticRecorder struct {
+	mu      sync.Mutex
 	started time.Time
 	events  []sqlDiagnosticEvent
 }
 
 func sqlQueryDiagnosticStage(ctx context.Context, stage string, err error) {
 	recorder, ok := ctx.Value(sqlDiagnosticKey{}).(*sqlDiagnosticRecorder)
-	if !ok || len(recorder.events) >= 24 {
+	if !ok {
+		return
+	}
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	if len(recorder.events) >= 24 {
 		return
 	}
 	switch stage {
@@ -92,6 +100,29 @@ func sqlDiagnosticCause(err error) string {
 	case errors.Is(err, network.ErrConnReset):
 		return "driver_context_reset"
 	}
+	var oracleError *network.OracleError
+	if errors.As(err, &oracleError) {
+		switch oracleError.ErrCode {
+		case 1013:
+			return "oracle_cancelled"
+		case 904, 942, 6550:
+			return "oracle_statement_rejected"
+		case 30009, 4030, 4036:
+			return "oracle_resource_limit"
+		case 1031:
+			return "oracle_privilege_rejected"
+		case 1017:
+			return "oracle_authentication_rejected"
+		case 12170, 12514, 12541:
+			return "oracle_connection_rejected"
+		default:
+			return "oracle_other"
+		}
+	}
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return "network_timeout"
+	}
 	switch err.Error() {
 	case "TTC error: received code 3 during response reading":
 		return "ttc_response_code_3"
@@ -101,4 +132,10 @@ func sqlDiagnosticCause(err error) string {
 		return "timezone_decode"
 	}
 	return "other"
+}
+
+func (r *sqlDiagnosticRecorder) snapshot() []sqlDiagnosticEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]sqlDiagnosticEvent(nil), r.events...)
 }

@@ -41,49 +41,7 @@ func TestManagedOracleStaticMetadataLive(t *testing.T) {
 	if _, _, err = c.databaseExecTarget(ctx, d, observed.Members[0]); err != nil {
 		t.Fatal("metadata member ownership validation failed")
 	}
-	for _, probe := range []struct {
-		name, statement string
-		args            []driver.NamedValue
-	}{
-		{"untyped_null", "SELECT NULL FROM dual", nil},
-		{"number_null", "SELECT CAST(:1 AS NUMBER(30,0)), NULL FROM dual", []driver.NamedValue{{Ordinal: 1, Value: "9007199254740993"}}},
-		{"typed_null", "SELECT CAST(NULL AS NUMBER(30,0)) FROM dual", nil},
-	} {
-		func() {
-			step, stop := context.WithTimeout(ctx, 20*time.Second)
-			defer stop()
-			native, e := c.oracleApplicationConnectionOptions(step, d, observed.Members[0], true, true)
-			if e != nil {
-				t.Fatal("metadata connection")
-			}
-			defer native.Close()
-			conn, e := native.Conn(step)
-			if e != nil {
-				t.Fatal("metadata session")
-			}
-			defer conn.Close()
-			if boundOracleQueryConnection(conn) != nil {
-				t.Fatal("metadata decoder limit")
-			}
-			var events []goora.NativeDiagnosticEvent
-			e = conn.Raw(func(raw any) error {
-				actual, ok := raw.(*goora.Connection)
-				if !ok {
-					return driver.ErrBadConn
-				}
-				events = goora.NativeQueryMetadata(step, actual, probe.statement, probe.args)
-				return nil
-			})
-			if e != nil {
-				t.Fatal("metadata native access")
-			}
-			encoded, e := json.Marshal(events)
-			if e != nil || len(encoded) > 4096 {
-				t.Fatal("metadata output bound")
-			}
-			t.Logf("Oracle static probe=%s events=%s", probe.name, encoded)
-		}()
-	}
+	oracleFixedMetadataProbes(t, ctx, c, d, observed.Members[0])
 }
 
 func TestSQLDiagnosticRecorderPrivacyAndBound(t *testing.T) {
@@ -219,5 +177,106 @@ func TestSQLDiagnosticStaticCausePreserved(t *testing.T) {
 		if e != nil || len(r.events) != 1 || r.events[0].Cause == "none" || strings.Contains(string(encoded), "private") {
 			t.Fatal("failed probe terminal classification was lost or disclosed text")
 		}
+	}
+}
+
+func oracleFixedMetadataProbes(t *testing.T, ctx context.Context, c *Client, d database.Resource, member database.Member) {
+	for _, probe := range []struct {
+		name, statement string
+		args            []driver.NamedValue
+	}{
+		{"number_null", "SELECT CAST(:1 AS NUMBER(30,0)), NULL FROM dual", []driver.NamedValue{{Ordinal: 1, Value: "9007199254740993"}}},
+		{"cardinality_null", "SELECT 1, CARDINALITY(NULL) FROM dual", nil},
+		{"lengthb_null", "SELECT 1, LENGTHB(NULL) FROM dual", nil},
+		{"timestamp_null", "SELECT 1, TO_UTC_TIMESTAMP_TZ(NULL) FROM dual", nil},
+	} {
+		func() {
+			step, stop := context.WithTimeout(ctx, 20*time.Second)
+			defer stop()
+			native, e := c.oracleApplicationConnectionOptions(step, d, member, true, true)
+			if e != nil {
+				t.Fatal("metadata connection")
+			}
+			defer native.Close()
+			conn, e := native.Conn(step)
+			if e != nil {
+				t.Fatal("metadata session")
+			}
+			defer conn.Close()
+			if boundOracleQueryConnection(conn) != nil {
+				t.Fatal("metadata decoder limit")
+			}
+			var events []goora.NativeDiagnosticEvent
+			cause := "none"
+			e = conn.Raw(func(raw any) error {
+				actual, ok := raw.(*goora.Connection)
+				if !ok {
+					return driver.ErrBadConn
+				}
+				events, cause = goora.NativeQueryMetadataCause(step, actual, probe.statement, probe.args)
+				return nil
+			})
+			if e != nil {
+				t.Fatal("metadata native access")
+			}
+			encoded, e := json.Marshal(events)
+			if e != nil || len(encoded) > 4096 {
+				t.Fatal("metadata output bound")
+			}
+			t.Logf("Oracle static probe=%s cause=%s events=%s", probe.name, cause, encoded)
+		}()
+	}
+}
+
+func oracleAcceptanceMetadataHook(t *testing.T, ctx context.Context, c *Client, d database.Resource, member database.Member) {
+	if os.Getenv("HAKOPOD_ORACLE_ACCEPTANCE_METADATA_TEST") != "1" {
+		return
+	}
+	if os.Getenv("HAKOPOD_KEEP_DATABASE_FIXTURES") != "" || os.Getenv("HAKOPOD_ORACLE_FIXTURE_ID") != "" {
+		t.Fatal("acceptance metadata requires fresh fixture and normal cleanup")
+	}
+	if !member.Ready || member.UID == "" {
+		t.Fatal("acceptance metadata requires a ready owned member")
+	}
+	if _, _, err := c.databaseExecTarget(ctx, d, member); err != nil {
+		t.Fatal("acceptance metadata member ownership validation failed")
+	}
+	oracleFixedMetadataProbes(t, ctx, c, d, member)
+}
+
+func oracleCancellationDiagnosticContext(t *testing.T, ctx context.Context) (context.Context, func()) {
+	if os.Getenv("HAKOPOD_ORACLE_ACCEPTANCE_METADATA_TEST") != "1" {
+		return ctx, func() {}
+	}
+	recorder := &sqlDiagnosticRecorder{started: time.Now()}
+	diagnosticCtx := context.WithValue(ctx, sqlDiagnosticKey{}, recorder)
+	return diagnosticCtx, func() {
+		encoded, err := json.Marshal(recorder.snapshot())
+		if err != nil || len(encoded) > 4096 {
+			t.Error("Oracle cancellation diagnostic output bound")
+			return
+		}
+		t.Logf("Oracle cancellation stages events=%s", encoded)
+	}
+}
+func TestSQLDiagnosticConcurrentSnapshotPrivacy(t *testing.T) {
+	r := &sqlDiagnosticRecorder{started: time.Now()}
+	ctx := context.WithValue(context.Background(), sqlDiagnosticKey{}, r)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			sqlQueryDiagnosticStage(ctx, "private-stage", errors.New("private-error"))
+		}
+	}()
+	for i := 0; i < 100; i++ {
+		encoded, err := json.Marshal(r.snapshot())
+		if err != nil || strings.Contains(string(encoded), "private") || len(encoded) > 4096 {
+			t.Fatal("concurrent diagnostic snapshot unsafe")
+		}
+	}
+	<-done
+	if len(r.snapshot()) != 24 {
+		t.Fatal("concurrent capture bound differs")
 	}
 }

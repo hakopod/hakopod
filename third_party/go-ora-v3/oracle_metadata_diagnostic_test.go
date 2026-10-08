@@ -5,6 +5,7 @@ package go_ora
 import (
 	"encoding/json"
 	"errors"
+	oraTypes "github.com/sijms/go-ora/v3/types"
 	"strings"
 	"testing"
 )
@@ -81,5 +82,37 @@ func TestOracleBoundaryResponseAndTrailerAccuracy(t *testing.T) {
 	stmt.nativeResponseFailure(errors.New("TTC error: received code 3 during response reading"))
 	if len(stmt.recorder.events) != 2 || stmt.recorder.events[1].Boundary != "metadata_trailer_complete" {
 		t.Fatal("known static response boundary missing")
+	}
+}
+
+func TestOracleMetadataTimestampCategories(t *testing.T) {
+	for _, sample := range []struct {
+		typ      uint16
+		category string
+	}{
+		{oraTypes.TIMESTAMP, "timestamp"}, {oraTypes.TimeStampDTY, "timestamp"},
+		{oraTypes.TIMESTAMPTZ, "timestamp_tz"}, {oraTypes.TimeStampTZ_DTY, "timestamp_tz_dty"},
+		{oraTypes.TimeStampLTZ, "timestamp_ltz"}, {oraTypes.TimeStampLTZ_DTY, "timestamp_ltz"},
+	} {
+		r := &nativeDiagnosticRecorder{}
+		col := &ParameterInfo{Name: "private-column", Value: "private-value"}
+		col.DataType = sample.typ
+		r.add("column", col)
+		encoded, err := json.Marshal(r.events)
+		if err != nil || len(r.events) != 1 || r.events[0].Type != sample.category || strings.Contains(string(encoded), "private") || len(encoded) > 256 {
+			t.Fatal("timestamp diagnostic category is unsafe or ambiguous")
+		}
+	}
+}
+
+func TestOracleMetadataDescribedZeroPrivacy(t *testing.T) {
+	for _, zero := range []bool{false, true} {
+		r := &nativeDiagnosticRecorder{}
+		col := &ParameterInfo{describedZero: zero, Name: "private-column", Value: "private-value"}
+		r.add("column", col)
+		encoded, err := json.Marshal(r.events)
+		if err != nil || r.events[0].DescribedZero != zero || strings.Contains(string(encoded), "private") || len(encoded) > 256 {
+			t.Fatal("original describe boolean was unsafe or missing")
+		}
 	}
 }

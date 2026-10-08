@@ -35,6 +35,7 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Minute)
 	defer cancel()
 	d, observed := newOracleFixture(t, ctx, c, "")
+	oracleAcceptanceMetadataHook(t, ctx, c, d, observed.Members[0])
 
 	write := false
 	read := func(sql string, args ...any) database.QueryResult {
@@ -50,14 +51,19 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	if len(result.Rows) != 1 || len(result.Rows[0]) != 2 || result.Rows[0][0] == nil || *result.Rows[0][0] != "9007199254740993" || result.Rows[0][1] != nil {
 		t.Fatal("numeric/null result differs")
 	}
-	for _, statement := range []string{
-		"SELECT 1, CARDINALITY(NULL) FROM dual",
-		"SELECT 1, LENGTHB(NULL) FROM dual",
-		"SELECT 1, TO_UTC_TIMESTAMP_TZ(NULL) FROM dual",
+	for _, probe := range []struct{ name, statement string }{
+		{"cardinality_null", "SELECT 1, CARDINALITY(NULL) FROM dual"},
+		{"lengthb_null", "SELECT 1, LENGTHB(NULL) FROM dual"},
+		{"timestamp_null", "SELECT 1, TO_UTC_TIMESTAMP_TZ(NULL) FROM dual"},
 	} {
-		result = read(statement)
+		result, probeErr := queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: probe.statement, ReadOnly: &write, ExecutionMode: "nontransactional"})
+		if probeErr != nil {
+			oracleSafeQueryFailure(t, probe.name, probeErr)
+			t.Errorf("Oracle scalar probe=%s operation failed", probe.name)
+			continue
+		}
 		if len(result.Rows) != 1 || len(result.Rows[0]) != 2 || result.Rows[0][0] == nil || *result.Rows[0][0] != "1" || result.Rows[0][1] != nil {
-			t.Fatal("scalar function NULL row differs")
+			t.Errorf("Oracle scalar probe=%s NULL row differs", probe.name)
 		}
 	}
 	_, err = queryOracleSQLFixture(ctx, c, d, database.QueryRequest{SQL: "CREATE TABLE hakopod_query_fixture_v2(value NUMBER(30,0) PRIMARY KEY)", ReadOnly: &write, ExecutionMode: "nontransactional"})
@@ -97,7 +103,13 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	if !errors.As(err, &oversizedError) || oversizedError.Code != "database_query_result_limit" || oversizedError.Outcome != "unknown" {
 		t.Fatal("oversized Oracle value lacked conservative bounded outcome")
 	}
-	oracleCancellationAfterExecution(t, ctx, c, d, observed.Members[0])
+	joinSafe := false
+	t.Run("cancellation", func(t *testing.T) {
+		oracleCancellationAfterExecution(t, ctx, c, d, observed.Members[0], &joinSafe)
+	})
+	if !joinSafe {
+		t.Fatal("Oracle cancellation worker did not finish before independent checks")
+	}
 	native, err := c.oracleApplicationConnection(ctx, d, observed.Members[0], true)
 	if err != nil {
 		t.Fatal("native connection")
@@ -326,11 +338,14 @@ func oracleDefaultDecoderPositiveControl(t *testing.T, parent context.Context, c
 	t.Logf("Oracle synthetic default_decoder error_type=%T error_class=%s error_hash=%s context_done=%t", err, oracleDiagnosticErrorClass(err), oracleDiagnosticErrorHash(err), ctx.Err() != nil)
 }
 
-func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *Client, d database.Resource, member database.Member) {
+func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *Client, d database.Resource, member database.Member, joinSafe *bool) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	*joinSafe = true
+	transportCtx, closeTransport := context.WithTimeout(parent, 45*time.Second)
+	defer closeTransport()
+	ctx, cancel := context.WithTimeout(transportCtx, 20*time.Second)
 	defer cancel()
-	native, err := c.oracleApplicationConnectionOptions(ctx, d, member, true, true)
+	native, err := c.oracleApplicationConnectionOptions(transportCtx, d, member, true, true)
 	if err != nil {
 		t.Fatal("Oracle cancellation connection")
 	}
@@ -343,6 +358,58 @@ func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *C
 	if boundOracleQueryConnection(conn) != nil {
 		t.Fatal("Oracle cancellation decoder bound")
 	}
+	created := []string{}
+	defer func() {
+		if len(created) == 0 || !*joinSafe {
+			return
+		}
+		cleanup, stopCleanup := context.WithTimeout(parent, 10*time.Second)
+		defer stopCleanup()
+		cleanupDB, cleanupErr := c.oracleApplicationConnectionOptions(cleanup, d, member, true, true)
+		if cleanupErr != nil {
+			t.Error("Oracle cancellation function cleanup connection failed")
+			return
+		}
+		defer cleanupDB.Close()
+		cleanupConn, cleanupErr := cleanupDB.Conn(cleanup)
+		if cleanupErr != nil {
+			t.Error("Oracle cancellation function cleanup session failed")
+			return
+		}
+		defer cleanupConn.Close()
+		if boundOracleQueryConnection(cleanupConn) != nil {
+			t.Error("Oracle cancellation function cleanup decoder bound failed")
+			return
+		}
+		for _, name := range created {
+			if _, cleanupErr = cleanupConn.ExecContext(cleanup, "DROP FUNCTION "+name); cleanupErr != nil {
+				t.Error("Oracle cancellation owned function cleanup failed")
+			}
+		}
+		var remaining int
+		if cleanupConn.QueryRowContext(cleanup, "SELECT COUNT(*) FROM user_objects WHERE object_type='FUNCTION' AND object_name IN ('HAKOPOD_CANCEL_POSITIVE','HAKOPOD_CANCEL_SLEEP')").Scan(&remaining) != nil || remaining != 0 {
+			t.Error("Oracle cancellation owned functions remain after cleanup")
+		}
+	}()
+	for _, fixture := range []struct{ name, duration string }{
+		{"hakopod_cancel_positive", "0.01"},
+		{"hakopod_cancel_sleep", "30"},
+	} {
+		_, err = conn.ExecContext(ctx, "CREATE FUNCTION "+fixture.name+" RETURN NUMBER IS BEGIN DBMS_SESSION.SLEEP("+fixture.duration+"); RETURN 1; END;")
+		if err != nil {
+			oracleSafeQueryFailure(t, "cancel_function_create", err)
+			t.Fatal("Oracle cancellation owned function creation failed")
+		}
+		created = append(created, fixture.name)
+	}
+	positiveCtx, stopPositive := context.WithTimeout(ctx, 3*time.Second)
+	var positive int
+	positiveErr := conn.QueryRowContext(positiveCtx, "SELECT hakopod_cancel_positive() FROM dual").Scan(&positive)
+	stopPositive()
+	if positiveErr != nil || positive != 1 {
+		oracleSafeQueryFailure(t, "cancel_positive", positiveErr)
+		t.Fatal("Oracle cancellation sleep positive control failed")
+	}
 	var sid string
 	if conn.QueryRowContext(ctx, "SELECT SYS_CONTEXT('USERENV','SID') FROM dual").Scan(&sid) != nil {
 		t.Fatal("Oracle cancellation session identity")
@@ -351,26 +418,47 @@ func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *C
 	if err != nil || sessionID == 0 {
 		t.Fatal("Oracle cancellation session identifier invalid")
 	}
-	busyCtx, stop := context.WithCancel(ctx)
+	executionCtx, cancelExecution := context.WithTimeout(transportCtx, 20*time.Second)
+	defer cancelExecution()
+	busyCtx, stop := context.WithCancel(executionCtx)
+	busyCtx, reportDiagnostic := oracleCancellationDiagnosticContext(t, busyCtx)
+	defer reportDiagnostic()
 	defer stop()
 	write := false
-	q := database.QueryRequest{SQL: "SELECT /* hakopod_cancel_control */ SUM(LEVEL) FROM dual CONNECT BY LEVEL<=1000000000", ReadOnly: &write, ExecutionMode: "nontransactional"}
+	q := database.QueryRequest{SQL: "SELECT /* hakopod_cancel_control */ hakopod_cancel_sleep() FROM dual", ReadOnly: &write, ExecutionMode: "nontransactional"}
 	if q.Validate() != nil {
 		t.Fatal("Oracle cancellation request")
 	}
 	ended := make(chan error, 1)
+	joined := false
+	defer func() {
+		stop()
+		closeTransport()
+		if !joined {
+			select {
+			case <-ended:
+				joined = true
+			case <-time.After(5 * time.Second):
+				t.Error("Oracle cancellation worker cleanup exceeded five seconds")
+			}
+		}
+		*joinSafe = joined
+	}()
+	*joinSafe = false
 	go func() {
 		_, err := runSQLDriverQuery(busyCtx, conn, "oracle", q, "read", func(context.Context) error { return nil })
 		ended <- err
 	}()
 	started := false
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline) && ctx.Err() == nil; {
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline) && busyCtx.Err() == nil; {
 		select {
-		case <-ended:
+		case endedErr := <-ended:
+			joined = true
+			oracleSafeQueryFailure(t, "cancel_before_proof", endedErr)
 			t.Fatal("Oracle cancellation query ended before execution proof")
 		default:
 		}
-		check, stopCheck := context.WithTimeout(ctx, 2*time.Second)
+		check, stopCheck := context.WithTimeout(busyCtx, 2*time.Second)
 		value, e := c.oracleLocalQuery(check, d, member, fmt.Sprintf("SELECT COUNT(*) FROM v$session s WHERE s.sid=%d AND s.username='APP' AND s.status='ACTIVE' AND EXISTS (SELECT 1 FROM v$sql q WHERE q.sql_id=s.sql_id AND q.sql_text LIKE 'SELECT /* hakopod_cancel_control */%%')", sessionID))
 		stopCheck()
 		if e != nil {
@@ -380,7 +468,7 @@ func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *C
 			started = true
 			break
 		}
-		if sleepContext(ctx, 50*time.Millisecond) != nil {
+		if sleepContext(busyCtx, 50*time.Millisecond) != nil {
 			break
 		}
 	}
@@ -388,7 +476,9 @@ func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *C
 		t.Fatal("Oracle server execution was not observed before cancellation")
 	}
 	select {
-	case <-ended:
+	case endedErr := <-ended:
+		joined = true
+		oracleSafeQueryFailure(t, "cancel_before_stop", endedErr)
 		t.Fatal("Oracle cancellation query ended before cancellation")
 	default:
 	}
@@ -396,6 +486,7 @@ func oracleCancellationAfterExecution(t *testing.T, parent context.Context, c *C
 	stop()
 	select {
 	case err := <-ended:
+		joined = true
 		var queryError *database.QueryError
 		if !errors.As(err, &queryError) || queryError.Outcome != "unknown" {
 			t.Fatal("Oracle in-flight cancellation lacked a conservative query outcome")

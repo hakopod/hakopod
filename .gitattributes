@@ -5,3 +5,4 @@ images/buildkit/userxattr.patch -whitespace
 # Preserve audited upstream assets and unified diff context byte for byte.
 internal/managedplatform/supabase-assets/** -whitespace
 patches/*.patch -whitespace
+third_party/go-ora-v3/*.patch -whitespace

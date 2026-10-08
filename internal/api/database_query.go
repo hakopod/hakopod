@@ -25,7 +25,7 @@ func (s *Server) databaseQueryCapabilities(w http.ResponseWriter, r *http.Reques
 		failure(w, err)
 		return
 	}
-	write(w, http.StatusOK, database.CapabilitiesForQuery(d.Spec.Engine))
+	write(w, http.StatusOK, database.CapabilitiesForQuerySpec(d.Spec))
 }
 func databaseQueryAllowed(p store.Principal, d database.Resource, readOnly bool) bool {
 	permissions := []string{"databases:query"}
@@ -66,7 +66,7 @@ func (s *Server) databaseQuery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 404, "not_found", "resource not found")
 		return
 	}
-	capabilities := database.CapabilitiesForQuery(d.Spec.Engine)
+	capabilities := database.CapabilitiesForQuerySpec(d.Spec)
 	if q.ExecutionMode == "" && len(capabilities.ExecutionModes) > 0 {
 		q.ExecutionMode = capabilities.ExecutionModes[0]
 	}

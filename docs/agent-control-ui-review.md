@@ -76,3 +76,30 @@ Final v15 Monaco originals reviewed in `work/ui-review/sql-monaco` include diagn
 Four final `v15-*-vitess-write.png` originals pass: the scope warning includes nontransactional requests, the reviewed revision is 4 and the review states One transaction on one shard. The statement and parameter 42 remain visible, mobile values wrap and actions fit. Four `v15-*-query-failure.png` originals preserve SELECT $1 and the quoted value 9007199254740993 after a synthetic unknown outcome, with readable error and operation ID. Dark desktop/mobile `v15-*-unsupported-grammar.png` originals also show explicit unavailable grammar guidance; light guidance is covered by failure states. The injected ClickHouse placeholder style and outcomes are fixture values, not native dialect qualification.
 
 Root's accessibility snapshot exposed the full mobile F8 message; its visual horizontal truncation remains recorded, and no assistive-technology test was performed. Some desktop full-page exports place the sticky action footer across earlier content. The final corrected-focus and help viewport captures show the instructions without actual overlap; those viewport checks govern that conclusion. This supplement approves the recorded presentation and interactions only. It does not prove native query execution, live scope mutation, rollout, or release readiness.
+
+## Oracle Free query supplement
+
+Status: scoped independent visual review passed on October 8, 2026. No actionable findings remain in the inspected states.
+The reviewer followed the Hatch checklist for the newly available Oracle query form and its shared editor.
+The fixture displays a DEVELOPMENT ONLY banner and uses artificial API responses. Product source did not change for this review.
+
+The reviewer critically inspected 12 full-page captures and eight ordinary viewport captures in dark and Paper themes at 1440×1000 and 390×1000.
+Each configuration covered the initial form, nontransactional write review and an unknown query outcome.
+The initial Run query action was disabled. Read only was unavailable, and the user had to select Read and write explicitly.
+Oracle placeholder instructions and unavailable grammar guidance remained visible. Escape moved focus from Monaco to Parameters.
+The Parameters accessible name remained stable after editing. Review focus had a visible two-pixel outline in both themes.
+The review displayed the target, revision, statement, parameters and persistence warning. Unknown outcomes retained SQL and parameters and required another review.
+
+Full-page exports placed the offscreen skip link and sticky footer over earlier content while scrolled.
+The ordinary viewport captures showed no such overlap. The unfocused skip link measured x=8, y=-49, width=148, height=38, with its bottom at -11.
+The viewport captures govern the overlap assessment. Root also inspected representative mobile review and desktop failure captures.
+Document widths remained 1440 and 390 pixels. Mode controls measured 48 pixels high, and review actions measured 40 pixels high.
+
+A dark 390×1000 browser context enabled synthetic touch with one reported touch point.
+Taps opened Query mode, confirmed the unavailable Read only option, selected Read and write, opened and closed Statement help, and opened the write review.
+The two touch screenshots showed readable help, warnings and review actions within the viewport. Physical-device testing is not claimed.
+
+Evidence is in `work/ui-review/oracle-free/`: `results.json`, `viewport-results.json`, `touch-results.json` and the corresponding PNG files.
+The headless browser needed task-local Fontconfig settings and fallback fonts. No system packages or product files changed for that repair.
+This supplement does not repeat the earlier Monaco suite or prove database authorization, live SQL execution, Cloud rendering, deployment or release readiness.
+Assistive technology, other browser engines, 320-pixel layouts and physical devices remain unverified.
