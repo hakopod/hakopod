@@ -63,17 +63,12 @@ func TestQueryProductionCapabilityGate(t *testing.T) {
 	}
 }
 
-func TestVitessScopeDoesNotEnableUnqualifiedTransport(t *testing.T) {
+func TestVitessQueryCapabilityPreservesSingleShardScope(t *testing.T) {
 	c := database.CapabilitiesForQuery("vitess")
-	if c.TransactionScope != "single_shard" || c.CrossShardDML == nil || *c.CrossShardDML {
-		t.Fatal("Vitess shard scope missing")
+	if !c.Supported || !c.ReadOnlySupported || !c.TransactionalDML || c.TransactionalDDL || c.DDLCommit != "implicit_commit" || c.TransactionScope != "single_shard" || c.CrossShardDML == nil || *c.CrossShardDML {
+		t.Fatal("Vitess exceeded qualified query scope")
 	}
-	write := false
-	for _, mode := range []string{"transaction", "nontransactional"} {
-		_, err := (&Client{}).QueryDatabase(context.Background(), database.Resource{Spec: database.Spec{Engine: "vitess"}}, database.QueryRequest{SQL: "UPDATE records SET label=?", Parameters: []any{"control"}, ReadOnly: &write, ExecutionMode: mode})
-		var failure *database.QueryError
-		if !errors.As(err, &failure) || failure.Code != "database_query_engine_unsupported" || failure.Outcome != "not_started" {
-			t.Fatal("unqualified Vitess reached transport")
-		}
+	if len(c.ExecutionModes) != 2 || c.ExecutionModes[0] != "transaction" || c.ExecutionModes[1] != "nontransactional" {
+		t.Fatal("Vitess qualified execution modes missing")
 	}
 }

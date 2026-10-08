@@ -115,11 +115,9 @@ func CapabilitiesForQuery(engine string) QueryCapabilities {
 		c.TransactionalDDL = true
 		c.DDLCommit = "transaction"
 	case "mysql", "vitess":
-		if engine == "mysql" {
-			c.Supported = true
-			c.ReadOnlySupported = true
-			c.ExecutionModes = []string{"transaction", "nontransactional"}
-		}
+		c.Supported = true
+		c.ReadOnlySupported = true
+		c.ExecutionModes = []string{"transaction", "nontransactional"}
 		c.ParameterStyle = "?"
 		c.ReadOnlyEnforcement = "server_transaction"
 		c.TransactionalDML = true
