@@ -16,6 +16,16 @@ Swagger UI can display this contract. It does not define authorization or execut
 | Go API | Enforce current credentials, scope, ownership, revisions, reviews and execution limits. |
 
 The CLI and MCP share the Go operation adapter. There is no separately maintained list of generic MCP endpoints.
+The adapter compiles the embedded input schemas once with a pinned JSON Schema 2020-12 library.
+It rejects external schema resources and applies composition, conditional, numeric, string and collection constraints.
+Schema validation preserves exact JSON numbers. Validation errors omit submitted values and property names.
+Format and content keywords remain annotations. The canonical handlers apply domain-specific checks.
+
+Declared object types reject unknown fields. Explicit maps and provider webhook payloads retain their declared open fields.
+Object extensions merge their base fields before generation. They do not combine incompatible closed object branches.
+Every input has independent bounds: 32 nested levels, 10,000 values and 1,000 items per array.
+Numeric literals have at most 128 characters, with exponents from -1000 to 1000.
+The request and response limits remain 1 MiB.
 Dedicated tools remain for deployment review, pod execution, SQL, terminals, event samples and CSV exports.
 These tools handle behavior that a JSON request schema cannot describe completely.
 

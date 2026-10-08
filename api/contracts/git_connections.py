@@ -9,7 +9,7 @@ route('/git/connections/{id}','put','updateGitConnection',ref('GitConnection'),r
 route('/git/connections/{id}','delete','deleteGitConnection',obj({'status':S},['status']))
 paths['/git/connections/{id}']['delete']['parameters'].append({'name':'expected_revision','in':'query','required':True,'schema':I})
 for endpoint,param,operation in [('/webhooks/git/{connection}','connection','namedGitWebhook'),('/webhooks/github-app/{app}','app','gitHubAppWebhook')]:
-    route(endpoint,'post',operation,obj({'accepted':B,'ignored':B}),obj({}),'202')
+    route(endpoint,'post',operation,obj({'accepted':B,'ignored':B}),mapping({}),'202')
     paths[endpoint]['post']['security']=[]
     paths[endpoint]['post']['parameters'].append({'name':param,'in':'path','required':True,'schema':S})
 

@@ -11,5 +11,5 @@ route('/applications/{id}/domains/{hostname}','delete','discardDomainVerificatio
 paths['/applications/{id}/domains/{hostname}']['delete']['parameters'].append({'name':'hostname','in':'path','required':True,'schema':S})
 
 schemas['InstallationLogQuery'] = obj({'query':S,'since_seconds':I,'limit':I},[])
-schemas['InstallationLogQueryResult'] = {'allOf':[ref('LogQueryResult'),obj({'source':S,'observed_at':T,'started_at':T},['source','observed_at'])]}
+schemas['InstallationLogQueryResult'] = extend_object('LogQueryResult', {'source':S,'observed_at':T,'started_at':T}, ['source','observed_at'])
 route('/installation/logs/query','post','queryInstallationLogs',ref('InstallationLogQueryResult'),ref('InstallationLogQuery'))

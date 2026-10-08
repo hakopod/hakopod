@@ -10,7 +10,12 @@ B = {"type": "boolean"}
 T = {"type": "string", "format": "date-time"}
 def ref(name): return {"$ref": f"#/components/schemas/{name}"}
 def array(item): return {"type": "array", "items": item}
-def obj(properties, required=()): return {"type": "object", "properties": properties, "required": list(required)}
+def obj(properties, required=()): return {"type": "object", "properties": properties, "required": list(required), "additionalProperties": False}
+object_extensions = []
+def extend_object(base, properties, required=()):
+    schema = {}
+    object_extensions.append((schema, base, properties, required))
+    return schema
 def mapping(value): return {"type": "object", "additionalProperties": value}
 schemas = {}
 schemas["Error"] = obj({"error": obj({"code": S, "message": S}, ["code", "message"])}, ["error"])
@@ -87,7 +92,13 @@ paths["/applications/{id}/logs"]["get"]["parameters"] += [{"name":"service","in"
 # Feature contracts execute with the same small schema helpers. Each feature owns its file.
 for extension in sorted(Path(__file__).with_name("contracts").glob("*.py")):
     if extension.name == "agent_policy.py": continue
-    runpy.run_path(str(extension), init_globals={"S": S, "I": I, "B": B, "T": T, "ref": ref, "array": array, "obj": obj, "mapping": mapping, "schemas": schemas, "paths": paths, "route": route, "items": items})
+    runpy.run_path(str(extension), init_globals={"S": S, "I": I, "B": B, "T": T, "ref": ref, "array": array, "obj": obj, "mapping": mapping, "extend_object": extend_object, "schemas": schemas, "paths": paths, "route": route, "items": items})
+# Resolve object extensions after forward-referenced feature schemas exist.
+for schema, base, properties, required in object_extensions:
+    parent = schemas[base]
+    if parent.get("type") != "object":
+        raise ValueError(f"object extension base is not an object: {base}")
+    schema.update({**parent, "properties": {**parent["properties"], **properties}, "required": [*parent["required"], *required]})
 runpy.run_path(str(Path(__file__).with_name("contracts") / "agent_policy.py"), init_globals={"paths": paths})
 doc={"openapi":"3.1.0", "info":{"title":"Hakopod Management API","version":"0.1.0","description":"Manage applications and databases through the versioned API. Each operation defines its input format and required permissions. The API checks current credentials, scope and resource ownership. CLI and MCP connections require explicit options for execution, administration and credential access."}, "servers":[{"url":"/api/v1"}], "security":[{"bearerAuth":[]}], "paths":paths,"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}},"schemas":schemas}}
 Path(__file__).with_name("openapi.json").write_text(json.dumps(doc,indent=2)+"\n")

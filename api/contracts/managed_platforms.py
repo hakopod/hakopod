@@ -90,12 +90,8 @@ schemas['ManagedPlatformRecoveryReview'] = obj({
     'id':S, 'intent':ref('ManagedPlatformRecoveryIntent'), 'request_hash':S,
     'authority_fingerprint':S, 'expires_at':T,
 }, ['id','intent','request_hash','authority_fingerprint','expires_at'])
-schemas['ManagedPlatformRecoveryRequest'] = {'allOf':[
-    ref('ManagedPlatformRecoveryIntent'), obj({'confirm_target_name':S}),
-]}
-schemas['ManagedPlatformRecoveryAcceptRequest'] = {'allOf':[
-    ref('ManagedPlatformRecoveryRequest'), obj({'review':ref('ManagedPlatformRecoveryReview')}, ['review']),
-]}
+schemas['ManagedPlatformRecoveryRequest'] = extend_object('ManagedPlatformRecoveryIntent', {'confirm_target_name':S})
+schemas['ManagedPlatformRecoveryAcceptRequest'] = extend_object('ManagedPlatformRecoveryRequest', {'review':ref('ManagedPlatformRecoveryReview')}, ['review'])
 schemas['ManagedPlatformRecoveryOperation'] = obj({
     'id':S, 'kind':{'type':'string','enum':['backup','restore']}, 'project':S,
     'environment':S, 'status':S, 'phase':S, 'message':S,

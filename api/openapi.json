@@ -85,7 +85,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -149,7 +150,8 @@
                       "maxLength": 1000
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -191,7 +193,8 @@
                 "required": [
                   "name",
                   "environment"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -266,7 +269,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -368,7 +372,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -404,7 +409,8 @@
                 "required": [
                   "confirm_name",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -690,7 +696,8 @@
                 "required": [
                   "revision",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -736,7 +743,8 @@
                       "type": "string"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -759,7 +767,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -803,7 +812,8 @@
                   "required": [
                     "items",
                     "observed_at"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -854,7 +864,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -959,7 +970,8 @@
                       "type": "string"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1071,7 +1083,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1257,13 +1270,15 @@
                         "required": [
                           "pool",
                           "slots"
-                        ]
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1351,7 +1366,8 @@
                             "type": "string"
                           }
                         },
-                        "required": []
+                        "required": [],
+                        "additionalProperties": false
                       }
                     },
                     "providers": {
@@ -1367,7 +1383,8 @@
                     "message",
                     "runner_image",
                     "providers"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1455,7 +1472,8 @@
                     "observed_at",
                     "limit",
                     "truncated"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1536,7 +1554,8 @@
                         "required": [
                           "number",
                           "text"
-                        ]
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "truncated": {
@@ -1569,7 +1588,8 @@
                     "state",
                     "message",
                     "observed_at"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1648,7 +1668,8 @@
                   "required": [
                     "status",
                     "scope"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1723,7 +1744,8 @@
                   "required": [
                     "hold",
                     "active_slots"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1795,7 +1817,8 @@
                   "required": [
                     "status",
                     "hold_id"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -1830,7 +1853,8 @@
                 "required": [
                   "hold_id",
                   "acknowledge"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -2415,7 +2439,8 @@
                   "required": [
                     "items",
                     "next_cursor"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -2599,7 +2624,8 @@
                   "name",
                   "email",
                   "password"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -2662,7 +2688,8 @@
                 "required": [
                   "email",
                   "password"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -2697,7 +2724,8 @@
                   },
                   "required": [
                     "logged_out"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -2720,7 +2748,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -2757,7 +2786,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -2811,7 +2841,8 @@
                   },
                   "required": [
                     "revoked"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -2901,7 +2932,8 @@
                     "challenge",
                     "secret",
                     "otpauth_url"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -2930,7 +2962,8 @@
                 },
                 "required": [
                   "password"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -2971,7 +3004,8 @@
                   "required": [
                     "enabled",
                     "recovery_codes"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -3004,7 +3038,8 @@
                 "required": [
                   "challenge",
                   "code"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3038,7 +3073,8 @@
                   },
                   "required": [
                     "disabled"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -3071,7 +3107,8 @@
                 "required": [
                   "password",
                   "code"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3130,7 +3167,8 @@
                 "required": [
                   "challenge",
                   "code"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3199,7 +3237,8 @@
                 },
                 "required": [
                   "token"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3262,7 +3301,8 @@
                     }
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -3318,7 +3358,8 @@
                 },
                 "required": [
                   "device_code"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3399,7 +3440,8 @@
                   },
                   "required": [
                     "approved"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -3441,7 +3483,8 @@
                 "required": [
                   "user_code",
                   "approve"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3498,7 +3541,8 @@
                 "schema": {
                   "type": "object",
                   "properties": {},
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -3589,7 +3633,8 @@
                       "required": [
                         "mfa_required",
                         "challenge"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 }
@@ -3665,7 +3710,8 @@
                 "required": [
                   "name",
                   "password"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3703,7 +3749,8 @@
                   "required": [
                     "id",
                     "name"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -3737,7 +3784,8 @@
                 "required": [
                   "challenge",
                   "credential"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3786,7 +3834,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -3847,7 +3896,8 @@
                 "required": [
                   "challenge",
                   "credential"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3891,7 +3941,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -3923,7 +3974,8 @@
                 },
                 "required": [
                   "password"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -3960,7 +4012,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4025,7 +4078,8 @@
                   },
                   "required": [
                     "updated"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4058,7 +4112,8 @@
                 "required": [
                   "disabled",
                   "admin"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4106,7 +4161,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4181,7 +4237,8 @@
                 },
                 "required": [
                   "name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4235,7 +4292,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4303,7 +4361,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4376,7 +4435,8 @@
                   },
                   "required": [
                     "updated"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4405,7 +4465,8 @@
                 },
                 "required": [
                   "role"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4490,7 +4551,8 @@
                 "required": [
                   "email",
                   "role"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4572,7 +4634,8 @@
                 "required": [
                   "email",
                   "role"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4629,7 +4692,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4692,7 +4756,8 @@
                   },
                   "required": [
                     "updated"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4727,7 +4792,8 @@
                 },
                 "required": [
                   "role"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4772,7 +4838,8 @@
                   },
                   "required": [
                     "accepted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4809,7 +4876,8 @@
                   "name",
                   "email",
                   "password"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4865,7 +4933,8 @@
                 },
                 "required": [
                   "token"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4900,7 +4969,8 @@
                   },
                   "required": [
                     "accepted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4929,7 +4999,8 @@
                 },
                 "required": [
                   "email"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -4964,7 +5035,8 @@
                   },
                   "required": [
                     "reset"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -4997,7 +5069,8 @@
                 "required": [
                   "token",
                   "password"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -5053,7 +5126,8 @@
                 },
                 "required": [
                   "token"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -5151,7 +5225,8 @@
                 },
                 "required": [
                   "choice"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -5188,7 +5263,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -5357,7 +5433,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -5386,7 +5463,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -5442,7 +5520,8 @@
                     "ok",
                     "bytes",
                     "message"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -5465,7 +5544,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -5511,7 +5591,8 @@
                   "required": [
                     "items",
                     "truncated"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -5581,7 +5662,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -5664,7 +5746,8 @@
                 "required": [
                   "destination_id",
                   "source"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -5780,7 +5863,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -5840,7 +5924,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -5946,7 +6031,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -5975,7 +6061,8 @@
                 },
                 "required": [
                   "confirmation"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -6048,7 +6135,8 @@
                 "required": [
                   "application_id",
                   "service"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -6133,7 +6221,8 @@
                 "required": [
                   "plan_id",
                   "confirmation"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -6175,7 +6264,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -6348,7 +6438,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -6377,7 +6468,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -6436,7 +6528,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -6664,7 +6757,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -6730,7 +6824,8 @@
                 },
                 "required": [
                   "expected_config_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -6809,7 +6904,8 @@
                 },
                 "required": [
                   "expected_config_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -6857,7 +6953,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -7002,7 +7099,8 @@
                 "required": [
                   "expected_revision",
                   "expected_config_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -7053,7 +7151,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -7076,7 +7175,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -7144,7 +7244,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -7379,7 +7480,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -7659,7 +7761,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -7688,7 +7791,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -7735,7 +7839,8 @@
                   "required": [
                     "id",
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -7764,7 +7869,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -7826,7 +7932,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -7980,7 +8087,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -7999,7 +8107,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8074,7 +8183,8 @@
                   "required": [
                     "items",
                     "expected_revision"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8153,7 +8263,8 @@
                 "required": [
                   "hostname",
                   "service"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -8221,7 +8332,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -8269,7 +8381,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8338,7 +8451,8 @@
                   },
                   "required": [
                     "results"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8398,7 +8512,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8635,7 +8750,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8698,7 +8814,8 @@
                       "type": "boolean"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8720,8 +8837,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
-                "required": []
+                "additionalProperties": {}
               }
             }
           }
@@ -8766,7 +8882,8 @@
                       "type": "boolean"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -8788,8 +8905,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
-                "required": []
+                "additionalProperties": {}
               }
             }
           }
@@ -8848,7 +8964,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -9013,7 +9130,8 @@
                 "required": [
                   "name",
                   "builds"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -9118,7 +9236,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -9177,7 +9296,8 @@
                 "required": [
                   "state",
                   "installation_id"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -9440,7 +9560,8 @@
                   },
                   "required": [
                     "accepted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -9473,7 +9594,8 @@
                 "required": [
                   "version",
                   "confirmation"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -9528,7 +9650,8 @@
                   },
                   "required": [
                     "discarded"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -9557,7 +9680,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -10005,7 +10129,8 @@
                 "required": [
                   "license",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -10069,7 +10194,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -10134,7 +10260,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -10219,7 +10346,8 @@
                   "project",
                   "environment",
                   "spec"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -10279,7 +10407,8 @@
                   "required": [
                     "items",
                     "limit"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -10416,7 +10545,8 @@
                 "required": [
                   "expected_revision",
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -10464,7 +10594,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -10572,7 +10703,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -10667,7 +10799,8 @@
                   "review_id",
                   "expected_database_revision",
                   "expected_endpoint_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -10804,7 +10937,8 @@
                 },
                 "required": [
                   "expected_endpoint_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11004,7 +11138,8 @@
                     "username",
                     "password",
                     "database"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -11027,7 +11162,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -11078,7 +11214,8 @@
                   "required": [
                     "id",
                     "plan"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -11107,7 +11244,8 @@
                 },
                 "required": [
                   "spec"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11191,7 +11329,8 @@
                   "review_id",
                   "expected_revision",
                   "spec"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11240,7 +11379,8 @@
                   "required": [
                     "id",
                     "plan"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -11274,7 +11414,8 @@
                 "required": [
                   "operation_id",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11364,7 +11505,8 @@
                   "operation_id",
                   "expected_revision",
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11433,7 +11575,8 @@
                 },
                 "required": [
                   "target_member"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11519,7 +11662,8 @@
                   "review_id",
                   "expected_revision",
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11595,7 +11739,8 @@
                   "operation_id",
                   "expected_revision",
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11662,7 +11807,8 @@
                 },
                 "required": [
                   "artifact_id"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11764,7 +11910,8 @@
                   "variable",
                   "endpoint",
                   "cluster_aware"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11847,7 +11994,8 @@
                 "required": [
                   "review_id",
                   "confirm_application"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -11925,7 +12073,8 @@
                   "confirm_name",
                   "expected_revision",
                   "inspected"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -12210,7 +12359,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -12355,7 +12505,8 @@
                   "credentials",
                   "expected_revision",
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -12433,7 +12584,8 @@
                 "required": [
                   "expected_revision",
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -12607,7 +12759,8 @@
                   "service",
                   "variable",
                   "disconnect"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -12690,7 +12843,8 @@
                 "required": [
                   "review_id",
                   "confirm_application"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -12796,7 +12950,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -13010,7 +13165,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -13229,7 +13385,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -13444,7 +13601,8 @@
                   },
                   "required": [
                     "cancel_requested"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -13681,7 +13839,8 @@
                 "required": [
                   "jsonrpc",
                   "method"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -14112,7 +14271,8 @@
                     "type": "integer"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -14282,7 +14442,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -14368,7 +14529,8 @@
                   "name",
                   "permissions",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -14454,7 +14616,8 @@
                   "name",
                   "permissions",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -14506,7 +14669,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -14535,7 +14699,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -14651,7 +14816,8 @@
                 "required": [
                   "require_mfa",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -14696,7 +14862,8 @@
                   },
                   "required": [
                     "verified"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -14725,7 +14892,8 @@
                 },
                 "required": [
                   "code"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -14879,7 +15047,8 @@
                 },
                 "required": [
                   "username"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -15004,7 +15173,8 @@
                   "node",
                   "permission",
                   "expires_at"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -15059,7 +15229,8 @@
                   },
                   "required": [
                     "revoked"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -15126,7 +15297,8 @@
                     "id",
                     "expires_at",
                     "node"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -15156,7 +15328,8 @@
                     "type": "integer"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -15288,7 +15461,8 @@
                     "type": "integer"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -15438,7 +15612,8 @@
                   "required": [
                     "project",
                     "name"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -15467,7 +15642,8 @@
                 },
                 "required": [
                   "name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -15562,7 +15738,8 @@
                   "required": [
                     "revision",
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -15604,8 +15781,8 @@
                   "expected_revision",
                   "expected_resource_version"
                 ],
-                "description": "Provide a nonempty settings patch, an edge policy, or both. Edge replaces the whole policy; omission preserves it. Both changes share one reviewed durable revision.",
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Provide a nonempty settings patch, an edge policy, or both. Edge replaces the whole policy; omission preserves it. Both changes share one reviewed durable revision."
               }
             }
           }
@@ -15833,7 +16010,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -15862,7 +16040,8 @@
                 },
                 "required": [
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -15927,7 +16106,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -15986,7 +16166,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -16015,7 +16196,8 @@
                 },
                 "required": [
                   "confirm_name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -16064,7 +16246,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -16087,7 +16270,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -16227,7 +16411,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -16315,7 +16500,8 @@
                 "required": [
                   "expected_revision",
                   "replicas"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -16371,7 +16557,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -16534,7 +16721,8 @@
                   "required": [
                     "deleted",
                     "cleanup_pending"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -16571,7 +16759,8 @@
                   "project",
                   "environment",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -16786,7 +16975,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -16905,7 +17095,8 @@
                 "required": [
                   "name",
                   "email"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -17007,7 +17198,8 @@
                 "required": [
                   "name",
                   "email"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -17078,7 +17270,8 @@
                 "required": [
                   "expected_resource_version",
                   "unschedulable"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -17145,7 +17338,8 @@
                 },
                 "required": [
                   "expected_resource_version"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -17239,7 +17433,8 @@
                     "type": "integer"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -17287,7 +17482,8 @@
                   },
                   "required": [
                     "revoked"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -17375,7 +17571,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -17451,7 +17648,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -17958,7 +18156,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -17987,7 +18186,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -18085,7 +18285,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -18302,7 +18503,8 @@
                 },
                 "required": [
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -18399,7 +18601,8 @@
                     "type": "string"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -18541,7 +18744,8 @@
                   "path",
                   "auto_deploy",
                   "expected_source_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -18604,7 +18808,8 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -18688,7 +18893,8 @@
                   "expected_revision",
                   "expected_source_revision",
                   "commit_sha"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -18723,7 +18929,8 @@
                       "type": "boolean"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -18745,8 +18952,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
-                "required": []
+                "additionalProperties": {}
               }
             }
           }
@@ -18842,7 +19048,8 @@
                     "type": "string"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -18882,7 +19089,8 @@
                       "type": "boolean"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -18904,8 +19112,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {},
-                "required": []
+                "additionalProperties": {}
               }
             }
           }
@@ -19026,7 +19233,8 @@
                 },
                 "required": [
                   "review_token"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -19063,7 +19271,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -19219,7 +19428,8 @@
                   "configuration",
                   "toml",
                   "expected_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -19301,7 +19511,8 @@
                   "required": [
                     "name",
                     "saved"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -19335,7 +19546,8 @@
                     "type": "boolean"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -19414,7 +19626,8 @@
                   },
                   "required": [
                     "state"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -19451,7 +19664,8 @@
                   "expected_revision",
                   "expected_application_id",
                   "expected_application_revision"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -19512,7 +19726,8 @@
                   "required": [
                     "items",
                     "can_manage"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -19739,7 +19954,8 @@
                   },
                   "required": [
                     "deleted"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -19784,7 +20000,8 @@
                   "expected_id",
                   "expected_revision",
                   "confirmation"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -19868,13 +20085,15 @@
                           "name",
                           "revision",
                           "services"
-                        ]
+                        ],
+                        "additionalProperties": false
                       }
                     }
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20119,7 +20338,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20197,7 +20417,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20224,7 +20445,8 @@
                     "type": "string"
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -20324,7 +20546,8 @@
                   "required": [
                     "items",
                     "next_cursor"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20494,7 +20717,8 @@
                   },
                   "required": [
                     "status"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20523,7 +20747,8 @@
                 },
                 "required": [
                   "confirmation"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -20589,7 +20814,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20673,7 +20899,8 @@
                       "type": "boolean"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20702,7 +20929,8 @@
                 },
                 "required": [
                   "value"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -20767,7 +20995,8 @@
                       "type": "boolean"
                     }
                   },
-                  "required": []
+                  "required": [],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20849,7 +21078,8 @@
                   "required": [
                     "name",
                     "saved"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -20886,7 +21116,8 @@
                     ]
                   }
                 },
-                "required": []
+                "required": [],
+                "additionalProperties": false
               }
             }
           }
@@ -20964,7 +21195,8 @@
                   "required": [
                     "items",
                     "serverless_available"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -21021,7 +21253,8 @@
                   "required": [
                     "required_secrets",
                     "missing_secrets"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -21058,7 +21291,8 @@
                   "project",
                   "environment",
                   "spec"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -21465,7 +21699,8 @@
                   },
                   "required": [
                     "items"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -21585,12 +21820,14 @@
             "required": [
               "code",
               "message"
-            ]
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
           "error"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Network": {
         "type": "object",
@@ -21605,7 +21842,8 @@
             "type": "string"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "SecretRef": {
         "type": "object",
@@ -21681,7 +21919,8 @@
             "type": "integer"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "Service": {
         "type": "object",
@@ -21896,7 +22135,8 @@
         },
         "required": [
           "image"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Spec": {
         "type": "object",
@@ -21956,7 +22196,8 @@
           "schema_version",
           "name",
           "services"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Event": {
         "type": "object",
@@ -21984,7 +22225,8 @@
           "type",
           "message",
           "service"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ServiceStatus": {
         "type": "object",
@@ -22037,7 +22279,8 @@
           "status",
           "ready",
           "desired"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Observation": {
         "type": "object",
@@ -22059,7 +22302,8 @@
             "type": "integer"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "Deployment": {
         "type": "object",
@@ -22182,7 +22426,8 @@
           "error",
           "created_at",
           "events"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Application": {
         "type": "object",
@@ -22250,7 +22495,8 @@
           "observed",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Project": {
         "type": "object",
@@ -22272,7 +22518,8 @@
               },
               "required": [
                 "name"
-              ]
+              ],
+              "additionalProperties": false
             }
           },
           "display_name": {
@@ -22298,7 +22545,8 @@
           "id",
           "name",
           "environments"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Principal": {
         "type": "object",
@@ -22397,7 +22645,8 @@
           "environment",
           "owner",
           "credential_type"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Node": {
         "type": "object",
@@ -22452,7 +22701,8 @@
           "control_plane",
           "metrics",
           "allocatable_gpu"
-        ]
+        ],
+        "additionalProperties": false
       },
       "KeyInput": {
         "type": "object",
@@ -22484,7 +22734,8 @@
           "name",
           "permissions",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AutomationKeyInput": {
         "oneOf": [
@@ -22522,7 +22773,8 @@
               "name",
               "permissions",
               "expires_at"
-            ]
+            ],
+            "additionalProperties": false
           },
           {
             "type": "object",
@@ -22557,7 +22809,8 @@
               "name",
               "permissions",
               "never_expires"
-            ]
+            ],
+            "additionalProperties": false
           }
         ],
         "description": "Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer."
@@ -22578,7 +22831,8 @@
             },
             "required": [
               "expires_at"
-            ]
+            ],
+            "additionalProperties": false
           },
           {
             "type": "object",
@@ -22593,7 +22847,8 @@
             },
             "required": [
               "never_expires"
-            ]
+            ],
+            "additionalProperties": false
           }
         ],
         "description": "Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer."
@@ -22680,7 +22935,8 @@
           "expires_at",
           "never_expires",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "KeyCreated": {
         "type": "object",
@@ -22698,7 +22954,8 @@
         "required": [
           "key",
           "metadata"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DeployInput": {
         "type": "object",
@@ -22759,7 +23016,8 @@
           "project",
           "environment",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PlanInput": {
         "type": "object",
@@ -22819,7 +23077,8 @@
         "required": [
           "project",
           "environment"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Change": {
         "type": "object",
@@ -22842,7 +23101,8 @@
           "before",
           "after",
           "sensitive"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Plan": {
         "type": "object",
@@ -22898,7 +23158,8 @@
                   "type": "string"
                 }
               },
-              "required": []
+              "required": [],
+              "additionalProperties": false
             }
           },
           "provenance": {
@@ -22916,7 +23177,8 @@
           "spec",
           "changes",
           "warnings"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Audit": {
         "type": "object",
@@ -22948,7 +23210,8 @@
           "action",
           "resource",
           "time"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DeploymentSummary": {
         "type": "object",
@@ -23014,7 +23277,8 @@
           "result",
           "error",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Actions": {
         "type": "object",
@@ -23075,6 +23339,7 @@
             "required": [
               "url"
             ],
+            "additionalProperties": false,
             "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator."
           },
           "bitbucket": {
@@ -23090,6 +23355,7 @@
             "required": [
               "workspace"
             ],
+            "additionalProperties": false,
             "description": "Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle."
           },
           "workspace_size_gib": {
@@ -23112,6 +23378,7 @@
             "required": [
               "credential"
             ],
+            "additionalProperties": false,
             "description": "Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration."
           }
         },
@@ -23119,6 +23386,7 @@
           "credential",
           "labels"
         ],
+        "additionalProperties": false,
         "description": "GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider execution requires an exact installation binding qualified for its coordinator, image and architecture. The server validates runtime availability before accepting a deployment."
       },
       "ActionsPool": {
@@ -23167,7 +23435,8 @@
           "removed",
           "message",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ActionsSlot": {
         "type": "object",
@@ -23208,7 +23477,8 @@
           "phase",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ActionsProviderCapabilities": {
         "type": "object",
@@ -23277,6 +23547,7 @@
                   "required": [
                     "url"
                   ],
+                  "additionalProperties": false,
                   "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator."
                 },
                 "bitbucket": {
@@ -23292,6 +23563,7 @@
                   "required": [
                     "workspace"
                   ],
+                  "additionalProperties": false,
                   "description": "Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle."
                 },
                 "cache": {
@@ -23308,7 +23580,8 @@
                 "architecture",
                 "cache",
                 "cross_architecture"
-              ]
+              ],
+              "additionalProperties": false
             }
           },
           "minimum_resources": {
@@ -23336,7 +23609,8 @@
               "memory_request",
               "memory_limit",
               "workspace_gib"
-            ]
+            ],
+            "additionalProperties": false
           },
           "cache": {
             "type": "object",
@@ -23353,7 +23627,8 @@
             },
             "required": [
               "persistent"
-            ]
+            ],
+            "additionalProperties": false
           },
           "build": {
             "type": "object",
@@ -23374,7 +23649,8 @@
             "required": [
               "native_architectures",
               "cross_architecture"
-            ]
+            ],
+            "additionalProperties": false
           },
           "isolation": {
             "type": "object",
@@ -23392,7 +23668,8 @@
             "required": [
               "single_job",
               "manager_credentials_isolated"
-            ]
+            ],
+            "additionalProperties": false
           },
           "cancellation_scope": {
             "type": "string",
@@ -23413,6 +23690,7 @@
           "isolation",
           "cancellation_scope"
         ],
+        "additionalProperties": false,
         "description": "Qualified provider behavior, separate from scoped licensing, runtime readiness and node availability. An unavailable provider cannot be deployed."
       },
       "ActionsObservation": {
@@ -23452,7 +23730,8 @@
           "job_key",
           "branch",
           "sha"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ActionsStep": {
         "type": "object",
@@ -23491,7 +23770,8 @@
           "number",
           "started_at",
           "completed_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ActionsWorkflowJob": {
         "type": "object",
@@ -23556,7 +23836,8 @@
           "started_at",
           "completed_at",
           "steps"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ActionsJob": {
         "type": "object",
@@ -23622,7 +23903,8 @@
           "job",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ActionsProviderJobIdentity": {
         "type": "object",
@@ -23653,6 +23935,7 @@
           "run_id",
           "job_id"
         ],
+        "additionalProperties": false,
         "description": "Opaque provider identifiers bound to the original runner and target. Native identifiers are strings and must not be converted to JavaScript numbers."
       },
       "ActionsProviderWorkflowJob": {
@@ -23701,7 +23984,8 @@
           "conclusion",
           "steps",
           "steps_truncated"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ActionsProviderHold": {
         "type": "object",
@@ -23746,7 +24030,8 @@
           "provider",
           "instance_url",
           "jobs"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PodExecInput": {
         "type": "object",
@@ -23783,7 +24068,8 @@
           "pod",
           "container",
           "command"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PodExecResult": {
         "type": "object",
@@ -23848,7 +24134,8 @@
           "stdout_truncated",
           "stderr_truncated",
           "audit_recorded"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseQueryInput": {
         "type": "object",
@@ -23902,7 +24189,8 @@
         },
         "required": [
           "sql"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseQueryColumn": {
         "type": "object",
@@ -23921,7 +24209,8 @@
         "required": [
           "name",
           "type_oid"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseQueryResult": {
         "type": "object",
@@ -23977,7 +24266,8 @@
           "rows_affected",
           "truncated",
           "outcome"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseQueryError": {
         "type": "object",
@@ -23995,7 +24285,8 @@
             "required": [
               "code",
               "message"
-            ]
+            ],
+            "additionalProperties": false
           },
           "operation_id": {
             "type": "string"
@@ -24016,7 +24307,8 @@
           "error",
           "operation_id",
           "outcome"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseQueryCapabilities": {
         "type": "object",
@@ -24076,7 +24368,8 @@
           "transactional_ddl",
           "ddl_commit",
           "cancellation"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Alarm": {
         "type": "object",
@@ -24189,7 +24482,8 @@
           "read",
           "acknowledged",
           "observation_status"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AlarmList": {
         "type": "object",
@@ -24216,14 +24510,16 @@
             "required": [
               "active",
               "unread"
-            ]
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
           "items",
           "next_cursor",
           "summary"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AlarmSettings": {
         "type": "object",
@@ -24283,7 +24579,8 @@
           "source",
           "email_available",
           "can_manage"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AlarmSettingsInput": {
         "type": "object",
@@ -24308,7 +24605,8 @@
           "hold_seconds",
           "email_enabled",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AlarmReadInput": {
         "type": "object",
@@ -24317,7 +24615,8 @@
             "type": "integer"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "ProjectRole": {
         "type": "object",
@@ -24341,7 +24640,8 @@
         "required": [
           "project",
           "role"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AuthStatus": {
         "type": "object",
@@ -24392,7 +24692,8 @@
           "signup_enabled",
           "password_recovery",
           "deployment_mode"
-        ]
+        ],
+        "additionalProperties": false
       },
       "HumanSessionCreated": {
         "type": "object",
@@ -24416,7 +24717,8 @@
           "user",
           "expires_at",
           "onboarding_required"
-        ]
+        ],
+        "additionalProperties": false
       },
       "HumanSession": {
         "type": "object",
@@ -24457,7 +24759,8 @@
           "created_at",
           "expires_at",
           "last_used_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "User": {
         "type": "object",
@@ -24501,7 +24804,8 @@
           "email_verified",
           "totp_enabled",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Team": {
         "type": "object",
@@ -24520,7 +24824,8 @@
           "id",
           "name",
           "role"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TeamMember": {
         "type": "object",
@@ -24551,7 +24856,8 @@
           "role",
           "username",
           "avatar_url"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ProjectMember": {
         "type": "object",
@@ -24572,7 +24878,8 @@
         "required": [
           "name",
           "role"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Invite": {
         "type": "object",
@@ -24602,7 +24909,8 @@
           "email",
           "role",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "InviteCreated": {
         "type": "object",
@@ -24621,7 +24929,8 @@
           "invite",
           "invite_url",
           "delivered"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Passkey": {
         "type": "object",
@@ -24653,7 +24962,8 @@
           "name",
           "created_at",
           "last_used_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AccountSecurity": {
         "type": "object",
@@ -24688,7 +24998,8 @@
           "password_enabled",
           "recovery_codes_remaining",
           "passkeys"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PasskeyChallenge": {
         "type": "object",
@@ -24706,13 +25017,15 @@
             },
             "required": [
               "publicKey"
-            ]
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
           "challenge",
           "options"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DeviceAuthorization": {
         "type": "object",
@@ -24743,7 +25056,8 @@
           "verification_uri_complete",
           "expires_in",
           "interval"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DeviceScope": {
         "type": "object",
@@ -24772,7 +25086,8 @@
           "label",
           "project",
           "environment"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DeviceDetails": {
         "type": "object",
@@ -24814,7 +25129,8 @@
           "expires_at",
           "scope_id",
           "scopes"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DeviceToken": {
         "type": "object",
@@ -24849,7 +25165,8 @@
           "expires_at",
           "expires_in",
           "user"
-        ]
+        ],
+        "additionalProperties": false
       },
       "OnboardingInvite": {
         "type": "object",
@@ -24877,7 +25194,8 @@
           "project",
           "role",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Onboarding": {
         "type": "object",
@@ -24899,7 +25217,8 @@
           "required",
           "personal_project",
           "invitations"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupSource": {
         "type": "object",
@@ -24945,7 +25264,8 @@
         "required": [
           "kind",
           "engine"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupDestination": {
         "type": "object",
@@ -25012,7 +25332,8 @@
           "encryption_recipient",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupDestinationInput": {
         "type": "object",
@@ -25067,7 +25388,8 @@
           "path_style",
           "allow_http",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupDestinationCreated": {
         "type": "object",
@@ -25081,7 +25403,8 @@
         },
         "required": [
           "destination"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupTarget": {
         "type": "object",
@@ -25156,7 +25479,8 @@
           "engine",
           "revision",
           "available"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupArtifact": {
         "type": "object",
@@ -25230,7 +25554,8 @@
           "format",
           "scope",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupJob": {
         "type": "object",
@@ -25302,7 +25627,8 @@
           "bytes",
           "cancel_requested",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupSchedule": {
         "type": "object",
@@ -25356,7 +25682,8 @@
           "next_run_at",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupScheduleInput": {
         "type": "object",
@@ -25395,7 +25722,8 @@
           "retention_count",
           "enabled",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackupRestorePlan": {
         "type": "object",
@@ -25434,7 +25762,8 @@
           "scope",
           "warnings",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BuildConfig": {
         "type": "object",
@@ -25618,7 +25947,8 @@
           "installed_revision",
           "installed_commit",
           "provider"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BuildInput": {
         "type": "object",
@@ -25772,7 +26102,8 @@
           "environment",
           "name",
           "repository"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BuildRun": {
         "type": "object",
@@ -25853,7 +26184,8 @@
           "auto_status",
           "provider",
           "remote_run_id"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BuildPreview": {
         "type": "object",
@@ -25883,7 +26215,8 @@
           "workflow",
           "image_repository",
           "requirements"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BuildInstalled": {
         "type": "object",
@@ -25905,7 +26238,8 @@
           "config",
           "commit_sha",
           "workflow_path"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BuildDeployPlan": {
         "type": "object",
@@ -25961,7 +26295,8 @@
                   "type": "string"
                 }
               },
-              "required": []
+              "required": [],
+              "additionalProperties": false
             }
           },
           "expected_config_revision": {
@@ -25975,7 +26310,8 @@
           "changes",
           "warnings",
           "expected_config_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "CloudCapabilities": {
         "type": "object",
@@ -26037,7 +26373,8 @@
               "required": [
                 "name",
                 "uid"
-              ]
+              ],
+              "additionalProperties": false
             }
           }
         },
@@ -26054,7 +26391,8 @@
           "public_tcp",
           "gpu",
           "aws_identity"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ComposeImportInput": {
         "type": "object",
@@ -26096,7 +26434,8 @@
           "project",
           "environment",
           "yaml"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ComposeImport": {
         "type": "object",
@@ -26126,7 +26465,8 @@
           "warnings",
           "application_id",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PublicTCPListener": {
         "type": "object",
@@ -26148,7 +26488,8 @@
           "port",
           "target_port",
           "source_cidrs"
-        ]
+        ],
+        "additionalProperties": false
       },
       "CertificateMount": {
         "type": "object",
@@ -26173,6 +26514,7 @@
           "hostname",
           "mount_path"
         ],
+        "additionalProperties": false,
         "oneOf": [
           {
             "required": [
@@ -26223,7 +26565,8 @@
           "target_port",
           "status",
           "message"
-        ]
+        ],
+        "additionalProperties": false
       },
       "AWSIdentityState": {
         "type": "object",
@@ -26261,7 +26604,8 @@
           "token_audience",
           "status",
           "aws_verified"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PublicTCPPolicy": {
         "type": "object",
@@ -26284,7 +26628,8 @@
           "mode",
           "allowed",
           "message"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ServiceDelivery": {
         "type": "object",
@@ -26318,7 +26663,8 @@
           "public_tcp_policy",
           "aws_identity",
           "observed_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackendCertificate": {
         "type": "object",
@@ -26355,7 +26701,8 @@
           "hostname",
           "source",
           "ready"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BackendCertificateInput": {
         "type": "object",
@@ -26377,7 +26724,8 @@
         },
         "required": [
           "hostname"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NotificationTarget": {
         "type": "object",
@@ -26436,7 +26784,8 @@
           "events",
           "revision",
           "slack_managed"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NotificationInput": {
         "type": "object",
@@ -26491,7 +26840,8 @@
           "enabled",
           "events",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NotificationPayload": {
         "type": "object",
@@ -26550,7 +26900,8 @@
           "revision",
           "status",
           "occurred_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NotificationDelivery": {
         "type": "object",
@@ -26605,7 +26956,8 @@
           "last_error",
           "created_at",
           "finished_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NotificationSettings": {
         "type": "object",
@@ -26642,7 +26994,8 @@
           "encryption_ready",
           "legacy_slack_available",
           "legacy_slack_reason"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DNSProvider": {
         "type": "object",
@@ -26704,6 +27057,7 @@
           "created_at",
           "updated_at"
         ],
+        "additionalProperties": false,
         "description": "A provider is installation-wide, or scoped to one project and one environment, never to a project alone. Credentials are never returned."
       },
       "DNSProviderSummary": {
@@ -26727,6 +27081,7 @@
           "name",
           "kind"
         ],
+        "additionalProperties": false,
         "description": "What a non-administrator sees: name and kind only, never the zone filter. The application listing adds the id the record endpoint takes."
       },
       "DNSProviderInput": {
@@ -26787,7 +27142,8 @@
           "kind",
           "zone_filter",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DNSRecord": {
         "type": "object",
@@ -26810,7 +27166,8 @@
           "type",
           "name",
           "value"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DNSRecordResult": {
         "type": "object",
@@ -26845,6 +27202,7 @@
           "message",
           "records"
         ],
+        "additionalProperties": false,
         "description": "One hostname's outcome. Records reaching a provider is not verification: the domain stays awaiting DNS until the verify step confirms it."
       },
       "DNSRecordsInput": {
@@ -26870,7 +27228,8 @@
         "required": [
           "provider_id",
           "hostnames"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Domain": {
         "type": "object",
@@ -26909,7 +27268,8 @@
           "verification_name",
           "verification_value",
           "target"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitConnectionCapabilities": {
         "type": "object",
@@ -26924,7 +27284,8 @@
         "required": [
           "read_source",
           "builds"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitConnection": {
         "type": "object",
@@ -27031,7 +27392,8 @@
           "status",
           "capabilities",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitConnectionInput": {
         "type": "object",
@@ -27093,7 +27455,8 @@
           "name",
           "provider",
           "auth_kind"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitOAuthStart": {
         "type": "object",
@@ -27113,7 +27476,8 @@
           "authorization_url",
           "callback_url",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitOAuthComplete": {
         "type": "object",
@@ -27128,7 +27492,8 @@
         "required": [
           "code",
           "state"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitAppSetup": {
         "type": "object",
@@ -27159,7 +27524,8 @@
           "phase",
           "action_url",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitProviderSetup": {
         "type": "object",
@@ -27187,7 +27553,8 @@
           "github_available",
           "public_url",
           "gitlab_callback_url"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitRepository": {
         "type": "object",
@@ -27206,7 +27573,8 @@
           "full_name",
           "default_branch",
           "private"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitRepositoryPage": {
         "type": "object",
@@ -27224,7 +27592,8 @@
         "required": [
           "items",
           "next_page"
-        ]
+        ],
+        "additionalProperties": false
       },
       "InstallationOperation": {
         "type": "object",
@@ -27246,7 +27615,8 @@
           "status",
           "message",
           "version"
-        ]
+        ],
+        "additionalProperties": false
       },
       "InstallationStatus": {
         "type": "object",
@@ -27277,7 +27647,8 @@
           "checked_at",
           "check_error",
           "operation"
-        ]
+        ],
+        "additionalProperties": false
       },
       "InstallationSetup": {
         "type": "object",
@@ -27299,7 +27670,8 @@
           "readiness_image",
           "storage_classes",
           "default_storage_class"
-        ]
+        ],
+        "additionalProperties": false
       },
       "InstallationLogs": {
         "type": "object",
@@ -27319,7 +27691,8 @@
               "required": [
                 "timestamp",
                 "message"
-              ]
+              ],
+              "additionalProperties": false
             }
           },
           "observed_at": {
@@ -27337,7 +27710,8 @@
         "required": [
           "entries",
           "observed_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "InstallationLogQuery": {
         "type": "object",
@@ -27352,34 +27726,84 @@
             "type": "integer"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "InstallationLogQueryResult": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/LogQueryResult"
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogEntry"
+            }
           },
-          {
-            "type": "object",
-            "properties": {
-              "source": {
-                "type": "string"
+          "histogram": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "count": {
+                  "type": "integer"
+                }
               },
-              "observed_at": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "started_at": {
-                "type": "string",
-                "format": "date-time"
-              }
-            },
-            "required": [
-              "source",
-              "observed_at"
-            ]
+              "required": [
+                "timestamp",
+                "count"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "scanned": {
+            "type": "integer"
+          },
+          "matched": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "pods": {
+            "type": "integer"
+          },
+          "window_seconds": {
+            "type": "integer"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
           }
-        ]
+        },
+        "required": [
+          "entries",
+          "histogram",
+          "scanned",
+          "matched",
+          "truncated",
+          "pods",
+          "window_seconds",
+          "warnings",
+          "source",
+          "observed_at"
+        ],
+        "additionalProperties": false
       },
       "InstallationLoginProvider": {
         "type": "object",
@@ -27652,7 +28076,8 @@
           "plan",
           "description",
           "enabled"
-        ]
+        ],
+        "additionalProperties": false
       },
       "LicenseStatus": {
         "type": "object",
@@ -27725,7 +28150,8 @@
           "sequence",
           "features",
           "catalog"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DeploymentJob": {
         "type": "object",
@@ -27744,7 +28170,8 @@
             "$ref": "#/components/schemas/JobSchedule"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "ConfigurationFile": {
         "type": "object",
@@ -27768,7 +28195,8 @@
         },
         "required": [
           "mount_path"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ServiceBinding": {
         "type": "object",
@@ -27837,7 +28265,8 @@
         },
         "required": [
           "protocol"
-        ]
+        ],
+        "additionalProperties": false
       },
       "HTTPEndpoint": {
         "type": "object",
@@ -27851,7 +28280,8 @@
         },
         "required": [
           "port"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePlacement": {
         "type": "object",
@@ -27873,7 +28303,8 @@
             "uniqueItems": true
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "DatabaseTLSConfig": {
         "type": "object",
@@ -27887,7 +28318,8 @@
         },
         "required": [
           "mode"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseOracleConfig": {
         "type": "object",
@@ -27911,7 +28343,8 @@
         },
         "required": [
           "edition"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseVitessTable": {
         "type": "object",
@@ -27928,7 +28361,8 @@
         "required": [
           "name",
           "sharding_column"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseVitessConfig": {
         "type": "object",
@@ -27952,7 +28386,8 @@
         "required": [
           "backup_destination_id",
           "backup_destination_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseTLSObservation": {
         "type": "object",
@@ -28004,7 +28439,8 @@
           "required",
           "verified",
           "plaintext_rejected"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicTrust": {
         "type": "object",
@@ -28033,7 +28469,8 @@
           "issuer",
           "not_before",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePooling": {
         "type": "object",
@@ -28070,7 +28507,8 @@
           "max_client_connections",
           "default_pool_size",
           "read_only"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedDatabaseSpec": {
         "type": "object",
@@ -28148,7 +28586,8 @@
           "cpu",
           "memory",
           "storage_gib"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseMember": {
         "type": "object",
@@ -28202,7 +28641,8 @@
           "uid",
           "role",
           "ready"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePlacementObservation": {
         "type": "object",
@@ -28233,7 +28673,8 @@
           "zones",
           "regions",
           "providers"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseEndpoint": {
         "type": "object",
@@ -28263,7 +28704,8 @@
           "purpose",
           "host",
           "port"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseObservation": {
         "type": "object",
@@ -28335,7 +28777,8 @@
           "members",
           "endpoints",
           "slots_healthy"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseRecovery": {
         "type": "object",
@@ -28368,7 +28811,8 @@
         "required": [
           "artifact_id",
           "job_id"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedDatabase": {
         "type": "object",
@@ -28420,7 +28864,8 @@
           "observation",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointSpec": {
         "type": "object",
@@ -28459,7 +28904,8 @@
           "purpose",
           "source_cidrs",
           "max_connections"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointAllocation": {
         "type": "object",
@@ -28485,7 +28931,8 @@
           "host",
           "address",
           "port"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointMemberAllocation": {
         "type": "object",
@@ -28504,7 +28951,8 @@
           "member_name",
           "member_uid",
           "allocation"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointClientAddress": {
         "type": "object",
@@ -28538,7 +28986,8 @@
           "advertised_addresses",
           "public_host",
           "public_port"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointObservation": {
         "type": "object",
@@ -28568,7 +29017,8 @@
           "configured",
           "externally_verified",
           "message"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpoint": {
         "type": "object",
@@ -28633,7 +29083,8 @@
           "observation",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointRoute": {
         "type": "object",
@@ -28687,7 +29138,8 @@
           "routing",
           "read_only",
           "pooled"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointCapabilities": {
         "type": "object",
@@ -28714,7 +29166,8 @@
           "available",
           "unavailable_reason",
           "routes"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointReview": {
         "type": "object",
@@ -28799,7 +29252,8 @@
           "blocked_reasons",
           "warnings",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointPlan": {
         "type": "object",
@@ -28814,7 +29268,8 @@
         "required": [
           "id",
           "plan"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePublicEndpointOperation": {
         "type": "object",
@@ -28881,7 +29336,8 @@
           "phase",
           "message",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseBackupEvidence": {
         "type": "object",
@@ -28914,7 +29370,8 @@
           "captured_at",
           "verified_at",
           "sha256"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseResizePlan": {
         "type": "object",
@@ -28959,7 +29416,8 @@
           "blocked_reasons",
           "warnings",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseResizeRetryReview": {
         "type": "object",
@@ -28996,7 +29454,8 @@
           "state",
           "resize",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseOracleSwitchoverReview": {
         "type": "object",
@@ -29060,7 +29519,8 @@
           "target_unique_name",
           "member_uids",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseOracleSwitchoverPlan": {
         "type": "object",
@@ -29082,7 +29542,8 @@
           "id",
           "plan",
           "warnings"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseOperation": {
         "type": "object",
@@ -29140,7 +29601,8 @@
           "message",
           "spec",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePlacementNode": {
         "type": "object",
@@ -29178,7 +29640,8 @@
           "architecture",
           "available",
           "reason"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseConnectionReference": {
         "type": "object",
@@ -29233,7 +29696,8 @@
           "last_successful_revision",
           "latest_attempt_revision",
           "latest_attempt_status"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseConnections": {
         "type": "object",
@@ -29255,7 +29719,8 @@
           "items",
           "truncated",
           "limit"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseConnectionPlan": {
         "type": "object",
@@ -29321,7 +29786,8 @@
           "binding",
           "expires_at",
           "warnings"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseImportSpec": {
         "type": "object",
@@ -29363,7 +29829,8 @@
           "captured_at",
           "bytes",
           "sha256"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseImport": {
         "type": "object",
@@ -29390,7 +29857,8 @@
           "spec",
           "status",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseEngineMetrics": {
         "type": "object",
@@ -29443,7 +29911,8 @@
         },
         "required": [
           "available"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseMetricPoint": {
         "type": "object",
@@ -29469,7 +29938,8 @@
           "observed_at",
           "revision",
           "status"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseMetricHistory": {
         "type": "object",
@@ -29502,7 +29972,8 @@
           "until",
           "resolution_seconds",
           "retention_hours"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabasePoolingObservation": {
         "type": "object",
@@ -29523,7 +29994,8 @@
         "required": [
           "ready",
           "members"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseRoutingObservation": {
         "type": "object",
@@ -29548,7 +30020,8 @@
           "kind",
           "ready",
           "members"
-        ]
+        ],
+        "additionalProperties": false
       },
       "DatabaseCoordinationObservation": {
         "type": "object",
@@ -29570,7 +30043,8 @@
         "required": [
           "ready",
           "members"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ExternalDatabaseSpec": {
         "type": "object",
@@ -29614,7 +30088,8 @@
           "host",
           "port",
           "database"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ExternalDatabaseCredentials": {
         "type": "object",
@@ -29635,7 +30110,8 @@
         "required": [
           "username",
           "password"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ExternalDatabaseObservation": {
         "type": "object",
@@ -29676,7 +30152,8 @@
           "message",
           "tls_verified",
           "query_verified"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ExternalDatabase": {
         "type": "object",
@@ -29729,7 +30206,8 @@
           "observation",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ExternalDatabaseOperation": {
         "type": "object",
@@ -29773,7 +30251,8 @@
           "message",
           "spec",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ExternalDatabaseTrust": {
         "type": "object",
@@ -29809,7 +30288,8 @@
           "verified",
           "observed_at",
           "message"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ExternalDatabaseConnectionPlan": {
         "type": "object",
@@ -29879,7 +30359,8 @@
           "variable",
           "expires_at",
           "warnings"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformSecretReference": {
         "type": "object",
@@ -29895,7 +30376,8 @@
         "required": [
           "name",
           "revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformResources": {
         "type": "object",
@@ -29910,7 +30392,8 @@
         "required": [
           "cpu",
           "memory"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformPlacement": {
         "type": "object",
@@ -29935,7 +30418,8 @@
         },
         "required": [
           "node_names"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SupabaseConfig": {
         "type": "object",
@@ -29994,7 +30478,8 @@
           "pool_size",
           "pool_max_clients",
           "email_signup"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NeonConfig": {
         "type": "object",
@@ -30055,7 +30540,8 @@
           "object_storage_region",
           "object_storage_prefix",
           "proxy_control_plane_patch_sha256"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformSpec": {
         "oneOf": [
@@ -30143,7 +30629,8 @@
             },
             "required": [
               "node_names"
-            ]
+            ],
+            "additionalProperties": false
           },
           "supabase": {
             "$ref": "#/components/schemas/SupabaseConfig"
@@ -30159,7 +30646,8 @@
           "secrets",
           "placement",
           "supabase"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NeonPlatformSpec": {
         "type": "object",
@@ -30236,7 +30724,8 @@
             },
             "required": [
               "node_names"
-            ]
+            ],
+            "additionalProperties": false
           },
           "neon": {
             "$ref": "#/components/schemas/NeonConfig"
@@ -30253,6 +30742,7 @@
           "placement",
           "neon"
         ],
+        "additionalProperties": false,
         "allOf": [
           {
             "if": {
@@ -30496,7 +30986,8 @@
                 ]
               }
             },
-            "required": []
+            "required": [],
+            "additionalProperties": false
           },
           "supabase": {
             "$ref": "#/components/schemas/SupabaseConfig"
@@ -30512,7 +31003,8 @@
           "secrets",
           "placement",
           "supabase"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NeonPlatformDefaults": {
         "type": "object",
@@ -30586,7 +31078,8 @@
                 ]
               }
             },
-            "required": []
+            "required": [],
+            "additionalProperties": false
           },
           "neon": {
             "type": "object",
@@ -30641,7 +31134,8 @@
               "object_storage_region",
               "object_storage_prefix",
               "proxy_control_plane_patch_sha256"
-            ]
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -30654,7 +31148,8 @@
           "secrets",
           "placement",
           "neon"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformDefaults": {
         "oneOf": [
@@ -30687,7 +31182,8 @@
           "cluster_qualified",
           "public_qualified",
           "reason"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformComponent": {
         "type": "object",
@@ -30731,7 +31227,8 @@
           "ports",
           "secret_keys",
           "storage_keys"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformPlan": {
         "type": "object",
@@ -30761,7 +31258,8 @@
           "public_service",
           "storage_class",
           "capability"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformCatalogNode": {
         "type": "object",
@@ -30784,7 +31282,8 @@
           "uid",
           "architecture",
           "operating_system"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformCatalogEntry": {
         "type": "object",
@@ -30826,7 +31325,8 @@
           "required_secret_keys",
           "default_spec",
           "capability"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformCatalog": {
         "type": "object",
@@ -30869,7 +31369,8 @@
           "nodes",
           "secret_references",
           "items"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformReview": {
         "type": "object",
@@ -30915,7 +31416,8 @@
           "request_hash",
           "expires_at",
           "blocked_reasons"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformTLSCertificate": {
         "type": "object",
@@ -30939,7 +31441,8 @@
           "fingerprint",
           "expires_at",
           "verified"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformTLSObservation": {
         "type": "object",
@@ -30968,7 +31471,8 @@
           "issuer_fingerprint",
           "certificates",
           "verified_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformMaintenanceObservation": {
         "type": "object",
@@ -30997,7 +31501,8 @@
           "phase",
           "message",
           "checked_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformObservation": {
         "type": "object",
@@ -31054,7 +31559,8 @@
             "$ref": "#/components/schemas/ManagedPlatformMaintenanceObservation"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "ManagedPlatform": {
         "type": "object",
@@ -31122,7 +31628,8 @@
           "reserved_storage_gib",
           "created_at",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformOperation": {
         "type": "object",
@@ -31190,7 +31697,8 @@
           "review_id",
           "created_at",
           "attempt"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformIntent": {
         "type": "object",
@@ -31231,7 +31739,8 @@
           "expected_revision",
           "kind",
           "spec"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformAcceptIntent": {
         "type": "object",
@@ -31274,7 +31783,8 @@
           "kind",
           "spec",
           "review"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformReviewResponse": {
         "type": "object",
@@ -31304,7 +31814,8 @@
           "plan",
           "review",
           "blocked"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformRecoveryIntent": {
         "type": "object",
@@ -31357,7 +31868,8 @@
           "environment",
           "source_platform_id",
           "expected_source_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformRecoveryReview": {
         "type": "object",
@@ -31385,41 +31897,126 @@
           "request_hash",
           "authority_fingerprint",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformRecoveryRequest": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ManagedPlatformRecoveryIntent"
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "restore"
+            ]
           },
-          {
-            "type": "object",
-            "properties": {
-              "confirm_target_name": {
-                "type": "string"
-              }
-            },
-            "required": []
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "source_platform_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "target_platform_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "artifact_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "destination_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "destination_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_source_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_target_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "confirm_target_name": {
+            "type": "string"
           }
-        ]
+        },
+        "required": [
+          "kind",
+          "project",
+          "environment",
+          "source_platform_id",
+          "expected_source_revision"
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformRecoveryAcceptRequest": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ManagedPlatformRecoveryRequest"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "review": {
-                "$ref": "#/components/schemas/ManagedPlatformRecoveryReview"
-              }
-            },
-            "required": [
-              "review"
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "restore"
             ]
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "source_platform_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "target_platform_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "artifact_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "destination_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "destination_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_source_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_target_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "confirm_target_name": {
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ManagedPlatformRecoveryReview"
           }
-        ]
+        },
+        "required": [
+          "kind",
+          "project",
+          "environment",
+          "source_platform_id",
+          "expected_source_revision",
+          "review"
+        ],
+        "additionalProperties": false
       },
       "ManagedPlatformRecoveryOperation": {
         "type": "object",
@@ -31488,7 +32085,8 @@
           "source_platform_id",
           "expected_source_revision",
           "cancel_requested"
-        ]
+        ],
+        "additionalProperties": false
       },
       "BuildProvenance": {
         "type": "object",
@@ -31545,7 +32143,8 @@
           "branch",
           "run_url",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ServiceProvenance": {
         "type": "object",
@@ -31580,7 +32179,8 @@
           "configured_image",
           "source_status",
           "builds"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ApplicationProvenance": {
         "type": "object",
@@ -31610,7 +32210,8 @@
           "services",
           "truncated",
           "note"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SourceBuild": {
         "type": "object",
@@ -31649,7 +32250,8 @@
           "commit_sha",
           "provider",
           "repository"
-        ]
+        ],
+        "additionalProperties": false
       },
       "LogEntry": {
         "type": "object",
@@ -31686,7 +32288,8 @@
           "message",
           "severity",
           "fields"
-        ]
+        ],
+        "additionalProperties": false
       },
       "LogQuery": {
         "type": "object",
@@ -31718,7 +32321,8 @@
         },
         "required": [
           "service"
-        ]
+        ],
+        "additionalProperties": false
       },
       "LogQueryResult": {
         "type": "object",
@@ -31745,7 +32349,8 @@
               "required": [
                 "timestamp",
                 "count"
-              ]
+              ],
+              "additionalProperties": false
             }
           },
           "scanned": {
@@ -31779,7 +32384,8 @@
           "pods",
           "window_seconds",
           "warnings"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TerminalInput": {
         "type": "object",
@@ -31805,7 +32411,8 @@
         },
         "required": [
           "pod"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TerminalSession": {
         "type": "object",
@@ -31829,7 +32436,8 @@
           "pod",
           "container",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TerminalPollFrame": {
         "type": "object",
@@ -31845,7 +32453,8 @@
         "required": [
           "cursor",
           "data"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TerminalPoll": {
         "type": "object",
@@ -31871,7 +32480,8 @@
           "next_cursor",
           "truncated",
           "done"
-        ]
+        ],
+        "additionalProperties": false
       },
       "CustomRole": {
         "type": "object",
@@ -31897,7 +32507,8 @@
           "name",
           "permissions",
           "revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "OrganizationSecurity": {
         "type": "object",
@@ -31920,7 +32531,8 @@
           "revision",
           "members",
           "ready_members"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Profile": {
         "type": "object",
@@ -31952,7 +32564,8 @@
           "avatar_seed",
           "avatar_url",
           "revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ProfileInput": {
         "type": "object",
@@ -31979,7 +32592,8 @@
           "name",
           "avatar_style",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "HostPermission": {
         "type": "object",
@@ -31994,7 +32608,8 @@
         "required": [
           "node",
           "permission"
-        ]
+        ],
+        "additionalProperties": false
       },
       "HostGrant": {
         "type": "object",
@@ -32018,7 +32633,8 @@
           "node",
           "permission",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "HostAccess": {
         "type": "object",
@@ -32055,7 +32671,8 @@
                 "control_plane",
                 "ready",
                 "allowed"
-              ]
+              ],
+              "additionalProperties": false
             }
           }
         },
@@ -32063,7 +32680,8 @@
           "super_admin",
           "grants",
           "nodes"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ProxyField": {
         "type": "object",
@@ -32082,7 +32700,8 @@
           "name",
           "description",
           "example"
-        ]
+        ],
+        "additionalProperties": false
       },
       "EdgeRule": {
         "type": "object",
@@ -32250,7 +32869,8 @@
           "settings",
           "edge",
           "fields"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ProxyChange": {
         "type": "object",
@@ -32284,7 +32904,8 @@
         "required": [
           "status",
           "error"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ProxyStatus": {
         "type": "object",
@@ -32307,7 +32928,8 @@
           "revision",
           "change",
           "drift"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ProxySettingsPatch": {
         "type": "object",
@@ -32351,7 +32973,8 @@
         "required": [
           "protocol",
           "port"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RequestEntry": {
         "type": "object",
@@ -32467,7 +33090,8 @@
           "duration_ms",
           "retries",
           "connections"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RequestCollection": {
         "type": "object",
@@ -32503,7 +33127,8 @@
           "checked_at",
           "last_success_at",
           "gap_count"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RequestList": {
         "type": "object",
@@ -32533,7 +33158,8 @@
           "collection",
           "retention_hours",
           "max_entries"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RequestRoute": {
         "type": "object",
@@ -32560,7 +33186,8 @@
           "port",
           "tls",
           "ingress"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RequestEndpoint": {
         "type": "object",
@@ -32579,7 +33206,8 @@
           "pod",
           "address",
           "ready"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RequestRouting": {
         "type": "object",
@@ -32620,7 +33248,8 @@
           "service",
           "namespace",
           "warnings"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Resources": {
         "type": "object",
@@ -32682,7 +33311,8 @@
           "status",
           "error",
           "reserved_gib"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VolumeCleanup": {
         "type": "object",
@@ -32704,7 +33334,8 @@
           "claims",
           "status",
           "error"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TLSIssuerKind": {
         "type": "string",
@@ -32726,7 +33357,8 @@
             "$ref": "#/components/schemas/TLSIssuerKind"
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "RuntimeMetrics": {
         "type": "object",
@@ -32761,7 +33393,8 @@
           "available",
           "pods_sampled",
           "pods_expected"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RuntimeCondition": {
         "type": "object",
@@ -32787,7 +33420,8 @@
           "type",
           "status",
           "last_transition_time"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RuntimeAllocation": {
         "type": "object",
@@ -32802,7 +33436,8 @@
         "required": [
           "cpu",
           "memory"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RuntimeContainer": {
         "type": "object",
@@ -32844,7 +33479,8 @@
             "required": [
               "requests",
               "limits"
-            ]
+            ],
+            "additionalProperties": false
           },
           "cpu_millicores": {
             "type": "number"
@@ -32860,7 +33496,8 @@
           "state",
           "image",
           "resources"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RuntimeEvent": {
         "type": "object",
@@ -32888,7 +33525,8 @@
           "message",
           "count",
           "last_seen"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RuntimePod": {
         "type": "object",
@@ -32941,7 +33579,8 @@
           "conditions",
           "containers",
           "events"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ServiceRuntime": {
         "type": "object",
@@ -32976,7 +33615,8 @@
           "metrics",
           "pods",
           "truncated"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RegistryInfo": {
         "type": "object",
@@ -33023,7 +33663,8 @@
           "created_at",
           "updated_at",
           "synchronized"
-        ]
+        ],
+        "additionalProperties": false
       },
       "RegistryInput": {
         "type": "object",
@@ -33060,7 +33701,8 @@
           "registry",
           "username",
           "password"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TLSStatus": {
         "type": "object",
@@ -33103,7 +33745,8 @@
           "enabled",
           "ready",
           "source"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TLSIssuer": {
         "type": "object",
@@ -33141,7 +33784,8 @@
           "server",
           "ready",
           "conditions"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TLSIssuers": {
         "type": "object",
@@ -33162,7 +33806,8 @@
         "required": [
           "installed",
           "items"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NodeMetrics": {
         "type": "object",
@@ -33186,7 +33831,8 @@
         },
         "required": [
           "available"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NodeDrain": {
         "type": "object",
@@ -33227,7 +33873,8 @@
           "evicted",
           "blockers",
           "remaining"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Enrollment": {
         "type": "object",
@@ -33258,7 +33905,8 @@
           "created_at",
           "expires_at",
           "expired"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Enrollments": {
         "type": "object",
@@ -33282,7 +33930,8 @@
         "required": [
           "configured",
           "items"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SecretProviderScope": {
         "type": "object",
@@ -33518,7 +34167,8 @@
         },
         "required": [
           "accent_color"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackEventDefinition": {
         "type": "object",
@@ -33581,7 +34231,8 @@
           "category",
           "label",
           "description"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackTeam": {
         "type": "object",
@@ -33596,7 +34247,8 @@
         "required": [
           "id",
           "name"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackChannel": {
         "type": "object",
@@ -33615,7 +34267,8 @@
           "id",
           "name",
           "is_private"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackManifest": {
         "type": "object",
@@ -33635,7 +34288,8 @@
           "oauth_config",
           "settings",
           "features"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackIntegrationStatus": {
         "type": "object",
@@ -33732,7 +34386,8 @@
           "events",
           "event_catalog",
           "revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackConnectInput": {
         "type": "object",
@@ -33745,7 +34400,8 @@
             "writeOnly": true
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "SlackConnectResult": {
         "type": "object",
@@ -33756,7 +34412,8 @@
         },
         "required": [
           "authorization_url"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackChannelInput": {
         "type": "object",
@@ -33771,7 +34428,8 @@
         "required": [
           "channel_id",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackEventsInput": {
         "type": "object",
@@ -33832,7 +34490,8 @@
         "required": [
           "events",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackDelivery": {
         "type": "object",
@@ -33930,7 +34589,8 @@
           "attempts",
           "last_error",
           "created_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackDeliveries": {
         "type": "object",
@@ -33947,7 +34607,8 @@
         },
         "required": [
           "items"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SlackTestResult": {
         "type": "object",
@@ -33965,7 +34626,8 @@
         "required": [
           "id",
           "status"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitHubStatus": {
         "type": "object",
@@ -33990,7 +34652,8 @@
           "configured",
           "token_configured",
           "webhook_path"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SourceBinding": {
         "type": "object",
@@ -34050,7 +34713,8 @@
           "last_deployment",
           "last_error",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SourceStatus": {
         "type": "object",
@@ -34064,7 +34728,8 @@
         },
         "required": [
           "connected"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SourcePlan": {
         "type": "object",
@@ -34120,7 +34785,8 @@
                   "type": "string"
                 }
               },
-              "required": []
+              "required": [],
+              "additionalProperties": false
             }
           },
           "provenance": {
@@ -34146,7 +34812,8 @@
           "warnings",
           "commit_sha",
           "expected_source_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GitLabStatus": {
         "type": "object",
@@ -34171,7 +34838,8 @@
           "configured",
           "token_configured",
           "webhook_path"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SourceImportInput": {
         "type": "object",
@@ -34213,7 +34881,8 @@
           "branch",
           "path",
           "auto_deploy"
-        ]
+        ],
+        "additionalProperties": false
       },
       "SourceImportPlan": {
         "type": "object",
@@ -34269,7 +34938,8 @@
                   "type": "string"
                 }
               },
-              "required": []
+              "required": [],
+              "additionalProperties": false
             }
           },
           "provenance": {
@@ -34304,7 +34974,8 @@
           "commit_sha",
           "review_token",
           "expires_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TemplateConfigOption": {
         "type": "object",
@@ -34319,7 +34990,8 @@
         "required": [
           "label",
           "value"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TemplateConfigCondition": {
         "type": "object",
@@ -34334,7 +35006,8 @@
         "required": [
           "field",
           "value"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TemplateConfigField": {
         "type": "object",
@@ -34370,7 +35043,8 @@
           "description",
           "default",
           "required"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TemplateSecretField": {
         "type": "object",
@@ -34397,7 +35071,8 @@
           "format",
           "generate",
           "optional"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Template": {
         "type": "object",
@@ -34516,7 +35191,8 @@
           "secret_fields",
           "sources",
           "deployable"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TemplateConfiguration": {
         "type": "object",
@@ -34587,7 +35263,8 @@
           "project",
           "environment",
           "name"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TemplatePlan": {
         "type": "object",
@@ -34643,7 +35320,8 @@
                   "type": "string"
                 }
               },
-              "required": []
+              "required": [],
+              "additionalProperties": false
             }
           },
           "provenance": {
@@ -34673,7 +35351,8 @@
           "required_secrets",
           "toml",
           "configuration"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Showcase": {
         "type": "object",
@@ -34728,7 +35407,8 @@
           "deployment_status",
           "message",
           "removable"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NetworkSegment": {
         "type": "object",
@@ -34743,7 +35423,8 @@
         },
         "required": [
           "applications"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkSpec": {
         "type": "object",
@@ -34772,7 +35453,8 @@
           "name",
           "description",
           "segments"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkSummary": {
         "type": "object",
@@ -34815,7 +35497,8 @@
           "segments",
           "revision",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkConnection": {
         "type": "object",
@@ -34861,7 +35544,8 @@
           "ports",
           "revision",
           "status"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkDetail": {
         "type": "object",
@@ -34895,7 +35579,8 @@
           "connections",
           "truncated",
           "can_manage"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkInput": {
         "type": "object",
@@ -34922,7 +35607,8 @@
         "required": [
           "project",
           "environment"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkCreate": {
         "type": "object",
@@ -34950,7 +35636,8 @@
           "project",
           "environment",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkUpdate": {
         "type": "object",
@@ -34979,7 +35666,8 @@
           "environment",
           "expected_id",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VirtualNetworkPlan": {
         "type": "object",
@@ -35013,7 +35701,8 @@
           "toml",
           "expected_id",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VolumeResizeInput": {
         "type": "object",
@@ -35038,7 +35727,8 @@
           "claim",
           "size_gib",
           "expected_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VolumeResizePlan": {
         "type": "object",
@@ -35087,7 +35777,8 @@
           "source_uid",
           "expected_revision",
           "warnings"
-        ]
+        ],
+        "additionalProperties": false
       },
       "VolumeResize": {
         "type": "object",
@@ -35155,7 +35846,8 @@
           "updated_at",
           "verified",
           "copied_bytes"
-        ]
+        ],
+        "additionalProperties": false
       },
       "FrameworkPlan": {
         "properties": {
@@ -35394,7 +36086,8 @@
           "created_at",
           "expires_at",
           "deleted_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PreviewInput": {
         "type": "object",
@@ -35428,7 +36121,8 @@
           "ttl_hours",
           "expected_parent_revision",
           "discard_on_expiry"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PreviewCreated": {
         "type": "object",
@@ -35443,7 +36137,8 @@
         "required": [
           "preview",
           "deployment"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Volume": {
         "type": "object",
@@ -35461,7 +36156,8 @@
         "required": [
           "mount_path",
           "size_gib"
-        ]
+        ],
+        "additionalProperties": false
       },
       "GPU": {
         "type": "object",
@@ -35472,7 +36168,8 @@
         },
         "required": [
           "count"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NamedVolume": {
         "type": "object",
@@ -35495,7 +36192,8 @@
         },
         "required": [
           "size_gib"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Mount": {
         "type": "object",
@@ -35516,7 +36214,8 @@
         "required": [
           "volume",
           "mount_path"
-        ]
+        ],
+        "additionalProperties": false
       },
       "TemporaryMount": {
         "type": "object",
@@ -35536,7 +36235,8 @@
         "required": [
           "mount_path",
           "size_mib"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PrivatePort": {
         "type": "object",
@@ -35561,7 +36261,8 @@
         "required": [
           "name",
           "port"
-        ]
+        ],
+        "additionalProperties": false
       },
       "NetworkAccess": {
         "type": "object",
@@ -35581,7 +36282,8 @@
         },
         "required": [
           "from"
-        ]
+        ],
+        "additionalProperties": false
       },
       "WorkloadSecret": {
         "type": "object",
@@ -35597,7 +36299,8 @@
         "required": [
           "name",
           "updated_at"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PlacementNode": {
         "type": "object",
@@ -35620,7 +36323,8 @@
           "architecture",
           "available",
           "reason"
-        ]
+        ],
+        "additionalProperties": false
       },
       "Serverless": {
         "type": "object",
@@ -35656,7 +36360,8 @@
             "default": 16
           }
         },
-        "required": []
+        "required": [],
+        "additionalProperties": false
       },
       "ServiceMoveInput": {
         "type": "object",
@@ -35679,7 +36384,8 @@
           "destination_service",
           "source_revision",
           "destination_revision"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ServiceMovePlan": {
         "type": "object",
@@ -35719,7 +36425,8 @@
           "destination_changes",
           "warnings",
           "secret_count"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ServiceMove": {
         "type": "object",
@@ -35762,7 +36469,8 @@
           "status",
           "source_revision",
           "destination_revision"
-        ]
+        ],
+        "additionalProperties": false
       }
     }
   }
