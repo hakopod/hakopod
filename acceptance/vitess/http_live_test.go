@@ -385,7 +385,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 	httpServer := httptest.NewServer(server.Handler())
 	httpServer.Client().Timeout = 90 * time.Second
 	defer httpServer.Close()
-	_, scopedToken, err := database.CreateKey(ctx, owner, store.KeyInput{Name: "vitess-http", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write", "logs:read"}, ExpiresAt: time.Now().Add(time.Hour)})
+	_, scopedToken, err := database.CreateKey(ctx, owner, store.KeyInput{Name: "vitess-http", Project: project, Environment: environment, Permissions: []string{"deployments:read", "deployments:write", "logs:read", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestVitessHTTPVerticalSlice(t *testing.T) {
 		t.Fatal(err)
 	}
 	deployer, err := database.Authenticate(ctx, scopedToken)
-	if err != nil || !deployer.Allows("deployments:write", project, environment, "") || !deployer.Allows("logs:read", project, environment, "") || deployer.CanManageApplication(project, environment, "vitess-http-client") {
+	if err != nil || !deployer.Allows("deployments:write", project, environment, "") || !deployer.Allows("logs:read", project, environment, "") || !deployer.Allows("agent:credentials", project, environment, "") || deployer.CanManageApplication(project, environment, "vitess-http-client") {
 		t.Fatal("scoped deployment key permissions differ")
 	}
 	cleanupPrincipal, err := database.Authenticate(ctx, cleanupToken)
