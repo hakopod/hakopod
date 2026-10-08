@@ -107,6 +107,11 @@ The original operator patch, CRD, build assets and packaging receipt are unchang
 The current release no longer needs the historical source compatibility and
 HTTP derivation records. Their historical copies remain available in Git.
 
+A separate source review compared all 166 vendored Oracle driver entries with
+the tested commit. Their Git tree is unchanged at
+`4313d681405273f04539ce1b7c1fdb70712cd73b`. The native manifests do not individually
+list those driver files. The release packaging fingerprint includes that directory.
+
 ## MyDuck and Oracle Database Free — alpha.56
 
 ### MyDuck
