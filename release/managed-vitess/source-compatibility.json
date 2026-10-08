@@ -9,7 +9,7 @@
     "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274"
   },
   "reviewed_release": "v0.1.0-alpha.58",
-  "control_plane_commit": "7efba9dd085dda6032b5849304c08f9b442c9bd1",
+  "control_plane_commit": "da7d3ddf97c989cf18fe53cc57987f39d68f2216",
   "regression_evidence": {
     "url": "https://github.com/hakopod/hakopod/actions/runs/37766513055",
     "tests": [

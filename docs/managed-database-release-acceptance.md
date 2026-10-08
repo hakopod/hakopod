@@ -1,9 +1,9 @@
 # Managed database release acceptance
 
-## Alpha.58 qualification in progress
+## Alpha.58 native qualification
 
-Vitess qualification passed on October 8, 2026, in the named `k3d-hakopod-dev`
-development cluster. MyDuck and Oracle Free qualification remain in progress.
+Vitess, MyDuck and Oracle Free qualification passed on October 8, 2026, in the named
+`k3d-hakopod-dev` development cluster.
 Installer acceptance, publication and production deployment are separate gates.
 
 The five native cases used source `e8164b49f5e2cac321309d7dc3a72da4f5656ec5`.
@@ -44,6 +44,68 @@ the fixture corrections, without another native run.
 
 The development workers shared one physical VM. These results do not establish
 independent-host, zone or provider availability.
+
+### MyDuck candidate qualification
+
+All three MyDuck cases passed on immutable source
+`3f973d47f8a99115f31ea3ed8d3059bfa762da71`. The rebased candidate has the same
+MyDuck source inventory. Runtime images, binaries and build receipts are unchanged.
+Each case verified source integrity, unrelated resources and fixture cleanup.
+
+| MyDuck case | Go test seconds | Protected log SHA-256 |
+| --- | ---: | --- |
+| Lifecycle | 101.484 | `c849416018062c739847ecffa071c518f7bd940814cf7d4464297d24eee57132` |
+| Recovery | 292.627 | `453bc862a857ad7bab35ffbbfe122534311130fea658a25cb50c48d915ae55fb` |
+| HTTP/API | 252.128 | `6bef87b436fa6831e6153ced6b9c12c515810c18d17d4bd6f8b6c6e6d9b53171` |
+
+The first HTTP attempt failed because its temporary backup staging directory
+inherited group and other permission bits from the runner's `UMask=0022`.
+The production archive verifier correctly refused that directory. The accepted
+attempt used `UMask=0077`, and its actual staging directory was verified as `0700`.
+The source and assertions did not change. The original failure remains separate
+from the accepted result. Set `UMask=0077` for future MyDuck HTTP qualification units.
+
+The [fresh manifest](../release/managed-myduck/manifest.json) has SHA-256
+`eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736`.
+The [native record](../release/managed-myduck/native-acceptance.json) has SHA-256
+`8faffa1df6d8a25184cc3c1ff42130f623016bf242e8984d9bd0da0cd57c15d8`.
+The original build and packaging receipts remain byte-for-byte unchanged.
+The current source matches this evidence, so no source compatibility exception
+is required. Historical records remain available at their release tags.
+
+### Oracle Free candidate qualification
+
+Oracle Free qualification uses immutable source
+`3f973d47f8a99115f31ea3ed8d3059bfa762da71`. The lifecycle, recovery,
+controller-loss and HTTP/API cases passed. The rebased candidate has the same
+Oracle Free source inventory.
+
+| Oracle Free case | Go test seconds | Protected log SHA-256 |
+| --- | ---: | --- |
+| Lifecycle | 497.449 | `9714f51922da082dd8bb6928d49b8d8fd557687b46b60a970a1f2266a897e2f0` |
+| Recovery | 1229.356 | `6efbbc76117c3c7861442096b3fed3b69ad62cda998e1ce19e22aab9fc73dee3` |
+| Controller loss | 516.542 | `c6ccb1215afc0efbb437d448bf59cb5f71a966cd9ffd4c35a2bc55b2ca927f1f` |
+| HTTP/API | 1548.666 | `953e010eae03fc5475886ca8663c06f57c8694feb9cfbd16d96fbea6ac42a0c8` |
+
+All four cases preserved source manifest
+`abb8257312e917f7e5f8832b0ffc21ece91c3151fdb6e18eac93c564f0c85e44`.
+Their reports confirm that fixture namespaces and backing persistent volumes
+were absent after execution. Runtime images and original build receipts are unchanged.
+The HTTP case passed authorization, lifecycle, encrypted backup and restore,
+application binding and revocation, and deletion. Its three fixture namespaces
+and backing volumes were absent after execution. The host receipt confirms
+that PostgreSQL and S3 fixture containers and credential files were absent.
+That receipt has SHA-256
+`afe8bff764f9bd6975d33ff5fd387145dc90a7f30f6eb18e02f60c49479cc65e`.
+
+The [fresh manifest](../release/managed-oracle-free/manifest.json) has SHA-256
+`409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9`.
+The [native record](../release/managed-oracle-free/native-acceptance.json) has SHA-256
+`a2a186bd026184e6085f0ce464bf76cb697d02f0450821b2d663aef601ca3b8a`.
+The record uses schema 1 because all four cases share the same source inventory.
+The original operator patch, CRD, build assets and packaging receipt are unchanged.
+The current release no longer needs the historical source compatibility and
+HTTP derivation records. Their historical copies remain available in Git.
 
 ## MyDuck and Oracle Database Free — alpha.56
 
