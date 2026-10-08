@@ -1,4 +1,4 @@
-# Oracle receive limits and diagnostics
+# Oracle receive limits, diagnostics and NULL decoding
 
 This directory contains the production sources of github.com/sijms/go-ora/v3
 v3.0.1, with its upstream LICENSE. Upstream module checksum:
@@ -35,13 +35,22 @@ The driver still consumes those protocol fields and returns errors normally.
 Explicit driver tracing retains its upstream behavior. Hakopod does not enable
 driver tracing for managed queries or accept tracing options from query callers.
 
-When updating the driver, reapply the small decoder patch, inspect all allocation
-and accumulation paths, and run these adversarial tests plus real Oracle query
-acceptance. The nested module is tested explicitly in CI:
+The NULL decoder patch backports upstream commit
+`567a5004ee489c33e01f5569420909a2324cad37`, which resolves
+[issue 730](https://github.com/sijms/go-ora/issues/730). An untyped NULL uses
+Oracle type 0 and has no registered decoder. The patch consumes its CLR field
+before processing later columns. It also rejects a nonempty value for this
+NULL-only type. Tests call the actual decoder and check subsequent field
+alignment, stale value removal and receive-limit enforcement.
+
+When updating the driver, review and reapply `receive-limit.patch`,
+`diagnostics.patch` and `null-decoder.patch` where upstream still requires them.
+Inspect all allocation and accumulation paths. Run these adversarial tests and
+real Oracle query acceptance. CI tests the nested module explicitly:
 
 ```
 cd third_party/go-ora-v3
-go test . ./network -run '^Test(ReadLimit|LobReadLimit|DriverDiagnostics)' -count=1
+go test . ./network -run '^Test(ReadLimit|LobReadLimit|DriverDiagnostics|DecodePrimValueUntypedNull)' -count=1
 ```
 
 The tests need no database. Root-module `go test ./...` excludes this nested

@@ -2,6 +2,7 @@ package go_ora
 
 import (
 	"database/sql/driver"
+	"errors"
 	"math"
 	"strings"
 
@@ -485,6 +486,18 @@ func (par *ParameterInfo) decodePrimValue(conn *Connection, udt bool) error {
 	//}
 	if par.ArraySize > 0 {
 		decoder = &parameter_coder.ArrayParameter{}
+	} else if par.DataType == 0 {
+		// An untyped NULL has no registered coder. Consume its CLR to retain alignment.
+		par.BValue, err = session.GetClr()
+		if err != nil {
+			return err
+		}
+		if len(par.BValue) != 0 {
+			return errors.New("untyped NULL column contains a value")
+		}
+		par.oPrimValue = nil
+		par.IsNull = true
+		return nil
 	} else {
 		if par.DataType == oraTypes.XMLType {
 			decoder, err = conn.GetParameterCoder(par.TypeName)
