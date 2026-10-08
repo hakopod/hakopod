@@ -3,9 +3,11 @@ import { ApplicationList } from '../components/application-list'
 import { Empty, ErrorState, Loading, PageHeader } from '../components/shared'
 import { Button } from '../components/ui/button'
 import { resolveProjectRouteScope, useProjects } from '../lib/projects'
+import { ProjectSettings } from '../components/project-settings'
 
 export const Route = createFileRoute('/projects/$project')({
-  validateSearch: (search: Record<string, unknown>): { environment?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { environment?: string; tab?: 'manage' } => ({
+    tab: search.tab === 'manage' ? 'manage' : undefined,
     environment:
       search.environment === undefined
         ? undefined
@@ -18,7 +20,7 @@ export const Route = createFileRoute('/projects/$project')({
 
 function ProjectApplications() {
   const { project: projectName } = Route.useParams()
-  const { environment } = Route.useSearch()
+  const { environment, tab } = Route.useSearch()
   const projects = useProjects()
   const selected = resolveProjectRouteScope(projects.data?.items, projectName, environment)
   if (projects.isPending || (selected.status === 'missing-project' && projects.isFetching))
@@ -40,6 +42,8 @@ function ProjectApplications() {
         />
       </div>
     )
+  if (tab === 'manage' && selected.project)
+    return <ProjectSettings key={selected.project.name} project={selected.project} />
   if (selected.status === 'missing-environment')
     return (
       <div className="ops-page project-unavailable-page">
@@ -72,7 +76,13 @@ function ProjectApplications() {
               </div>
             ) : (
               <Button asChild>
-                <Link to="/">View projects</Link>
+                <Link
+                  to="/projects/$project"
+                  params={{ project: projectName }}
+                  search={{ tab: 'manage' }}
+                >
+                  Project settings
+                </Link>
               </Button>
             )
           }

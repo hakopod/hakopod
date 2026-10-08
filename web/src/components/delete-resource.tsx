@@ -87,7 +87,10 @@ export function DeleteResource({
           params: { project: reviewed.project },
           search: { environment: reviewed.environment },
         })
-      else void navigate({ to: '/' })
+      else {
+        if (scope.project === project) scope.syncScope('', '')
+        void navigate({ to: '/' })
+      }
     } catch (cause) {
       setError(message(cause))
     } finally {
@@ -159,7 +162,7 @@ export function DeleteResource({
             <p>
               {application
                 ? 'This removes the empty application, its deployment and build history, and Git bindings. Persistent data is retained unless you choose to delete it below. Saved backups are kept. Active work or enabled backup schedules must be stopped first.'
-                : 'Only an empty project can be deleted. Remove applications, builds, networks and secret-provider scope grants across every environment first. Personal workspaces cannot be deleted.'}
+                : 'Only an empty project can be deleted. Remove its resources, reclaim retained storage and remove scope grants across every environment first. Pending operations must finish. Personal projects stay linked to their accounts.'}
             </p>
             {application && (
               <label className="flex items-start gap-2">
@@ -199,6 +202,7 @@ export function DeleteResource({
               variant="danger"
               disabled={busy || !empty || confirmation !== name}
             >
+              <Icon name="trash" size={14} />
               {busy ? 'Deleting…' : `Delete ${kind}`}
             </Button>
           </div>
