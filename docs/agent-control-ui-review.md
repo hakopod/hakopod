@@ -40,3 +40,39 @@ The desktop SQL viewport capture confirms the transaction warning and schema-cha
 ## Limits
 
 No backend authorization, credential retrieval, SQL engine execution, Kubernetes lifecycle, live deployment or public endpoint is proved by these fixtures. Physical touch, synthetic swipe, assistive technology, other browser engines, 320px layouts and the complete Cloud shell were not tested. The in-app browser rejected touch dispatch; keyboard scrolling was verified instead. Unrelated route families and unchanged loading/denied states are not represented as newly reviewed. No local build or test was run by the reviewer.
+
+
+## SQL editor, Vitess scope and project settings supplement
+
+Status: scoped independent visual review complete. No remaining actionable finding in the inspected states. The earlier completed review remains limited to its recorded states.
+
+The independent reviewer used the standing Hatch checklist and inspected the actual project/settings/deletion routes, shared editor, parser worker and query route. Root captured the browser screenshots and executed interactions. All responses in these development fixtures are artificial and all screens display a DEVELOPMENT ONLY banner.
+
+| Family | Final rendered coverage | Evidence |
+| --- | --- | --- |
+| Project settings | Base, empty, personal and viewer states in dark and Paper at 1440px and 390px | `work/ui-review/scope-deletion/*-final.png`, `*-empty.png`, `*-personal.png`, `*-viewer.png` |
+| Environment deletion | Conflict with preserved staging confirmation in both themes and widths; Escape returns focus to the named trigger | `*-conflict.png` |
+| Environment creation | Clean dialog in both themes and widths; light desktop conflict preserves the quality ID | `*-create-environment-clean.png`, `light-desktop-create-conflict.png` |
+| Demo replacement | Confirmation, zero-project overview, creation review and resulting exact name/ID/environment; dark 390px only | `dark-mobile-demo-confirm.png`, `dark-mobile-demo-deleted.png`, `dark-mobile-replacement-review.png`, `dark-mobile-replacement-created.png` |
+| Monaco SQL | Diagnostics both themes/widths; light desktop completion and correction focus; dark mobile help viewport; Vitess transactional write review and unknown query outcome both themes/widths; unsupported grammar dark both widths and light failure states | `work/ui-review/sql-monaco/v15-*.png` |
+| Expanded TOML | Actual shared editor inside a bounded fixture parent in both themes and widths | `*-expanded-toml.png` |
+
+The reviewer critically inspected each listed original. Settings titles and content retain the 24px desktop / 16px mobile inset. Project rename/delete and environment Open/trash controls measure 36px and share row positions. Empty projects remain reachable without selecting another environment. Personal projects disclose their account linkage and omit project/development deletion controls; viewers have navigation without mutation controls. These observations prove synthetic UI presentation, not backend authorization or deletion.
+
+Deletion warnings, the preserved staging ID and error focus are readable. The mobile conflict dialog measures x=12, width=366 with a 324px input in a 390px viewport. Clean creation captures keep all field instructions, suggestions and actions visible. The transient conflict toast obscured help in an earlier capture; clean captures supersede it for layout approval.
+
+Expanded TOML bounds are x=24, y=158, width=1392, height=654 at 1440x900 and x=16, y=209, width=351, height=598 at 390x844. Syntax colors, line numbers and wrapped values are readable; the editor fills its parent without document overflow. The collapsed preliminary fixture lacked Tailwind source discovery for fixture-only classes. The fix adds `review.css` with an explicit source declaration; it is not a product layout regression. This checks the shared expanded editor, not the full deployment dialog.
+
+Earlier mobile-labelled desktop exports and collapsed fixture captures are superseded and excluded. Passing bounds did not substitute for screenshot inspection.
+
+Source review confirms local advisory grammars for PostgreSQL, MySQL and Vitess; other SQL dialects disclose unavailable grammar lint. Valid bind placeholders or server extensions can produce advisory warnings. SQL is bounded to 64 KiB of UTF-8, diagnostics to 20 markers and messages to 512 characters. One worker holds at most one active and one latest pending request. Worker initialization after asset import is bounded to ten seconds and parsing to two seconds. Errors/timeouts terminate it; a later edit can start a new attempt without a timer-driven retry loop. Model-version checks discard stale diagnostics. Escape targets Parameters explicitly; root verified this focus transfer in the final browser pass.
+
+The lazy SQL parser worker measured 3.763 MB before transfer compression. This is a material loading cost, not a performance benchmark. No page-speed, live SQL execution, Kubernetes lifecycle, deployment or release qualification is claimed. Physical touch, assistive technology, other browser engines, 320px layouts and unrelated route families were not newly tested.
+
+
+Final v15 Monaco originals reviewed in `work/ui-review/sql-monaco` include diagnostic screens in both themes at 1440px and 390px, light desktop completion and corrected Parameters focus, and the dark mobile help viewport. Squiggles and F8 details are visible; syntax colors and controls are readable. Root verified SELECT FROM produces a warning, SELECT 1 clears it, blank SQL clears state, Ctrl+Space offers SELECT and Enter accepts it, repeated edits continue to lint and Escape focuses Parameters. These are UI/plugin behaviors, not execution approval. Mobile F8 text remains in Monaco's bounded viewport and can truncate long messages; full-message assistive-technology access was not tested. The advisory bind-placeholder instruction and Escape-to-Parameters help are fully visible below the editor, with no footer overlap in the inspected viewport.
+
+
+Four final `v15-*-vitess-write.png` originals pass: the scope warning includes nontransactional requests, the reviewed revision is 4 and the review states One transaction on one shard. The statement and parameter 42 remain visible, mobile values wrap and actions fit. Four `v15-*-query-failure.png` originals preserve SELECT $1 and the quoted value 9007199254740993 after a synthetic unknown outcome, with readable error and operation ID. Dark desktop/mobile `v15-*-unsupported-grammar.png` originals also show explicit unavailable grammar guidance; light guidance is covered by failure states. The injected ClickHouse placeholder style and outcomes are fixture values, not native dialect qualification.
+
+Root's accessibility snapshot exposed the full mobile F8 message; its visual horizontal truncation remains recorded, and no assistive-technology test was performed. Some desktop full-page exports place the sticky action footer across earlier content. The final corrected-focus and help viewport captures show the instructions without actual overlap; those viewport checks govern that conclusion. This supplement approves the recorded presentation and interactions only. It does not prove native query execution, live scope mutation, rollout, or release readiness.
