@@ -150,7 +150,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - name: Check generated dashboard contracts
+      - name: Verify generated dashboard API and editor schema
         run: |
           pnpm generate:api
           git diff --exit-code -- src/lib/api.generated.ts src/lib/editor-schema.json
