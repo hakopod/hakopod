@@ -42,3 +42,9 @@ Validation also exercises the native and npm executables through real pseudo-ter
 against a loopback fixture API. Hidden entry, explicit generation and cancellation
 passed; the entered value did not appear in terminal output or deployment payloads.
 The fixture uses synthetic credentials and does not claim a production deployment.
+
+When a service is removed, reconciliation deletes its generated environment Secret
+after all workloads stop using it. This also removes credentials left by older
+revisions. Shared platform values, file snapshots and certificates remain under
+their existing lifecycle rules. An incomplete inventory or changed Secret identity
+stops cleanup; reconciliation never guesses that credentials are unused.
