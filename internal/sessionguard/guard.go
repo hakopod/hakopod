@@ -2,6 +2,7 @@ package sessionguard
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -57,12 +58,34 @@ func Install() error {
 	ok = true
 	return output.Close()
 }
+
+// runCommand checks the immutable exec target before the helper reads caller bytes.
+func runCommand(args []string) ([]string, error) {
+	if len(args) >= 3 && args[0] == "run" && args[1] == "--" {
+		return args[2:], nil
+	}
+	if len(args) >= 9 && args[0] == "run" && args[1] == "--expected-pod-uid" && args[3] == "--expected-generation" && args[5] == "--ready-token" && args[7] == "--" {
+		if args[2] == "" || args[4] == "" || len(args[2]) > 128 || len(args[4]) > 128 || os.Getenv("HAKOPOD_POD_UID") != args[2] || os.Getenv("HAKOPOD_SESSION_GENERATION") != args[4] {
+			return nil, fmt.Errorf("session pod identity or generation changed")
+		}
+		if decoded, err := hex.DecodeString(args[6]); err != nil || len(decoded) != 32 {
+			return nil, fmt.Errorf("session ready token must contain 64 hexadecimal characters")
+		}
+		return args[8:], nil
+	}
+	return nil, fmt.Errorf("use run -- with the fixed command, or provide expected pod UID, generation and ready token before --")
+}
 func Run(args []string) error {
 	if len(args) == 1 && args[0] == "install" {
 		return Install()
 	}
-	if len(args) < 3 || args[0] != "run" || args[1] != "--" {
-		return fmt.Errorf("use install or run -- followed by the fixed worker command")
+	command, err := runCommand(args)
+	if err != nil {
+		return err
 	}
-	return execute(args[2:])
+	readyToken := ""
+	if len(args) >= 9 && args[1] == "--expected-pod-uid" {
+		readyToken = args[6]
+	}
+	return execute(command, readyToken)
 }
