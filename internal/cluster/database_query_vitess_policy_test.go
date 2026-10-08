@@ -41,3 +41,19 @@ func TestVitessQueryDirectivePolicyRejectsAmbiguity(t *testing.T) {
 		}
 	}
 }
+
+// The pinned parser splits the complete comment on whitespace and visits only
+// interior fields. Compact first/last fields are not recognized directives.
+func TestVitessQueryDirectivePolicyCompactComments(t *testing.T) {
+	for _, comment := range []string{"/*vt+*/", "/*vt+ */", "/*vt+SCATTER_ERRORS_AS_WARNINGS=1*/", "/*vt+ SCATTER_ERRORS_AS_WARNINGS=1*/", "/*vt+SCATTER_ERRORS_AS_WARNINGS=1 */"} {
+		if err := validateVitessQueryDirectives("SELECT " + comment + " 1"); err != nil {
+			t.Fatal(comment, err)
+		}
+	}
+	for _, comment := range []string{"/*vt+ SCATTER_ERRORS_AS_WARNINGS=1 */", "/*vt+ignored IGNORE_MAX_MEMORY_ROWS */", "/*vt+\nIGNORE_MAX_PAYLOAD_SIZE\n*/"} {
+		var failure *database.QueryError
+		if !errors.As(validateVitessQueryDirectives("SELECT "+comment+" 1"), &failure) || failure.Outcome != "not_started" {
+			t.Fatal(comment, failure)
+		}
+	}
+}

@@ -88,7 +88,8 @@ func scanVitessQueryDirectives(statement string, backslashEscapes bool) error {
 			if strings.HasPrefix(statement[start:end], "/*vt+") {
 				// Match the pinned parser: whitespace-delimited tokens, key before '='.
 				fields := strings.Fields(statement[start:end])
-				for _, field := range fields[1 : len(fields)-1] {
+				for index := 1; index < len(fields)-1; index++ {
+					field := fields[index]
 					key, _, _ := strings.Cut(field, "=")
 					switch strings.ToUpper(key) {
 					case "SCATTER_ERRORS_AS_WARNINGS", "IGNORE_MAX_MEMORY_ROWS", "IGNORE_MAX_PAYLOAD_SIZE", "MULTI_SHARD_AUTOCOMMIT":
