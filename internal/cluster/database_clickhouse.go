@@ -79,6 +79,14 @@ func clickhouseDatabaseSpec(d database.Resource, resources map[string]any) map[s
 	}
 	users["app/networks/ip"] = "::/0"
 	users["app/grants/query"] = []any{"GRANT SELECT, INSERT, ALTER, CREATE TABLE, CREATE VIEW, DROP TABLE, DROP VIEW, TRUNCATE, OPTIMIZE, SHOW ON app.*"}
+	if d.Spec.ClickHouseTenantAdmin() {
+		// SQL access entities are instance-wide. Never delegate engine, source,
+		// system-table or administrative server privileges to tenant users.
+		users["app/grants/query"] = append(users["app/grants/query"].([]any),
+			"GRANT CREATE USER, DROP USER, CREATE QUOTA, ALTER QUOTA, DROP QUOTA ON *.*",
+			"GRANT CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, DROP DICTIONARY ON app.*",
+			"GRANT SELECT ON app.* WITH GRANT OPTION")
+	}
 	users["hakopod-bootstrap/grants/query"] = []any{"GRANT CREATE DATABASE ON app.*"}
 	users["hakopod-monitor/grants/query"] = []any{"GRANT SELECT ON system.*", "GRANT SHOW ON app.*"}
 	users["hakopod-recovery/grants/query"] = []any{"GRANT SELECT, INSERT, ALTER, CREATE TABLE, CREATE VIEW, DROP TABLE, DROP VIEW, TRUNCATE, OPTIMIZE, SHOW, BACKUP ON app.*"}
