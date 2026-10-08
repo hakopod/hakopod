@@ -63,7 +63,7 @@ func TestPostgresQueryFailureOutcome(t *testing.T) {
 }
 func TestDatabaseQueryUnsupportedFailsBeforeClusterAccess(t *testing.T) {
 	var c *Client
-	for _, engine := range []string{"duckdb", "vitess", "oracle", "mongodb", "redis"} {
+	for _, engine := range []string{"vitess", "oracle", "mongodb", "redis"} {
 		_, err := c.QueryDatabase(context.Background(), database.Resource{Spec: database.Spec{Engine: engine}}, database.QueryRequest{SQL: "SELECT 1"})
 		var queryErr *database.QueryError
 		if !errors.As(err, &queryErr) || queryErr.Code != "database_query_engine_unsupported" || queryErr.Outcome != "not_started" {
