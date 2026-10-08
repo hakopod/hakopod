@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -18,7 +19,7 @@ const (
 	Ready          = "ready"
 	Closing        = "closing"
 	Closed         = "closed"
-	MaxSessions    = 8
+	MaxSessions    = spec.MaxSandboxSessions
 	MaxHistory     = 1000
 	MaxInputBytes  = 48 << 20
 	MaxOutputBytes = 52 << 20
@@ -81,8 +82,10 @@ func HashKey(value string) (string, error) {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:]), nil
 }
-func ValidID(value string) bool    { return idPattern.MatchString(value) }
-func ValidImage(value string) bool { return len(value) <= 512 && imagePattern.MatchString(value) }
+func ValidID(value string) bool { return idPattern.MatchString(value) }
+func ValidImage(value string) bool {
+	return len(value) <= 512 && !strings.ContainsAny(value, " \t\n\r\x00\\?#") && !strings.Contains(value, "://") && !strings.HasPrefix(value, "/") && !strings.Contains(value, "..") && strings.Count(value, "@") == 1 && strings.IndexByte(value, '@') > 0 && imagePattern.MatchString(value)
+}
 func AllowsIdentity(template *spec.SandboxSession, identity string) bool {
 	if template == nil {
 		return false

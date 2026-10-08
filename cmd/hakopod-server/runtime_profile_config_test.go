@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -34,5 +35,13 @@ func TestOperatorRuntimeProfileFile(t *testing.T) {
 	}
 	if _, err := operatorSettings(cloud, dir, override); err != nil {
 		t.Fatal("the explicit empty environment override did not take precedence", err)
+	}
+}
+
+func TestOperatorSessionGuardImage(t *testing.T) {
+	image := "example/guard@sha256:" + strings.Repeat("a", 64)
+	settings, err := operatorSettings([]byte("schema_version=1\n[sandbox_sessions]\nguard_image='"+image+"'\n"), t.TempDir(), noOperatorEnvironment)
+	if err != nil || settings["HAKOPOD_SESSION_GUARD_IMAGE"] != image {
+		t.Fatal("operator guard image was not preserved", err)
 	}
 }

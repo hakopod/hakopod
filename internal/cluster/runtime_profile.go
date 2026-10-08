@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/sandbox"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/pelletier/go-toml/v2"
 	appsv1 "k8s.io/api/apps/v1"
@@ -88,6 +89,13 @@ func ReadRuntimeProfileBindingsFile(path string) ([]RuntimeProfileBinding, error
 	return config.Bindings, nil
 }
 
+func validateSessionGuardImage(image string) error {
+	if image != "" && !sandbox.ValidImage(image) {
+		return fmt.Errorf("session guard image must use a sha256 digest")
+	}
+	return nil
+}
+
 func validateRuntimeProfileInstallation(options Options) error {
 	if len(options.RuntimeProfileBindings) > 0 && (options.DeploymentMode == DeploymentManagedCloud || options.WorkloadPolicy != nil || options.PlacementPolicy != nil) {
 		return fmt.Errorf("runtime profile bindings require a self-hosted installation without a hosted workload policy")
@@ -122,6 +130,14 @@ func (c *Client) resolveRuntimeProfile(ctx context.Context, project, environment
 		}
 		if class.Scheduling != nil && (len(class.Scheduling.NodeSelector) != 0 || len(class.Scheduling.Tolerations) != 0) {
 			return RuntimeProfileBinding{}, fmt.Errorf("runtime profiles do not yet support RuntimeClass scheduling rules")
+		}
+		if svc.Session != nil {
+			if binding.Handler != "runsc" {
+				return RuntimeProfileBinding{}, fmt.Errorf("sandbox sessions require the runsc handler")
+			}
+			if c.options.SessionGuardImage == "" || validateSessionGuardImage(c.options.SessionGuardImage) != nil {
+				return RuntimeProfileBinding{}, fmt.Errorf("sandbox sessions require an operator-configured guard image with a sha256 digest")
+			}
 		}
 		return binding, nil
 	}
