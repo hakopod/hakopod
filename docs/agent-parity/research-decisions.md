@@ -30,7 +30,9 @@ Inspected UI paths included project creation, Git import, the app catalog, impor
 Selected mobile screens were also inspected. This was a technical walkthrough, not a participant study or a timed product comparison.
 
 The useful patterns were direct client connection instructions, explanations of missing prerequisites and a visible permission summary before creating access.
-The investigation did not establish that Openship uses K3s. It also did not establish a general performance or usability advantage.
+The [README at the inspected revision](https://github.com/oblien/openship/blob/0b446ead07ccfb98a1c5111d1dfe04cae79f1ce5/README.md#how-it-works) describes Docker containers and supervised host processes for application execution.
+Its self-hosted control plane uses Docker Compose on Linux with Docker, or a bare process that deploys through SSH or Cloud. That README does not document a K3s runner.
+This documents the inspected release's stated architecture. It does not establish a general performance or usability advantage.
 Catalog entries were not treated as proof of managed database lifecycle support.
 
 ## Oracle execution guarantees
