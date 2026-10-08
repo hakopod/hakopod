@@ -19,8 +19,8 @@ Data Guard and public Oracle endpoints remain unavailable.
 
 MyDuck and Vitess retain their existing runtime images and native test evidence.
 The release records the exact reviewed source changes instead of relabeling old
-test runs. Oracle retains its three cluster test cases and requires a new HTTP
-API acceptance result for the provisioning change.
+test runs. Oracle's HTTP API acceptance passed for the provisioning change.
+Its three earlier cluster cases retain their original source and result records.
 
 Install this prerelease with:
 
