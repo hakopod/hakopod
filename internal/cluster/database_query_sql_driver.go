@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -32,6 +34,11 @@ func queryStatementKind(statement string) (string, error) {
 	return "", &database.QueryError{Code: "database_query_statement_unsupported", Outcome: "not_started"}
 }
 func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q database.QueryRequest, check func(context.Context) error) (database.QueryResult, error) {
+	if d.Spec.Engine == "vitess" {
+		if err := validateVitessQueryDirectives(q.SQL); err != nil {
+			return database.QueryResult{}, err
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	kind, err := queryStatementKind(q.SQL)
@@ -41,18 +48,32 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 	if q.IsReadOnly() && kind != "read" {
 		return database.QueryResult{}, &database.QueryError{Code: "database_query_read_only", Outcome: "not_started"}
 	}
-	observation, err := c.ObserveDatabase(ctx, d)
-	if err != nil || observation.Status != "ready" {
-		return database.QueryResult{}, queryUnavailable()
-	}
+	var observation database.Observation
 	var member database.Member
-	for _, m := range observation.Members {
-		if m.Name == observation.Primary || len(observation.Members) == 1 {
-			member = m
-			break
+	var vitessTarget *vitessQueryTarget
+	if d.Spec.Engine == "vitess" {
+		vitessTarget, err = c.selectVitessQueryTarget(ctx, d)
+		if err != nil {
+			return database.QueryResult{}, queryUnavailable()
+		}
+		member = database.Member{Name: vitessTarget.pod.Name, UID: string(vitessTarget.pod.UID), Role: "gateway", Ready: true}
+	} else {
+		observation, err = c.ObserveDatabase(ctx, d)
+		if err != nil || observation.Status != "ready" {
+			return database.QueryResult{}, queryUnavailable()
+		}
+		for _, m := range observation.Members {
+			if m.Name == observation.Primary || len(observation.Members) == 1 {
+				member = m
+				break
+			}
 		}
 	}
 	if member.UID == "" {
+		return database.QueryResult{}, queryUnavailable()
+	}
+	secret, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
+	if err != nil {
 		return database.QueryResult{}, queryUnavailable()
 	}
 	var client *sql.DB
@@ -68,12 +89,6 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 			client, err = c.myduckMySQLClient(ctx, d, member, password, identity)
 		}
 	case "vitess":
-		if observation.Routing == nil || len(observation.Routing.Members) == 0 {
-			return database.QueryResult{}, queryUnavailable()
-		}
-		member = observation.Routing.Members[0]
-		secret, e := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
-		err = e
 		if err == nil {
 			ns, e := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
 			if e != nil || !postgresQueryCredentialOwned(secret, d, ns) {
@@ -106,20 +121,18 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 			return database.QueryResult{}, queryUnavailable()
 		}
 	}
-	secret, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
-	if err != nil {
-		return database.QueryResult{}, queryUnavailable()
-	}
 	verify := func(step context.Context) error {
-		if err := check(step); err != nil {
+		if check != nil {
+			if err := check(step); err != nil {
+				return err
+			}
+		}
+		if err := c.verifySQLQueryCredential(step, d, secret); err != nil {
 			return err
 		}
-		current, e := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(step, "database-credentials", metav1.GetOptions{})
-		if e != nil || current.UID != secret.UID || current.ResourceVersion != secret.ResourceVersion {
-			return queryUnavailable()
-		}
+		var e error
 		if d.Spec.Engine == "vitess" {
-			_, _, e = c.vitessExecTarget(step, d, member)
+			e = c.verifyVitessQueryTarget(step, d, vitessTarget)
 		} else {
 			_, _, e = c.databaseExecTarget(step, d, member)
 		}
@@ -289,4 +302,12 @@ func sqlRollbackOutcome(tx *sql.Tx) string {
 		return "unknown"
 	}
 	return "rolled_back"
+}
+
+func (c *Client) verifySQLQueryCredential(ctx context.Context, d database.Resource, secret *corev1.Secret) error {
+	current, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
+	if err != nil || secret == nil || current.UID != secret.UID || current.ResourceVersion != secret.ResourceVersion || current.DeletionTimestamp != nil || current.Labels[databaseOwner] != d.ID || current.Labels[managedBy] != "hakopod" || !reflect.DeepEqual(current.OwnerReferences, secret.OwnerReferences) || !reflect.DeepEqual(current.Labels, secret.Labels) || !reflect.DeepEqual(current.Data, secret.Data) {
+		return queryUnavailable()
+	}
+	return nil
 }
