@@ -56,7 +56,7 @@ export function ProjectSettings({ project }: { project: Project }) {
           <h2 id="project-settings-details">Project</h2>
           <div className="flex items-center gap-2">
             <RenameResource project={project} />
-            {!dashboardEdition.cloud && identity.admin && !project.personal && (
+            {manage && identity.admin && !identity.project && !project.personal && (
               <DeleteResource project={project.name} trigger="icon" />
             )}
           </div>
