@@ -16291,6 +16291,92 @@
         "summary": "Delete an empty project record."
       }
     },
+    "/projects/{project}/environments/{environment}": {
+      "delete": {
+        "operationId": "deleteEmptyEnvironment",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm_name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "confirm_name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "The actor must have current project management authority.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Delete an empty environment after confirming its ID."
+      }
+    },
     "/storage/retained": {
       "get": {
         "operationId": "listRetainedApplicationData",
@@ -24665,6 +24751,19 @@
           "read_only_enforcement": {
             "type": "string"
           },
+          "transaction_scope": {
+            "type": "string",
+            "enum": [
+              "none",
+              "connection",
+              "single_shard"
+            ],
+            "description": "Scope of transaction guarantees. Scatter reads do not imply a globally synchronized snapshot."
+          },
+          "cross_shard_dml": {
+            "type": "boolean",
+            "description": "Whether data changes may span shards. If false, data changes must target one shard, including nontransactional requests. Schema changes can partially apply."
+          },
           "transactional_dml": {
             "type": "boolean"
           },
@@ -24689,7 +24788,8 @@
           "transactional_dml",
           "transactional_ddl",
           "ddl_commit",
-          "cancellation"
+          "cancellation",
+          "transaction_scope"
         ],
         "additionalProperties": false
       },

@@ -1177,6 +1177,13 @@ export const agentRoutes = [
     "boundary": "installation"
   },
   {
+    "id": "deleteEmptyEnvironment",
+    "method": "DELETE",
+    "path": "/projects/{project}/environments/{environment}",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "listRetainedApplicationData",
     "method": "GET",
     "path": "/storage/retained",
