@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/jackc/pgx/v5"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 )
@@ -24,11 +25,15 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 		return result, queryUnavailable()
 	}
 	member := observation.Members[0]
-	credential, identity, err := c.myduckClientIdentity(ctx, d)
-	if err != nil {
+	namespace, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
+	if err != nil || namespace.UID == "" || namespace.DeletionTimestamp != nil || namespace.Labels[databaseOwner] != d.ID || namespace.Labels[managedBy] != "hakopod" {
 		return result, queryUnavailable()
 	}
 	secret, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
+	if err != nil || myduckCredentialOwned(secret, d, namespace) != nil {
+		return result, queryUnavailable()
+	}
+	credential, identity, err := c.myduckClientIdentity(ctx, d)
 	if err != nil {
 		return result, queryUnavailable()
 	}
@@ -45,13 +50,13 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 			}
 		}
 		current, e := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(step, "database-credentials", metav1.GetOptions{})
-		if e != nil || current.UID != secret.UID || current.ResourceVersion != secret.ResourceVersion {
+		if e != nil || verifyMyDuckQueryCredential(current, secret, d, namespace) != nil {
 			return queryUnavailable()
 		}
 		_, _, e = c.databaseExecTarget(step, d, member)
 		return e
 	}
-	args := []any{pgx.QueryResultFormats{0}}
+	args := []any{pgx.QueryExecModeExec, pgx.QueryResultFormats{0}}
 	for _, value := range q.Parameters {
 		if number, ok := value.(json.Number); ok {
 			args = append(args, string(number))
@@ -111,6 +116,13 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 	}
 	result.Outcome = "applied"
 	return result, nil
+}
+
+func verifyMyDuckQueryCredential(current, captured *corev1.Secret, d database.Resource, namespace *corev1.Namespace) error {
+	if captured == nil || captured.UID == "" || captured.ResourceVersion == "" || myduckCredentialOwned(current, d, namespace) != nil || current.UID != captured.UID || current.ResourceVersion != captured.ResourceVersion {
+		return queryUnavailable()
+	}
+	return nil
 }
 
 func myduckLimitedQueryResult(conn *pgx.Conn, result database.QueryResult) (database.QueryResult, error) {
