@@ -165,3 +165,49 @@ func TestSQLQueryCredentialRejectsRotationDuringConnectionSetup(t *testing.T) {
 		t.Fatal("connection credential rotation accepted")
 	}
 }
+
+func TestVitessQuerySpecDiagnosticReportsOnlyBoundedPaths(t *testing.T) {
+	want := map[string]any{"nested": map[string]any{"value": "private expected value"}, "items": []any{map[string]any{"value": "private"}}}
+	live := map[string]any{"nested": map[string]any{"value": "private observed value"}, "items": []any{map[string]any{"value": "changed"}}, "default": true}
+	live["private untrusted map key"] = "private body"
+	paths := vitessQuerySpecDifferencePaths(want, live, "spec", 2)
+	if len(paths) != 2 || paths[0] != "spec.<extra>" || paths[1] != "spec.items[0].value" {
+		t.Fatal("incorrect bounded diagnostic paths", paths)
+	}
+	if len(vitessQuerySpecDifferencePaths(want, want, "spec", 64)) != 0 {
+		t.Fatal("equal specs differed")
+	}
+}
+
+func TestVitessQueryDesiredSpecAcceptsOnlyPinnedDefaults(t *testing.T) {
+	d := vitessTestDatabase()
+	desired, e := DatabaseObject(d)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, scenario := range []string{"defaults", "hex_nondefault", "hex_wrong_type", "name_nondefault", "name_wrong_type", "unknown"} {
+		t.Run(scenario, func(t *testing.T) {
+			live := desired.DeepCopy()
+			keyspaces := live.Object["spec"].(map[string]any)["keyspaces"].([]any)
+			equal := keyspaces[0].(map[string]any)["partitionings"].([]any)[0].(map[string]any)["equal"].(map[string]any)
+			pool := equal["shardTemplate"].(map[string]any)["tabletPools"].([]any)[0].(map[string]any)
+			equal["hexWidth"] = int64(0)
+			pool["name"] = ""
+			switch scenario {
+			case "hex_nondefault":
+				equal["hexWidth"] = int64(2)
+			case "hex_wrong_type":
+				equal["hexWidth"] = "0"
+			case "name_nondefault":
+				pool["name"] = "other"
+			case "name_wrong_type":
+				pool["name"] = int64(0)
+			case "unknown":
+				pool["unreviewed"] = true
+			}
+			if got := vitessQueryDesiredSpecMatches(desired, live); got != (scenario == "defaults") {
+				t.Fatal("unexpected desired spec acceptance", scenario, got)
+			}
+		})
+	}
+}

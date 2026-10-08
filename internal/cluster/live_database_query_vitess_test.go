@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hakopod/hakopod/internal/database"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -276,6 +279,19 @@ func TestManagedVitessShardedQueryLive(t *testing.T) {
 // same twenty-second bound as the production query adapter.
 func vitessQueryPhaseDiagnostic(t *testing.T, ctx context.Context, c *Client, d database.Resource, observed database.Observation, password []byte) {
 	t.Helper()
+	specCtx, stopSpec := context.WithTimeout(ctx, 20*time.Second)
+	expected, expectedErr := c.databaseObject(specCtx, d)
+	if expectedErr == nil {
+		expectedErr = c.applyVitessIdentity(specCtx, d, expected)
+	}
+	live, liveErr := c.dynamic.Resource(vitessDatabaseResource).Namespace(DatabaseNamespace(d.ID)).Get(specCtx, "database", metav1.GetOptions{})
+	if expectedErr == nil && liveErr == nil {
+		paths := vitessQuerySpecDifferencePaths(expected.Object["spec"], live.Object["spec"], "spec", 64)
+		t.Logf("Vitess synthetic controller_spec_diff_count=%d paths=%v", len(paths), paths)
+	} else {
+		t.Logf("Vitess synthetic controller_spec_compare expected_error_type=%T live_error_type=%T", expectedErr, liveErr)
+	}
+	stopSpec()
 	observationCtx, stopObservation := context.WithTimeout(ctx, 20*time.Second)
 	started := time.Now()
 	current, err := c.ObserveDatabase(observationCtx, d)
@@ -340,4 +356,68 @@ func logVitessQueryPhase(t *testing.T, ctx context.Context, phase string, starte
 		code, outcome = problem.Code, problem.Outcome
 	}
 	t.Logf("Vitess synthetic phase=%s elapsed=%s error_type=%T code=%s outcome=%s context_done=%t", phase, time.Since(started), err, code, outcome, ctx.Err() != nil)
+}
+
+// Report field names only; controller values can include private configuration.
+func vitessQuerySpecDifferencePaths(expected, live any, path string, limit int) []string {
+	if limit <= 0 || reflect.DeepEqual(expected, live) {
+		return nil
+	}
+	if len(path) > 240 || strings.Count(path, ".")+strings.Count(path, "[") > 16 {
+		return []string{"<nested-difference>"}
+	}
+	result := []string{}
+	if want, ok := expected.(map[string]any); ok {
+		actual, ok := live.(map[string]any)
+		if !ok {
+			return []string{path}
+		}
+		keys := map[string]bool{}
+		for key := range want {
+			keys[key] = true
+		}
+		for key := range actual {
+			keys[key] = true
+		}
+		ordered := []string{}
+		for key := range keys {
+			ordered = append(ordered, key)
+		}
+		sort.Strings(ordered)
+		seenExtra := false
+		for _, key := range ordered {
+			if len(result) >= limit {
+				break
+			}
+			w, wok := want[key]
+			a, aok := actual[key]
+			if !wok {
+				if !seenExtra {
+					result = append(result, path+".<extra>")
+					seenExtra = true
+				}
+				continue
+			}
+			if !aok {
+				result = append(result, path+"."+key)
+				continue
+			}
+			result = append(result, vitessQuerySpecDifferencePaths(w, a, path+"."+key, limit-len(result))...)
+		}
+		return result
+	}
+	if want, ok := expected.([]any); ok {
+		actual, ok := live.([]any)
+		if !ok || len(want) != len(actual) {
+			return []string{path}
+		}
+		for i := range want {
+			if len(result) >= limit {
+				break
+			}
+			result = append(result, vitessQuerySpecDifferencePaths(want[i], actual[i], fmt.Sprintf("%s[%d]", path, i), limit-len(result))...)
+		}
+		return result
+	}
+	return []string{path}
 }
