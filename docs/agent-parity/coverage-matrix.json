@@ -1,7 +1,7 @@
 {
-  "contract_sha256": "77faf89f6a7c29d75dec8a6e25e053dd4bfbc0356726809466b45eab6189b93b",
-  "contract_operation_count": 328,
-  "literal_dashboard_call_count": 367,
+  "contract_sha256": "2b7e8201c86ba68c315131ce2ae683950a0650110e22a19c72819e74c625ea54",
+  "contract_operation_count": 329,
+  "literal_dashboard_call_count": 368,
   "dashboard_contract_gaps": [],
   "limitations": [
     "Literal typed client calls are captured with file and line evidence. Dynamic endpoint expressions and alternate auth/upload/stream transports require manual review.",
@@ -1774,6 +1774,33 @@
           "deployments:write"
         ],
         "prerequisite": "",
+        "review": "canonical",
+        "sensitive_fields": []
+      },
+      "request_media": [
+        "application/json"
+      ],
+      "response_media": [
+        "application/json"
+      ]
+    },
+    {
+      "operation": "deleteEmptyEnvironment",
+      "method": "DELETE",
+      "path": "/projects/{project}/environments/{environment}",
+      "dashboard_calls": [
+        "web/src/components/project-settings.tsx:96"
+      ],
+      "current_interface": "separate installation invocation",
+      "policy": {
+        "boundary": "installation",
+        "category": "admin",
+        "exposure": "installation",
+        "permissions": [
+          "admin",
+          "agent:admin"
+        ],
+        "prerequisite": "The actor must have current project management authority.",
         "review": "canonical",
         "sensitive_fields": []
       },
@@ -6362,7 +6389,7 @@
       "method": "POST",
       "path": "/databases/{id}/query",
       "dashboard_calls": [
-        "web/src/routes/databases.$databaseId.query.tsx:114"
+        "web/src/routes/databases.$databaseId.query.tsx:116"
       ],
       "current_interface": "dedicated workflow",
       "policy": {

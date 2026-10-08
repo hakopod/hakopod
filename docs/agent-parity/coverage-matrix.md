@@ -1,6 +1,6 @@
 # Interface coverage inventory
 
-Contract operations: 328. Literal dashboard calls: 367.
+Contract operations: 329. Literal dashboard calls: 368.
 
 This is source coverage. It is not runtime verification. Dynamic and alternate transports require manual review.
 
@@ -71,6 +71,7 @@ This is source coverage. It is not runtime verification. Dynamic and alternate t
 | deleteDNSProvider | DELETE /dns-providers/{name} | separate installation invocation | web/src/routes/settings.dns-providers.tsx:190 |
 | deleteDeploymentNotification | DELETE /applications/{id}/notifications/{target} | dedicated workflow | web/src/routes/applications.$applicationId.notifications.tsx:200 |
 | deleteEmptyApplication | DELETE /applications/{id} | generic scoped invocation | web/src/components/delete-resource.tsx:63 |
+| deleteEmptyEnvironment | DELETE /projects/{project}/environments/{environment} | separate installation invocation | web/src/components/project-settings.tsx:96 |
 | deleteEmptyProject | DELETE /projects/{id} | separate installation invocation | web/src/components/delete-resource.tsx:74 |
 | deleteExternalDatabase | DELETE /external-databases/{id} | generic scoped invocation | web/src/routes/databases.external.$externalDatabaseId.tsx:98 |
 | deleteGitConnection | DELETE /git/connections/{id} | generic scoped invocation | web/src/components/git-connections.tsx:758 |
@@ -246,7 +247,7 @@ This is source coverage. It is not runtime verification. Dynamic and alternate t
 | putWorkloadSecret | PUT /secrets/{name} | generic scoped invocation | web/src/components/application-secrets.tsx:210<br>web/src/lib/save-environment.ts:35 |
 | queryInstallationLogs | POST /installation/logs/query | separate installation invocation | web/src/components/logs.tsx:83 |
 | queryLogs | POST /applications/{id}/logs/query | generic scoped invocation | web/src/components/logs.tsx:89 |
-| queryManagedDatabase | POST /databases/{id}/query | dedicated workflow | web/src/routes/databases.$databaseId.query.tsx:114 |
+| queryManagedDatabase | POST /databases/{id}/query | dedicated workflow | web/src/routes/databases.$databaseId.query.tsx:116 |
 | readAlarm | POST /alarms/{id}/read | generic scoped invocation | No literal typed call |
 | registerAccount | POST /auth/register | human or protocol prerequisite | No literal typed call |
 | releaseActionsProviderHold | POST /applications/{id}/actions/{service}/hold/release | generic scoped invocation | web/src/lib/actions-hold.ts:36 |

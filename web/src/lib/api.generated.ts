@@ -3630,6 +3630,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project}/environments/{environment}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an empty environment after confirming its ID. */
+        delete: operations["deleteEmptyEnvironment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/storage/retained": {
         parameters: {
             query?: never;
@@ -5443,6 +5460,13 @@ export interface components {
             application_identity: string;
             parameter_style: string;
             read_only_enforcement: string;
+            /**
+             * @description Scope of transaction guarantees. Scatter reads do not imply a globally synchronized snapshot.
+             * @enum {string}
+             */
+            transaction_scope: "none" | "connection" | "single_shard";
+            /** @description Whether data changes may span shards. If false, data changes must target one shard, including nontransactional requests. Schema changes can partially apply. */
+            cross_shard_dml?: boolean;
             transactional_dml: boolean;
             transactional_ddl: boolean;
             ddl_commit: string;
@@ -17184,6 +17208,46 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    confirm_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteEmptyEnvironment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project: string;
+                environment: string;
             };
             cookie?: never;
         };
