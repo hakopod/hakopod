@@ -38046,6 +38046,12 @@
               "type": "string"
             }
           },
+          "ready_command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "idle_seconds": {
             "type": "integer",
             "minimum": 60,
@@ -38061,7 +38067,8 @@
         },
         "required": [
           "allowed_identities",
-          "helper_command"
+          "helper_command",
+          "ready_command"
         ],
         "additionalProperties": false
       },

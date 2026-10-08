@@ -8803,6 +8803,7 @@ export interface components {
         SandboxSession: {
             allowed_identities: string[];
             helper_command: string[];
+            ready_command: string[];
             /** @default 900 */
             idle_seconds: number;
             /** @default 3600 */
