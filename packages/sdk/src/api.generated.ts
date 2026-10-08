@@ -11,6 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the current identity, credential type, permissions and scope. */
         get: operations["getIdentity"];
         put?: never;
         post?: never;
@@ -27,8 +28,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List projects. */
         get: operations["listProjects"];
         put?: never;
+        /** Create a project. */
         post: operations["createProject"];
         delete?: never;
         options?: never;
@@ -43,6 +46,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List applications. */
         get: operations["listApplications"];
         put?: never;
         post?: never;
@@ -59,9 +63,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the application. */
         get: operations["getApplication"];
         put?: never;
         post?: never;
+        /** Delete an empty application record. */
         delete: operations["deleteEmptyApplication"];
         options?: never;
         head?: never;
@@ -77,6 +83,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a deployment plan for the application. */
         post: operations["planDeployment"];
         delete?: never;
         options?: never;
@@ -93,6 +100,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request an application deployment. */
         post: operations["createDeployment"];
         delete?: never;
         options?: never;
@@ -107,6 +115,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the deployment. */
         get: operations["getDeployment"];
         put?: never;
         post?: never;
@@ -123,6 +132,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Find the deployment associated with an idempotency key. */
         get: operations["getIdempotentDeployment"];
         put?: never;
         post?: never;
@@ -141,6 +151,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request deployment of a previous application revision. */
         post: operations["rollbackApplication"];
         delete?: never;
         options?: never;
@@ -157,6 +168,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request cancellation of a deployment. */
         post: operations["cancelDeployment"];
         delete?: never;
         options?: never;
@@ -171,6 +183,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List nodes. */
         get: operations["listNodes"];
         put?: never;
         post?: never;
@@ -187,8 +200,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List automation key metadata. */
         get: operations["listKeys"];
         put?: never;
+        /** Create an automation key with the requested scope and permissions. */
         post: operations["createKey"];
         delete?: never;
         options?: never;
@@ -206,6 +221,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Revoke the specified automation key. */
         delete: operations["revokeKey"];
         options?: never;
         head?: never;
@@ -221,6 +237,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Rotate the specified automation key. */
         post: operations["rotateKey"];
         delete?: never;
         options?: never;
@@ -235,6 +252,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List audit events. */
         get: operations["listAudit"];
         put?: never;
         post?: never;
@@ -251,6 +269,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read or follow logs for an application service. */
         get: operations["streamLogs"];
         put?: never;
         post?: never;
@@ -267,6 +286,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Stream events for the specified deployment. */
         get: operations["streamEvents"];
         put?: never;
         post?: never;
@@ -283,6 +303,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read Managed Actions state for the application. */
         get: operations["getManagedActions"];
         put?: never;
         post?: never;
@@ -299,6 +320,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read available Managed Actions capabilities. */
         get: operations["getManagedActionsCapabilities"];
         put?: never;
         post?: never;
@@ -315,6 +337,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List Managed Actions jobs. */
         get: operations["listActionsJobs"];
         put?: never;
         post?: never;
@@ -331,6 +354,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read logs for the specified Managed Actions job. */
         get: operations["getActionsJobLogs"];
         put?: never;
         post?: never;
@@ -349,6 +373,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request cancellation of a Managed Actions job. */
         post: operations["cancelActionsJob"];
         delete?: never;
         options?: never;
@@ -363,6 +388,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the provider hold for the Managed Actions service. */
         get: operations["getActionsProviderHold"];
         put?: never;
         post?: never;
@@ -381,6 +407,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Release the provider hold for the Managed Actions service. */
         post: operations["releaseActionsProviderHold"];
         delete?: never;
         options?: never;
@@ -397,7 +424,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Run one command in the specified owned container. Requires pods:exec. CLI and machine credentials require an explicit pods:exec grant. An unknown outcome does not establish process termination. */
+        /**
+         * Run a command in the specified owned pod and container.
+         * @description Run one command in the specified owned container. Requires pods:exec. CLI and machine credentials require an explicit pods:exec grant. An unknown outcome does not establish process termination.
+         */
         post: operations["executePodCommand"];
         delete?: never;
         options?: never;
@@ -414,7 +444,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Run one SQL statement using the managed application identity. Read the engine capabilities first. All queries require databases:query. Writes also require databases:write-query and a reviewed database revision. CLI and machine credentials require explicit SQL grants. Results can contain private data. Check an unknown outcome before retrying. */
+        /**
+         * Run one SQL statement with the database's enabled modes and limits.
+         * @description Run one SQL statement using the managed application identity. Read the engine capabilities first. All queries require databases:query. Writes also require databases:write-query and a reviewed database revision. CLI and machine credentials require explicit SQL grants. Results can contain private data. Check an unknown outcome before retrying.
+         */
         post: operations["queryManagedDatabase"];
         delete?: never;
         options?: never;
@@ -429,7 +462,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read SQL execution support, modes, parameter format, and transaction behavior for this database engine. Requires access to read the database. */
+        /**
+         * Read enabled SQL modes and guarantees for the database.
+         * @description Read SQL execution support, modes, parameter format, and transaction behavior for this database engine. Requires access to read the database.
+         */
         get: operations["getDatabaseQueryCapabilities"];
         put?: never;
         post?: never;
@@ -446,6 +482,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List alarms. */
         get: operations["listAlarms"];
         put?: never;
         post?: never;
@@ -464,6 +501,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Acknowledge the specified alarm. */
         post: operations["acknowledgeAlarm"];
         delete?: never;
         options?: never;
@@ -480,6 +518,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Mark the specified alarm as read. */
         post: operations["readAlarm"];
         delete?: never;
         options?: never;
@@ -494,7 +533,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read alarm settings for the selected scope. */
         get: operations["getAlarmSettings"];
+        /** Save alarm settings for the selected scope. */
         put: operations["putAlarmSettings"];
         post?: never;
         delete?: never;
@@ -510,6 +551,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List audit history for the specified identity. */
         get: operations["listUserAuditHistory"];
         put?: never;
         post?: never;
@@ -526,6 +568,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Export a page of audit history as CSV. */
         get: operations["exportUserAuditHistory"];
         put?: never;
         post?: never;
@@ -542,6 +585,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read authentication status and available login methods. */
         get: operations["getAuthStatus"];
         put?: never;
         post?: never;
@@ -560,6 +604,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create the initial installation owner through setup. */
         post: operations["setupInstallerOwner"];
         delete?: never;
         options?: never;
@@ -576,6 +621,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Authenticate a human identity with a password. */
         post: operations["loginWithPassword"];
         delete?: never;
         options?: never;
@@ -592,6 +638,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** End the current human authentication session. */
         post: operations["logoutHuman"];
         delete?: never;
         options?: never;
@@ -606,6 +653,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List authentication sessions for the current identity. */
         get: operations["listHumanSessions"];
         put?: never;
         post?: never;
@@ -625,6 +673,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Revoke the specified human authentication session. */
         delete: operations["revokeHumanSession"];
         options?: never;
         head?: never;
@@ -638,6 +687,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read security settings for the current account. */
         get: operations["getAccountSecurity"];
         put?: never;
         post?: never;
@@ -656,6 +706,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start registration of an authenticator app. */
         post: operations["beginTOTP"];
         delete?: never;
         options?: never;
@@ -672,6 +723,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Confirm registration of an authenticator app. */
         post: operations["confirmTOTP"];
         delete?: never;
         options?: never;
@@ -688,6 +740,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Disable authentication with an authenticator app. */
         post: operations["disableTOTP"];
         delete?: never;
         options?: never;
@@ -704,6 +757,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Complete the additional authentication required after provider login. */
         post: operations["completeProviderMFA"];
         delete?: never;
         options?: never;
@@ -720,6 +774,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Accept an invitation for the current identity. */
         post: operations["acceptHumanInvite"];
         delete?: never;
         options?: never;
@@ -736,6 +791,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start a device request for human authorization. */
         post: operations["startDeviceAuthorization"];
         delete?: never;
         options?: never;
@@ -752,6 +808,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Read the approval state of a device authorization request. */
         post: operations["pollDeviceAuthorization"];
         delete?: never;
         options?: never;
@@ -766,6 +823,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the device request and its requested permissions. */
         get: operations["getDeviceConsent"];
         put?: never;
         post?: never;
@@ -784,6 +842,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Approve the device request through human consent. */
         post: operations["approveDeviceAuthorization"];
         delete?: never;
         options?: never;
@@ -798,6 +857,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Start authentication with the identity provider. */
         get: operations["startProviderLogin"];
         put?: never;
         post?: never;
@@ -814,6 +874,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Complete authentication with the identity provider. */
         get: operations["finishProviderLogin"];
         put?: never;
         post?: never;
@@ -832,6 +893,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start registration of a passkey. */
         post: operations["beginPasskeyRegistration"];
         delete?: never;
         options?: never;
@@ -848,6 +910,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Complete registration of a passkey. */
         post: operations["finishPasskeyRegistration"];
         delete?: never;
         options?: never;
@@ -864,6 +927,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start authentication with a passkey. */
         post: operations["beginPasskeyLogin"];
         delete?: never;
         options?: never;
@@ -880,6 +944,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Complete authentication with a passkey. */
         post: operations["finishPasskeyLogin"];
         delete?: never;
         options?: never;
@@ -897,6 +962,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Delete the passkey. */
         delete: operations["deletePasskey"];
         options?: never;
         head?: never;
@@ -910,6 +976,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List users. */
         get: operations["listUsers"];
         put?: never;
         post?: never;
@@ -932,6 +999,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /** Update the user. */
         patch: operations["updateUser"];
         trace?: never;
     };
@@ -942,8 +1010,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List teams. */
         get: operations["listTeams"];
         put?: never;
+        /** Create a team. */
         post: operations["createTeam"];
         delete?: never;
         options?: never;
@@ -961,6 +1031,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Delete the team. */
         delete: operations["deleteTeam"];
         options?: never;
         head?: never;
@@ -974,6 +1045,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List team members. */
         get: operations["listTeamMembers"];
         put?: never;
         post?: never;
@@ -991,6 +1063,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set the identity's membership and role in the team. */
         put: operations["setTeamMember"];
         post?: never;
         delete?: never;
@@ -1008,6 +1081,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create an invitation to the team. */
         post: operations["createTeamInvite"];
         delete?: never;
         options?: never;
@@ -1024,6 +1098,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create an invitation to the project. */
         post: operations["createProjectInvite"];
         delete?: never;
         options?: never;
@@ -1038,7 +1113,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List project members. */
         get: operations["listProjectMembers"];
+        /** Set the identity's membership and role in the project. */
         put: operations["setProjectMember"];
         post?: never;
         delete?: never;
@@ -1056,6 +1133,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start registration of a human account. */
         post: operations["registerAccount"];
         delete?: never;
         options?: never;
@@ -1072,6 +1150,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Verify the account registration token. */
         post: operations["verifyRegistration"];
         delete?: never;
         options?: never;
@@ -1088,6 +1167,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request password recovery for a human account. */
         post: operations["requestPasswordReset"];
         delete?: never;
         options?: never;
@@ -1104,6 +1184,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Set a new password with the recovery token. */
         post: operations["resetPassword"];
         delete?: never;
         options?: never;
@@ -1120,6 +1201,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Read invitation details before acceptance. */
         post: operations["inspectInvite"];
         delete?: never;
         options?: never;
@@ -1134,8 +1216,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read onboarding state for the current identity. */
         get: operations["getOnboarding"];
         put?: never;
+        /** Complete onboarding for the current identity. */
         post: operations["completeOnboarding"];
         delete?: never;
         options?: never;
@@ -1150,10 +1234,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * List backup destinations.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         get: operations["listBackupDestinations"];
         put?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Create a backup destination.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         post: operations["createBackupDestination"];
         delete?: never;
         options?: never;
@@ -1169,10 +1259,16 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Update the backup destination.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         put: operations["updateBackupDestination"];
         post?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Delete the backup destination.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         delete: operations["deleteBackupDestination"];
         options?: never;
         head?: never;
@@ -1188,7 +1284,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Test the backup destination.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         post: operations["testBackupDestination"];
         delete?: never;
         options?: never;
@@ -1203,7 +1302,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * List resources available as backup targets.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         get: operations["listBackupTargets"];
         put?: never;
         post?: never;
@@ -1220,10 +1322,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * List backup jobs.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         get: operations["listBackups"];
         put?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Request a database backup.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         post: operations["createBackup"];
         delete?: never;
         options?: never;
@@ -1238,7 +1346,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Read the state of the backup job.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         get: operations["getBackup"];
         put?: never;
         post?: never;
@@ -1257,7 +1368,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Request cancellation of a backup job.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         post: operations["cancelBackup"];
         delete?: never;
         options?: never;
@@ -1272,7 +1386,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * List backup artifacts.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         get: operations["listBackupArtifacts"];
         put?: never;
         post?: never;
@@ -1289,11 +1406,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Read the backup artifact.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         get: operations["getBackupArtifact"];
         put?: never;
         post?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Delete the backup artifact.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         delete: operations["deleteBackupArtifact"];
         options?: never;
         head?: never;
@@ -1309,7 +1432,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Prepare a plan to restore the selected backup.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         post: operations["planBackupRestore"];
         delete?: never;
         options?: never;
@@ -1326,7 +1452,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Request restoration of the reviewed backup.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         post: operations["restoreBackup"];
         delete?: never;
         options?: never;
@@ -1341,10 +1470,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * List backup schedules.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         get: operations["listBackupSchedules"];
         put?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Create a backup schedule.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         post: operations["createBackupSchedule"];
         delete?: never;
         options?: never;
@@ -1360,10 +1495,16 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Update the backup schedule.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         put: operations["updateBackupSchedule"];
         post?: never;
-        /** @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database. */
+        /**
+         * Delete the backup schedule.
+         * @description Requires backup management authority for the exact project and environment, or installation administrator authority. Lists are bounded: 32 destinations, 64 schedules, 100 jobs/artifacts per cursor page and 128 discovered targets. Destination storage location and encryption identity are immutable; PUT rotates credentials/name with expected_revision. Recovery keys are returned once on destination creation and must be saved separately. Restore always creates a fresh database and never overwrites an existing database.
+         */
         delete: operations["deleteBackupSchedule"];
         options?: never;
         head?: never;
@@ -1377,8 +1518,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List source build configurations. */
         get: operations["listSourceBuilds"];
         put?: never;
+        /** Create a source build configuration. */
         post: operations["createSourceBuild"];
         delete?: never;
         options?: never;
@@ -1393,7 +1536,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the source build configuration. */
         get: operations["getSourceBuild"];
+        /** Update the source build configuration. */
         put: operations["updateSourceBuild"];
         post?: never;
         delete?: never;
@@ -1411,6 +1556,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Preview the generated build workflow. */
         post: operations["previewBuildWorkflow"];
         delete?: never;
         options?: never;
@@ -1427,6 +1573,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Install the generated build workflow in the source repository. */
         post: operations["installBuildWorkflow"];
         delete?: never;
         options?: never;
@@ -1443,6 +1590,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a new run of the source build. */
         post: operations["runSourceBuild"];
         delete?: never;
         options?: never;
@@ -1457,6 +1605,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List source build runs. */
         get: operations["listSourceBuildRuns"];
         put?: never;
         post?: never;
@@ -1473,6 +1622,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of a source build run. */
         get: operations["observeSourceBuild"];
         put?: never;
         post?: never;
@@ -1491,6 +1641,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request deployment of a verified source build. */
         post: operations["deploySourceBuild"];
         delete?: never;
         options?: never;
@@ -1507,6 +1658,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request cancellation of a source build run. */
         post: operations["cancelSourceBuild"];
         delete?: never;
         options?: never;
@@ -1523,6 +1675,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a deployment plan for a source build. */
         post: operations["planSourceBuildDeployment"];
         delete?: never;
         options?: never;
@@ -1537,6 +1690,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read capabilities exposed by the current Cloud connection. */
         get: operations["getCloudCapabilities"];
         put?: never;
         post?: never;
@@ -1555,7 +1709,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Convert one bounded, image-based Docker Compose document into an editable TOML draft. Does not build or deploy. Explicit env_file uploads save sensitive values as scoped secret references before returning the draft. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments. */
+        /**
+         * Convert a Docker Compose configuration to a Hakopod specification.
+         * @description Convert one bounded, image-based Docker Compose document into an editable TOML draft. Does not build or deploy. Explicit env_file uploads save sensitive values as scoped secret references before returning the draft. Existing application imports add services with revision and collision checks. Host environment and filesystem values are never read. Review warnings, then use /plan and /deployments.
+         */
         post: operations["convertCompose"];
         delete?: never;
         options?: never;
@@ -1570,6 +1727,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read delivery status for the service. */
         get: operations["getServiceDelivery"];
         put?: never;
         post?: never;
@@ -1586,8 +1744,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List backend certificates for the service. */
         get: operations["listBackendCertificates"];
         put?: never;
+        /** Upload a backend certificate for the service. */
         post: operations["uploadBackendCertificate"];
         delete?: never;
         options?: never;
@@ -1602,8 +1762,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List notification targets for application deployments. */
         get: operations["deploymentNotifications"];
         put?: never;
+        /** Create a notification target for application deployments. */
         post: operations["createDeploymentNotification"];
         delete?: never;
         options?: never;
@@ -1619,8 +1781,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Update the notification target for application deployments. */
         put: operations["updateDeploymentNotification"];
         post?: never;
+        /** Delete the notification target for application deployments. */
         delete: operations["deleteDeploymentNotification"];
         options?: never;
         head?: never;
@@ -1636,6 +1800,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Send a test notification to the configured deployment target. */
         post: operations["testDeploymentNotification"];
         delete?: never;
         options?: never;
@@ -1685,8 +1850,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List application domains. */
         get: operations["listApplicationDomains"];
         put?: never;
+        /** Start verification of an application domain. */
         post: operations["beginDomainVerification"];
         delete?: never;
         options?: never;
@@ -1703,6 +1870,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Verify the application domain. */
         post: operations["verifyApplicationDomain"];
         delete?: never;
         options?: never;
@@ -1717,6 +1885,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List DNS providers available to the application. */
         get: operations["listApplicationDNSProviders"];
         put?: never;
         post?: never;
@@ -1735,6 +1904,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create DNS records for the application domain. */
         post: operations["createApplicationDNSRecords"];
         delete?: never;
         options?: never;
@@ -1749,8 +1919,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List Git connections. */
         get: operations["listGitConnections"];
         put?: never;
+        /** Create a Git connection. */
         post: operations["createGitConnection"];
         delete?: never;
         options?: never;
@@ -1765,9 +1937,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the Git connection. */
         get: operations["getGitConnection"];
+        /** Update the Git connection. */
         put: operations["updateGitConnection"];
         post?: never;
+        /** Delete the Git connection. */
         delete: operations["deleteGitConnection"];
         options?: never;
         head?: never;
@@ -1783,6 +1958,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Receive an authenticated webhook for the specified Git connection. */
         post: operations["namedGitWebhook"];
         delete?: never;
         options?: never;
@@ -1799,6 +1975,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Receive an authenticated GitHub App webhook. */
         post: operations["gitHubAppWebhook"];
         delete?: never;
         options?: never;
@@ -1815,6 +1992,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start authorization of the Git connection with its provider. */
         post: operations["startGitSourceOAuth"];
         delete?: never;
         options?: never;
@@ -1831,6 +2009,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Complete the authorization callback for the specified Git connection. */
         post: operations["completeNamedGitSourceOAuth"];
         delete?: never;
         options?: never;
@@ -1847,6 +2026,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Complete the Git provider authorization callback. */
         post: operations["completeGitSourceOAuth"];
         delete?: never;
         options?: never;
@@ -1863,6 +2043,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start GitHub App registration from a generated manifest. */
         post: operations["startGitHubAppManifest"];
         delete?: never;
         options?: never;
@@ -1879,6 +2060,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Complete GitHub App registration from its manifest callback. */
         post: operations["completeGitHubAppManifest"];
         delete?: never;
         options?: never;
@@ -1895,6 +2077,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Resume the GitHub App setup. */
         post: operations["resumeGitHubAppSetup"];
         delete?: never;
         options?: never;
@@ -1911,6 +2094,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Complete the GitHub App installation callback. */
         post: operations["completeGitHubAppInstallation"];
         delete?: never;
         options?: never;
@@ -1925,6 +2109,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read setup status for the Git provider. */
         get: operations["getGitProviderSetup"];
         put?: never;
         post?: never;
@@ -1941,6 +2126,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List Git repositories. */
         get: operations["listGitRepositories"];
         put?: never;
         post?: never;
@@ -1957,6 +2143,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the installation status. */
         get: operations["getInstallationStatus"];
         put?: never;
         post?: never;
@@ -1973,6 +2160,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the installation logs. */
         get: operations["getInstallationLogs"];
         put?: never;
         post?: never;
@@ -1989,6 +2177,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read setup settings for the installation. */
         get: operations["getInstallationSetup"];
         put?: never;
         post?: never;
@@ -2007,6 +2196,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request an upgrade of the installation. */
         post: operations["upgradeInstallation"];
         delete?: never;
         options?: never;
@@ -2024,6 +2214,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Discard the domain verification. */
         delete: operations["discardDomainVerification"];
         options?: never;
         head?: never;
@@ -2039,6 +2230,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Query installation logs with the supplied filters and limits. */
         post: operations["queryInstallationLogs"];
         delete?: never;
         options?: never;
@@ -2053,7 +2245,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the installation's login provider settings. */
         get: operations["getInstallationLoginProvider"];
+        /** Save the installation's login provider settings. */
         put: operations["putInstallationLoginProvider"];
         post?: never;
         delete?: never;
@@ -2069,7 +2263,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the installation's SMTP settings. */
         get: operations["getInstallationSMTP"];
+        /** Save the installation's SMTP settings. */
         put: operations["putInstallationSMTP"];
         post?: never;
         delete?: never;
@@ -2087,6 +2283,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Send a test message with the installation's SMTP configuration. */
         post: operations["testInstallationSMTP"];
         delete?: never;
         options?: never;
@@ -2101,9 +2298,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the license status. */
         get: operations["getLicenseStatus"];
+        /** Activate the installation license. */
         put: operations["activateLicense"];
         post?: never;
+        /** Remove the installation license. */
         delete: operations["removeLicense"];
         options?: never;
         head?: never;
@@ -2117,8 +2317,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List managed databases. */
         get: operations["listManagedDatabases"];
         put?: never;
+        /** Request creation of a managed database. */
         post: operations["createManagedDatabase"];
         delete?: never;
         options?: never;
@@ -2133,6 +2335,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List candidate nodes for managed database placement. */
         get: operations["listDatabasePlacementNodes"];
         put?: never;
         post?: never;
@@ -2149,9 +2352,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the managed database. */
         get: operations["getManagedDatabase"];
         put?: never;
         post?: never;
+        /** Request deletion of the managed database. */
         delete: operations["deleteManagedDatabase"];
         options?: never;
         head?: never;
@@ -2165,6 +2370,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List database operations. */
         get: operations["listDatabaseOperations"];
         put?: never;
         post?: never;
@@ -2181,7 +2387,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse, MongoDB, Redis, Vitess and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled. */
+        /**
+         * Read supported options for publishing a database endpoint.
+         * @description Read authorized, bounded route capabilities. Availability requires database TLS, an exact supported database shape and completed native qualification for the selected engine. MySQL, ClickHouse, MongoDB, Redis, Vitess and Oracle Free publication remain disabled until their native transport, identity transition and revocation acceptance gates pass. Oracle Enterprise and Data Guard use a separate licensed acceptance gate. Existing endpoint inventory, operation lookup and revocation remain available while new publication is disabled.
+         */
         get: operations["getDatabasePublicEndpointCapabilities"];
         put?: never;
         post?: never;
@@ -2198,9 +2407,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List public endpoints for the managed database. */
         get: operations["listDatabasePublicEndpoints"];
         put?: never;
-        /** @description Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them. */
+        /**
+         * Request publication of a reviewed database endpoint.
+         * @description Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them.
+         */
         post: operations["publishDatabasePublicEndpoint"];
         delete?: never;
         options?: never;
@@ -2217,7 +2430,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them. */
+        /**
+         * Prepare a review for publishing a database endpoint.
+         * @description Public database access uses operator-owned address, hostname and port inventory. The caller controls only a supported route purpose, explicit IPv4 source networks and the connection cap. Route capabilities and native qualification gate publication. New reviews include the selected immutable route descriptor and private backend fingerprint; legacy PostgreSQL reviews may omit them.
+         */
         post: operations["reviewDatabasePublicEndpoint"];
         delete?: never;
         options?: never;
@@ -2235,7 +2451,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Close and acknowledge the owned HAProxy route and its existing sessions before releasing the endpoint allocation. */
+        /**
+         * Request closure of the database endpoint and its existing sessions.
+         * @description Close and acknowledge the owned HAProxy route and its existing sessions before releasing the endpoint allocation.
+         */
         delete: operations["revokeDatabasePublicEndpoint"];
         options?: never;
         head?: never;
@@ -2249,6 +2468,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of the operation for a public database endpoint. */
         get: operations["getDatabasePublicEndpointOperation"];
         put?: never;
         post?: never;
@@ -2265,6 +2485,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List application bindings to the managed database. */
         get: operations["listDatabaseConnections"];
         put?: never;
         post?: never;
@@ -2281,6 +2502,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read public certificate trust information for the database. */
         get: operations["getDatabasePublicTrust"];
         put?: never;
         post?: never;
@@ -2299,6 +2521,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Return credentials for the managed database. */
         post: operations["revealDatabaseCredentials"];
         delete?: never;
         options?: never;
@@ -2315,6 +2538,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a review for resizing the managed database. */
         post: operations["reviewDatabaseResize"];
         delete?: never;
         options?: never;
@@ -2331,6 +2555,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a reviewed resize of the managed database. */
         post: operations["resizeManagedDatabase"];
         delete?: never;
         options?: never;
@@ -2347,7 +2572,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology. */
+        /**
+         * Prepare a review for retrying a managed database resize.
+         * @description Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology.
+         */
         post: operations["reviewManagedDatabaseResizeRetry"];
         delete?: never;
         options?: never;
@@ -2364,7 +2592,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology. */
+        /**
+         * Request a reviewed retry of a managed database resize.
+         * @description Review and retry the same failed clustered MySQL or MongoDB replica change at its existing desired revision. The review distinguishes an exact accepted controller revision from a fully healthy prior reviewed configuration. Retry creates a new durable attempt without changing desired capacity or replaying stale topology.
+         */
         post: operations["retryManagedDatabaseResize"];
         delete?: never;
         options?: never;
@@ -2381,7 +2612,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. */
+        /**
+         * Prepare a review for an Oracle database switchover.
+         * @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable.
+         */
         post: operations["reviewOracleDatabaseSwitchover"];
         delete?: never;
         options?: never;
@@ -2398,7 +2632,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. */
+        /**
+         * Request a reviewed Oracle database switchover.
+         * @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable.
+         */
         post: operations["switchoverOracleDatabase"];
         delete?: never;
         options?: never;
@@ -2415,7 +2652,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. Resumes the existing approved operation and target after a worker timeout. The operation ID makes retries idempotent; no new review, target or request token is created. */
+        /**
+         * Request a retry of an Oracle database switchover.
+         * @description Graceful Oracle Enterprise Data Guard switchover. Requires the gated Enterprise runtime and database write permission. Existing connections close; forced failover is unavailable. Resumes the existing approved operation and target after a worker timeout. The operation ID makes retries idempotent; no new review, target or request token is created.
+         */
         post: operations["retryOracleDatabaseSwitchover"];
         delete?: never;
         options?: never;
@@ -2432,6 +2672,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a recovery plan for the managed database. */
         post: operations["reviewManagedDatabaseRecovery"];
         delete?: never;
         options?: never;
@@ -2448,6 +2689,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a review for an application binding to a managed database. */
         post: operations["reviewDatabaseConnection"];
         delete?: never;
         options?: never;
@@ -2464,6 +2706,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Replace a reviewed application binding to a managed database. */
         post: operations["replaceDatabaseConnection"];
         delete?: never;
         options?: never;
@@ -2480,6 +2723,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Record the caller's inspection of restored database data. */
         post: operations["attestDatabaseInspection"];
         delete?: never;
         options?: never;
@@ -2496,6 +2740,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a review for importing a database archive. */
         post: operations["reviewDatabaseImport"];
         delete?: never;
         options?: never;
@@ -2510,6 +2755,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of the database import. */
         get: operations["getDatabaseImport"];
         put?: never;
         post?: never;
@@ -2527,6 +2773,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Upload the archive for the database import. */
         put: operations["uploadDatabaseImport"];
         post?: never;
         delete?: never;
@@ -2542,6 +2789,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read recorded metrics for the managed database. */
         get: operations["getDatabaseMetricHistory"];
         put?: never;
         post?: never;
@@ -2558,6 +2806,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List external databases. */
         get: operations["listExternalDatabases"];
         put?: never;
         post?: never;
@@ -2574,9 +2823,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the external database. */
         get: operations["getExternalDatabase"];
+        /** Request credential rotation for the legacy external database registration. */
         put: operations["rotateExternalDatabaseCredentials"];
         post?: never;
+        /** Request deletion of the legacy external database registration. */
         delete: operations["deleteExternalDatabase"];
         options?: never;
         head?: never;
@@ -2590,6 +2842,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List application bindings to the legacy external database. */
         get: operations["listExternalDatabaseConnections"];
         put?: never;
         post?: never;
@@ -2606,6 +2859,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read certificate trust information for a legacy external database. */
         get: operations["getExternalDatabaseTrust"];
         put?: never;
         post?: never;
@@ -2624,6 +2878,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a review for an application binding to a legacy external database. */
         post: operations["reviewLegacyExternalDatabaseBinding"];
         delete?: never;
         options?: never;
@@ -2640,6 +2895,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a reviewed application binding to a legacy external database. */
         post: operations["applyLegacyExternalDatabaseBindingReview"];
         delete?: never;
         options?: never;
@@ -2654,6 +2910,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of the operation for a legacy external database. */
         get: operations["getExternalDatabaseOperation"];
         put?: never;
         post?: never;
@@ -2670,7 +2927,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description List up to 64 readable platforms across all accessible projects. Omit both scope parameters for the global list; otherwise supply both for an exact scope. Partial, empty or repeated scope parameters are rejected. */
+        /**
+         * List managed platforms.
+         * @description List up to 64 readable platforms across all accessible projects. Omit both scope parameters for the global list; otherwise supply both for an exact scope. Partial, empty or repeated scope parameters are rejected.
+         */
         get: operations["listManagedPlatforms"];
         put?: never;
         post?: never;
@@ -2687,7 +2947,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read editable platform defaults, configured capacity node references and immutable secret references for one authorized existing environment. References contain no secret values. Configured nodes do not assert live health or physical-zone qualification. Native qualification gates still control creation. */
+        /**
+         * Read the catalog of managed platform types.
+         * @description Read editable platform defaults, configured capacity node references and immutable secret references for one authorized existing environment. References contain no secret values. Configured nodes do not assert live health or physical-zone qualification. Native qualification gates still control creation.
+         */
         get: operations["getManagedPlatformCatalog"];
         put?: never;
         post?: never;
@@ -2704,6 +2967,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the managed platform. */
         get: operations["getManagedPlatform"];
         put?: never;
         post?: never;
@@ -2720,7 +2984,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Read the current public certificate authority for an accessible managed platform. Returns no private keys or credentials. Missing or changed runtime ownership keeps trust unavailable. */
+        /**
+         * Read public certificate trust information for the managed platform.
+         * @description Read the current public certificate authority for an accessible managed platform. Returns no private keys or credentials. Missing or changed runtime ownership keeps trust unavailable.
+         */
         get: operations["getManagedPlatformPublicTrust"];
         put?: never;
         post?: never;
@@ -2737,6 +3004,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List managed platform operations. */
         get: operations["listManagedPlatformOperations"];
         put?: never;
         post?: never;
@@ -2753,6 +3021,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of the managed platform operation. */
         get: operations["getManagedPlatformOperation"];
         put?: never;
         post?: never;
@@ -2771,7 +3040,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource. */
+        /**
+         * Prepare a review for a managed platform change.
+         * @description Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource.
+         */
         post: operations["reviewManagedPlatform"];
         delete?: never;
         options?: never;
@@ -2788,7 +3060,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource. */
+        /**
+         * Request a managed platform change from a saved review.
+         * @description Review and accept an immutable managed-platform revision. Neon and Supabase availability remain false until native acceptance is complete. Delete remains available for an owned existing resource.
+         */
         post: operations["acceptManagedPlatform"];
         delete?: never;
         options?: never;
@@ -2803,6 +3078,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List recovery operations for the managed platform. */
         get: operations["listManagedPlatformRecoveryOperations"];
         put?: never;
         post?: never;
@@ -2819,6 +3095,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of the recovery operation for a managed platform. */
         get: operations["getManagedPlatformRecoveryOperation"];
         put?: never;
         post?: never;
@@ -2837,6 +3114,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a review for recovery of a managed platform. */
         post: operations["reviewManagedPlatformRecovery"];
         delete?: never;
         options?: never;
@@ -2853,6 +3131,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request managed platform recovery from a saved review. */
         post: operations["acceptManagedPlatformRecovery"];
         delete?: never;
         options?: never;
@@ -2869,6 +3148,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request cancellation of a recovery operation for a managed platform. */
         post: operations["cancelManagedPlatformRecoveryOperation"];
         delete?: never;
         options?: never;
@@ -2883,6 +3163,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the provenance records for an application. */
         get: operations["applicationProvenance"];
         put?: never;
         post?: never;
@@ -2901,9 +3182,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a machine or CLI bearer credential scoped to one project/environment, or a separate installation credential with explicit admin and agent:admin grants. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
+        /**
+         * Process an MCP protocol message for the current session.
+         * @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a machine or CLI bearer credential scoped to one project/environment, or a separate installation credential with explicit admin and agent:admin grants. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md.
+         */
         post: operations["mcpMessage"];
-        /** @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a machine or CLI bearer credential scoped to one project/environment, or a separate installation credential with explicit admin and agent:admin grants. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md. */
+        /**
+         * Close the MCP session.
+         * @description Streamable HTTP MCP for self-hosted and managed runtime APIs. Requires a machine or CLI bearer credential scoped to one project/environment, or a separate installation credential with explicit admin and agent:admin grants. Initialize first, then retain Mcp-Session-Id and negotiated MCP-Protocol-Version. JSON responses; GET/SSE is not offered. Enable additional tool groups explicitly. See docs/http-mcp.md.
+         */
         delete: operations["closeMCPSession"];
         options?: never;
         head?: never;
@@ -2919,6 +3206,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Query application logs with the supplied filters and limits. */
         post: operations["queryLogs"];
         delete?: never;
         options?: never;
@@ -2935,6 +3223,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Open a terminal session in an application container. */
         post: operations["createTerminal"];
         delete?: never;
         options?: never;
@@ -2949,7 +3238,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description One SSE reader; data JSON is {type:output,data:base64} or {type:exit,code:number,message:string}. Human deployment writer only. Four sessions, ten-minute lifetime, two-minute input-idle timeout; authority rechecked every five seconds. */
+        /**
+         * Stream output from the specified application terminal session.
+         * @description One SSE reader; data JSON is {type:output,data:base64} or {type:exit,code:number,message:string}. Human deployment writer only. Four sessions, ten-minute lifetime, two-minute input-idle timeout; authority rechecked every five seconds.
+         */
         get: operations["terminalOutput"];
         put?: never;
         post?: never;
@@ -2968,6 +3260,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Send input or a resize request to the application terminal session. */
         post: operations["terminalInput"];
         delete?: never;
         options?: never;
@@ -2985,6 +3278,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Close the specified application terminal session. */
         delete: operations["deleteTerminal"];
         options?: never;
         head?: never;
@@ -2998,6 +3292,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read retained application terminal output from the supplied cursor. */
         get: operations["pollTerminal"];
         put?: never;
         post?: never;
@@ -3014,8 +3309,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List custom roles. */
         get: operations["listCustomRoles"];
         put?: never;
+        /** Create a custom role. */
         post: operations["createCustomRole"];
         delete?: never;
         options?: never;
@@ -3031,8 +3328,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Update the custom role. */
         put: operations["updateCustomRole"];
         post?: never;
+        /** Delete the custom role. */
         delete: operations["deleteCustomRole"];
         options?: never;
         head?: never;
@@ -3046,7 +3345,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read security settings for the organization. */
         get: operations["getOrganizationSecurity"];
+        /** Update security settings for the organization. */
         put: operations["updateOrganizationSecurity"];
         post?: never;
         delete?: never;
@@ -3064,6 +3365,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Verify additional authentication for the current session. */
         post: operations["verifySessionMFA"];
         delete?: never;
         options?: never;
@@ -3078,12 +3380,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the current identity's profile. */
         get: operations["getProfile"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Update the current identity's profile. */
         patch: operations["updateProfile"];
         trace?: never;
     };
@@ -3095,6 +3399,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set the identity's username within the team. */
         put: operations["setTeamUsername"];
         post?: never;
         delete?: never;
@@ -3110,6 +3415,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read host access grants. */
         get: operations["getHostAccess"];
         put?: never;
         post?: never;
@@ -3127,6 +3433,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Grant access to the specified hosts. */
         put: operations["grantHostAccess"];
         post?: never;
         delete?: never;
@@ -3145,6 +3452,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Revoke the host access. */
         delete: operations["revokeHostAccess"];
         options?: never;
         head?: never;
@@ -3160,6 +3468,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Open a terminal session on the specified authorized host. */
         post: operations["openHostTerminal"];
         delete?: never;
         options?: never;
@@ -3174,6 +3483,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Stream output from the specified host terminal session. */
         get: operations["streamHostTerminal"];
         put?: never;
         post?: never;
@@ -3192,6 +3502,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Send input or a resize request to the host terminal session. */
         post: operations["writeHostTerminal"];
         delete?: never;
         options?: never;
@@ -3209,6 +3520,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Close the specified host terminal session. */
         delete: operations["closeHostTerminal"];
         options?: never;
         head?: never;
@@ -3222,6 +3534,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read retained host terminal output from the supplied cursor. */
         get: operations["pollHostTerminal"];
         put?: never;
         post?: never;
@@ -3240,6 +3553,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create an environment in the project. */
         post: operations["createEnvironment"];
         delete?: never;
         options?: never;
@@ -3254,12 +3568,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the proxy configuration. */
         get: operations["getProxy"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Save the proxy configuration. */
         patch: operations["setProxy"];
         trace?: never;
     };
@@ -3270,6 +3586,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List observed application requests. */
         get: operations["listRequests"];
         put?: never;
         post?: never;
@@ -3286,6 +3603,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read observed request routing for the service. */
         get: operations["requestRouting"];
         put?: never;
         post?: never;
@@ -3305,6 +3623,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Delete an empty project record. */
         delete: operations["deleteEmptyProject"];
         options?: never;
         head?: never;
@@ -3318,6 +3637,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List retained volumes for the application. */
         get: operations["listRetainedApplicationData"];
         put?: never;
         post?: never;
@@ -3337,6 +3657,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Request deletion of retained volumes for the application. */
         delete: operations["deleteRetainedApplicationData"];
         options?: never;
         head?: never;
@@ -3352,6 +3673,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request another attempt to delete retained service volumes. */
         post: operations["retryServiceVolumeCleanup"];
         delete?: never;
         options?: never;
@@ -3366,6 +3688,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read observed runtime state for the service. */
         get: operations["getServiceRuntime"];
         put?: never;
         post?: never;
@@ -3384,6 +3707,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a restart of the service. */
         post: operations["restartService"];
         delete?: never;
         options?: never;
@@ -3400,6 +3724,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a scale change for the service. */
         post: operations["scaleService"];
         delete?: never;
         options?: never;
@@ -3414,8 +3739,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List configured container registries. */
         get: operations["listRegistries"];
         put?: never;
+        /** Store access settings for a container registry. */
         post: operations["createRegistry"];
         delete?: never;
         options?: never;
@@ -3431,8 +3758,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Update access settings for the container registry. */
         put: operations["updateRegistry"];
         post?: never;
+        /** Delete access settings for the container registry. */
         delete: operations["deleteRegistry"];
         options?: never;
         head?: never;
@@ -3448,6 +3777,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Refresh workload copies of the stored container registry credentials. */
         post: operations["syncRegistry"];
         delete?: never;
         options?: never;
@@ -3462,8 +3792,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the service's TLS certificate configuration. */
         get: operations["getServiceTLS"];
         put?: never;
+        /** Request attachment of a TLS certificate to the service. */
         post: operations["attachServiceTLS"];
         delete?: never;
         options?: never;
@@ -3478,8 +3810,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List TLS issuers available to the application. */
         get: operations["listApplicationTLSIssuers"];
         put?: never;
+        /** Create a TLS issuer for the application. */
         post: operations["createApplicationTLSIssuer"];
         delete?: never;
         options?: never;
@@ -3494,8 +3828,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List TLS issuers. */
         get: operations["listTLSIssuers"];
         put?: never;
+        /** Create a TLS issuer for the installation. */
         post: operations["createTLSIssuer"];
         delete?: never;
         options?: never;
@@ -3512,6 +3848,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prevent new workloads from scheduling on the node. */
         post: operations["cordonNode"];
         delete?: never;
         options?: never;
@@ -3528,6 +3865,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Evict eligible workloads from the node. */
         post: operations["drainNode"];
         delete?: never;
         options?: never;
@@ -3542,8 +3880,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List node enrollment requests. */
         get: operations["listNodeEnrollments"];
         put?: never;
+        /** Create an enrollment request for a node. */
         post: operations["createNodeEnrollment"];
         delete?: never;
         options?: never;
@@ -3561,6 +3901,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Revoke the specified node enrollment request. */
         delete: operations["revokeNodeEnrollment"];
         options?: never;
         head?: never;
@@ -3576,6 +3917,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a stop of the service. */
         post: operations["stopService"];
         delete?: never;
         options?: never;
@@ -3592,6 +3934,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request resumption of the service. */
         post: operations["resumeService"];
         delete?: never;
         options?: never;
@@ -3606,6 +3949,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of the managed database operation. */
         get: operations["getDatabaseOperation"];
         put?: never;
         post?: never;
@@ -3658,12 +4002,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the dashboard appearance settings. */
         get: operations["getAppearance"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Save the dashboard appearance settings. */
         patch: operations["setAppearance"];
         trace?: never;
     };
@@ -3674,9 +4020,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the Slack connection status. */
         get: operations["getSlackIntegration"];
         put?: never;
         post?: never;
+        /** Remove the Slack connection. */
         delete: operations["disconnectSlack"];
         options?: never;
         head?: never;
@@ -3692,6 +4040,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Start the Slack connection flow. */
         post: operations["connectSlack"];
         delete?: never;
         options?: never;
@@ -3706,6 +4055,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List Slack channels. */
         get: operations["listSlackChannels"];
         put?: never;
         post?: never;
@@ -3723,6 +4073,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Select the Slack channel for notifications. */
         put: operations["setSlackChannel"];
         post?: never;
         delete?: never;
@@ -3739,6 +4090,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Select the event types sent to Slack. */
         put: operations["setSlackEvents"];
         post?: never;
         delete?: never;
@@ -3754,6 +4106,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List Slack notification deliveries. */
         get: operations["listSlackDeliveries"];
         put?: never;
         post?: never;
@@ -3772,6 +4125,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Send a test notification through the Slack integration. */
         post: operations["testSlack"];
         delete?: never;
         options?: never;
@@ -3786,7 +4140,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the GitHub integration status. */
         get: operations["githubStatus"];
+        /** Configure the GitHub integration. */
         put: operations["configureGitHub"];
         post?: never;
         delete?: never;
@@ -3802,7 +4158,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the application's source configuration. */
         get: operations["getSource"];
+        /** Save the application's source configuration. */
         put: operations["setSource"];
         post?: never;
         delete?: never;
@@ -3820,6 +4178,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a deployment plan from the application source configuration. */
         post: operations["planSource"];
         delete?: never;
         options?: never;
@@ -3836,6 +4195,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a deployment from the application source configuration. */
         post: operations["deploySource"];
         delete?: never;
         options?: never;
@@ -3852,7 +4212,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description GitHub push webhook. Requires X-Hub-Signature-256 HMAC, X-GitHub-Delivery and X-GitHub-Event. Bounded durable inbox with retry and duplicate suppression. */
+        /**
+         * Receive an authenticated GitHub webhook.
+         * @description GitHub push webhook. Requires X-Hub-Signature-256 HMAC, X-GitHub-Delivery and X-GitHub-Event. Bounded durable inbox with retry and duplicate suppression.
+         */
         post: operations["githubWebhook"];
         delete?: never;
         options?: never;
@@ -3867,7 +4230,9 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the GitLab integration status. */
         get: operations["gitlabStatus"];
+        /** Configure the GitLab integration. */
         put: operations["configureGitLab"];
         post?: never;
         delete?: never;
@@ -3885,7 +4250,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description GitLab.com push webhook authenticated with X-Gitlab-Token and deduplicated by X-Gitlab-Event-UUID. Provider-separated bounded durable inbox. */
+        /**
+         * Receive an authenticated GitLab webhook.
+         * @description GitLab.com push webhook authenticated with X-Gitlab-Token and deduplicated by X-Gitlab-Event-UUID. Provider-separated bounded durable inbox.
+         */
         post: operations["gitlabWebhook"];
         delete?: never;
         options?: never;
@@ -3902,6 +4270,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a deployment plan from a source repository. */
         post: operations["planSourceImport"];
         delete?: never;
         options?: never;
@@ -3918,6 +4287,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request deployment from a reviewed source import. */
         post: operations["deploySourceImport"];
         delete?: never;
         options?: never;
@@ -3932,6 +4302,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List templates. */
         get: operations["listTemplates"];
         put?: never;
         post?: never;
@@ -3950,6 +4321,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a deployment plan from a template. */
         post: operations["planTemplate"];
         delete?: never;
         options?: never;
@@ -3966,6 +4338,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request an application deployment from a template. */
         post: operations["deployTemplate"];
         delete?: never;
         options?: never;
@@ -3981,6 +4354,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Store the specified secret for a template deployment. */
         put: operations["putTemplateSecret"];
         post?: never;
         delete?: never;
@@ -3996,6 +4370,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the state of the demonstration application. */
         get: operations["getShowcase"];
         put?: never;
         post?: never;
@@ -4014,6 +4389,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request removal of the reviewed demonstration application. */
         post: operations["removeShowcase"];
         delete?: never;
         options?: never;
@@ -4028,8 +4404,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List virtual networks. */
         get: operations["listVirtualNetworks"];
         put?: never;
+        /** Create a virtual network. */
         post: operations["createVirtualNetwork"];
         delete?: never;
         options?: never;
@@ -4044,9 +4422,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the virtual network. */
         get: operations["getVirtualNetwork"];
+        /** Update the virtual network. */
         put: operations["updateVirtualNetwork"];
         post?: never;
+        /** Delete the virtual network. */
         delete: operations["deleteVirtualNetwork"];
         options?: never;
         head?: never;
@@ -4060,6 +4441,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List candidate application services for a virtual network. */
         get: operations["listVirtualNetworkCandidates"];
         put?: never;
         post?: never;
@@ -4078,6 +4460,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a plan for virtual network membership. */
         post: operations["planVirtualNetwork"];
         delete?: never;
         options?: never;
@@ -4094,6 +4477,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a plan to resize an application volume. */
         post: operations["planVolumeResize"];
         delete?: never;
         options?: never;
@@ -4108,8 +4492,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List volume resize operations for the application. */
         get: operations["listVolumeResizes"];
         put?: never;
+        /** Request a reviewed resize of an application volume. */
         post: operations["startVolumeResize"];
         delete?: never;
         options?: never;
@@ -4126,6 +4512,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Retry or cancel a volume resize, retain its original volume, or delete that volume. */
         post: operations["volumeResizeAction"];
         delete?: never;
         options?: never;
@@ -4142,6 +4529,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Detect the build framework from the source repository. */
         post: operations["detectBuildFramework"];
         delete?: never;
         options?: never;
@@ -4156,8 +4544,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List application previews. */
         get: operations["listApplicationPreviews"];
         put?: never;
+        /** Request a preview environment for the application. */
         post: operations["createPreview"];
         delete?: never;
         options?: never;
@@ -4172,9 +4562,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read the preview. */
         get: operations["getPreview"];
         put?: never;
         post?: never;
+        /** Request deletion of the preview. */
         delete: operations["deletePreview"];
         options?: never;
         head?: never;
@@ -4188,6 +4580,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List secret metadata for workloads. */
         get: operations["listWorkloadSecrets"];
         put?: never;
         post?: never;
@@ -4205,8 +4598,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Store the specified workload secret. */
         put: operations["putWorkloadSecret"];
+        /** Create a workload secret. */
         post: operations["createWorkloadSecret"];
+        /** Delete the workload secret. */
         delete: operations["deleteWorkloadSecret"];
         options?: never;
         head?: never;
@@ -4220,6 +4616,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List candidate nodes for workload placement. */
         get: operations["listPlacementNodes"];
         put?: never;
         post?: never;
@@ -4238,6 +4635,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Check the secrets required by the proposed application specification. */
         post: operations["checkSecretRequirements"];
         delete?: never;
         options?: never;
@@ -4253,6 +4651,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Rename the application. */
         put: operations["renameApplication"];
         post?: never;
         delete?: never;
@@ -4269,6 +4668,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Rename the service. */
         put: operations["renameService"];
         post?: never;
         delete?: never;
@@ -4285,6 +4685,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Rename the project. */
         put: operations["renameProject"];
         post?: never;
         delete?: never;
@@ -4302,6 +4703,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Prepare a plan to move an application service. */
         post: operations["planServiceMove"];
         delete?: never;
         options?: never;
@@ -4318,6 +4720,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request a reviewed move of an application service. */
         post: operations["startServiceMove"];
         delete?: never;
         options?: never;
@@ -4332,6 +4735,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List service move operations for the application. */
         get: operations["listServiceMoves"];
         put?: never;
         post?: never;
@@ -4350,6 +4754,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Request removal of the service from its source after the destination is ready. */
         post: operations["finishServiceMove"];
         delete?: never;
         options?: never;

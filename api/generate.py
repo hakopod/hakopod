@@ -119,6 +119,20 @@ for path, methods in paths.items():
             if ("path", variable) not in declared:
                 parameters.append({"name": variable, "in": "path", "required": True, "schema": S})
 runpy.run_path(str(Path(__file__).with_name("contracts") / "agent_policy.py"), init_globals={"paths": paths})
+# Summaries are explicit contract source. Generation does not infer action semantics.
+summaries = json.loads(Path(__file__).with_name("operation-summaries.json").read_text())
+for methods in paths.values():
+    for operation in methods.values():
+        if "operationId" not in operation:
+            continue
+        operation_id = operation["operationId"]
+        if not operation.get("summary"):
+            summary = summaries.pop(operation_id, None)
+            if not isinstance(summary, str) or not summary.strip():
+                raise ValueError(f"add an explicit operation summary: {operation_id}")
+            operation["summary"] = summary
+if summaries:
+    raise ValueError(f"remove obsolete operation summaries: {', '.join(sorted(summaries))}")
 doc={"openapi":"3.1.0", "info":{"title":"Hakopod Management API","version":"0.1.0","description":"Manage applications and databases through the versioned API. Each operation defines its input format and required permissions. The API checks current credentials, scope and resource ownership. CLI and MCP connections require explicit options for execution, administration and credential access."}, "servers":[{"url":"/api/v1"}], "security":[{"bearerAuth":[]}], "paths":paths,"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}},"schemas":schemas}}
 Path(__file__).with_name("openapi.json").write_text(json.dumps(doc,indent=2)+"\n")
 

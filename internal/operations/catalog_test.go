@@ -21,6 +21,9 @@ func TestCatalogSafetyAndCompleteness(t *testing.T) {
 			t.Fatalf("missing or duplicate operation %q", o.ID)
 		}
 		seen[o.ID] = true
+		if strings.TrimSpace(o.Summary) == "" {
+			t.Fatalf("operation lacks an explicit summary: %s", o.ID)
+		}
 		if o.Available == (o.Exclusion != "") {
 			t.Fatalf("inconsistent availability %s", o.ID)
 		}
