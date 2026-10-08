@@ -232,6 +232,11 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 		}
 	}
 	var cleanupPending bool
+	// The application row is locked. Dispatch uses the same row and the runtime
+	// advisory lock; a new revision cannot overtake an active invocation.
+	if err = fenceInvocationsForDeployment(ctx, tx, a.ID); err != nil {
+		return Deployment{}, err
+	}
 	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM deployment_volume_cleanup c JOIN deployments d ON d.id=c.deployment_id WHERE d.application_id=$1 AND NOT c.completed AND d.status IN ('queued','running','succeeded'))", a.ID).Scan(&cleanupPending); err != nil {
 		return Deployment{}, err
 	}
@@ -390,6 +395,15 @@ func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 			continue
 		}
 		release := func() { releaseClaimConnection(conn) }
+		var invocationActive bool
+		if err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM job_invocations WHERE application_id=$1 AND (status IN ('starting','running') OR cleanup_pending))`, v.app).Scan(&invocationActive); err != nil {
+			release()
+			return nil, err
+		}
+		if invocationActive {
+			release()
+			continue
+		}
 		d, err := scanDep(conn.QueryRow(ctx, "UPDATE deployments SET status='running',started_at=COALESCE(started_at,now()),attempts=attempts+1 WHERE id=$1 AND status IN ('queued','running') RETURNING "+depCols, v.id))
 		if err != nil {
 			release()
