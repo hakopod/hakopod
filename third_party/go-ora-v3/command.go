@@ -41,6 +41,7 @@ type StmtInterface interface {
 	CanAutoClose() bool
 }
 type defaultStmt struct {
+	nativeDiagnosticState
 	connection *Connection
 	text       string
 	// disableCompression bool
@@ -833,6 +834,7 @@ func (stmt *defaultStmt) read(resultSet *ResultSet) (err error) {
 				} else {
 					newRow := make(Row, resultSet.columnCount)
 					for index, col := range stmt.columns {
+						stmt.nativeBoundary("row_column_start", index, &col)
 						if col.getDataFromServer {
 							err = stmt.calculateColumnValue(&col, false)
 							if err != nil {
@@ -850,6 +852,7 @@ func (stmt *defaultStmt) read(resultSet *ResultSet) (err error) {
 							}
 							stmt.columns[index] = col
 						}
+						stmt.nativeBoundary("row_column_end", index, &col)
 						newRow[index] = col.oPrimValue
 					}
 					resultSet.rows = append(resultSet.rows, newRow)
@@ -962,10 +965,12 @@ func (stmt *defaultStmt) read(resultSet *ResultSet) (err error) {
 			}
 			stmt.columns = make([]ParameterInfo, resultSet.columnCount)
 			for x := 0; x < resultSet.columnCount; x++ {
+				stmt.nativeBoundary("metadata_column_start", x, nil)
 				err = stmt.columns[x].load(stmt.connection)
 				if err != nil {
 					return err
 				}
+				stmt.nativeBoundary("metadata_column_end", x, &stmt.columns[x])
 				if stmt.columns[x].isLongType() {
 					stmt._hasLONG = true
 				}
@@ -973,18 +978,26 @@ func (stmt *defaultStmt) read(resultSet *ResultSet) (err error) {
 					stmt._hasBLOB = true
 				}
 			}
+			stmt.nativeTrailerStart()
 			_, err = session.GetDlc()
+			stmt.nativeTrailerRead(err == nil)
 			if session.TTCVersion >= 3 {
 				_, err = session.GetInt(4, true, true)
+				stmt.nativeTrailerRead(err == nil)
 				_, err = session.GetInt(4, true, true)
+				stmt.nativeTrailerRead(err == nil)
 			}
 			if session.TTCVersion >= 4 {
 				_, err = session.GetInt(4, true, true)
+				stmt.nativeTrailerRead(err == nil)
 				_, err = session.GetInt(4, true, true)
+				stmt.nativeTrailerRead(err == nil)
 			}
 			if session.TTCVersion >= 5 {
 				_, err = session.GetDlc()
+				stmt.nativeTrailerRead(err == nil)
 			}
+			stmt.nativeTrailerEnd()
 		case 19:
 			session.ResetBuffer()
 			session.PutBytes(19)
@@ -1031,6 +1044,7 @@ func (stmt *defaultStmt) read(resultSet *ResultSet) (err error) {
 		default:
 			err = stmt.connection.ProcessTCCResponse(msg)
 			if err != nil {
+				stmt.nativeResponseFailure(err)
 				return err
 			}
 			if msg == 4 || msg == 9 {
