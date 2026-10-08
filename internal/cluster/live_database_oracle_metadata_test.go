@@ -78,7 +78,7 @@ func TestManagedOracleStaticMetadataLive(t *testing.T) {
 				t.Fatal("metadata native access")
 			}
 			encoded, e := json.Marshal(events)
-			if e != nil || len(encoded) > 2048 {
+			if e != nil || len(encoded) > 4096 {
 				t.Fatal("metadata output bound")
 			}
 			t.Logf("Oracle static probe=%s events=%s", probe.name, encoded)
@@ -157,7 +157,7 @@ func TestManagedOracleAdapterStagesLive(t *testing.T) {
 									return nil
 								})
 								metadata, encodeErr := json.Marshal(events)
-								if encodeErr != nil || len(metadata) > 2048 {
+								if encodeErr != nil || len(metadata) > 4096 {
 									t.Fatal("driver metadata output bound")
 								}
 								t.Logf("Oracle driver direct cause=%s events=%s", cause, metadata)

@@ -1,0 +1,14 @@
+diff --git a/parameter_coder/basic_parameter.go b/parameter_coder/basic_parameter.go
+index 59c7dd9f..6050c714 100644
+--- a/parameter_coder/basic_parameter.go
++++ b/parameter_coder/basic_parameter.go
+@@ -41,9 +41,6 @@ func (basic *BasicParameter) Write(session network.SessionWriter) error {
+ 	return nil
+ }
+ func (basic *BasicParameter) BasicRead(session network.SessionReader) ([]byte, error) {
+-	if (basic.DataType == types.NCHAR || basic.DataType == types.CHAR) && basic.MaxLen == 0 {
+-		return nil, nil
+-	}
+ 	if basic.DataType == types.RAW && basic.MaxLen == 0 {
+ 		return nil, nil
+ 	}

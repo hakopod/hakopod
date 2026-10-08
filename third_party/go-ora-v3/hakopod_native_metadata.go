@@ -16,6 +16,8 @@ type NativeDiagnosticEvent struct {
 	Type       string `json:"type"`
 	Size       string `json:"size"`
 	FromServer bool   `json:"from_server"`
+	Ordinal    string `json:"ordinal,omitempty"`
+	Boundary   string `json:"boundary,omitempty"`
 }
 type nativeDiagnosticRecorder struct {
 	events  []NativeDiagnosticEvent
@@ -28,7 +30,7 @@ func (r *nativeDiagnosticRecorder) add(stage string, column *ParameterInfo) {
 		return
 	}
 	switch stage {
-	case "query_complete", "query_failed", "column", "rows_empty", "rows_present", "rows_complete", "rows_failed":
+	case "query_complete", "query_failed", "column", "rows_empty", "rows_present", "rows_complete", "rows_failed", "metadata_column_start", "metadata_column_end", "metadata_trailer_complete", "row_column_start", "row_column_end", "unknown_response":
 	default:
 		stage = "other"
 	}
@@ -66,6 +68,7 @@ func (r *nativeDiagnosticRecorder) add(stage string, column *ParameterInfo) {
 func NativeQueryMetadata(ctx context.Context, conn *Connection, statement string, args []driver.NamedValue) []NativeDiagnosticEvent {
 	recorder := &nativeDiagnosticRecorder{}
 	stmt := NewStmt(statement, conn)
+	stmt.nativeDiagnosticState.recorder = recorder
 	defer stmt.Close()
 	rows, err := stmt.QueryContext(ctx, args)
 	if rows != nil {
@@ -93,6 +96,7 @@ func NativeQueryMetadata(ctx context.Context, conn *Connection, statement string
 func NativeQueryMetadataCause(ctx context.Context, conn *Connection, statement string, args []driver.NamedValue) ([]NativeDiagnosticEvent, string) {
 	recorder := &nativeDiagnosticRecorder{}
 	stmt := NewStmt(statement, conn)
+	stmt.nativeDiagnosticState.recorder = recorder
 	defer stmt.Close()
 	rows, err := stmt.QueryContext(ctx, args)
 	if rows != nil {
@@ -173,4 +177,72 @@ func NativeQueryMetadataCause(ctx context.Context, conn *Connection, statement s
 		}
 	}
 	return recorder.events, cause
+}
+
+// nativeDiagnosticState belongs only to the fresh statement explicitly captured
+// by NativeQueryMetadata or NativeQueryMetadataCause. Connections are unchanged.
+type nativeDiagnosticState struct {
+	recorder        *nativeDiagnosticRecorder
+	boundary        string
+	trailerComplete bool
+}
+
+func (stmt *defaultStmt) nativeBoundary(stage string, ordinal int, column *ParameterInfo) {
+	state := &stmt.nativeDiagnosticState
+	if state.recorder == nil {
+		return
+	}
+	switch stage {
+	case "metadata_column_start", "metadata_column_end", "metadata_trailer_complete", "row_column_start", "row_column_end", "unknown_response":
+	default:
+		stage = "other"
+	}
+	prior := state.boundary
+	state.boundary = stage
+	before := len(state.recorder.events)
+	state.recorder.add(stage, column)
+	if len(state.recorder.events) == before {
+		return
+	}
+	event := &state.recorder.events[before]
+	switch {
+	case ordinal < 0:
+		event.Ordinal = "none"
+	case ordinal == 0:
+		event.Ordinal = "first"
+	case ordinal == 1:
+		event.Ordinal = "second"
+	default:
+		event.Ordinal = "later"
+	}
+	if stage == "unknown_response" {
+		switch prior {
+		case "metadata_column_start", "metadata_column_end", "metadata_trailer_complete", "row_column_start", "row_column_end":
+			event.Boundary = prior
+		default:
+			event.Boundary = "other"
+		}
+	}
+}
+
+func (stmt *defaultStmt) nativeTrailerStart() {
+	if stmt.recorder != nil {
+		stmt.trailerComplete = true
+	}
+}
+func (stmt *defaultStmt) nativeTrailerRead(ok bool) {
+	if stmt.recorder != nil {
+		stmt.trailerComplete = stmt.trailerComplete && ok
+	}
+}
+func (stmt *defaultStmt) nativeTrailerEnd() {
+	if stmt.recorder != nil && stmt.trailerComplete {
+		stmt.nativeBoundary("metadata_trailer_complete", -1, nil)
+	}
+}
+
+func (stmt *defaultStmt) nativeResponseFailure(err error) {
+	if stmt.recorder != nil && err != nil && err.Error() == "TTC error: received code 3 during response reading" {
+		stmt.nativeBoundary("unknown_response", -1, nil)
+	}
 }
