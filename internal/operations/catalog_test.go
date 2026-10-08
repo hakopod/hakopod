@@ -285,3 +285,71 @@ func TestAlarmExactCredentialAndShowcaseFixedScope(t *testing.T) {
 		t.Fatal("showcase scope")
 	}
 }
+
+func TestDiscoveryPreservesContractSemanticText(t *testing.T) {
+	summaries, descriptions := 0, 0
+	for _, op := range Catalog() {
+		var entry struct {
+			Summary     string `json:"summary"`
+			Description string `json:"description"`
+		}
+		if err := json.Unmarshal(doc.Paths[op.Path][strings.ToLower(op.Method)], &entry); err != nil {
+			t.Fatal(err)
+		}
+		if op.Summary != entry.Summary || op.Description != entry.Description {
+			t.Fatal("catalog semantic text differs", op.ID)
+		}
+		if entry.Summary != "" {
+			summaries++
+		}
+		if entry.Description != "" {
+			descriptions++
+		}
+		detail, err := Discovery("", "", op.ID, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := detail["operation"].(Operation)
+		if got.Summary != entry.Summary || got.Description != entry.Description {
+			t.Fatal("detail lost semantic text", op.ID)
+		}
+	}
+	if summaries == 0 || descriptions == 0 {
+		t.Fatal("contract lacks regression samples")
+	}
+	cursor := ""
+	for {
+		result, err := Discovery(cursor, "", "", 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, op := range result["operations"].([]Operation) {
+			var entry struct {
+				Summary     string `json:"summary"`
+				Description string `json:"description"`
+			}
+			if err := json.Unmarshal(doc.Paths[op.Path][strings.ToLower(op.Method)], &entry); err != nil {
+				t.Fatal(err)
+			}
+			if op.Summary != entry.Summary || op.Description != entry.Description {
+				t.Fatal("page lost semantic text", op.ID)
+			}
+		}
+		next, ok := result["next_cursor"].(string)
+		if !ok {
+			break
+		}
+		cursor = next
+	}
+	raw, err := json.Marshal(Operation{ID: "missing-description"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["summary"] != nil || fields["description"] != nil {
+		t.Fatal("invented empty semantic fields")
+	}
+}
