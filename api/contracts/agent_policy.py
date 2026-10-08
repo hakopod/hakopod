@@ -2627,6 +2627,10 @@ POLICIES = {'acceptHumanInvite': {'boundary': 'identity',
 for operation, permission in [('createJobInvocation','jobs:invoke'),('listJobInvocations','jobs:read'),('getJobInvocation','jobs:read'),('cancelJobInvocation','jobs:cancel'),('getJobInvocationLogs','jobs:logs')]:
     POLICIES[operation] = {'boundary':'project','category':'write' if operation in ('createJobInvocation','cancelJobInvocation') else 'read','exposure':'dedicated','permissions':[permission],'review':'none','prerequisite':'Use an application-scoped machine key and a verified owner scope.','sensitive_fields':['inputs']}
 
+# Session calls carry code and owner authority; only dedicated trusted clients may invoke them.
+for operation, permission in [('createSandboxSession','sessions:create'),('listSandboxSessions','sessions:read'),('getSandboxSession','sessions:read'),('deleteSandboxSession','sessions:delete'),('heartbeatSandboxSession','sessions:call'),('callSandboxSession','sessions:call')]:
+    POLICIES[operation] = {'boundary':'project','category':'binary' if operation == 'callSandboxSession' else ('read' if operation in ('listSandboxSessions','getSandboxSession') else 'write'),'exposure':'dedicated','permissions':[permission],'review':'none','prerequisite':'Use an exact application-scoped machine key and a verified owner scope.','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

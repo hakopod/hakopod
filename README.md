@@ -259,4 +259,5 @@ The project uses Apache-2.0 for original code; dependencies retain their own
 
 Build and release workflows: [framework setup, MCP, schedules, previews, recovery and build secrets](docs/engine-workflows.md).
 
-Service execution: [node placement](docs/node-placement.md) and [serverless HTTP functions and containers](docs/serverless.md).
+Service execution: [node placement](docs/node-placement.md), [serverless HTTP functions and containers](docs/serverless.md),
+[predefined jobs](docs/job-invocations.md), and [sandbox sessions](docs/sandbox-sessions.md) (under native qualification).

@@ -573,6 +573,40 @@
     "required": [],
     "additionalProperties": false
   },
+  "SandboxSession": {
+    "type": "object",
+    "properties": {
+      "allowed_identities": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "helper_command": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "idle_seconds": {
+        "type": "integer",
+        "minimum": 60,
+        "maximum": 900,
+        "default": 900
+      },
+      "lifetime_seconds": {
+        "type": "integer",
+        "minimum": 60,
+        "maximum": 3600,
+        "default": 3600
+      }
+    },
+    "required": [
+      "allowed_identities",
+      "helper_command"
+    ],
+    "additionalProperties": false
+  },
   "SecretRef": {
     "type": "object",
     "additionalProperties": false,
@@ -880,6 +914,9 @@
       },
       "serverless": {
         "$ref": "#/components/schemas/Serverless"
+      },
+      "session": {
+        "$ref": "#/components/schemas/SandboxSession"
       }
     },
     "required": [
