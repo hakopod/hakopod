@@ -31,6 +31,7 @@ type Application struct {
 }
 
 type Service struct {
+	Session                 *SandboxSession         `json:"session,omitempty" toml:"session"`
 	Actions                 *Actions                `json:"actions,omitempty" toml:"actions"`
 	Serverless              *Serverless             `json:"serverless,omitempty" toml:"serverless,omitempty"`
 	NodeName                string                  `json:"node_name,omitempty" toml:"node_name,omitempty"`
@@ -240,6 +241,9 @@ func Normalize(input Application) (Application, error) {
 	for _, name := range Names(app) {
 		svc := app.Services[name]
 		field := "services." + name
+		if err := normalizeSandboxSession(app, &svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
 		if err := normalizeActions(&svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
@@ -315,7 +319,9 @@ func Normalize(input Application) (Application, error) {
 		if err := ValidateCommand(svc.Command, svc.Args); err != nil {
 			return Application{}, fmt.Errorf("%s: %s", field, err)
 		}
-		if svc.Networks == nil {
+		if svc.Session != nil {
+			svc.Networks = nil
+		} else if svc.Networks == nil {
 			svc.Networks = []string{"default"}
 		} else if len(svc.Networks) == 0 {
 			return Application{}, fmt.Errorf("%s.networks: an explicit empty list is unsupported; omit networks for default membership", field)
