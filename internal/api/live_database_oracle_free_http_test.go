@@ -461,7 +461,11 @@ func TestManagedOracleFreeHTTPLive(t *testing.T) {
 	httpServer := httptest.NewServer(server.Handler())
 	httpServer.Client().Timeout = 30 * time.Second
 	defer httpServer.Close()
-	client := backupRequestClient{t, httpServer, token}
+	_, credentialToken, err := db.CreateKey(ctx, principal, store.KeyInput{Name: "Oracle HTTP credential fixture", Permissions: []string{"admin", "agent:admin", "agent:credentials"}, ExpiresAt: time.Now().Add(2 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := backupRequestClient{t, httpServer, credentialToken}
 	runCtx, stopWorkers := context.WithCancel(ctx)
 	workersDone := make(chan struct{})
 	go func() { defer close(workersDone); server.RunManagedDatabases(runCtx) }()
