@@ -20,6 +20,7 @@ import (
 type sandboxRuntimeFixture struct {
 	starts, calls, cleanups int
 	cleanupReady            bool
+	replacement             bool
 }
 
 func (f *sandboxRuntimeFixture) StartSession(ctx context.Context, r sandbox.Record, before func(context.Context) error) (sandbox.RuntimeState, error) {
@@ -30,6 +31,9 @@ func (f *sandboxRuntimeFixture) StartSession(ctx context.Context, r sandbox.Reco
 	return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "pod-fixture", ContainerID: "container-fixture", Ready: true}, nil
 }
 func (f *sandboxRuntimeFixture) ObserveSession(context.Context, sandbox.Record) (sandbox.RuntimeState, error) {
+	if f.replacement {
+		return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "replacement", ContainerID: "container-fixture", Ready: true}, fmt.Errorf("kernel changed")
+	}
 	return sandbox.RuntimeState{NamespaceUID: "ns-fixture", PodUID: "pod-fixture", ContainerID: "container-fixture", Ready: true}, nil
 }
 func (f *sandboxRuntimeFixture) CallSession(ctx context.Context, r sandbox.Record, in io.Reader, out io.Writer) error {
@@ -191,5 +195,33 @@ func TestSessionControllerClosesLostBrokerSessions(t *testing.T) {
 	state, err = s.Store.ReadSession(ctx, p, d.ApplicationID, "worker", owner, r.ID, "sessions:read")
 	if err != nil || state.Status != sandbox.Closed {
 		t.Fatal(fmt.Sprintf("orphan cleanup failed: %s %v", state.Status, err))
+	}
+}
+
+func TestSessionControllerClosesChangedRuntimeIdentity(t *testing.T) {
+	s, p, d, in, fake := sessionAPIFixture(t)
+	ctx := context.Background()
+	owner, _ := sandbox.HashKey("tenant-a")
+	r, err := s.Store.CreateSession(ctx, p, d.ApplicationID, "worker", owner, "replacement-fixture", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := s.Store.ClaimSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.reconcileSession(ctx, lease, fake)
+	if _, err = s.Store.Pool.Exec(ctx, "UPDATE sandbox_sessions SET lease_until=now()-interval '1 second' WHERE id=$1", r.ID); err != nil {
+		t.Fatal(err)
+	}
+	lease, err = s.Store.ClaimSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.replacement = true
+	s.reconcileSession(ctx, lease, fake)
+	state, err := s.Store.ReadSession(ctx, p, d.ApplicationID, "worker", owner, r.ID, "sessions:read")
+	if err != nil || state.Status != sandbox.Closing || !state.CleanupPending {
+		t.Fatal("replaced runtime remained callable", state, err)
 	}
 }

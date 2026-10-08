@@ -19,7 +19,7 @@ func (s *Store) ClaimSession(ctx context.Context) (sandbox.Record, error) {
 	}
 	defer tx.Rollback(ctx)
 	var id string
-	err = tx.QueryRow(ctx, `SELECT id FROM sandbox_sessions WHERE lease_until<now() AND (status<>'closed' OR cleanup_pending OR closed_at>now()-interval '10 minutes') ORDER BY CASE WHEN status='closing' THEN 0 WHEN status='starting' THEN 1 ELSE 2 END,lease_until,id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&id)
+	err = tx.QueryRow(ctx, `SELECT id FROM sandbox_sessions WHERE lease_until<now() AND (status<>'closed' OR cleanup_pending OR closed_at>now()-interval '10 minutes') ORDER BY CASE WHEN status='closing' OR idle_until<=now() OR expires_at<=now() OR (call_token<>'' AND call_until<=now()) THEN 0 WHEN status='starting' THEN 1 ELSE 2 END,lease_until,id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&id)
 	if err != nil {
 		return zero, err
 	}

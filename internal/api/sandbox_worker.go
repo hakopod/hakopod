@@ -68,16 +68,16 @@ func (s *Server) reconcileSession(ctx context.Context, r sandbox.Record, runtime
 	authority := s.Store.CheckSessionLease(step, r)
 	if authority != nil {
 		if errors.Is(authority, store.ErrForbidden) || errors.Is(authority, store.ErrUnauthorized) || errors.Is(authority, store.ErrConflict) {
-			_ = s.Store.RequestSessionCleanup(step, r, "Session authority expired; cleanup is pending")
+			_ = s.Store.RequestSessionCleanup(step, r, "Session authority expired. Cleanup is pending.")
 		}
 		return
 	}
 	if r.CallToken != "" && !time.Now().Before(r.CallUntil) {
-		_ = s.Store.RequestSessionCleanup(step, r, "Session call outcome is uncertain; cleanup is pending")
+		_ = s.Store.RequestSessionCleanup(step, r, "Session call outcome is uncertain. Cleanup is pending.")
 		return
 	}
 	if r.Status == sandbox.Starting && time.Since(r.CreatedAt) > 2*time.Minute {
-		_ = s.Store.RequestSessionCleanup(step, r, "Session startup deadline expired; cleanup is pending")
+		_ = s.Store.RequestSessionCleanup(step, r, "Session startup deadline expired. Cleanup is pending.")
 		return
 	}
 	var state sandbox.RuntimeState
@@ -89,10 +89,11 @@ func (s *Server) reconcileSession(ctx context.Context, r sandbox.Record, runtime
 	}
 	if state.NamespaceUID != "" {
 		if saveErr := s.Store.SaveSessionRuntime(step, r, state); saveErr != nil {
+			_ = s.Store.RequestSessionCleanup(step, r, "Session runtime identity could not be recorded. Cleanup is pending.")
 			return
 		}
 	}
 	if err != nil {
-		_ = s.Store.RequestSessionCleanup(step, r, "Session runtime is unavailable; cleanup is pending")
+		_ = s.Store.RequestSessionCleanup(step, r, "Session runtime is unavailable. Cleanup is pending.")
 	}
 }

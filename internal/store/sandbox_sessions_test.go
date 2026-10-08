@@ -282,3 +282,23 @@ func TestSessionReceiptDeletionWaitsForCleanup(t *testing.T) {
 		t.Fatal("session receipt remained", remaining, err)
 	}
 }
+
+func TestSessionCleanupDeadlinePrecedesNewStartup(t *testing.T) {
+	db, _, p, d, in, owner := sessionFixture(t)
+	ctx := context.Background()
+	expired, err := db.CreateSession(ctx, p, d.ApplicationID, "worker", owner, "expired-fixture", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Pool.Exec(ctx, "UPDATE sandbox_sessions SET status='ready',idle_until=now()-interval '1 second' WHERE id=$1", expired.ID); err != nil {
+		t.Fatal(err)
+	}
+	in.RuntimeKey = "another-runtime"
+	if _, err = db.CreateSession(ctx, p, d.ApplicationID, "worker", owner, "startup-fixture", in); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := db.ClaimSession(ctx)
+	if err != nil || lease.ID != expired.ID {
+		t.Fatal("new startup delayed expired-session cleanup", lease.ID, err)
+	}
+}

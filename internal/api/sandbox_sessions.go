@@ -146,7 +146,7 @@ func (s *Server) callSandboxSession(w http.ResponseWriter, r *http.Request) {
 	case s.sessionCalls <- struct{}{}:
 		defer func() { <-s.sessionCalls }()
 	default:
-		problem(w, 429, "capacity", "Session call capacity is full; retry before submitting code")
+		problem(w, 429, "capacity", "Session call capacity is full. No call started. Retry this request later.")
 		return
 	}
 	// Authenticate before reading a large body. Two process-wide slots bound memory.
@@ -198,7 +198,7 @@ func (s *Server) callSandboxSession(w http.ResponseWriter, r *http.Request) {
 	stop()
 	if !output.started {
 		if !complete || finishErr != nil {
-			problem(w, 502, "call_interrupted", "Session call outcome is uncertain; do not replay this request")
+			problem(w, 502, "call_interrupted", "Session call outcome is uncertain. Do not replay this request")
 			return
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
