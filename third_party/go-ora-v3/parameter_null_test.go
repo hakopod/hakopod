@@ -3,9 +3,11 @@ package go_ora
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/sijms/go-ora/v3/configurations"
+	"github.com/sijms/go-ora/v3/converters"
 	"github.com/sijms/go-ora/v3/network"
 	"github.com/sijms/go-ora/v3/parameter_coder"
 	"github.com/sijms/go-ora/v3/trace"
@@ -100,6 +102,10 @@ func TestStatementReadNullAndNumberColumnSequences(t *testing.T) {
 		{"untyped_then_number", []uint16{0, oraTypes.NUMBER}, [][]byte{nil, number.BValue}},
 		{"number_then_untyped", []uint16{oraTypes.NUMBER, 0}, [][]byte{number.BValue, nil}},
 		{"typed_null_then_number", []uint16{oraTypes.NUMBER, oraTypes.NUMBER}, [][]byte{nil, number.BValue}},
+		{"char_null_then_number", []uint16{oraTypes.CHAR, oraTypes.NUMBER}, [][]byte{nil, number.BValue}},
+		{"number_then_char_null", []uint16{oraTypes.NUMBER, oraTypes.CHAR}, [][]byte{number.BValue, nil}},
+		{"nchar_null_then_number", []uint16{oraTypes.NCHAR, oraTypes.NUMBER}, [][]byte{nil, number.BValue}},
+		{"number_then_nchar_null", []uint16{oraTypes.NUMBER, oraTypes.NCHAR}, [][]byte{number.BValue, nil}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			// command.read consumes a row message (7), CLR column values, then end-of-call (9).
@@ -112,10 +118,11 @@ func TestStatementReadNullAndNumberColumnSequences(t *testing.T) {
 			}
 			encoded.PutBytes(9)
 			session := nullTestSession(output.Bytes())
-			conn := &Connection{session: session, tracer: trace.NilTracer(), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{oraTypes.NUMBER: &parameter_coder.NumberParameter{}}}
+			conn := &Connection{session: session, tracer: trace.NilTracer(), cStrConv: converters.NewStringConverter(873), nStrConv: converters.NewStringConverter(873), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{oraTypes.NUMBER: &parameter_coder.NumberParameter{}, oraTypes.CHAR: &parameter_coder.StringParameter{}, oraTypes.NCHAR: &parameter_coder.StringParameter{}}}
 			stmt := &defaultStmt{connection: conn, columns: make([]ParameterInfo, len(scenario.types))}
 			for i, typ := range scenario.types {
 				stmt.columns[i].DataType = typ
+				stmt.columns[i].CharsetForm = 1
 				stmt.columns[i].getDataFromServer = true
 			}
 			result := &ResultSet{columnCount: len(scenario.types)}
@@ -131,5 +138,85 @@ func TestStatementReadNullAndNumberColumnSequences(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestStatementReadZeroLengthCharacterNull(t *testing.T) {
+	for _, typ := range []uint16{oraTypes.CHAR, oraTypes.NCHAR} {
+		t.Run(fmt.Sprintf("type_%d", typ), func(t *testing.T) {
+			session := nullTestSession([]byte{7, 0, 9})
+			conn := &Connection{session: session, tracer: trace.NilTracer(), cStrConv: converters.NewStringConverter(873), nStrConv: converters.NewStringConverter(873), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{typ: &parameter_coder.StringParameter{}}}
+			stmt := &defaultStmt{connection: conn, columns: []ParameterInfo{{getDataFromServer: true}}}
+			stmt.columns[0].DataType = typ
+			stmt.columns[0].CharsetForm = 1
+			result := &ResultSet{columnCount: 1}
+			if err := stmt.read(result); err != nil {
+				t.Fatal("zero-length character NULL row parsing failed")
+			}
+			if len(result.rows) != 1 || len(result.rows[0]) != 1 || result.rows[0][0] != nil {
+				t.Fatal("zero-length character NULL row was lost")
+			}
+		})
+	}
+}
+
+func TestZeroLengthCharacterNullRetainsReceiveLimit(t *testing.T) {
+	for _, typ := range []uint16{oraTypes.CHAR, oraTypes.NCHAR} {
+		session := nullTestSession([]byte{0xfe, 2, 1, 2, 0})
+		session.SetReadLimit(1)
+		basic := &parameter_coder.BasicParameter{DataType: typ}
+		if _, err := basic.BasicRead(session); !errors.Is(err, network.ErrReadLimit) {
+			t.Fatal("zero-length character bypassed receive limit")
+		}
+	}
+}
+func TestZeroLengthCharacterNullPreservesFollowingValue(t *testing.T) {
+	for _, typ := range []uint16{oraTypes.CHAR, oraTypes.NCHAR} {
+		session := nullTestSession([]byte{0, 1, 42})
+		basic := &parameter_coder.BasicParameter{DataType: typ}
+		value, err := basic.BasicRead(session)
+		if err != nil || value != nil {
+			t.Fatal("zero-length character NULL was not consumed")
+		}
+		next, err := session.GetClr()
+		if err != nil || !bytes.Equal(next, []byte{42}) {
+			t.Fatal("zero-length character corrupted following value")
+		}
+	}
+}
+
+func TestZeroLengthCharacterNullRemovesStaleValue(t *testing.T) {
+	for _, typ := range []uint16{oraTypes.CHAR, oraTypes.NCHAR} {
+		session := nullTestSession([]byte{0})
+		conn := &Connection{session: session, cStrConv: converters.NewStringConverter(873), nStrConv: converters.NewStringConverter(873), oracleTypeCoder: map[uint16]parameter_coder.OracleParameterCoder{typ: &parameter_coder.StringParameter{}}}
+		par := ParameterInfo{oPrimValue: "previous"}
+		par.DataType = typ
+		par.CharsetForm = 1
+		par.BValue = []byte("previous")
+		if par.decodePrimValue(conn, false) != nil || par.oPrimValue != nil || par.BValue != nil {
+			t.Fatal("character NULL retained stale value")
+		}
+	}
+}
+
+func TestZeroLengthCharacterFixedAndArrayNullBounds(t *testing.T) {
+	for _, typ := range []uint16{oraTypes.CHAR, oraTypes.NCHAR} {
+		for _, udt := range []bool{false, true} {
+			session := nullTestSession([]byte{0xff, 1, 42})
+			basic := &parameter_coder.BasicParameter{DataType: typ, IsUDTPar: udt, IsArrayPar: !udt}
+			value, err := basic.BasicRead(session)
+			if err != nil || value != nil {
+				t.Fatal("character sentinel was not consumed")
+			}
+			next, err := session.GetClr()
+			if err != nil || !bytes.Equal(next, []byte{42}) {
+				t.Fatal("character sentinel corrupted following value")
+			}
+			limited := nullTestSession([]byte{2, 1, 2})
+			limited.SetReadLimit(1)
+			if _, err = basic.BasicRead(limited); !errors.Is(err, network.ErrReadLimit) {
+				t.Fatal("character fixed or array read bypassed receive limit")
+			}
+		}
 	}
 }
