@@ -2,11 +2,15 @@ package cluster
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/hakopod/hakopod/internal/database"
 	oranetwork "github.com/sijms/go-ora/v3/network"
+	"io"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
 	"testing"
@@ -29,6 +33,7 @@ func TestManagedOracleQueryLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Minute)
 	defer cancel()
 	d, observed := newOracleFixture(t, ctx, c, "")
+	oracleDefaultDecoderPositiveControl(t, ctx, c, d, observed.Members[0])
 	oracleBoundQueryDiagnostic(t, ctx, c, d, observed.Members[0])
 
 	read := func(sql string, args ...any) database.QueryResult {
@@ -163,12 +168,12 @@ func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d 
 		if errors.As(err, &native) {
 			code = native.ErrCode
 		}
-		t.Logf("Oracle synthetic phase=%s error_type=%T oracle_code=%d elapsed=%s context_done=%t", phase, err, code, time.Since(started), ctx.Err() != nil)
+		t.Logf("Oracle synthetic phase=%s error_type=%T oracle_code=%d error_class=%s error_hash=%s elapsed=%s context_done=%t", phase, err, code, oracleDiagnosticErrorClass(err), oracleDiagnosticErrorHash(err), time.Since(started), ctx.Err() != nil)
 	}
 	observationStart := time.Now()
 	observationContext, stopObservation := context.WithTimeout(parent, 20*time.Second)
 	_, observationErr := c.ObserveDatabase(observationContext, d)
-	t.Logf("Oracle synthetic observation_elapsed=%s error_type=%T context_done=%t", time.Since(observationStart), observationErr, observationContext.Err() != nil)
+	t.Logf("Oracle synthetic observation_elapsed=%s error_type=%T error_class=%s error_hash=%s context_done=%t", time.Since(observationStart), observationErr, oracleDiagnosticErrorClass(observationErr), oracleDiagnosticErrorHash(observationErr), observationContext.Err() != nil)
 	stopObservation()
 	stopDiagnostic()
 	ctx, stopDiagnostic = context.WithTimeout(parent, 20*time.Second)
@@ -242,4 +247,60 @@ func oracleBoundQueryDiagnostic(t *testing.T, ctx context.Context, c *Client, d 
 		return step.Err()
 	})
 	t.Logf("Oracle synthetic executor_elapsed=%s error_type=%T authority_checks=%d context_done=%t", time.Since(queryStart), executionErr, checks, ctx.Err() != nil)
+}
+
+func oracleDiagnosticErrorClass(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, oranetwork.ErrReadLimit):
+		return "receive_limit"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, driver.ErrBadConn):
+		return "bad_connection"
+	case errors.Is(err, io.EOF):
+		return "eof"
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		return "unexpected_eof"
+	case errors.Is(err, sql.ErrConnDone):
+		return "connection_done"
+	case errors.Is(err, oranetwork.ErrConnReset):
+		return "driver_context_reset"
+	}
+	// Compare only known static driver messages; never print backend text.
+	switch err.Error() {
+	case "attempt to set timeout on closed connection", "attempt to write on closed connection", "closed connection":
+		return "closed_connection"
+	case "incorrect format for DBTimeZone":
+		return "timezone_decode"
+	default:
+		return "unclassified"
+	}
+}
+
+func oracleDiagnosticErrorHash(err error) string {
+	if err == nil {
+		return "none"
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(err.Error())))
+}
+
+// This separate connection observes only a tiny synthetic value with default decoding.
+func oracleDefaultDecoderPositiveControl(t *testing.T, parent context.Context, c *Client, d database.Resource, member database.Member) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	native, err := c.oracleApplicationConnection(ctx, d, member, true)
+	if err == nil {
+		defer native.Close()
+		var value int
+		err = native.QueryRowContext(ctx, "SELECT 1 FROM dual").Scan(&value)
+		if err == nil && value != 1 {
+			t.Fatal("Oracle default decoder positive control differed")
+		}
+	}
+	t.Logf("Oracle synthetic default_decoder error_type=%T error_class=%s error_hash=%s context_done=%t", err, oracleDiagnosticErrorClass(err), oracleDiagnosticErrorHash(err), ctx.Err() != nil)
 }
