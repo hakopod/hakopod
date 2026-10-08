@@ -145,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerVirtualNetworkRoutes(routes)
 	s.registerBuildRoutes(routes)
 	s.registerRuntimeRoutes(routes)
+	s.registerInvocationRoutes(routes)
 	s.registerMCPRoutes(routes)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/certificates", s.backendCertificates)
 	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/certificates", s.uploadBackendCertificate)
