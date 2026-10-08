@@ -1,0 +1,74 @@
+package parameter_coder
+
+import (
+	"github.com/sijms/go-ora/v3/network"
+	"github.com/sijms/go-ora/v3/types"
+)
+
+type RawParameter struct {
+	BasicParameter
+	isQueueMessage bool
+}
+
+func (param *RawParameter) Copy() OracleParameterCoder {
+	ret := new(RawParameter)
+	*ret = *param
+	return ret
+}
+
+func (param *RawParameter) Init() {
+	param.SetDefault()
+	param.DataType = types.RAW
+}
+
+func (param *RawParameter) Encode(input interface{}, conn IConnection) error {
+	param.Init()
+	encoder := types.Raw{}
+	encoder.SetDataType(param.DataType)
+	err := encoder.SetValue(input)
+	if err != nil {
+		return err
+	}
+	if dt := encoder.GetDataType(); dt != 0 {
+		param.DataType = dt
+	}
+	param.BValue = encoder.Bytes()
+	if len(param.BValue) > 0 {
+		param.MaxLen = int64(len(param.BValue))
+	}
+	if param.MaxLen <= conn.GetMaxStringLength() {
+		param.DataType = types.RAW
+	} else {
+		param.DataType = types.LongRaw
+	}
+	if param.MaxLen < encoder.GetMaxLen() {
+		param.MaxLen = encoder.GetMaxLen()
+	}
+	return nil
+}
+
+func (param *RawParameter) Decode(_ IConnection) (interface{}, error) {
+	decoder := types.Raw{}
+	decoder.SetBytes(param.BValue)
+	decoder.SetDataType(param.DataType)
+	return decoder.Value()
+}
+
+func (param *RawParameter) Read(session network.SessionReader) error {
+	var err error
+	param.BValue, err = param.BasicRead(session)
+	return err
+}
+
+func (param *RawParameter) SetAQMessage() {
+	param.isQueueMessage = true
+}
+
+func (param *RawParameter) Write(session network.SessionWriter) error {
+	if param.isQueueMessage {
+		session.PutBytes(param.BValue...)
+		return nil
+	}
+
+	return param.BasicParameter.Write(session)
+}

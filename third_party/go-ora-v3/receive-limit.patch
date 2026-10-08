@@ -1,0 +1,101 @@
+--- a/network/basic_session.go
++++ b/network/basic_session.go
+@@ -8,6 +8,7 @@
+ )
+ 
+ type SessionProperties struct {
++	ReadLimit       int
+ 	UseBigClrChunks bool
+ 	UseBigScn       bool
+ 	ClrChunkSize    int
+@@ -117,6 +118,9 @@
+ 			if err != nil {
+ 				return
+ 			}
++			if err = session.CheckReadSize(tempBuffer.Len(), chunkSize); err != nil {
++				return nil, err
++			}
+ 			chunk, err = session.GetBytes(chunkSize)
+ 			if err != nil {
+ 				return
+@@ -124,6 +128,9 @@
+ 			tempBuffer.Write(chunk)
+ 		}
+ 	} else {
++		if err = session.CheckReadSize(tempBuffer.Len(), chunkSize); err != nil {
++			return nil, err
++		}
+ 		chunk, err = session.GetBytes(chunkSize)
+ 		if err != nil {
+ 			return
+--- a/network/session.go
++++ b/network/session.go
+@@ -773,6 +773,9 @@
+ func (session *Session) read(numBytes int) ([]byte, error) {
+ 	var err error
+ 	var pck PacketInterface
++	if err := session.CheckReadSize(0, numBytes); err != nil {
++		return nil, err
++	}
+ 	ret := make([]byte, numBytes)
+ 	index := 0
+ 	actualRead, err := session.inBuffer.Read(ret)
+@@ -870,6 +873,9 @@
+ 	// session.mu.Lock()
+ 	// defer session.mu.Unlock()
+ 	index := 0
++	if err := session.CheckReadSize(session.lastPacket.Len(), size); err != nil {
++		return err
++	}
+ 	tempBuffer := make([]byte, size)
+ 	var err error
+ 	var temp int
+@@ -1023,6 +1029,9 @@
+ 				session.Disconnect()
+ 				return nil, driver.ErrBadConn
+ 			}
++			if err := session.CheckReadSize(session.inBuffer.Len(), len(dataPck.buffer)); err != nil {
++				return nil, err
++			}
+ 			_, err = session.inBuffer.Write(dataPck.buffer)
+ 		}
+ 		return nil, err
+--- a/lob.go
++++ b/lob.go
+@@ -562,6 +562,9 @@
+ 	if err != nil {
+ 		return err
+ 	}
++	if err := session.CheckReadSize(lob.data.Len(), len(tempBytes)); err != nil {
++		return err
++	}
+ 	lob.data.Write(tempBytes)
+ 	return nil
+ }
+--- /dev/null
++++ b/network/read_limit.go
+@@ -0,0 +1,24 @@
++package network
++
++import "errors"
++
++// ErrReadLimit means the connection refused a result before allocating its body.
++var ErrReadLimit = errors.New("Oracle receive limit exceeded")
++
++// SetReadLimit bounds individual reads, packets, CLR values and LOB buffers.
++// Zero retains upstream behavior. Set it before starting a query, without
++// concurrent session operations. A rejected connection must be discarded.
++func (session *Session) SetReadLimit(limit int) {
++	session.ReadLimit = limit
++}
++
++// CheckReadSize checks an allocation or append without overflowing arithmetic.
++func (session *basicSession) CheckReadSize(current, added int) error {
++	if current < 0 || added < 0 || current > int(^uint(0)>>1)-added {
++		return ErrReadLimit
++	}
++	if session.ReadLimit > 0 && (current > session.ReadLimit || added > session.ReadLimit-current) {
++		return ErrReadLimit
++	}
++	return nil
++}

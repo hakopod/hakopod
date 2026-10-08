@@ -1,0 +1,101 @@
+package parameter_coder
+
+import (
+	"fmt"
+
+	"github.com/sijms/go-ora/v3/network"
+	"github.com/sijms/go-ora/v3/types"
+)
+
+type RowIDParameter struct {
+	rowid types.RowID
+	BasicParameter
+}
+
+func (param *RowIDParameter) Copy() OracleParameterCoder {
+	ret := new(RowIDParameter)
+	*ret = *param
+	return ret
+}
+
+func (param *RowIDParameter) Init() {
+	param.SetDefault()
+}
+
+func (param *RowIDParameter) Encode(input interface{}, _ IConnection) error {
+	param.Init()
+	coder := &types.RowID{}
+	coder.SetDataType(param.DataType)
+	err := coder.SetValue(input)
+	if dt := coder.GetDataType(); dt != 0 {
+		param.DataType = dt
+	}
+	if param.MaxLen < coder.GetMaxLen() {
+		param.MaxLen = coder.GetMaxLen()
+	}
+	return err
+}
+
+func (param *RowIDParameter) Decode(_ IConnection) (interface{}, error) {
+	decoder := &types.RowID{}
+	*decoder = param.rowid
+	decoder.SetBytes(param.BValue)
+	decoder.SetDataType(param.DataType)
+	return decoder.Value()
+}
+
+func (param *RowIDParameter) Write(session network.SessionWriter) error {
+	return fmt.Errorf("cannot pass rowid as an input parameter")
+}
+
+func (param *RowIDParameter) Read(session network.SessionReader) error {
+	switch param.DataType {
+	case types.ROWID:
+		length, err := session.GetByte()
+		if err != nil {
+			return err
+		}
+		if length == 0 {
+			return nil
+		}
+		param.rowid.Rba, err = session.GetInt64(4, true, true)
+		if err != nil {
+			return err
+		}
+		param.rowid.PartitionID, err = session.GetInt64(2, true, true)
+		if err != nil {
+			return err
+		}
+		num, err := session.GetByte()
+		if err != nil {
+			return err
+		}
+		param.rowid.BlockNumber, err = session.GetInt64(4, true, true)
+		if err != nil {
+			return err
+		}
+		param.rowid.SlotNumber, err = session.GetInt64(2, true, true)
+		if err != nil {
+			return err
+		}
+		if param.rowid.Rba == 0 && param.rowid.PartitionID == 0 && num == 0 && param.rowid.BlockNumber == 0 && param.rowid.SlotNumber == 0 {
+			return nil
+		}
+		return nil
+	case types.UROWID:
+		length, err := session.GetInt(4, true, true)
+		if err != nil {
+			return err
+		}
+		if length > 0 {
+			param.BValue, err = session.GetClr()
+			if err != nil {
+				return err
+			}
+		} else {
+			param.BValue = nil
+		}
+		return nil
+	}
+	return fmt.Errorf("ROWID decoder called with unsupported data type: %d", param.DataType)
+}
