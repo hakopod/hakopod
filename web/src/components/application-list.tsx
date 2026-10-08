@@ -128,6 +128,15 @@ export function ApplicationList({
           action={
             scope.can('deployments:write') && (
               <div className="toolbar-actions">
+                <Button asChild>
+                  <Link
+                    to="/projects/$project"
+                    params={{ project: project.name }}
+                    search={{ environment, tab: 'manage' }}
+                  >
+                    Project settings
+                  </Link>
+                </Button>
                 {features.git && (
                   <Button asChild>
                     <Link to="/builds" aria-label="Deploy from source" title="Deploy from source">

@@ -121,6 +121,16 @@ function Projects() {
                       <Badge>{project.personal ? 'Personal' : 'Shared'}</Badge>
                     )}
                     <div className="ops-card-actions relative z-10 ml-auto flex items-center gap-2">
+                      <Button asChild variant="ghost" size="icon">
+                        <Link
+                          to="/projects/$project"
+                          params={{ project: project.name }}
+                          search={{ tab: 'manage' }}
+                          aria-label={`Settings for project ${name}`}
+                        >
+                          <Icon name="settings" size={14} />
+                        </Link>
+                      </Button>
                       <RenameResource project={project} />
                       {scope.identity.admin && !project.personal && (
                         <DeleteResource project={project.name} trigger="icon" />
