@@ -49,6 +49,7 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	sqlQueryDiagnosticStage(ctx, "adapter_start", nil)
 	kind, err := queryStatementKind(q.SQL)
 	if err != nil {
 		return database.QueryResult{}, err
@@ -67,6 +68,7 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 		member = database.Member{Name: vitessTarget.pod.Name, UID: string(vitessTarget.pod.UID), Role: "gateway", Ready: true}
 	} else {
 		observation, err = c.ObserveDatabase(ctx, d)
+		sqlQueryDiagnosticStage(ctx, "observe", err)
 		if err != nil || observation.Status != "ready" {
 			return database.QueryResult{}, queryUnavailable()
 		}
@@ -81,6 +83,7 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 		return database.QueryResult{}, queryUnavailable()
 	}
 	secret, err := c.kube.CoreV1().Secrets(DatabaseNamespace(d.ID)).Get(ctx, "database-credentials", metav1.GetOptions{})
+	sqlQueryDiagnosticStage(ctx, "credentials", err)
 	if err != nil {
 		return database.QueryResult{}, queryUnavailable()
 	}
@@ -115,20 +118,24 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 	case "mysql":
 		client, err = c.mysqlQueryClient(ctx, d, member)
 	}
+	sqlQueryDiagnosticStage(ctx, "connector", err)
 	if err != nil || client == nil {
 		return database.QueryResult{}, queryUnavailable()
 	}
 	defer client.Close()
 	connection, err := client.Conn(ctx)
+	sqlQueryDiagnosticStage(ctx, "connection", err)
 	if err != nil {
 		return database.QueryResult{}, queryUnavailable()
 	}
 	defer connection.Close()
 	if d.Spec.Engine == "oracle" {
 		if err = boundOracleQueryConnection(connection); err != nil {
+			sqlQueryDiagnosticStage(ctx, "decoder_limit", err)
 			return database.QueryResult{}, queryUnavailable()
 		}
 	}
+	sqlQueryDiagnosticStage(ctx, "decoder_limit", nil)
 	verify := func(step context.Context) error {
 		if check != nil {
 			if err := check(step); err != nil {
@@ -147,8 +154,10 @@ func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q data
 		return e
 	}
 	if err := verify(ctx); err != nil {
+		sqlQueryDiagnosticStage(ctx, "authority", err)
 		return database.QueryResult{}, queryUnavailable()
 	}
+	sqlQueryDiagnosticStage(ctx, "authority", nil)
 	return runSQLDriverQuery(ctx, connection, d.Spec.Engine, q, kind, verify)
 }
 func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q database.QueryRequest, kind string, check func(context.Context) error) (database.QueryResult, error) {
@@ -182,6 +191,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		prepare = tx.PrepareContext
 	}
 	stmt, err := prepare(ctx, q.SQL)
+	sqlQueryDiagnosticStage(ctx, "prepare", err)
 	if err != nil {
 		if sqlQueryFailureCode(engine, err) == "database_query_result_limit" {
 			return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "not_started"}
@@ -222,12 +232,14 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		return result, nil
 	}
 	rows, err := stmt.QueryContext(ctx, args...)
+	sqlQueryDiagnosticStage(ctx, "query", err)
 	if err != nil {
 		outcome := sqlDriverRollbackOutcome(ctx, tx, engine)
 		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: outcome}
 	}
 	defer rows.Close()
 	columns, err := rows.Columns()
+	sqlQueryDiagnosticStage(ctx, "columns", err)
 	if err != nil {
 		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: sqlDriverRollbackOutcome(ctx, tx, engine)}
 	}
@@ -255,6 +267,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 			targets[i] = &values[i]
 		}
 		if err = rows.Scan(targets...); err != nil {
+			sqlQueryDiagnosticStage(ctx, "scan", err)
 			return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: "unknown"}
 		}
 		row := make([]*string, len(columns))
@@ -273,6 +286,7 @@ func runSQLDriverQuery(ctx context.Context, conn *sql.Conn, engine string, q dat
 		result.Rows = append(result.Rows, row)
 	}
 	if err = rows.Err(); err != nil {
+		sqlQueryDiagnosticStage(ctx, "rows", err)
 		return result, &database.QueryError{Code: sqlQueryFailureCode(engine, err), Outcome: "unknown"}
 	}
 	rows.Close()
