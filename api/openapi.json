@@ -22641,6 +22641,522 @@
         },
         "summary": "Read the encrypted terminal output for one owned job invocation."
       }
+    },
+    "/applications/{id}/services/{service}/sessions": {
+      "post": {
+        "operationId": "createSandboxSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxSessionReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SandboxSessionCreate"
+              }
+            }
+          }
+        },
+        "description": "Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "dedicated",
+          "permissions": [
+            "sessions:create"
+          ],
+          "review": "none",
+          "prerequisite": "Use an exact application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": []
+        },
+        "summary": "Create an isolated session from an immutable worker template."
+      },
+      "get": {
+        "operationId": "listSandboxSessions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "runtime_key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SandboxSessionReceipt"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "dedicated",
+          "permissions": [
+            "sessions:read"
+          ],
+          "review": "none",
+          "prerequisite": "Use an exact application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": []
+        },
+        "summary": "Find sessions for one exact owner and runtime key."
+      }
+    },
+    "/applications/{id}/services/{service}/sessions/{session}": {
+      "get": {
+        "operationId": "getSandboxSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxSessionReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "dedicated",
+          "permissions": [
+            "sessions:read"
+          ],
+          "review": "none",
+          "prerequisite": "Use an exact application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": []
+        },
+        "summary": "Read one owned session and its current generation."
+      },
+      "delete": {
+        "operationId": "deleteSandboxSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxSessionReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "dedicated",
+          "permissions": [
+            "sessions:delete"
+          ],
+          "review": "none",
+          "prerequisite": "Use an exact application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": []
+        },
+        "summary": "Close one owned session and delete its runtime."
+      }
+    },
+    "/applications/{id}/services/{service}/sessions/{session}/heartbeat": {
+      "post": {
+        "operationId": "heartbeatSandboxSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Hakopod-Session-Generation",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SandboxSessionReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "dedicated",
+          "permissions": [
+            "sessions:call"
+          ],
+          "review": "none",
+          "prerequisite": "Use an exact application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": []
+        },
+        "summary": "Renew the idle deadline of the expected live generation."
+      }
+    },
+    "/applications/{id}/services/{service}/sessions/{session}/call": {
+      "post": {
+        "operationId": "callSandboxSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Hakopod-Session-Generation",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "maxLength": 54525952
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Send bounded bytes to the fixed session helper and stream its output. Requires the expected generation and a unique Idempotency-Key. A repeated call is rejected. If the stream fails, its execution outcome is uncertain. Do not replay code automatically.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 50331648
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "binary",
+          "exposure": "dedicated",
+          "permissions": [
+            "sessions:call"
+          ],
+          "review": "none",
+          "prerequisite": "Use an exact application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": []
+        },
+        "summary": "Send bounded input to the fixed helper of one owned session."
+      }
     }
   },
   "components": {
@@ -22978,6 +23494,9 @@
           },
           "serverless": {
             "$ref": "#/components/schemas/Serverless"
+          },
+          "session": {
+            "$ref": "#/components/schemas/SandboxSession"
           }
         },
         "required": [
@@ -37509,6 +38028,128 @@
           "correlation_id",
           "owner_scope",
           "inputs"
+        ],
+        "additionalProperties": false
+      },
+      "SandboxSession": {
+        "type": "object",
+        "properties": {
+          "allowed_identities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "helper_command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "idle_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 900,
+            "default": 900
+          },
+          "lifetime_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 3600,
+            "default": 3600
+          }
+        },
+        "required": [
+          "allowed_identities",
+          "helper_command"
+        ],
+        "additionalProperties": false
+      },
+      "SandboxSessionReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "image": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "ready",
+              "closing",
+              "closed"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "cleanup_pending": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idle_until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "service",
+          "revision",
+          "image",
+          "generation",
+          "status",
+          "cleanup_pending",
+          "created_at",
+          "expires_at",
+          "idle_until"
+        ],
+        "additionalProperties": false
+      },
+      "SandboxSessionCreate": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer"
+          },
+          "expected_image": {
+            "type": "string"
+          },
+          "runtime_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "expected_image",
+          "runtime_key"
         ],
         "additionalProperties": false
       }

@@ -4863,6 +4863,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/services/{service}/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find sessions for one exact owner and runtime key.
+         * @description Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.
+         */
+        get: operations["listSandboxSessions"];
+        put?: never;
+        /**
+         * Create an isolated session from an immutable worker template.
+         * @description Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.
+         */
+        post: operations["createSandboxSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/sessions/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one owned session and its current generation.
+         * @description Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.
+         */
+        get: operations["getSandboxSession"];
+        put?: never;
+        post?: never;
+        /**
+         * Close one owned session and delete its runtime.
+         * @description Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.
+         */
+        delete: operations["deleteSandboxSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/sessions/{session}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew the idle deadline of the expected live generation.
+         * @description Requires an exact application-scoped machine key, an explicit sessions permission and a template identity grant. The creating identity and owner scope must match. Closed status confirms owned runtime cleanup.
+         */
+        post: operations["heartbeatSandboxSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/sessions/{session}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send bounded input to the fixed helper of one owned session.
+         * @description Send bounded bytes to the fixed session helper and stream its output. Requires the expected generation and a unique Idempotency-Key. A repeated call is rejected. If the stream fails, its execution outcome is uncertain. Do not replay code automatically.
+         */
+        post: operations["callSandboxSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4958,6 +5046,7 @@ export interface components {
             /** @description Self-hosted: approved runtime alias for this exact service scope. Empty uses the installation's normal runtime policy. */
             runtime_profile?: string;
             serverless?: components["schemas"]["Serverless"];
+            session?: components["schemas"]["SandboxSession"];
         };
         Spec: {
             schema_version: number;
@@ -8710,6 +8799,39 @@ export interface components {
             inputs: {
                 [key: string]: unknown;
             };
+        };
+        SandboxSession: {
+            allowed_identities: string[];
+            helper_command: string[];
+            /** @default 900 */
+            idle_seconds: number;
+            /** @default 3600 */
+            lifetime_seconds: number;
+        };
+        SandboxSessionReceipt: {
+            id: string;
+            application_id: string;
+            service: string;
+            revision: number;
+            image: string;
+            generation: string;
+            /** @enum {string} */
+            status: "starting" | "ready" | "closing" | "closed";
+            message?: string;
+            cleanup_pending: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            idle_until: string;
+            /** Format: date-time */
+            closed_at?: string;
+        };
+        SandboxSessionCreate: {
+            expected_revision: number;
+            expected_image: string;
+            runtime_key: string;
         };
     };
     responses: never;
@@ -20635,6 +20757,230 @@ export interface operations {
                         text: string;
                         truncated: boolean;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listSandboxSessions: {
+        parameters: {
+            query: {
+                runtime_key: string;
+            };
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SandboxSessionReceipt"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createSandboxSession: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SandboxSessionCreate"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxSessionReceipt"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSandboxSession: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxSessionReceipt"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteSandboxSession: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+            };
+            path: {
+                id: string;
+                service: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxSessionReceipt"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    heartbeatSandboxSession: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Hakopod-Owner-Scope": string;
+                "X-Hakopod-Session-Generation": string;
+            };
+            path: {
+                id: string;
+                service: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SandboxSessionReceipt"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    callSandboxSession: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                "X-Hakopod-Owner-Scope": string;
+                "X-Hakopod-Session-Generation": string;
+            };
+            path: {
+                id: string;
+                service: string;
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
                 };
             };
             /** @description Error */
