@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/hakopod/hakopod/internal/spec"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 )
 
@@ -18,8 +20,39 @@ func (c *Client) MissingWorkloadSecrets(ctx context.Context, project, environmen
 	if len(names) > 100 {
 		return nil, fmt.Errorf("at most 100 application secrets")
 	}
+	if len(names) == 0 {
+		return missing, nil
+	}
+	if err := c.platformNamespace(ctx, false); err != nil {
+		if apierrors.IsNotFound(err) {
+			return names, nil
+		}
+		return nil, fmt.Errorf("application secret storage is unavailable")
+	}
+	// Read this application's bounded set once. Repeated namespace and secret
+	// reads can exhaust the shared deadline even when every secret exists.
+	scope := secretScope(project, environment, app.Name)
+	api := c.kube.CoreV1().Secrets(PlatformNamespace)
+	list, err := api.List(ctx, metav1.ListOptions{LabelSelector: "hakopod.io/secret-scope=" + scope, Limit: 101})
+	if err != nil {
+		return nil, fmt.Errorf("application secret storage is unavailable")
+	}
+	if list.Continue != "" || len(list.Items) > 100 {
+		return nil, fmt.Errorf("application secret limit exceeded")
+	}
+	byName := make(map[string]*corev1.Secret, len(list.Items))
+	for i := range list.Items {
+		byName[list.Items[i].Name] = &list.Items[i]
+	}
 	for _, name := range names {
-		secret, err := c.GetPlatformSecret(ctx, workloadSecretName(project, environment, app.Name, name))
+		key := workloadSecretName(project, environment, app.Name, name)
+		secret, found := byName[key]
+		var err error
+		if !found {
+			// An absent label match is not proof of absence. Check the exact
+			// name so foreign ownership still fails closed.
+			secret, err = api.Get(ctx, key, metav1.GetOptions{})
+		}
 		if apierrors.IsNotFound(err) {
 			missing = append(missing, name)
 			continue
@@ -27,7 +60,7 @@ func (c *Client) MissingWorkloadSecrets(ctx context.Context, project, environmen
 		if err != nil {
 			return nil, fmt.Errorf("application secret storage is unavailable")
 		}
-		if secret.Labels["hakopod.io/secret-scope"] != secretScope(project, environment, app.Name) || secret.Labels["hakopod.io/secret-name"] != name {
+		if secret.Labels[managedBy] != "hakopod" || secret.Labels[platformSecretLabel] != "true" || secret.Labels["hakopod.io/secret-scope"] != scope || secret.Labels["hakopod.io/secret-name"] != name {
 			return nil, fmt.Errorf("application secret ownership could not be verified")
 		}
 		if len(secret.Data["value"]) == 0 {
