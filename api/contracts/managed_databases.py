@@ -1,5 +1,6 @@
 schemas['DatabasePlacement'] = obj({'spread': {'type': 'string', 'enum': ['', 'nodes', 'zones']}, 'node_names': {'type': 'array', 'items': S, 'maxItems': 48, 'uniqueItems': True}})
 schemas['DatabaseTLSConfig'] = obj({'mode': {'type': 'string', 'enum': ['required']}}, ['mode'])
+schemas['DatabaseClickHouseConfig'] = obj({'access_profile': {'type': 'string', 'enum': ['application', 'tenant_admin'], 'description': 'application is the default. tenant_admin allows a trusted service to provision read-only tenant users on a dedicated standalone instance. Backups exclude tenant access entities.'}}, ['access_profile'])
 schemas['DatabaseOracleConfig'] = obj({'edition': {'type': 'string', 'enum': ['free', 'enterprise']}, 'image': S, 'registry_credential': S, 'license_confirmed': B}, ['edition'])
 schemas['DatabaseVitessTable'] = obj({'name': {'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,63}$'}, 'sharding_column': {'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,63}$'}}, ['name', 'sharding_column'])
 schemas['DatabaseVitessConfig'] = obj({'tables': {'type': 'array', 'items': ref('DatabaseVitessTable'), 'maxItems': 128}, 'backup_destination_id': {'type': 'string', 'pattern': '^[a-f0-9]{32}$'}, 'backup_destination_revision': {'type': 'integer', 'minimum': 1}}, ['backup_destination_id', 'backup_destination_revision'])
@@ -10,7 +11,7 @@ schemas['ManagedDatabaseSpec'] = obj({
     'schema_version': {'type': 'integer', 'const': 1}, 'name': S,
     'engine': {'type': 'string', 'enum': ['postgresql', 'redis', 'mysql', 'mongodb', 'clickhouse', 'oracle', 'vitess', 'duckdb']},
     'version': S, 'mode': {'type': 'string', 'enum': ['standalone', 'cluster']},
-    'replicas': I, 'shards': I, 'cpu': S, 'memory': S, 'storage_gib': I, 'placement': ref('DatabasePlacement'), 'tls': ref('DatabaseTLSConfig'), 'pooling': ref('DatabasePooling'), 'oracle': ref('DatabaseOracleConfig'), 'vitess': ref('DatabaseVitessConfig'),
+    'replicas': I, 'shards': I, 'cpu': S, 'memory': S, 'storage_gib': I, 'placement': ref('DatabasePlacement'), 'tls': ref('DatabaseTLSConfig'), 'pooling': ref('DatabasePooling'), 'oracle': ref('DatabaseOracleConfig'), 'clickhouse': ref('DatabaseClickHouseConfig'), 'vitess': ref('DatabaseVitessConfig'),
 }, ['schema_version', 'name', 'engine', 'version', 'mode', 'replicas', 'shards', 'cpu', 'memory', 'storage_gib'])
 schemas['ManagedDatabaseSpec']['properties']['engine']['description'] = 'Managed engine identifier. duckdb selects DuckDB through MyDuck and remains unavailable until native single-node, dual-protocol TLS qualification passes.'
 schemas['DatabaseMember'] = obj({'name': S, 'uid': S, 'role': S, 'shard': S, 'ready': B, 'node': S, 'zone': S, 'region': S, 'provider': S, 'phase': S, 'restarts': I, 'created_at': T, 'image': S, 'metrics': ref('RuntimeMetrics')}, ['name', 'uid', 'role', 'ready'])
