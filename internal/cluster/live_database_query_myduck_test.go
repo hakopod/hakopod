@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/hakopod/hakopod/internal/database"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,7 +56,7 @@ func TestManagedMyDuckQueryLive(t *testing.T) {
 		t.Fatal("bound write", err)
 	}
 	result, err = query("SELECT value,text_value,NULL FROM hakopod_query_fixture")
-	if err != nil || len(result.Rows) != 1 || *result.Rows[0][0] != "9007199254740993" || *result.Rows[0][1] != payload || result.Rows[0][2] != nil {
+	if err != nil || len(result.Rows) != 1 || len(result.Rows[0]) != 3 || result.Rows[0][0] == nil || result.Rows[0][1] == nil || *result.Rows[0][0] != "9007199254740993" || *result.Rows[0][1] != payload || result.Rows[0][2] != nil {
 		t.Fatal("bound readback", err)
 	}
 	if _, err = queryMyDuckSQLFixture(ctx, c, d, database.QueryRequest{SQL: "SELECT 1"}); err == nil {
@@ -64,19 +65,93 @@ func TestManagedMyDuckQueryLive(t *testing.T) {
 	if _, err = query("SELECT 1; INSERT INTO hakopod_query_fixture VALUES (2,'second')"); err == nil {
 		t.Fatal("multiple statements accepted")
 	}
-	limited := database.QueryRequest{SQL: "SELECT * FROM range(10)", ReadOnly: &write, ExecutionMode: "nontransactional", MaxRows: 2}
-	limited.Validate()
-	if _, err = c.queryMyDuckSQL(ctx, d, limited, func(context.Context) error { return nil }); err == nil {
-		t.Fatal("row bound accepted oversized result")
+	for _, limited := range []database.QueryRequest{{SQL: "SELECT * FROM range(10)", ReadOnly: &write, ExecutionMode: "nontransactional", MaxRows: 2}, {SQL: "SELECT repeat('x',2000)", ReadOnly: &write, ExecutionMode: "nontransactional", MaxBytes: 1024}} {
+		limited.Validate()
+		_, err = c.queryMyDuckSQL(ctx, d, limited, nil)
+		var bounded *database.QueryError
+		if !errors.As(err, &bounded) || bounded.Code != "database_query_result_limit" || bounded.Outcome != "unknown" {
+			t.Fatal("bound outcome", err)
+		}
 	}
-	short, stop := context.WithTimeout(ctx, time.Second)
-	busy := database.QueryRequest{SQL: "SELECT sum(i) FROM range(100000000000) t(i)", ReadOnly: &write, ExecutionMode: "nontransactional"}
-	busy.Validate()
-	_, err = c.queryMyDuckSQL(short, d, busy, func(context.Context) error { return nil })
-	stop()
-	if err == nil {
-		t.Fatal("cancelled query accepted")
+	oversized := database.QueryRequest{SQL: "SELECT repeat('x',2097152)", ReadOnly: &write, ExecutionMode: "nontransactional"}
+	oversized.Validate()
+	_, err = c.queryMyDuckSQL(ctx, d, oversized, nil)
+	var protocolFailure *database.QueryError
+	if !errors.As(err, &protocolFailure) || protocolFailure.Outcome != "unknown" {
+		t.Fatal("oversized protocol value", err)
 	}
+	result, err = query("SELECT COUNT(*) FROM hakopod_query_fixture")
+	if err != nil || len(result.Rows) != 1 || len(result.Rows[0]) != 1 || result.Rows[0][0] == nil || *result.Rows[0][0] != "1" {
+		t.Fatal("negative probe persisted rows", err)
+	}
+	revoked := database.QueryRequest{SQL: "INSERT INTO hakopod_query_fixture VALUES (2,'revoked')", ReadOnly: &write, ExecutionMode: "nontransactional"}
+	revoked.Validate()
+	calls := 0
+	_, err = c.queryMyDuckSQL(ctx, d, revoked, func(context.Context) error {
+		calls++
+		if calls > 1 {
+			return context.Canceled
+		}
+		return nil
+	})
+	var authority *database.QueryError
+	if !errors.As(err, &authority) || authority.Code != "database_query_authority_changed" || authority.Outcome != "unknown" || calls != 2 {
+		t.Fatal("authority outcome", err, calls)
+	}
+
+	observation, e := c.ObserveDatabase(ctx, d)
+	if e != nil || len(observation.Members) != 1 {
+		t.Fatal("cancellation observation unavailable")
+	}
+	password, identity, e := c.myduckClientIdentity(ctx, d)
+	if e != nil {
+		t.Fatal("cancellation identity unavailable")
+	}
+	native, e := c.myduckMySQLClient(ctx, d, observation.Members[0], password, identity)
+	if e != nil {
+		t.Fatal("cancellation observer unavailable")
+	}
+	defer native.Close()
+	cancelCtx, cancelQuery := context.WithCancel(ctx)
+	defer cancelQuery()
+	cancelled := make(chan error, 1)
+	const marker = "hakopod_myduck_cancel_after_start"
+	go func() {
+		_, executionErr := queryMyDuckSQLFixture(cancelCtx, c, d, database.QueryRequest{SQL: "SELECT SLEEP(15) /* " + marker + " */", ReadOnly: &write, ExecutionMode: "nontransactional"})
+		cancelled <- executionErr
+	}()
+	started := false
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		select {
+		case earlyErr := <-cancelled:
+			t.Fatalf("query finished before execution marker: error_type=%T", earlyErr)
+		default:
+		}
+		var running int
+		e = native.QueryRowContext(ctx, "SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE ID <> CONNECTION_ID() AND INFO LIKE ?", "%"+marker+"%").Scan(&running)
+		if e != nil {
+			t.Fatal("observe executing query unavailable")
+		}
+		if running > 0 {
+			started = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !started {
+		t.Fatal("query never reached observed server execution")
+	}
+	cancelQuery()
+	select {
+	case e = <-cancelled:
+		var interrupted *database.QueryError
+		if !errors.As(e, &interrupted) || interrupted.Outcome != "unknown" {
+			t.Fatal("in-flight cancellation outcome", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("in-flight cancellation exceeded five seconds")
+	}
+
 	t.Log("MyDuck explicit write opt-in preserved PG binds and exact values")
 }
 

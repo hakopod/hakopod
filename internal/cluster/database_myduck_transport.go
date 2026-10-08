@@ -117,12 +117,19 @@ func (c *Client) myduckMySQLClient(ctx context.Context, d database.Resource, mem
 }
 
 func (c *Client) myduckPostgresClient(ctx context.Context, d database.Resource, member database.Member, password []byte, identity *tls.Config) (*pgx.Conn, error) {
+	return c.myduckPostgresClientBounded(ctx, d, member, password, identity, false)
+}
+func (c *Client) myduckPostgresClientBounded(ctx context.Context, d database.Resource, member database.Member, password []byte, identity *tls.Config, query bool) (*pgx.Conn, error) {
 	host := "database." + DatabaseNamespace(d.ID) + ".svc"
 	config, err := pgx.ParseConfig("host=" + host + " port=5432 user=postgres dbname=app connect_timeout=5")
 	if err != nil {
 		return nil, err
 	}
 	config.Password, config.TLSConfig, config.Fallbacks = string(password), identity, nil
+	if query {
+		config.MaxProtocolMessageBodyLen = database.QueryMaxBytes
+		config.OnNotice = nil
+	}
 	config.DialFunc = func(step context.Context, network, address string) (net.Conn, error) {
 		if network != "tcp" || step.Err() != nil {
 			return nil, fmt.Errorf("MyDuck requested an invalid connection")
