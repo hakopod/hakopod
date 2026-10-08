@@ -7,6 +7,7 @@ The contract classifies project operations, installation administration, dedicat
 Discovery lists the connection boundary, permissions, review requirements and prerequisites for each operation.
 It also returns the operation summary and description from OpenAPI when those fields exist.
 The [coverage inventory](agent-parity/coverage-matrix.md) records source coverage. It does not establish production availability.
+The [research decisions](agent-parity/research-decisions.md) connect the work to public user reports and the Openship walkthrough.
 
 ## Discover and call operations
 
