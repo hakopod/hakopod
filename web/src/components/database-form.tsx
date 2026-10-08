@@ -18,6 +18,7 @@ import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { databaseVersions } from '../lib/database-create'
 import { DatabaseCreate } from './database-create'
+import { DatabaseClickHouseAccess } from './database-clickhouse-access'
 import { databaseRequestedCapacity, routerInstances, votingDatabase, databaseStorageGiB, engineName } from '../lib/database-view'
 
 const initial: DatabaseSpec = {
@@ -88,6 +89,7 @@ function DatabaseAllocationForm({
     )
   if (database && (['clickhouse', 'oracle', 'vitess', 'duckdb'].includes(spec.engine) || (replicaOnly && spec.mode === 'standalone'))) return <FormPage title="Database capacity" description="Review the current engine's capacity policy." breadcrumbs={[]}>
     <Note>{replicaOnly ? `${engineName(spec.engine)} member resources and storage` : spec.engine === 'vitess' ? 'Vitess capacity and table routing' : spec.engine === 'clickhouse' ? 'ClickHouse topology and resources' : spec.engine === 'duckdb' ? 'DuckDB (MyDuck) resources and storage' : 'Oracle edition and resources'} are fixed at creation. Create a separate compatible database and recover into it to change capacity.</Note>
+    {spec.engine === 'clickhouse' && <DatabaseClickHouseAccess database={database} />}
     {spec.engine === 'vitess' && <>
       <Note>Vitess requires a dedicated operator-approved native backup destination.</Note>
       <FormSection title="Vitess configuration"><dl className="db-create-facts"><div><dt>Table routing</dt><dd>{spec.shards === 1 ? 'Single shard; no sharding columns' : (spec.vitess?.tables || []).map((table) => `${table.name} / ${table.sharding_column}`).join(', ') || 'Not configured'}</dd></div><div><dt>Native backup destination</dt><dd>{spec.vitess?.backup_destination_id || 'Not configured'}{spec.vitess && ` · r${spec.vitess.backup_destination_revision}`}</dd></div></dl></FormSection>

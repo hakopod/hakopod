@@ -723,6 +723,13 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     </span>
                   </div>
                 </div>
+                {spec.engine === 'clickhouse' && <FormSection title="Application access">
+                  <SelectField label="Access profile" value={spec.clickhouse?.access_profile || 'application'} onValueChange={(value) => update({ clickhouse: { access_profile: value as 'application' | 'tenant_admin' } })} disabled={busy} options={[
+                    { value: 'application', label: 'Application queries' },
+                    { value: 'tenant_admin', label: 'Tenant administration', disabled: spec.mode !== 'standalone' },
+                  ]} />
+                  {spec.clickhouse?.access_profile === 'tenant_admin' ? <Note>The application login can create and delete tenant users, quotas and row policies, and delegate SELECT on app.*. Use this profile only for a trusted provisioning service on a dedicated instance. Backups exclude tenant access entities; recreate and verify them before tenant reads after restore.</Note> : <p className="field-help">The application login can query and manage tables in app. It cannot create tenant users.</p>}
+                </FormSection>}
                 <FormSection title="Connection policy">
                   <dl className="db-create-facts">
                     <div>
@@ -1017,7 +1024,7 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
                     </div>
                     <div>
                       <dt>Security</dt>
-                      <dd>Required TLS · private endpoints · generated credentials</dd>
+                      <dd>Required TLS · private endpoints · generated credentials{spec.engine === 'clickhouse' && ` · ${spec.clickhouse?.access_profile === 'tenant_admin' ? 'Tenant administration enabled; recreate tenant access after restore' : 'Application queries only'}`}</dd>
                     </div>
                     <div>
                       <dt>Connection routing</dt>
