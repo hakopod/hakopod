@@ -279,3 +279,26 @@ func TestSandboxAcceptsOnlyReservedRuntimeOverhead(t *testing.T) {
 		})
 	}
 }
+func TestSandboxCleanupPreservesForeignFieldsOnDefaultResources(t *testing.T) {
+	c, r := sandboxFixture(t)
+	_ = c
+	target, _, err := sandboxTarget(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := &unstructured.Unstructured{Object: map[string]any{"metadata": map[string]any{"name": "kube-root-ca.crt"}, "data": map[string]any{"ca.crt": "fixture-ca"}}}
+	kind := schema.GroupResource{Resource: "configmaps"}
+	if !sandboxCleanupAllowed(ca, kind, target, r) {
+		t.Fatal("default CA rejected")
+	}
+	ca.Object["binaryData"] = map[string]any{"foreign": "a2VlcA=="}
+	if sandboxCleanupAllowed(ca, kind, target, r) {
+		t.Fatal("foreign binary CA fields would be erased")
+	}
+	for _, field := range []string{"secrets", "imagePullSecrets"} {
+		account := &unstructured.Unstructured{Object: map[string]any{"metadata": map[string]any{"name": "default"}, field: "malformed"}}
+		if sandboxCleanupAllowed(account, schema.GroupResource{Resource: "serviceaccounts"}, target, r) {
+			t.Fatal("malformed default account would be erased")
+		}
+	}
+}
