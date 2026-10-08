@@ -1800,7 +1800,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send a test notification to the configured deployment target. */
+        /** Queue a test notification for the configured deployment target. */
         post: operations["testDeploymentNotification"];
         delete?: never;
         options?: never;
@@ -2706,7 +2706,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Replace a reviewed application binding to a managed database. */
+        /** Request replacement of a reviewed application binding to a managed database. */
         post: operations["replaceDatabaseConnection"];
         delete?: never;
         options?: never;
@@ -3575,7 +3575,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Save the proxy configuration. */
+        /** Request a reviewed proxy configuration change. */
         patch: operations["setProxy"];
         trace?: never;
     };
@@ -4125,7 +4125,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send a test notification through the Slack integration. */
+        /** Queue a test notification through the Slack integration. */
         post: operations["testSlack"];
         delete?: never;
         options?: never;
@@ -4512,7 +4512,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry or cancel a volume resize, retain its original volume, or delete that volume. */
+        /** Request a volume resize retry or cancellation, or retention or deletion of its original volume. */
         post: operations["volumeResizeAction"];
         delete?: never;
         options?: never;

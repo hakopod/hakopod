@@ -7994,7 +7994,7 @@
           "review": "canonical",
           "sensitive_fields": []
         },
-        "summary": "Send a test notification to the configured deployment target."
+        "summary": "Queue a test notification for the configured deployment target."
       }
     },
     "/dns-providers": {
@@ -12189,7 +12189,7 @@
           "review": "canonical",
           "sensitive_fields": []
         },
-        "summary": "Replace a reviewed application binding to a managed database."
+        "summary": "Request replacement of a reviewed application binding to a managed database."
       }
     },
     "/databases/{id}/inspect": {
@@ -16034,7 +16034,7 @@
             "secret"
           ]
         },
-        "summary": "Save the proxy configuration."
+        "summary": "Request a reviewed proxy configuration change."
       }
     },
     "/requests": {
@@ -18794,7 +18794,7 @@
           "review": "canonical",
           "sensitive_fields": []
         },
-        "summary": "Send a test notification through the Slack integration."
+        "summary": "Queue a test notification through the Slack integration."
       }
     },
     "/integrations/github": {
@@ -20764,7 +20764,7 @@
           "review": "canonical",
           "sensitive_fields": []
         },
-        "summary": "Retry or cancel a volume resize, retain its original volume, or delete that volume."
+        "summary": "Request a volume resize retry or cancellation, or retention or deletion of its original volume."
       }
     },
     "/builds/detect": {
