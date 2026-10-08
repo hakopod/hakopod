@@ -24,7 +24,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check fixture ownership and failure cleanup
-        run: python3 -B -m unittest discover -s scripts -p 'test-rabbit-private-mount-acceptance.py' -v
+        run: python3 -B scripts/test-rabbit-private-mount-acceptance.py -v
       - name: Check out the reviewed public Rabbit fixture
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
