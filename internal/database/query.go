@@ -122,10 +122,11 @@ func CapabilitiesForQuery(engine string) QueryCapabilities {
 		c.TransactionalDML = true
 		c.DDLCommit = "implicit_commit"
 	case "oracle":
+		c.ExecutionModes = []string{"nontransactional"}
 		c.ApplicationIdentity = "APP"
 		c.ParameterStyle = ":1"
-		c.ReadOnlyEnforcement = "server_transaction"
-		c.TransactionalDML = true
+		c.Cancellation = "Queries may commit autonomous writes. Cancellation and errors cannot confirm that no writes persisted. Check outcomes before retrying."
+		c.ReadOnlyEnforcement = "unsupported"
 		c.DDLCommit = "implicit_commit"
 	case "duckdb":
 		c.Supported = true

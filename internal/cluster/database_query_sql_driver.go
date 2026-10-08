@@ -15,8 +15,8 @@ import (
 )
 
 // This classification selects execution semantics. It is not the authorization
-// boundary. The driver prepares one statement and the server enforces read-only
-// mode. Engine qualification must test functions and implicit commits.
+// boundary. The driver prepares one statement. Read-only support depends on
+// qualified server enforcement, including functions and implicit commits.
 func queryStatementKind(statement string) (string, error) {
 	fields := strings.Fields(statement)
 	if len(fields) == 0 {
@@ -34,6 +34,14 @@ func queryStatementKind(statement string) (string, error) {
 	return "", &database.QueryError{Code: "database_query_statement_unsupported", Outcome: "not_started"}
 }
 func (c *Client) querySQLDriver(ctx context.Context, d database.Resource, q database.QueryRequest, check func(context.Context) error) (database.QueryResult, error) {
+	if d.Spec.Engine == "oracle" {
+		if q.IsReadOnly() {
+			return database.QueryResult{}, &database.QueryError{Code: "database_query_read_only_unsupported", Outcome: "not_started"}
+		}
+		if q.ExecutionMode != "nontransactional" {
+			return database.QueryResult{}, &database.QueryError{Code: "database_query_execution_mode_unsupported", Outcome: "not_started"}
+		}
+	}
 	if d.Spec.Engine == "vitess" {
 		if err := validateVitessQueryDirectives(q.SQL); err != nil {
 			return database.QueryResult{}, err
