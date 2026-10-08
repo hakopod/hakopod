@@ -53,7 +53,9 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 		if svc.Job != nil {
 			var status ServiceStatus
 			var err error
-			if svc.Job.Schedule != nil {
+			if svc.Job.Invocation != nil {
+				status, err = c.observeInvocationTemplate(ctx, t, name, svc)
+			} else if svc.Job.Schedule != nil {
 				status, err = c.observeScheduledJob(ctx, t, name, svc)
 			} else {
 				status, err = c.observeJob(ctx, t, name, svc)
@@ -62,7 +64,7 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 				return result, err
 			}
 			result.Services = append(result.Services, status)
-			if status.Status == "completed" || status.Status == "scheduled" || status.Status == "stopped" {
+			if status.Status == "configured" || status.Status == "completed" || status.Status == "scheduled" || status.Status == "stopped" {
 				healthy++
 			}
 			continue

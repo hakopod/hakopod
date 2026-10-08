@@ -212,6 +212,9 @@ func (c *Client) observeJob(ctx context.Context, t Target, name string, s spec.S
 }
 
 func (c *Client) validateWorkloadKinds(ctx context.Context, t Target) error {
+	if err := c.validateActiveInvocations(ctx, t); err != nil {
+		return err
+	}
 	ns, nsErr := c.kube.CoreV1().Namespaces().Get(ctx, Namespace(t.ApplicationID), metav1.GetOptions{})
 	if nsErr != nil && !apierrors.IsNotFound(nsErr) {
 		return nsErr
@@ -225,6 +228,13 @@ func (c *Client) validateWorkloadKinds(ctx context.Context, t Target) error {
 	}
 
 	for name, s := range t.Spec.Services {
+		marker, e := c.kube.CoreV1().ConfigMaps(Namespace(t.ApplicationID)).Get(ctx, invocationTemplateName(name), metav1.GetOptions{})
+		if e == nil && marker != nil && (s.Job == nil || s.Job.Invocation == nil) {
+			return fmt.Errorf("%s: remove the invocation template before changing its workload kind", name)
+		}
+		if e != nil && !apierrors.IsNotFound(e) {
+			return e
+		}
 		if s.Actions != nil {
 			d, e := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
 			if e == nil && d != nil {
@@ -241,7 +251,7 @@ func (c *Client) validateWorkloadKinds(ctx context.Context, t Target) error {
 		if err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
-		if s.Job != nil && s.Job.Schedule != nil {
+		if s.Job != nil && (s.Job.Schedule != nil || s.Job.Invocation != nil) {
 			prior, e := c.kube.BatchV1().Jobs(Namespace(t.ApplicationID)).Get(ctx, jobName(name), metav1.GetOptions{})
 			if e == nil && prior != nil {
 				return fmt.Errorf("%s: remove the deployment job before scheduling it", name)
@@ -281,6 +291,11 @@ func (c *Client) cleanupJobs(ctx context.Context, t Target) error {
 		return fmt.Errorf("too many owned jobs for bounded cleanup")
 	}
 	for _, j := range jobs.Items {
+		// Only the durable invocation controller may delete these Jobs, after
+		// storing their terminal receipt and bounded logs.
+		if j.Labels[invocationLabel] != "" {
+			continue
+		}
 		if svc, ok := t.Spec.Services[j.Labels[serviceKey]]; ok && svc.Job != nil {
 			continue
 		}

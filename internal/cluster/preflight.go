@@ -57,7 +57,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		}
 		cpu := resource.MustParse(p.CPURequest)
 		memory := resource.MustParse(p.MemoryRequest)
-		if s.Job != nil && s.Job.Schedule == nil {
+		if s.Job != nil && s.Job.Schedule == nil && s.Job.Invocation == nil {
 			jobCPU = max(jobCPU, cpu.MilliValue())
 			jobMemory = max(jobMemory, memory.Value())
 		} else {
@@ -197,7 +197,7 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 			continue
 		}
 		cpu, memory := pinnedRequests(svc, policy)
-		if svc.Job != nil && svc.Job.Schedule == nil {
+		if svc.Job != nil && svc.Job.Schedule == nil && svc.Job.Invocation == nil {
 			v := pinnedJobs[node]
 			v[0] = max(v[0], cpu)
 			v[1] = max(v[1], memory)
