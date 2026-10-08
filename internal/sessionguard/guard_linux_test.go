@@ -88,3 +88,57 @@ func TestSessionGuardRejectsUnsupportedArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionGuardConfirmsIdentityBeforeExec(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if mode := os.Getenv("HAKOPOD_GUARD_READY_CHILD"); mode != "" {
+		args := []string{"run", "--expected-pod-uid", "pod-one", "--expected-generation", "generation-one", "--ready-token", token, "--", "/bin/echo", "fixed-helper-executed"}
+		if mode == "changed" {
+			args[2] = "replaced-pod"
+		}
+		if err := Run(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		os.Exit(3) // A successful exec does not return.
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() == 0 {
+		directory, err := os.MkdirTemp("/tmp", "hakopod-session-ready-test-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(directory)
+		if err = os.Chmod(directory, 0755); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(executable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		executable = filepath.Join(directory, "probe")
+		if err = os.WriteFile(executable, data, 0555); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, mode := range []string{"matching", "changed"} {
+		command := exec.Command(executable, "-test.run=^TestSessionGuardConfirmsIdentityBeforeExec$")
+		command.Env = append(os.Environ(), "HAKOPOD_GUARD_READY_CHILD="+mode, "HAKOPOD_POD_UID=pod-one", "HAKOPOD_SESSION_GENERATION=generation-one")
+		if os.Geteuid() == 0 {
+			command.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 65532, Gid: 65532}}
+		}
+		var stdout, stderr bytes.Buffer
+		command.Stdout, command.Stderr = &stdout, &stderr
+		err := command.Run()
+		if mode == "matching" {
+			if err != nil || stdout.String() != "HAKOPOD_SESSION_READY "+token+"\nfixed-helper-executed\n" {
+				t.Fatal("guard did not confirm identity before helper output", err, stdout.String(), stderr.String())
+			}
+		} else if err == nil || stdout.Len() != 0 || !strings.Contains(stderr.String(), "identity or generation changed") {
+			t.Fatal("changed Pod received readiness or helper execution", err, stdout.String(), stderr.String())
+		}
+	}
+}
