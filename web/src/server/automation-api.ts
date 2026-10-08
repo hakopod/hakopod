@@ -18,6 +18,11 @@ const routes: [RegExp, string[]][] = [
   [/^builds\/[A-Za-z0-9_-]+\/runs(?:\/[A-Za-z0-9_-]+)?$/, ['GET']],
   [/^builds\/[A-Za-z0-9_-]+\/runs\/[A-Za-z0-9_-]+\/(?:plan|deploy)$/, ['POST']],
   [/^auth\/device\/(?:start|token)$/, ['POST']],
+  // Invocation callers use explicit machine credentials and tenant owner authority.
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations$/, ['GET', 'POST']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}$/, ['GET']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}\/cancel$/, ['POST']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}\/logs$/, ['GET']],
   [/^applications$/, ['GET']],
   [/^applications\/[A-Za-z0-9_-]+$/, ['GET', 'DELETE']],
   [/^applications\/[A-Za-z0-9_-]+\/provenance$/, ['GET']],
@@ -124,6 +129,10 @@ export async function forwardAutomationAPI(request: Request) {
     for (const name of ['Content-Type', 'Idempotency-Key']) {
       const value = request.headers.get(name)
       if (value !== null) headers.set(name, value)
+    }
+    if (/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations(?:\/|$)/.test(path)) {
+      const owner = request.headers.get('X-Hakopod-Owner-Scope')
+      if (owner !== null) headers.set('X-Hakopod-Owner-Scope', owner)
     }
     const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)
       ? await boundedBytes(request, 1024 * 1024)
