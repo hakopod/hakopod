@@ -92,6 +92,43 @@ class VitessSourceCompatibilityTest(unittest.TestCase):
         path.write_text(json.dumps(self.record if record is None else record))
         return path
 
+    def candidate_record(self):
+        record = copy.deepcopy(self.record)
+        baseline = record.pop("qualified_release")
+        baseline.pop("tag")
+        native = baseline.pop("commit")
+        record["schema_version"] = 2
+        record["reviewed_release"] = "v0.1.0-alpha.58"
+        record["qualified_candidate"] = {**baseline, "version": "0.1.0-alpha.58",
+                                         "native_commit": native, "http_commit": "4" * 40}
+        return record
+
+    def test_prepublication_candidate_retains_exact_native_and_http_hashes(self):
+        record = self.candidate_record()
+        self.write(record)
+        self.assertTrue(VITESS.validate_source_compatibility(
+            self.root, "runtime", self.baseline, self.current,
+            artifact_sha256=record["qualified_candidate"]["native_manifest_sha256"]))
+        self.assertTrue(VITESS.validate_http_compatibility(
+            self.root, self.report, self.current, self.report["http_harness_source_files"]))
+
+    def test_prepublication_candidate_rejects_invented_tag_and_invalid_commits(self):
+        for key, value in (("tag", "v0.1.0-alpha.58"), ("native_commit", "bad"),
+                           ("http_commit", "bad"), ("version", "v0.1.0-alpha.58")):
+            with self.subTest(key=key):
+                record = self.candidate_record()
+                record["qualified_candidate"][key] = value
+                self.write(record)
+                with self.assertRaises(ValueError):
+                    VITESS.load_source_compatibility(self.root)
+
+    def test_prepublication_candidate_rejects_different_reviewed_version(self):
+        record = self.candidate_record()
+        record["reviewed_release"] = "v0.1.0-alpha.59"
+        self.write(record)
+        with self.assertRaises(ValueError):
+            VITESS.load_source_compatibility(self.root)
+
     def test_equal_source_maps_need_no_compatibility_exception(self):
         self.assertFalse(VITESS.validate_source_compatibility(
             self.root, "runtime", self.baseline, self.baseline))
@@ -208,6 +245,7 @@ class VitessSourceCompatibilityTest(unittest.TestCase):
         native = {
             "source_boolean": lambda root, name: True,
             "load_source_compatibility": VITESS.load_source_compatibility,
+            "compatibility_baseline": VITESS.compatibility_baseline,
             "canonical_hash": VITESS.canonical_hash,
         }
         state = HTTP["verify"].__globals__
