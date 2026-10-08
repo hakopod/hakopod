@@ -1,83 +1,46 @@
-Hakopod 0.1.0-alpha.56 adds managed DuckDB through MyDuck and Oracle Database
-Free, database bindings for existing application accounts, and editable TOML
-for catalog deployments.
+Hakopod 0.1.0-alpha.57 gives Oracle Database Free provisioning and health checks
+separate reconciliation steps. Creating the Kubernetes resources no longer uses
+up part of the health check's time allowance. The handoff is saved in PostgreSQL,
+so it survives an API restart. Each step keeps the existing timeout and operation
+lease.
 
-MyDuck runs one persistent DuckDB database with two private connections: MySQL
-on port 3306 and PostgreSQL on port 5432. Both reach the same data. Connections
-require TLS and the database CA. MyDuck supports parts of both wire protocols;
-test your application's driver, migrations and queries before moving data.
-Backups stop the instance and copy its database and write-ahead log. See the
-[MyDuck guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/docs/managed-myduck.md)
-for compatibility, resource limits and recovery instructions.
+This release includes managed DuckDB through MyDuck and Oracle Database Free,
+introduced in alpha.56. MyDuck offers MySQL and PostgreSQL connections to the
+same persistent DuckDB database. Oracle Free uses the Oracle Database Operator
+and a restricted application schema. Both require TLS, Linux amd64 workers and
+supported persistent storage. Both run one instance with private endpoints;
+neither provides automatic failover. See the
+[MyDuck guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.57/docs/managed-myduck.md)
+and [Oracle guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.57/docs/managed-oracle.md)
+for client compatibility, backup procedures and resource limits.
 
-Oracle Database Free runs one instance managed by the Oracle Database Operator.
-Applications use the restricted APP schema through private TCPS on port 2484.
-Backups use Data Pump to capture that schema at a selected SCN; restore uses a
-separate target for inspection before applications connect. Oracle Free is
-proprietary software available at no charge, with Oracle's limits of two CPUs,
-2 GB of database memory and 12 GB of user data. See the
-[Oracle guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/docs/managed-oracle.md)
-for the stack, connection settings and backup scope.
+Oracle Free is proprietary software available at no charge. Oracle Enterprise,
+Data Guard and public Oracle endpoints remain unavailable.
 
-Both additions require Linux amd64 workers and supported persistent storage.
-They have one instance, private endpoints and no automatic failover. Restarts
-and certificate renewal interrupt connections, so clients need reconnect
-handling. Oracle Enterprise, Data Guard and public database endpoints remain
-unavailable.
+MyDuck and Vitess retain their existing runtime images and native test evidence.
+The release records the exact reviewed source changes instead of relabeling old
+test runs. Oracle retains its three cluster test cases and requires a new HTTP
+API acceptance result for the provisioning change.
 
-For engines that support custom application accounts, a database binding can
-select an existing username, database, password secret and SSL mode. The
-dashboard can save a new password as a scoped secret; reviews and application
-revisions contain only its reference.
-The same options are available in TOML, the CLI and the TypeScript SDK. Omitted
-options retain the managed defaults. Binding does not create database accounts
-or change their grants.
-
-TLS and endpoint validation follow each database engine's policy. PostgreSQL
-custom users and databases use direct endpoints; pooled endpoints retain the
-managed app login. Clients must trust the mounted database CA when verification
-is enabled. See the
-[connection guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.56/docs/managed-databases.md#application-connections)
-for supported options and client trust configuration.
-
-Catalog reviews now include **Edit TOML**. Change or remove services, volumes,
-bindings and other settings, then review the validated configuration before
-deploying. Existing applications show the complete configuration and any
-removals in the diff. Required secrets follow the edited configuration, failed
-requests preserve drafts, and deployment retains scope and revision checks.
-The editor's schema is generated from the API contract.
-
-This release retains managed Vitess and the Outpost application template. They
-were introduced in
-[alpha.55](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.55) and
-[alpha.54](https://github.com/hakopod/hakopod/releases/tag/v0.1.0-alpha.54),
-respectively.
-Their documented platform, capacity and recovery requirements still apply.
-
-Vitess retains its alpha.55 runtime, operator and original acceptance evidence.
-An exact source compatibility review covers the shared control-plane changes;
-packaging still verifies the immutable images and rejects unreviewed changes.
-
-Install alpha.56 with the published installer:
+Install this prerelease with:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.56/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.56
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.57/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.57
 ```
 
-Upgrade an existing installation with:
+Upgrade an existing alpha.55 or alpha.56 installation with:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.56/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.56
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.57/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.57
 ```
 
-Direct upgrades are supported from alpha.54 and alpha.55. Older installations
-need a supported intermediate release. Each upgrade backs up PostgreSQL and
-configuration and restarts the management API and dashboard. Retain backups
-because replacing binaries does not reverse database migrations.
+Older installations need a supported intermediate release. The upgrade backs up
+PostgreSQL and configuration, then restarts the management API and dashboard.
+Retain those backups; replacing binaries does not reverse database migrations.
 
-Hakopod Cloud requires its own package and rollout. This public release does
-not establish production Cloud availability.
+Hakopod Cloud has a separate package and rollout. This OSS release does not
+establish production Cloud availability.
