@@ -93,10 +93,14 @@ hakopod api call getDatabaseQueryCapabilities --project demo --environment devel
 ```
 
 `supported` identifies enabled execution. `read_only_supported` identifies server-enforced read-only execution.
-The response also specifies parameter syntax, execution modes and transaction guarantees.
+The response also specifies parameter syntax, execution modes and transaction guarantees. `transaction_scope` identifies guarantees for no transaction, one connection or one shard.
 An unsupported engine or mode is rejected before connection. The current [verification record](agent-control-verification.md) lists qualified engines.
 
 MyDuck uses its PostgreSQL endpoint with `$1` parameters and only `nontransactional` execution. It cannot enforce read-only queries: CLI and MCP callers must explicitly enable writes and supply the reviewed revision. Query capability discovery returns these same guarantees.
+
+Oracle query execution remains disabled pending native qualification. Its candidate mode requires explicit write permission and nontransactional execution. Oracle autonomous functions can commit outside the calling transaction, including from a `SELECT`. A parent rollback cannot prove that every write was undone. [Oracle's autonomous transaction documentation](https://docs.oracle.com/en/database/oracle/oracle-database/26/lnpls/autonomous-transactions.html) describes this behavior. Do not infer read-only safety from the statement's first keyword or the caller's transaction mode.
+
+Vitess query execution retains the server's SINGLE transaction policy. Data changes must target one shard, including nontransactional requests. Reads may span shards. Schema changes can partially apply. `cross_shard_dml=false` reports that restriction. Standalone and sharded development acceptance passed against the same runtime source.
 
 For PostgreSQL, save a query in a file:
 
@@ -131,6 +135,30 @@ Read results may be truncated. SQL null stays JSON null. Other cells use text to
 Query errors include an operation ID and outcome after execution begins.
 An `unknown` outcome means the server cannot establish the final write result. Check the database before a retry.
 Queries do not retry automatically. Audit records exclude SQL text, parameters, credentials and result rows.
+
+The dashboard uses Monaco for SQL highlighting and keyword completion. PostgreSQL, MySQL and Vitess receive grammar hints from a local worker.
+Grammar hints are advisory. They can flag valid bind placeholders or server extensions. Other dialects show an explicit linting limitation.
+The editor sends no SQL to a third-party service. The control-plane API receives the statement only when the user runs it.
+Editor input is limited to 64 KiB in UTF-8. Worker startup and parsing have separate deadlines, and a failure preserves the statement.
+One worker retains at most one active request and the latest pending request. A later edit can start a new attempt after worker failure.
+Press Escape to move from the editor to Parameters. If completion is open, the first Escape closes completion.
+
+## Project and environment deletion
+
+Self-hosted administrators can delete an empty project, including `demo` after first-time owner setup.
+Project settings lists environments and provides deletion review. Project administrators can delete an empty environment through the dashboard.
+Delete resources and reclaim retained data first. Remove scope grants and finish active operations before deletion.
+The API checks for remaining resources while it locks the scope against concurrent creation.
+Completed resource history stays available. Deletion revokes keys restricted to the removed scope.
+Deleted IDs remain reserved. Create a project with a new name and ID to replace the default project.
+Renaming an existing project changes its display name only.
+
+CLI and MCP expose `deleteEmptyProject` and `deleteEmptyEnvironment` through the installation connection.
+Both require installation administration permission and explicit write opt-in. Supply the exact project or environment ID in `confirm_name`.
+These connection requirements do not grant authority to a scoped machine key.
+
+Personal projects and their development environment remain linked to the account. Additional empty personal environments can be removed.
+Cloud workspaces retain their separate runtime binding. Raw project deletion does not replace Cloud release or node-disconnection workflows.
 
 ## Verification and remaining work
 
