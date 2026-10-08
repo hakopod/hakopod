@@ -63,7 +63,7 @@ func TestPostgresQueryFailureOutcome(t *testing.T) {
 }
 func TestDatabaseQueryUnsupportedFailsBeforeClusterAccess(t *testing.T) {
 	var c *Client
-	for _, engine := range []string{"vitess", "oracle", "mongodb", "redis"} {
+	for _, engine := range []string{"oracle", "mongodb", "redis"} {
 		_, err := c.QueryDatabase(context.Background(), database.Resource{Spec: database.Spec{Engine: engine}}, database.QueryRequest{SQL: "SELECT 1"})
 		var queryErr *database.QueryError
 		if !errors.As(err, &queryErr) || queryErr.Code != "database_query_engine_unsupported" || queryErr.Outcome != "not_started" {
@@ -73,8 +73,14 @@ func TestDatabaseQueryUnsupportedFailsBeforeClusterAccess(t *testing.T) {
 }
 func TestSupportedDatabaseQueryRequiresTLSBeforeClusterAccess(t *testing.T) {
 	var c *Client
-	for _, engine := range []string{"postgresql", "mysql", "clickhouse"} {
-		_, err := c.QueryDatabase(context.Background(), database.Resource{Spec: database.Spec{Engine: engine}}, database.QueryRequest{SQL: "SELECT 1"})
+	for _, engine := range []string{"postgresql", "mysql", "vitess", "duckdb", "clickhouse"} {
+		request := database.QueryRequest{SQL: "SELECT 1"}
+		if engine == "duckdb" {
+			readOnly := false
+			request.ReadOnly = &readOnly
+			request.ExecutionMode = "nontransactional"
+		}
+		_, err := c.QueryDatabase(context.Background(), database.Resource{Spec: database.Spec{Engine: engine}}, request)
 		var queryErr *database.QueryError
 		if !errors.As(err, &queryErr) || queryErr.Code != "database_query_tls_required" || queryErr.Outcome != "not_started" {
 			t.Fatalf("%s: %v", engine, err)
