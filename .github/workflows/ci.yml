@@ -96,9 +96,9 @@ jobs:
           python3 -B api/check_route_coverage.py
           git diff --exit-code -- api/openapi.json web/src/server/agent-routes.generated.ts
       - run: go test ./...
-      - name: Oracle decoder receive limits
+      - name: Oracle decoder receive limits and private diagnostics
         working-directory: third_party/go-ora-v3
-        run: go test . ./network -run '^Test(ReadLimit|LobReadLimit)' -count=1
+        run: go test . ./network -run '^Test(ReadLimit|LobReadLimit|DriverDiagnostics)' -count=1
       - name: Check signup build policies
         run: |
           go test -tags=hakopod_cloud ./cmd/hakopod-server
