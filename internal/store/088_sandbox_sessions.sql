@@ -17,6 +17,7 @@ CREATE TABLE sandbox_sessions (
  namespace_uid text NOT NULL DEFAULT '',
  pod_uid text NOT NULL DEFAULT '',
  container_id text NOT NULL DEFAULT '',
+ image_id text NOT NULL DEFAULT '',
  source jsonb NOT NULL,
  call_token text NOT NULL DEFAULT '',
  call_request_id text NOT NULL DEFAULT '',

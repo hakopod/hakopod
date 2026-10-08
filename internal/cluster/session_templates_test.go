@@ -15,7 +15,7 @@ import (
 
 func sessionTemplateFixture(t *testing.T) (*Client, Target) {
 	t.Helper()
-	app, err := spec.Normalize(spec.Application{Name: "session-test", Services: map[string]spec.Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{strings.Repeat("b", 32)}, HelperCommand: []string{"helper"}}}}})
+	app, err := spec.Normalize(spec.Application{Name: "session-test", Services: map[string]spec.Service{"worker": {Image: "example/worker@sha256:" + strings.Repeat("a", 64), Command: []string{"worker"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{strings.Repeat("b", 32)}, ReadyCommand: []string{"ready"}, HelperCommand: []string{"helper"}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
