@@ -470,3 +470,61 @@ test('invocation transport preserves owner authority and rejects browser credent
   assert.equal((await request(`${base}/${id}/exec`, 'POST', '{}')).status, 404)
   assert.equal(mocked.mock.callCount(), cases.length)
 })
+
+test('session control transport preserves exact owner and generation authority', async (t) => {
+  const base = `applications/${app}/services/worker/sessions`
+  const id = 'c'.repeat(32)
+  const cases = [[base, 'POST'], [base, 'GET'], [`${base}/${id}`, 'GET'], [`${base}/${id}`, 'DELETE'], [`${base}/${id}/heartbeat`, 'POST']]
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    assert.ok(cases.some(([path, method]) => new URL(String(url)).pathname === `/api/v1/${path}` && init?.method === method))
+    const headers = new Headers(init?.headers)
+    assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
+    assert.equal(headers.get('Cookie'), null)
+    assert.equal(headers.get('X-Hakopod-Owner-Scope'), 'tenant-a')
+    assert.equal(headers.get('X-Hakopod-Session-Generation'), 'generation-a')
+    return Response.json({ status: 'ready' })
+  })
+  for (const [path, method] of cases) {
+    const response = await request(path, method, method === 'GET' ? undefined : '{}', { Cookie: 'ambient', 'X-Hakopod-Owner-Scope': 'tenant-a', 'X-Hakopod-Session-Generation': 'generation-a' })
+    assert.equal(response.status, 200)
+    assert.equal((await request(path, method, method === 'GET' ? undefined : '{}', { Authorization: '', Cookie: 'ambient' })).status, 401)
+    const browser = new Request(`https://dashboard.example/api/${path}`)
+    assert.equal((await proxy({ request: browser, params: { _splat: path } })).status, 404)
+  }
+  assert.equal(mocked.mock.callCount(), cases.length)
+})
+
+test('session binary transport exceeds JSON size safely and retains capacity until output closes', async (t) => {
+  const path = `applications/${app}/services/worker/sessions/${'d'.repeat(32)}/call`
+  const mocked = t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
+    assert.equal(new Headers(init?.headers).get('X-Hakopod-Owner-Scope'), 'tenant-a')
+    assert.equal((init?.body as Uint8Array).byteLength, 2 * 1024 * 1024)
+    return new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 2])) } }), { headers: { 'Content-Type': 'application/octet-stream' } })
+  })
+  const submit = () => request(path, 'POST', 'x'.repeat(2 * 1024 * 1024), { 'X-Hakopod-Owner-Scope': 'tenant-a', 'X-Hakopod-Session-Generation': 'generation-a', 'Idempotency-Key': 'call-once' })
+  const first = await submit()
+  const second = await submit()
+  try {
+    assert.equal(first.status, 200)
+    assert.equal(second.status, 200)
+    assert.equal(first.headers.get('X-Accel-Buffering'), 'no')
+    assert.equal((await submit()).status, 429)
+    assert.equal(mocked.mock.callCount(), 2)
+    await first.body?.cancel()
+    const next = await submit()
+    assert.equal(next.status, 200)
+    await next.body?.cancel()
+  } finally { await first.body?.cancel(); await second.body?.cancel() }
+})
+
+test('session stream cancellation fails the stream instead of reporting a successful EOF', async (t) => {
+  const path = `applications/${app}/services/worker/sessions/${'d'.repeat(32)}/call`
+  const abort = new AbortController()
+  t.mock.method(globalThis, 'fetch', async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1])) } })))
+  const input = new Request(`https://dashboard.example/api/v1/${path}`, { method: 'POST', body: '{}', signal: abort.signal, headers: { Authorization: 'Bearer hp_fixture', 'X-Hakopod-Owner-Scope': 'tenant-a' } })
+  const response = await forwardAutomationAPI(input)
+  const reader = response.body!.getReader()
+  assert.equal((await reader.read()).value?.byteLength, 1)
+  abort.abort(new Error('fixture cancellation'))
+  await assert.rejects(reader.read(), /fixture cancellation/)
+})

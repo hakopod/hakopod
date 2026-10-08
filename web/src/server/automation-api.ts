@@ -18,6 +18,10 @@ const routes: [RegExp, string[]][] = [
   [/^builds\/[A-Za-z0-9_-]+\/runs(?:\/[A-Za-z0-9_-]+)?$/, ['GET']],
   [/^builds\/[A-Za-z0-9_-]+\/runs\/[A-Za-z0-9_-]+\/(?:plan|deploy)$/, ['POST']],
   [/^auth\/device\/(?:start|token)$/, ['POST']],
+  // Session calls retain explicit owner and generation authority.
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions$/, ['GET', 'POST']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions\/[a-f0-9]{32}$/, ['GET', 'DELETE']],
+  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions\/[a-f0-9]{32}\/(?:heartbeat|call)$/, ['POST']],
   // Invocation callers use explicit machine credentials and tenant owner authority.
   [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations$/, ['GET', 'POST']],
   [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}$/, ['GET']],
@@ -130,9 +134,14 @@ export async function forwardAutomationAPI(request: Request) {
       const value = request.headers.get(name)
       if (value !== null) headers.set(name, value)
     }
-    if (/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations(?:\/|$)/.test(path)) {
+    if (/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/(?:invocations|sessions)(?:\/|$)/.test(path)) {
       const owner = request.headers.get('X-Hakopod-Owner-Scope')
       if (owner !== null) headers.set('X-Hakopod-Owner-Scope', owner)
+    }
+    if (/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions(?:\/|$)/.test(path)) {
+      const generation = request.headers.get('X-Hakopod-Session-Generation')
+      if (generation !== null) headers.set('X-Hakopod-Session-Generation', generation)
+      if (path.endsWith('/call')) return forwardSessionCall(request, path, headers)
     }
     const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)
       ? await boundedBytes(request, 1024 * 1024)
@@ -165,5 +174,76 @@ export async function forwardAutomationAPI(request: Request) {
       },
       { status: 503, headers: privateHeaders },
     )
+  }
+}
+
+let activeSessionCalls = 0
+
+// Keep the slot until output is consumed or cancelled, not merely until headers arrive.
+async function forwardSessionCall(request: Request, path: string, headers: Headers) {
+  if (activeSessionCalls >= 2)
+    return Response.json({ error: { code: 'capacity', message: 'Session transport capacity is full. No call started. Retry this request later.' } }, { status: 429, headers: privateHeaders })
+  activeSessionCalls++
+  let released = false
+  const release = () => { if (!released) { released = true; activeSessionCalls-- } }
+  try {
+    const inputAbort = new AbortController()
+    const inputTimer = setTimeout(() => inputAbort.abort(), 15000)
+    let body: Uint8Array<ArrayBuffer> | null
+    try {
+      const input = request.body?.pipeThrough(new TransformStream(), { signal: AbortSignal.any([request.signal, inputAbort.signal]) }) ?? null
+      body = await boundedBytes({ headers: request.headers, body: input }, 48 * 1024 * 1024)
+    } finally { clearTimeout(inputTimer) }
+    if (body === null) {
+      release()
+      return Response.json({ error: { code: 'body_limit', message: 'Session input exceeds 48 MiB.' } }, { status: 413, headers: privateHeaders })
+    }
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(170000)])
+    const response = await fetch(apiURL(path), { method: 'POST', headers, body, redirect: 'error', signal })
+    const returned = new Headers(privateHeaders)
+    for (const name of ['Content-Type', 'Retry-After']) {
+      const value = response.headers.get(name)
+      if (value !== null) returned.set(name, value)
+    }
+    returned.set('X-Accel-Buffering', 'no')
+    if (!response.body) { release(); return new Response(null, { status: response.status, headers: returned }) }
+    const reader = response.body.getReader()
+    let used = 0
+    let finished = false
+    let output: ReadableStreamDefaultController<Uint8Array> | undefined
+    const finish = () => { finished = true; signal.removeEventListener('abort', abort); release() }
+    const abort = () => {
+      if (finished) return
+      finish()
+      void reader.cancel().catch(() => {})
+      output?.error(signal.reason ?? new Error('Session transport aborted.'))
+    }
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        output = controller
+        signal.addEventListener('abort', abort, { once: true })
+        if (signal.aborted) abort()
+      },
+      async pull(controller) {
+        if (finished) return
+        try {
+          const next = await reader.read()
+          if (finished) return
+          if (next.done) { finish(); controller.close(); return }
+          used += next.value.byteLength
+          if (used > 52 * 1024 * 1024) throw new Error('Session output exceeded its limit.')
+          controller.enqueue(next.value)
+        } catch (error) {
+          if (finished) return
+          void reader.cancel().catch(() => {})
+          finish(); controller.error(error)
+        }
+      },
+      async cancel(reason) { try { await reader.cancel(reason) } finally { finish() } },
+    })
+    return new Response(stream, { status: response.status, headers: returned })
+  } catch {
+    release()
+    return Response.json({ error: { code: 'call_interrupted', message: 'Session call outcome is uncertain. Do not replay this request.' } }, { status: 503, headers: privateHeaders })
   }
 }
