@@ -44,10 +44,10 @@ func newOracleFixture(t *testing.T, ctx context.Context, c *Client, reuse string
 	d.Spec.Placement.NodeNames = developmentRecoveryFixtureNodes(t)
 	id, password := make([]byte, 16), make([]byte, 32)
 	if _, err = rand.Read(id); err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle fixture credential generation failed")
 	}
 	if _, err = rand.Read(password); err != nil {
-		t.Fatal(err)
+		t.Fatal("Oracle fixture credential generation failed")
 	}
 	d.ID = hex.EncodeToString(id)
 	password = []byte(hex.EncodeToString(password))
@@ -71,7 +71,7 @@ func newOracleFixture(t *testing.T, ctx context.Context, c *Client, reuse string
 		}
 		d.Revision = revision
 		if e = c.oracleEnterpriseObjectOwned(ctx, d, object); e != nil {
-			t.Fatal(e)
+			t.Fatal("Oracle fixture ownership validation failed")
 		}
 	}
 	t.Log("Development Oracle namespace", DatabaseNamespace(d.ID))
@@ -84,7 +84,7 @@ func newOracleFixture(t *testing.T, ctx context.Context, c *Client, reuse string
 		for cleanup.Err() == nil {
 			done, e := c.DeleteDatabase(cleanup, d, func() error { return cleanup.Err() })
 			if e != nil {
-				t.Error(e)
+				t.Error("Oracle fixture cleanup failed")
 				return
 			}
 			if done {
@@ -102,13 +102,13 @@ func newOracleFixture(t *testing.T, ctx context.Context, c *Client, reuse string
 				break
 			}
 		}
-		t.Log("Waiting for Oracle", health.Message, err)
+		t.Log("Waiting for Oracle fixture apply and observation")
 		if sleepContext(ctx, 5*time.Second) != nil {
 			t.Fatal("Oracle readiness timed out")
 		}
 	}
 	if ctx.Err() != nil {
-		t.Fatal(ctx.Err())
+		t.Fatal("Oracle fixture readiness context ended")
 	}
 	if health.TLS == nil || !health.TLS.Verified || !health.TLS.PlaintextRejected || health.Primary == "" {
 		t.Fatal("Oracle native identity or TLS enforcement was not verified")
