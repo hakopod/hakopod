@@ -32,7 +32,7 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 	if err != nil {
 		return result, queryUnavailable()
 	}
-	conn, err := c.myduckPostgresClient(ctx, d, member, credential, identity)
+	conn, err := c.myduckPostgresClientBounded(ctx, d, member, credential, identity, true)
 	if err != nil {
 		return result, queryUnavailable()
 	}
@@ -51,17 +51,23 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 		_, _, e = c.databaseExecTarget(step, d, member)
 		return e
 	}
-	description, err := conn.Prepare(ctx, "", q.SQL)
-	if err != nil {
-		return result, &database.QueryError{Code: "database_query_statement_unsupported", Outcome: "not_started"}
+	args := []any{pgx.QueryResultFormats{0}}
+	for _, value := range q.Parameters {
+		if number, ok := value.(json.Number); ok {
+			args = append(args, string(number))
+		} else {
+			args = append(args, value)
+		}
 	}
-	params := queryParameters(q.Parameters)
 	if err = verify(ctx); err != nil {
 		return result, queryUnavailable()
 	}
-	check = verify
-	rr := conn.PgConn().ExecParams(ctx, q.SQL, params, description.ParamOIDs, []int16{0}, []int16{0})
-	for _, col := range rr.FieldDescriptions() {
+	rows, err := conn.Query(ctx, q.SQL, args...)
+	if err != nil {
+		return result, &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
+	}
+	defer rows.Close()
+	for _, col := range rows.FieldDescriptions() {
 		result.Columns = append(result.Columns, database.QueryColumn{Name: col.Name, TypeOID: col.DataTypeOID})
 	}
 	encoded, _ := json.Marshal(result)
@@ -70,11 +76,11 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 		closeQueryConnection(conn)
 		return result, &database.QueryError{Code: "database_query_result_limit", Outcome: "unknown"}
 	}
-	for rr.NextRow() {
+	for rows.Next() {
 		if len(result.Rows) >= q.MaxRows {
 			return myduckLimitedQueryResult(conn, result)
 		}
-		values := rr.Values()
+		values := rows.RawValues()
 		row := make([]*string, len(values))
 		for i, v := range values {
 			if v != nil {
@@ -93,15 +99,15 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 		used += len(encoded) + 1
 		result.Rows = append(result.Rows, row)
 	}
-	tag, err := rr.Close()
+	rows.Close()
+	tag := rows.CommandTag()
+	err = rows.Err()
 	if err != nil {
 		return result, &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
 	}
 	result.RowsAffected = tag.RowsAffected()
-	if check != nil {
-		if err = check(ctx); err != nil {
-			return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: "unknown"}
-		}
+	if err = verify(ctx); err != nil {
+		return result, &database.QueryError{Code: "database_query_authority_changed", Outcome: "unknown"}
 	}
 	result.Outcome = "applied"
 	return result, nil
