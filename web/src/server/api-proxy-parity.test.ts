@@ -7,6 +7,11 @@ import { sealSession, sessionCookie } from './session.ts'
 // These endpoints use dedicated authentication transports.
 const alternate = new Set([
   '/mcp',
+  // Isolated sessions use dedicated machine identity and owner authority.
+  '/applications/{id}/services/{service}/sessions',
+  '/applications/{id}/services/{service}/sessions/{session}',
+  '/applications/{id}/services/{service}/sessions/{session}/heartbeat',
+  '/applications/{id}/services/{service}/sessions/{session}/call',
   // Trusted invocation callers use the bearer API, not browser session cookies.
   '/applications/{id}/services/{service}/invocations',
   '/applications/{id}/services/{service}/invocations/{invocation}',
