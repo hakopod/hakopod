@@ -57,7 +57,8 @@
       "schema_version",
       "name",
       "services"
-    ]
+    ],
+    "additionalProperties": false
   },
   "Actions": {
     "type": "object",
@@ -118,6 +119,7 @@
         "required": [
           "url"
         ],
+        "additionalProperties": false,
         "description": "GitLab instance base and exactly one project_id or group_id. Custom instances require an installation-approved trust_policy and native execution qualification for that exact coordinator."
       },
       "bitbucket": {
@@ -133,6 +135,7 @@
         "required": [
           "workspace"
         ],
+        "additionalProperties": false,
         "description": "Bitbucket workspace UUID and required repository UUID. Execution remains unavailable until the installation qualifies its native lifecycle."
       },
       "workspace_size_gib": {
@@ -155,6 +158,7 @@
         "required": [
           "credential"
         ],
+        "additionalProperties": false,
         "description": "Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration."
       }
     },
@@ -162,6 +166,7 @@
       "credential",
       "labels"
     ],
+    "additionalProperties": false,
     "description": "GitHub pools select exactly one of organization or repository. Runner groups apply only to organization pools. Native provider execution requires an exact installation binding qualified for its coordinator, image and architecture. The server validates runtime availability before accepting a deployment."
   },
   "Autoscaling": {
@@ -177,7 +182,8 @@
         "type": "integer"
       }
     },
-    "required": []
+    "required": [],
+    "additionalProperties": false
   },
   "CertificateMount": {
     "type": "object",
@@ -202,6 +208,7 @@
       "hostname",
       "mount_path"
     ],
+    "additionalProperties": false,
     "oneOf": [
       {
         "required": [
@@ -247,7 +254,8 @@
     },
     "required": [
       "mount_path"
-    ]
+    ],
+    "additionalProperties": false
   },
   "DeploymentJob": {
     "type": "object",
@@ -266,7 +274,8 @@
         "$ref": "#/components/schemas/JobSchedule"
       }
     },
-    "required": []
+    "required": [],
+    "additionalProperties": false
   },
   "GPU": {
     "type": "object",
@@ -277,7 +286,8 @@
     },
     "required": [
       "count"
-    ]
+    ],
+    "additionalProperties": false
   },
   "HTTPEndpoint": {
     "type": "object",
@@ -291,7 +301,8 @@
     },
     "required": [
       "port"
-    ]
+    ],
+    "additionalProperties": false
   },
   "JobSchedule": {
     "properties": {
@@ -334,7 +345,8 @@
     "required": [
       "volume",
       "mount_path"
-    ]
+    ],
+    "additionalProperties": false
   },
   "NamedVolume": {
     "type": "object",
@@ -357,7 +369,8 @@
     },
     "required": [
       "size_gib"
-    ]
+    ],
+    "additionalProperties": false
   },
   "Network": {
     "type": "object",
@@ -372,7 +385,8 @@
         "type": "string"
       }
     },
-    "required": []
+    "required": [],
+    "additionalProperties": false
   },
   "NetworkAccess": {
     "type": "object",
@@ -392,7 +406,8 @@
     },
     "required": [
       "from"
-    ]
+    ],
+    "additionalProperties": false
   },
   "PrivatePort": {
     "type": "object",
@@ -417,7 +432,8 @@
     "required": [
       "name",
       "port"
-    ]
+    ],
+    "additionalProperties": false
   },
   "PublicTCPListener": {
     "type": "object",
@@ -439,7 +455,8 @@
       "port",
       "target_port",
       "source_cidrs"
-    ]
+    ],
+    "additionalProperties": false
   },
   "Readiness": {
     "type": "object",
@@ -474,7 +491,8 @@
     "required": [
       "protocol",
       "port"
-    ]
+    ],
+    "additionalProperties": false
   },
   "RecoveryPolicy": {
     "properties": {
@@ -613,7 +631,8 @@
         "default": 16
       }
     },
-    "required": []
+    "required": [],
+    "additionalProperties": false
   },
   "Service": {
     "type": "object",
@@ -828,7 +847,8 @@
     },
     "required": [
       "image"
-    ]
+    ],
+    "additionalProperties": false
   },
   "ServiceBinding": {
     "type": "object",
@@ -897,7 +917,8 @@
     },
     "required": [
       "protocol"
-    ]
+    ],
+    "additionalProperties": false
   },
   "TLSConfig": {
     "type": "object",
@@ -912,7 +933,8 @@
         "$ref": "#/components/schemas/TLSIssuerKind"
       }
     },
-    "required": []
+    "required": [],
+    "additionalProperties": false
   },
   "TLSIssuerKind": {
     "type": "string",
@@ -939,7 +961,8 @@
     "required": [
       "mount_path",
       "size_mib"
-    ]
+    ],
+    "additionalProperties": false
   },
   "Volume": {
     "type": "object",
@@ -957,6 +980,7 @@
     "required": [
       "mount_path",
       "size_gib"
-    ]
+    ],
+    "additionalProperties": false
   }
 }
