@@ -5,6 +5,7 @@ The operation catalog comes from `api/openapi.json`. Dashboard and SDK types com
 
 The contract classifies project operations, installation administration, dedicated execution tools and human consent flows.
 Discovery lists the connection boundary, permissions, review requirements and prerequisites for each operation.
+It also returns the operation summary and description from OpenAPI when those fields exist.
 The [coverage inventory](agent-parity/coverage-matrix.md) records source coverage. It does not establish production availability.
 
 ## Discover and call operations
@@ -115,6 +116,7 @@ Some data-definition statements support `EXPLAIN`, including `CREATE TABLE AS`. 
 
 PostgreSQL read queries use a read-only transaction. Transactional writes commit only after a final authority check.
 Use `--execution-mode nontransactional` only when the capability permits it and the intended statement requires it.
+MySQL and Vitess retain a read-only transaction for read requests. Their nontransactional option applies to writes.
 Some engines commit DDL implicitly. Nontransactional changes can persist after a failure, cancellation or result-limit error.
 An engine without read-only enforcement requires explicit write access, including for a SELECT statement.
 The dashboard never changes a read request into a write request automatically.
@@ -134,5 +136,5 @@ Native tests require the named `k3d-hakopod-dev` context and disposable fixtures
 UI fixtures contain artificial data and do not prove database connectivity.
 
 The contract inventory is complete for this source snapshot. Native and production acceptance remain separate checks.
-Self-hosted terminal acceptance does not establish Cloud terminal support.
+Cloud application terminal polling has separate native acceptance. Read the verification record for transport coverage and Cloud limitations.
 Marketing claims must identify released capabilities and their tested limits.

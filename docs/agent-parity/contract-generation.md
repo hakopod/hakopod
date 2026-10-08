@@ -11,7 +11,7 @@ Swagger UI can display this contract. It does not define authorization or execut
 | Dashboard and SDK | Generate TypeScript request and response types from OpenAPI. |
 | Dashboard proxy | Generate exact routes for operations with generic or installation exposure. |
 | CLI and MCP | Load operation IDs, schemas, references and policies from the embedded OpenAPI document. |
-| Discovery | Return bounded operation pages, schema definitions and the contract SHA-256. |
+| Discovery | Return bounded operation pages, verbatim summaries and descriptions, schema definitions and the contract SHA-256. |
 | Coverage inventory | Compare contract operations with literal dashboard call sites. |
 | Go API | Enforce current credentials, scope, ownership, revisions, reviews and execution limits. |
 
