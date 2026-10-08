@@ -40,7 +40,7 @@ func Start(ctx context.Context, server *api.Server, domain string, rollout time.
 	handler := server.Handler()
 	worker := &worker.Worker{Store: db, Cluster: kube, ManagedPlatforms: server.ManagedPlatformRuntime, Concurrency: 2, Timeout: rollout*3 + time.Minute}
 	var wg sync.WaitGroup
-	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunPlatformRecovery, server.RunManagedDatabases, server.RunExternalDatabases, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunSlack, server.RunSlackCloudEvents, server.RunRequests, server.RunActions, server.RunInvocations} {
+	for _, run := range []func(context.Context){worker.Run, worker.Resync, server.RunSources, server.RunPlatform, server.RunBuilds, server.RunBackups, server.RunPlatformRecovery, server.RunManagedDatabases, server.RunExternalDatabases, server.RunShowcase, server.RunAlarms, server.RunNotifications, server.RunSlack, server.RunSlackCloudEvents, server.RunRequests, server.RunActions, server.RunInvocations, server.RunSessions} {
 		wg.Add(1)
 		go func(run func(context.Context)) { defer wg.Done(); run(ctx) }(run)
 	}
