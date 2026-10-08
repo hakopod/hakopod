@@ -22202,6 +22202,445 @@
         },
         "summary": "Request removal of the service from its source after the destination is ready."
       }
+    },
+    "/applications/{id}/services/{service}/invocations": {
+      "post": {
+        "operationId": "createJobInvocation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInvocationReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobInvocationCreate"
+              }
+            }
+          }
+        },
+        "description": "Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "dedicated",
+          "permissions": [
+            "jobs:invoke"
+          ],
+          "review": "none",
+          "prerequisite": "Use an application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": [
+            "inputs"
+          ]
+        },
+        "summary": "Queue one execution of the reviewed job template."
+      },
+      "get": {
+        "operationId": "listJobInvocations",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "correlation_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/JobInvocationReceipt"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "dedicated",
+          "permissions": [
+            "jobs:read"
+          ],
+          "review": "none",
+          "prerequisite": "Use an application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": [
+            "inputs"
+          ]
+        },
+        "summary": "Find job receipts for the exact owner and correlation identifier."
+      }
+    },
+    "/applications/{id}/services/{service}/invocations/{invocation}": {
+      "get": {
+        "operationId": "getJobInvocation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invocation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInvocationReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "dedicated",
+          "permissions": [
+            "jobs:read"
+          ],
+          "review": "none",
+          "prerequisite": "Use an application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": [
+            "inputs"
+          ]
+        },
+        "summary": "Read one job receipt for its creating identity and owner."
+      }
+    },
+    "/applications/{id}/services/{service}/invocations/{invocation}/cancel": {
+      "post": {
+        "operationId": "cancelJobInvocation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invocation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInvocationReceipt"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "dedicated",
+          "permissions": [
+            "jobs:cancel"
+          ],
+          "review": "none",
+          "prerequisite": "Use an application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": [
+            "inputs"
+          ]
+        },
+        "summary": "Request cancellation of one owned job invocation."
+      }
+    },
+    "/applications/{id}/services/{service}/invocations/{invocation}/logs": {
+      "get": {
+        "operationId": "getJobInvocationLogs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Hakopod-Owner-Scope",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "invocation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "truncated"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires an application-scoped machine key, an explicit jobs permission and a template identity grant. Reads and cancellation require the creating identity and owner scope. Public terminal status is withheld until owned runtime cleanup completes.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "dedicated",
+          "permissions": [
+            "jobs:logs"
+          ],
+          "review": "none",
+          "prerequisite": "Use an application-scoped machine key and a verified owner scope.",
+          "sensitive_fields": [
+            "inputs"
+          ]
+        },
+        "summary": "Read the encrypted terminal output for one owned job invocation."
+      }
     }
   },
   "components": {
@@ -28590,6 +29029,9 @@
           },
           "schedule": {
             "$ref": "#/components/schemas/JobSchedule"
+          },
+          "invocation": {
+            "$ref": "#/components/schemas/JobInvocation"
           }
         },
         "required": [],
@@ -36911,6 +37353,162 @@
           "status",
           "source_revision",
           "destination_revision"
+        ],
+        "additionalProperties": false
+      },
+      "JobInvocation": {
+        "type": "object",
+        "properties": {
+          "allowed_identities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "input_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_input_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 131072,
+            "default": 65536
+          },
+          "queue_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 16
+          }
+        },
+        "required": [
+          "allowed_identities",
+          "input_keys"
+        ],
+        "additionalProperties": false
+      },
+      "JobInvocationReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "image": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "starting",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "cleanup_pending": {
+            "type": "boolean"
+          },
+          "input_bytes": {
+            "type": "integer"
+          },
+          "log_truncated": {
+            "type": "boolean"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "service",
+          "revision",
+          "image",
+          "correlation_id",
+          "status",
+          "cleanup_pending"
+        ],
+        "additionalProperties": false
+      },
+      "JobInvocationCreate": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer"
+          },
+          "expected_image": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string"
+          },
+          "owner_scope": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "expected_revision",
+          "expected_image",
+          "correlation_id",
+          "owner_scope",
+          "inputs"
         ],
         "additionalProperties": false
       }
