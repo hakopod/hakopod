@@ -83,6 +83,7 @@ export const allowed = [
   /^teams(?:\/[A-Za-z0-9_-]+\/(?:members(?:\/[A-Za-z0-9_-]+)?|invites))?$/,
   /^users(?:\/[A-Za-z0-9_-]+)?$/,
   /^projects\/[A-Za-z0-9_-]+\/(?:members|invites|environments)$/,
+  /^projects\/[A-Za-z0-9_-]+\/environments\/[A-Za-z0-9_-]+$/,
   /^registries(?:\/[A-Za-z0-9_-]+(?:\/sync)?)?$/,
   /^tls\/issuers$/,
   /^applications\/[A-Za-z0-9_-]+\/tls\/issuers$/,
