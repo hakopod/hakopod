@@ -133,6 +133,13 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		if err := ctx.Err(); err != nil {
 			return c.observationAfterFailure(target), err
 		}
+		if svc.Session != nil {
+			if err := c.applySessionTemplate(ctx, target, name, svc); err != nil {
+				return c.observationAfterFailure(target), err
+			}
+			emit(Event{Type: "configured", Service: name, Message: "Session template configured. An authorized API request must start each worker."})
+			continue
+		}
 		if svc.Job != nil && svc.Job.Invocation != nil {
 			if err := c.applyInvocationTemplate(ctx, target, name, svc); err != nil {
 				return c.observationAfterFailure(target), err
@@ -209,6 +216,9 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		return c.observationAfterFailure(target), err
 	}
 	if err := c.cleanupScheduledJobs(ctx, target); err != nil {
+		return c.observationAfterFailure(target), err
+	}
+	if err := c.cleanupSessionTemplates(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
 	if err := c.cleanupInvocationTemplates(ctx, target); err != nil {
