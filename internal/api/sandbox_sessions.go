@@ -109,6 +109,7 @@ func (s *Server) heartbeatSandboxSession(w http.ResponseWriter, r *http.Request)
 // sessionOutput bounds untrusted bytes and records whether the HTTP response started.
 type sessionOutput struct {
 	response http.ResponseWriter
+	writes   *responseWriteGuard
 	used     int64
 	started  bool
 	mu       sync.Mutex
@@ -117,6 +118,9 @@ type sessionOutput struct {
 func (w *sessionOutput) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.writes == nil || !w.writes.begin() {
+		return 0, context.DeadlineExceeded
+	}
 	if w.used+int64(len(p)) > sandbox.MaxOutputBytes {
 		return 0, store.ErrInput
 	}
@@ -128,8 +132,8 @@ func (w *sessionOutput) Write(p []byte) (int, error) {
 	}
 	n, err := w.response.Write(p)
 	w.used += int64(n)
-	if f, ok := w.response.(http.Flusher); ok {
-		f.Flush()
+	if err == nil {
+		err = w.writes.controller.Flush()
 	}
 	return n, err
 }
@@ -188,9 +192,13 @@ func (s *Server) callSandboxSession(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	output := &sessionOutput{response: w}
+	writes := guardResponseWrites(ctx, w, 10*time.Second)
+	stopWrites := sync.OnceFunc(writes.stop)
+	defer stopWrites()
+	output := &sessionOutput{response: w, writes: writes}
 	err = s.sandboxRuntime().CallSession(ctx, record, bytes.NewReader(input), output)
 	complete := err == nil && ctx.Err() == nil
+	stopWrites()
 	cancel()
 	<-done
 	persistCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)

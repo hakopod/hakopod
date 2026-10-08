@@ -17,6 +17,10 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
+type sessionResponseFixture struct{ *httptest.ResponseRecorder }
+
+func (*sessionResponseFixture) SetWriteDeadline(time.Time) error { return nil }
+
 type sandboxRuntimeFixture struct {
 	starts, calls, cleanups int
 	cleanupReady            bool
@@ -98,7 +102,7 @@ func TestSessionHTTPAndCleanupNeverExposeAnotherOwner(t *testing.T) {
 		r.Header.Set("X-Hakopod-Session-Generation", generation)
 		r = r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
 		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
+		mux.ServeHTTP(&sessionResponseFixture{w}, r)
 		return w
 	}
 	body, _ := json.Marshal(in)
@@ -223,5 +227,17 @@ func TestSessionControllerClosesChangedRuntimeIdentity(t *testing.T) {
 	state, err := s.Store.ReadSession(ctx, p, d.ApplicationID, "worker", owner, r.ID, "sessions:read")
 	if err != nil || state.Status != sandbox.Closing || !state.CleanupPending {
 		t.Fatal("replaced runtime remained callable", state, err)
+	}
+}
+
+func TestSessionOutputReportsFlushFailureAndMissingDeadlines(t *testing.T) {
+	for _, writer := range []http.ResponseWriter{httptest.NewRecorder(), &terminalFlushFailure{ResponseRecorder: httptest.NewRecorder()}} {
+		writes := guardResponseWrites(context.Background(), writer, time.Second)
+		output := &sessionOutput{response: writer, writes: writes}
+		_, err := output.Write([]byte("output"))
+		writes.stop()
+		if err == nil {
+			t.Fatal("unbounded or disconnected response accepted")
+		}
 	}
 }
