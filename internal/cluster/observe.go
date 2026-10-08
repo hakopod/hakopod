@@ -50,6 +50,17 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 			}
 			continue
 		}
+		if svc.Session != nil {
+			status, err := c.observeSessionTemplate(ctx, t, name, svc)
+			if err != nil {
+				return result, err
+			}
+			result.Services = append(result.Services, status)
+			if status.Status == "configured" || status.Status == "stopped" {
+				healthy++
+			}
+			continue
+		}
 		if svc.Job != nil {
 			var status ServiceStatus
 			var err error

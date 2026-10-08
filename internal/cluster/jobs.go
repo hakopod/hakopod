@@ -228,6 +228,23 @@ func (c *Client) validateWorkloadKinds(ctx context.Context, t Target) error {
 	}
 
 	for name, s := range t.Spec.Services {
+		sessionMarker, e := c.kube.CoreV1().ConfigMaps(Namespace(t.ApplicationID)).Get(ctx, sessionTemplateName(name), metav1.GetOptions{})
+		if e == nil && sessionMarker != nil && s.Session == nil {
+			return fmt.Errorf("%s: remove the session template before changing its workload kind", name)
+		}
+		if e != nil && !apierrors.IsNotFound(e) {
+			return e
+		}
+		if s.Session != nil {
+			d, e := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
+			if e == nil && d != nil {
+				return fmt.Errorf("%s: remove the existing service before creating a session template", name)
+			}
+			if e != nil && !apierrors.IsNotFound(e) {
+				return e
+			}
+		}
+
 		marker, e := c.kube.CoreV1().ConfigMaps(Namespace(t.ApplicationID)).Get(ctx, invocationTemplateName(name), metav1.GetOptions{})
 		if e == nil && marker != nil && (s.Job == nil || s.Job.Invocation == nil) {
 			return fmt.Errorf("%s: remove the invocation template before changing its workload kind", name)

@@ -62,6 +62,9 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 			jobMemory = max(jobMemory, memory.Value())
 		} else {
 			replicas := max(s.Replicas, 1)
+			if s.Session != nil {
+				replicas = spec.MaxSandboxSessions
+			}
 			if s.Autoscaling != nil {
 				replicas = max(replicas, s.Autoscaling.MaxReplicas)
 			}
