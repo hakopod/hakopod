@@ -148,6 +148,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	runtimeProfiles, err := cluster.ReadRuntimeProfileBindingsFile(os.Getenv("HAKOPOD_RUNTIME_PROFILES_FILE"))
+	if err != nil {
+		return err
+	}
 	managedActions, err := cluster.ReadManagedActionsFile(os.Getenv("HAKOPOD_MANAGED_ACTIONS_FILE"))
 	if err != nil {
 		return err
@@ -166,6 +170,7 @@ func run() error {
 		return err
 	}
 	kubeOptions := cluster.Options{ManagedClusterNodes: managedClusterNodes, ClickHouseSandbox: os.Getenv("HAKOPOD_CLICKHOUSE_SANDBOX") == "true", ServerlessAddress: os.Getenv("HAKOPOD_SERVERLESS_ADDRESS"), ApprovedDomains: db.ApprovedDomains, ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, DatabasePublicAddress: os.Getenv("HAKOPOD_DATABASE_PUBLIC_ADDRESS"), DatabasePublicDomain: os.Getenv("HAKOPOD_DATABASE_PUBLIC_DOMAIN"), DatabasePublicPorts: databasePublicPorts, DedicatedPublicTCPNode: os.Getenv("HAKOPOD_DEDICATED_TCP_NODE"), AWSIdentityBindings: awsIdentities, PrivateEgressBindings: privateEgress, ContainerDaemonBindings: containerDaemons, ManagedActions: managedActions, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, RegistryCredentialNames: db.RegistryCredentialNames, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")}
+	kubeOptions.RuntimeProfileBindings = runtimeProfiles
 	var kube *cluster.Client
 	if verified := nativeacceptance.KubernetesConfig(); verified != nil {
 		kube, err = cluster.NewWithConfig(verified, kubeOptions)
