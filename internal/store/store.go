@@ -300,7 +300,7 @@ func validKeyFields(name, project, environment, application string, permissions 
 		return errors.New("at least one permission is required")
 	}
 	for _, v := range permissions {
-		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "jobs:invoke", "jobs:read", "jobs:cancel", "jobs:logs", "networks:write", "git:manage", "applications:manage", "slack:relay", "pods:exec", "databases:query", "databases:write-query", "agent:admin", "agent:credentials", "nodes:terminal"}, v) {
+		if !contains([]string{"admin", "deployments:read", "deployments:write", "logs:read", "jobs:invoke", "jobs:read", "jobs:cancel", "jobs:logs", "sessions:create", "sessions:read", "sessions:call", "sessions:delete", "networks:write", "git:manage", "applications:manage", "slack:relay", "pods:exec", "databases:query", "databases:write-query", "agent:admin", "agent:credentials", "nodes:terminal"}, v) {
 			return fmt.Errorf("unsupported permission %q", v)
 		}
 	}
