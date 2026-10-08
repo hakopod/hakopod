@@ -130,19 +130,32 @@ def load_source_compatibility(root):
         record = json.loads(path.read_text(), object_pairs_hook=_compatibility_object)
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('Invalid Vitess compatibility review') from error
-    fields = {'schema_version', 'qualified_release', 'reviewed_release', 'control_plane_commit',
+    version = record.get('schema_version') if isinstance(record, dict) else None
+    identity_field = 'qualified_candidate' if version == 2 else 'qualified_release'
+    fields = {'schema_version', identity_field, 'reviewed_release', 'control_plane_commit',
               'regression_evidence', 'scopes'}
     if (not isinstance(record, dict) or set(record) != fields
-            or type(record['schema_version']) is not int or record['schema_version'] != 1):
+            or type(version) is not int or version not in (1, 2)):
         raise ValueError('Invalid Vitess compatibility review schema')
-    baseline = record['qualified_release']
-    if (not isinstance(baseline, dict) or set(baseline) != {
-            'tag', 'commit', 'native_manifest_sha256', 'http_evidence_sha256', 'http_report_sha256'}
-            or not isinstance(baseline['tag'], str)
-            or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', baseline['tag'])
-            or not isinstance(baseline['commit'], str) or not re.fullmatch(r'[0-9a-f]{40}', baseline['commit'])
-            or any(not isinstance(baseline.get(key), str) or not DIGEST.fullmatch(baseline[key])
-                   for key in ('native_manifest_sha256', 'http_evidence_sha256', 'http_report_sha256'))
+    baseline = record[identity_field]
+    hashes = {'native_manifest_sha256', 'http_evidence_sha256', 'http_report_sha256'}
+    identity_fields = {'tag', 'commit'} if version == 1 else {'version', 'native_commit', 'http_commit'}
+    if not isinstance(baseline, dict) or set(baseline) != hashes | identity_fields:
+        raise ValueError('Vitess compatibility review lacks its release and evidence identities')
+    if version == 1:
+        valid_identity = (isinstance(baseline['tag'], str)
+                          and re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', baseline['tag'])
+                          and isinstance(baseline['commit'], str)
+                          and re.fullmatch(r'[0-9a-f]{40}', baseline['commit']))
+    else:
+        # This identifies unpublished evidence, never a published baseline tag.
+        valid_identity = (isinstance(baseline['version'], str)
+                          and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+', baseline['version'])
+                          and all(isinstance(baseline[key], str) and re.fullmatch(r'[0-9a-f]{40}', baseline[key])
+                                  for key in ('native_commit', 'http_commit'))
+                          and record['reviewed_release'] == 'v' + baseline['version'])
+    if (not valid_identity
+            or any(not isinstance(baseline.get(key), str) or not DIGEST.fullmatch(baseline[key]) for key in hashes)
             or not isinstance(record['reviewed_release'], str)
             or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', record['reviewed_release'])
             or not isinstance(record['control_plane_commit'], str)
@@ -172,6 +185,10 @@ def load_source_compatibility(root):
     return record
 
 
+def compatibility_baseline(record):
+    return record['qualified_candidate' if record['schema_version'] == 2 else 'qualified_release']
+
+
 def _protected_vitess_source(path):
     return (path in {'go.mod', 'go.sum', 'Dockerfile.vitess-runtime', 'Dockerfile.vitess-operator',
                      'scripts/apply-managed-vitess-patches.py', 'scripts/build-managed-vitess.sh',
@@ -187,7 +204,7 @@ def validate_source_compatibility(root, scope, recorded, current, artifact_sha25
     review = load_source_compatibility(root)
     if scope not in ('runtime', 'http_harness'):
         raise ValueError('Unknown Vitess compatibility source scope')
-    if artifact_sha256 is not None and artifact_sha256 != review['qualified_release']['native_manifest_sha256']:
+    if artifact_sha256 is not None and artifact_sha256 != compatibility_baseline(review)['native_manifest_sha256']:
         raise ValueError('Vitess compatibility review belongs to another native manifest')
     for inventory in (recorded, current):
         if (not isinstance(inventory, dict) or not 1 <= len(inventory) <= MAX_SOURCE_FILES
@@ -229,7 +246,7 @@ def validate_source_compatibility(root, scope, recorded, current, artifact_sha25
 
 def validate_http_compatibility(root, report, runtime_sources, harness_sources):
     review = load_source_compatibility(root)
-    if canonical_hash(report) != review['qualified_release']['http_report_sha256']:
+    if canonical_hash(report) != compatibility_baseline(review)['http_report_sha256']:
         raise ValueError('Vitess compatibility review belongs to another historical HTTP report')
     validate_source_compatibility(root, 'runtime', report['runtime_source_files'], runtime_sources)
     validate_source_compatibility(root, 'http_harness', report['http_harness_source_files'], harness_sources)

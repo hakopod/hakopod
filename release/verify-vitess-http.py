@@ -156,7 +156,7 @@ def verify(evidence=REPORT, output=None, root=ROOT):
     report = validate_report(read_report(evidence), root)
     compatibility = root / "release/managed-vitess/source-compatibility.json"
     if compatibility.exists():
-        historical = NATIVE["load_source_compatibility"](root)["qualified_release"]
+        historical = NATIVE["compatibility_baseline"](NATIVE["load_source_compatibility"](root))
         if (NATIVE["canonical_hash"](report) == historical["http_report_sha256"]
                 and _file_hash(evidence) != historical["http_evidence_sha256"]):
             raise ValueError("Historical Vitess HTTP evidence bytes changed")
