@@ -280,7 +280,7 @@ func Normalize(input Application) (Application, error) {
 		if err := normalizeResources(&svc); err != nil {
 			return Application{}, fmt.Errorf("%s.%w", field, err)
 		}
-		if svc.Suspended && svc.Job != nil && svc.Job.Schedule == nil {
+		if svc.Suspended && svc.Job != nil && svc.Job.Schedule == nil && svc.Job.Invocation == nil {
 			return Application{}, fmt.Errorf("%s: deployment jobs cannot be stopped or resumed", field)
 		}
 		if svc.Replicas == 0 {
@@ -325,7 +325,7 @@ func Normalize(input Application) (Application, error) {
 		}
 		if err := validateMembers(svc.DependsOn, field+".depends_on", func(n string) bool {
 			dependency, ok := app.Services[n]
-			return ok && n != name && (dependency.Job == nil || dependency.Job.Schedule == nil)
+			return ok && n != name && (dependency.Job == nil || dependency.Job.Schedule == nil && dependency.Job.Invocation == nil)
 		}); err != nil {
 			return Application{}, err
 		}
