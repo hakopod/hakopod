@@ -43,6 +43,9 @@ An agent cannot use generated invocation to approve its own access.
 6. Run native acceptance for changed Kubernetes behavior.
 
 CI checks OpenAPI/proxy drift and SDK generation. Tests reject missing exposure metadata and unsafe invocation paths.
+CI also checks literal Go API route declarations against OpenAPI. A new declaration must have a contract or an explained exclusion.
+`api/route_coverage_exclusions.json` records internal protocols, acceptance probes, the contract download, a retired route and the Slack OAuth callback.
+The check rejects obsolete exclusions. Dynamic route expressions and transports that dispatch several methods still require separate review.
 Use an immutable source snapshot for validation. Record its hash with the results.
 
 This process reduces duplicate interface work. It does not generate reconciler logic, prove runtime behavior or authorize deployment.
