@@ -56,18 +56,10 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 		_, _, e = c.databaseExecTarget(step, d, member)
 		return e
 	}
-	args := []any{pgx.QueryExecModeExec, pgx.QueryResultFormats{0}}
-	for _, value := range q.Parameters {
-		if number, ok := value.(json.Number); ok {
-			args = append(args, string(number))
-		} else {
-			args = append(args, value)
-		}
-	}
 	if err = verify(ctx); err != nil {
 		return result, queryUnavailable()
 	}
-	rows, err := conn.Query(ctx, q.SQL, args...)
+	rows, err := conn.Query(ctx, q.SQL, myduckQueryArguments(q.Parameters)...)
 	if err != nil {
 		return result, &database.QueryError{Code: "database_query_failed", Outcome: "unknown"}
 	}
@@ -116,6 +108,18 @@ func (c *Client) queryMyDuckSQL(ctx context.Context, d database.Resource, q data
 	}
 	result.Outcome = "applied"
 	return result, nil
+}
+
+func myduckQueryArguments(parameters []any) []any {
+	args := []any{pgx.QueryExecModeDescribeExec, pgx.QueryResultFormats{0}}
+	for _, value := range parameters {
+		if number, ok := value.(json.Number); ok {
+			args = append(args, string(number))
+		} else {
+			args = append(args, value)
+		}
+	}
+	return args
 }
 
 func verifyMyDuckQueryCredential(current, captured *corev1.Secret, d database.Resource, namespace *corev1.Namespace) error {
