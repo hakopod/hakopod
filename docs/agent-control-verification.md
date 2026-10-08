@@ -83,16 +83,18 @@ Tests use only `k3d-hakopod-dev` and owned disposable resources.
 | Application terminal polling | Snapshot `agent-terminal-runtime-v4-20261008` passed owned pinned-pod input/output, exit 7, key revocation and trusted product-authority revocation. The product revocation check closed the output handler in 3.07 seconds while the key remained valid. The full test passed in 62.55 seconds and confirmed namespace deletion. |
 | Cloud terminal polling | Snapshot `agent-cloud-terminal-native-v8` passed hosted and connected-node input/output, exit status, Cloud grant revocation and exact downstream cleanup while the enrolled engine key remained valid. The test uses fixture Cloud identity/state and relay routing with the production gateway, canonical HTTP and real Kubernetes execution. It does not qualify a deployed relay. Namespace absence was confirmed. |
 | PostgreSQL | Final rollback snapshot `agent-control-pg-rollback-20261008` passed focused transaction/revocation checks and managed native acceptance in 112.25 seconds. Covers TLS, exact values, DDL/DML/readback, limits, read-only refusal, cancellation and confirmed-versus-unknown rollback. Namespace and volumes were removed. |
+| SQL through HTTP and MCP | `agent-query-api-mcp-v2` passed in 90.70 seconds. Canonical HTTP and HTTP MCP verified explicit grants, stale-review rejection, exact numeric/null/parameter values, writes and readback, per-operation audit identity/outcomes/redaction, session closure and revoked-key refusal. The owned PostgreSQL namespace and volumes were removed. |
 | MySQL | Native snapshot `agent-mysql-query-expanded-v2` passed in 294.97 seconds. It verified exact binds, DDL, transactional and nontransactional DML persistence, read-only enforcement, result limits and confirmed rollback after authority loss. A dedicated connection reached server execution before cancellation returned in 0.24 ms. Namespace and volume absence were confirmed. This cancellation check exercises the shared driver and real TLS relay, not the preceding observation setup. API authorization checks are separate integration tests. |
 | ClickHouse | Native v4 passed JSONCompact numeric/null preservation, read-only insert refusal, result limits, cancellation and normal namespace cleanup. Nontransactional execution only. |
 | MyDuck | Diagnostic runs found that MySQL prepared INSERT binds fail and reported read-only modes permit writes. A later low-level PostgreSQL protocol attempt also failed bound writes. The high-level PostgreSQL driver path and final nontransactional acceptance remain pending. |
 | Oracle | A fresh Oracle Free fixture completed initialization, then failed its first bound query. A diagnostic must identify the driver phase and error before qualification. Execution remains disabled. |
 | Vitess | Standalone v5 passed in 271.70 seconds, including actual tablet execution before cancellation, binds, writes, readback, read-only refusal, rollback, limits and owned cleanup. The two-shard v5 test failed during the first query's connection setup, before it could establish transaction behavior. Its owned namespace and volumes were removed. The query setup diagnostic and final sharded acceptance remain pending. Execution remains disabled. |
 
-`TestDatabaseQueryAPIMCPLive` adds a disposable PostgreSQL fixture through the canonical HTTP API and HTTP MCP transport.
-Its source review and gate-unset VM compilation passed. Native execution remains pending.
-The authored assertions cover consent, revisions, exact values, audit redaction and revoked MCP access.
-These assertions are not native evidence until the gated test and its owned cleanup pass.
+`TestDatabaseQueryAPIMCPLive` uses a disposable PostgreSQL fixture through the canonical HTTP API and HTTP MCP transport.
+The first native attempt found a test-decoding error: MCP places the SQL result inside an explicitly untrusted `data` envelope.
+The corrected test verifies that envelope and passed all assertions and cleanup.
+Its test SHA-256 is `b058d663417a0379a78b42296b688cca302ebf8edc3ab20672aded060ca805e7`.
+The v2 snapshot manifest SHA-256 is `13bc2bca7dbda8b11d0314afd3d740beb1175cd0393286d8fb5bf9011fad1af1`.
 
 The query transport verifies the managed application identity with TLS. A fixed byte relay runs in the exact owned, pinned database container.
 SQL and credentials do not appear in relay command arguments. Kubernetes does not supply database authorization.
