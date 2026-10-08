@@ -182,3 +182,9 @@ helper processes were gone after cleanup.
 See [managed database release acceptance](managed-database-release-acceptance.md)
 for the measured evidence and its limits. Public routes require separate
 outside-in acceptance and remain unavailable.
+
+## SQL query statement forms
+
+Managed query execution accepts one statement with optional trailing semicolon and comments. Standard single-quoted strings and double-quoted identifiers use doubled quotes. Line comments and nested block comments are accepted. The query guard rejects multiple statements, unterminated quotes or comments, escape and byte string prefixes, dollar-quoted strings, backtick identifiers, backslashes in quoted text, and non-ASCII unquoted tokens. MyDuck routes some PostgreSQL syntax through a different parser, so ambiguous forms are rejected before runtime access.
+
+Use `$1`, `$2` and bound parameters for values containing delimiters, quotes, backslashes or Unicode. Those values are sent separately and are not scanned as SQL. Query capabilities remain disabled until native qualification passes; compilation alone does not enable support.
