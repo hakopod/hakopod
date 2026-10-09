@@ -34,6 +34,7 @@ import { Route as DatabasesDatabaseIdRouteImport } from './routes/databases.$dat
 import { Route as DatabasesImportRouteImport } from './routes/databases.import'
 import { Route as DatabasesNewRouteImport } from './routes/databases.new'
 import { Route as DeploymentsDeploymentIdRouteImport } from './routes/deployments.$deploymentId'
+import { Route as InfrastructureCleanupRouteImport } from './routes/infrastructure.cleanup'
 import { Route as LoginDeviceRouteImport } from './routes/login.device'
 import { Route as LoginForgotRouteImport } from './routes/login.forgot'
 import { Route as LoginInviteRouteImport } from './routes/login.invite'
@@ -64,7 +65,9 @@ import { Route as BackupsDestinationsNewRouteImport } from './routes/backups.des
 import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedules.new'
 import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.edit'
 import { Route as DatabasesDatabaseIdConnectRouteImport } from './routes/databases.$databaseId.connect'
+import { Route as DatabasesDatabaseIdMigrationLockRecoveryRouteImport } from './routes/databases.$databaseId.migration-lock-recovery'
 import { Route as DatabasesDatabaseIdPrivateAccessRouteImport } from './routes/databases.$databaseId.private-access'
+import { Route as DatabasesDatabaseIdProvisionApplicationRouteImport } from './routes/databases.$databaseId.provision-application'
 import { Route as DatabasesDatabaseIdPublicEndpointsRouteImport } from './routes/databases.$databaseId.public-endpoints'
 import { Route as DatabasesDatabaseIdQueryRouteImport } from './routes/databases.$databaseId.query'
 import { Route as DatabasesDatabaseIdRecoverRouteImport } from './routes/databases.$databaseId.recover'
@@ -232,6 +235,11 @@ const DeploymentsDeploymentIdRoute = DeploymentsDeploymentIdRouteImport.update({
   path: '/deployments/$deploymentId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InfrastructureCleanupRoute = InfrastructureCleanupRouteImport.update({
+  id: '/cleanup',
+  path: '/cleanup',
+  getParentRoute: () => InfrastructureRoute,
+} as any)
 const LoginDeviceRoute = LoginDeviceRouteImport.update({
   id: '/login/device',
   path: '/login/device',
@@ -389,10 +397,22 @@ const DatabasesDatabaseIdConnectRoute =
     path: '/connect',
     getParentRoute: () => DatabasesDatabaseIdRoute,
   } as any)
+const DatabasesDatabaseIdMigrationLockRecoveryRoute =
+  DatabasesDatabaseIdMigrationLockRecoveryRouteImport.update({
+    id: '/migration-lock-recovery',
+    path: '/migration-lock-recovery',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
 const DatabasesDatabaseIdPrivateAccessRoute =
   DatabasesDatabaseIdPrivateAccessRouteImport.update({
     id: '/private-access',
     path: '/private-access',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
+const DatabasesDatabaseIdProvisionApplicationRoute =
+  DatabasesDatabaseIdProvisionApplicationRouteImport.update({
+    id: '/provision-application',
+    path: '/provision-application',
     getParentRoute: () => DatabasesDatabaseIdRoute,
   } as any)
 const DatabasesDatabaseIdPublicEndpointsRoute =
@@ -655,6 +675,7 @@ export interface FileRoutesByFullPath {
   '/databases/import': typeof DatabasesImportRoute
   '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
+  '/infrastructure/cleanup': typeof InfrastructureCleanupRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
@@ -685,7 +706,9 @@ export interface FileRoutesByFullPath {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/migration-lock-recovery': typeof DatabasesDatabaseIdMigrationLockRecoveryRoute
   '/databases/$databaseId/private-access': typeof DatabasesDatabaseIdPrivateAccessRoute
+  '/databases/$databaseId/provision-application': typeof DatabasesDatabaseIdProvisionApplicationRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
@@ -753,6 +776,7 @@ export interface FileRoutesByTo {
   '/databases/import': typeof DatabasesImportRoute
   '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
+  '/infrastructure/cleanup': typeof InfrastructureCleanupRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
@@ -783,7 +807,9 @@ export interface FileRoutesByTo {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/migration-lock-recovery': typeof DatabasesDatabaseIdMigrationLockRecoveryRoute
   '/databases/$databaseId/private-access': typeof DatabasesDatabaseIdPrivateAccessRoute
+  '/databases/$databaseId/provision-application': typeof DatabasesDatabaseIdProvisionApplicationRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
@@ -852,6 +878,7 @@ export interface FileRoutesById {
   '/databases/import': typeof DatabasesImportRoute
   '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
+  '/infrastructure/cleanup': typeof InfrastructureCleanupRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
@@ -882,7 +909,9 @@ export interface FileRoutesById {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/migration-lock-recovery': typeof DatabasesDatabaseIdMigrationLockRecoveryRoute
   '/databases/$databaseId/private-access': typeof DatabasesDatabaseIdPrivateAccessRoute
+  '/databases/$databaseId/provision-application': typeof DatabasesDatabaseIdProvisionApplicationRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
@@ -952,6 +981,7 @@ export interface FileRouteTypes {
     | '/databases/import'
     | '/databases/new'
     | '/deployments/$deploymentId'
+    | '/infrastructure/cleanup'
     | '/login/device'
     | '/login/forgot'
     | '/login/invite'
@@ -982,7 +1012,9 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/migration-lock-recovery'
     | '/databases/$databaseId/private-access'
+    | '/databases/$databaseId/provision-application'
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
@@ -1050,6 +1082,7 @@ export interface FileRouteTypes {
     | '/databases/import'
     | '/databases/new'
     | '/deployments/$deploymentId'
+    | '/infrastructure/cleanup'
     | '/login/device'
     | '/login/forgot'
     | '/login/invite'
@@ -1080,7 +1113,9 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/migration-lock-recovery'
     | '/databases/$databaseId/private-access'
+    | '/databases/$databaseId/provision-application'
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
@@ -1148,6 +1183,7 @@ export interface FileRouteTypes {
     | '/databases/import'
     | '/databases/new'
     | '/deployments/$deploymentId'
+    | '/infrastructure/cleanup'
     | '/login/device'
     | '/login/forgot'
     | '/login/invite'
@@ -1178,7 +1214,9 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/migration-lock-recovery'
     | '/databases/$databaseId/private-access'
+    | '/databases/$databaseId/provision-application'
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
@@ -1426,6 +1464,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DeploymentsDeploymentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/infrastructure/cleanup': {
+      id: '/infrastructure/cleanup'
+      path: '/cleanup'
+      fullPath: '/infrastructure/cleanup'
+      preLoaderRoute: typeof InfrastructureCleanupRouteImport
+      parentRoute: typeof InfrastructureRoute
+    }
     '/login/device': {
       id: '/login/device'
       path: '/login/device'
@@ -1636,11 +1681,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DatabasesDatabaseIdConnectRouteImport
       parentRoute: typeof DatabasesDatabaseIdRoute
     }
+    '/databases/$databaseId/migration-lock-recovery': {
+      id: '/databases/$databaseId/migration-lock-recovery'
+      path: '/migration-lock-recovery'
+      fullPath: '/databases/$databaseId/migration-lock-recovery'
+      preLoaderRoute: typeof DatabasesDatabaseIdMigrationLockRecoveryRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
     '/databases/$databaseId/private-access': {
       id: '/databases/$databaseId/private-access'
       path: '/private-access'
       fullPath: '/databases/$databaseId/private-access'
       preLoaderRoute: typeof DatabasesDatabaseIdPrivateAccessRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
+    '/databases/$databaseId/provision-application': {
+      id: '/databases/$databaseId/provision-application'
+      path: '/provision-application'
+      fullPath: '/databases/$databaseId/provision-application'
+      preLoaderRoute: typeof DatabasesDatabaseIdProvisionApplicationRouteImport
       parentRoute: typeof DatabasesDatabaseIdRoute
     }
     '/databases/$databaseId/public-endpoints': {
@@ -1989,7 +2048,9 @@ const BuildsRouteWithChildren =
 
 interface DatabasesDatabaseIdRouteChildren {
   DatabasesDatabaseIdConnectRoute: typeof DatabasesDatabaseIdConnectRoute
+  DatabasesDatabaseIdMigrationLockRecoveryRoute: typeof DatabasesDatabaseIdMigrationLockRecoveryRoute
   DatabasesDatabaseIdPrivateAccessRoute: typeof DatabasesDatabaseIdPrivateAccessRoute
+  DatabasesDatabaseIdProvisionApplicationRoute: typeof DatabasesDatabaseIdProvisionApplicationRoute
   DatabasesDatabaseIdPublicEndpointsRoute: typeof DatabasesDatabaseIdPublicEndpointsRoute
   DatabasesDatabaseIdQueryRoute: typeof DatabasesDatabaseIdQueryRoute
   DatabasesDatabaseIdRecoverRoute: typeof DatabasesDatabaseIdRecoverRoute
@@ -2000,7 +2061,11 @@ interface DatabasesDatabaseIdRouteChildren {
 
 const DatabasesDatabaseIdRouteChildren: DatabasesDatabaseIdRouteChildren = {
   DatabasesDatabaseIdConnectRoute: DatabasesDatabaseIdConnectRoute,
+  DatabasesDatabaseIdMigrationLockRecoveryRoute:
+    DatabasesDatabaseIdMigrationLockRecoveryRoute,
   DatabasesDatabaseIdPrivateAccessRoute: DatabasesDatabaseIdPrivateAccessRoute,
+  DatabasesDatabaseIdProvisionApplicationRoute:
+    DatabasesDatabaseIdProvisionApplicationRoute,
   DatabasesDatabaseIdPublicEndpointsRoute:
     DatabasesDatabaseIdPublicEndpointsRoute,
   DatabasesDatabaseIdQueryRoute: DatabasesDatabaseIdQueryRoute,
@@ -2053,12 +2118,14 @@ const DatabasesRouteWithChildren = DatabasesRoute._addFileChildren(
 )
 
 interface InfrastructureRouteChildren {
+  InfrastructureCleanupRoute: typeof InfrastructureCleanupRoute
   InfrastructureRegistriesNameRoute: typeof InfrastructureRegistriesNameRoute
   InfrastructureRegistriesNewRoute: typeof InfrastructureRegistriesNewRoute
   InfrastructureNodesNodeTerminalRoute: typeof InfrastructureNodesNodeTerminalRoute
 }
 
 const InfrastructureRouteChildren: InfrastructureRouteChildren = {
+  InfrastructureCleanupRoute: InfrastructureCleanupRoute,
   InfrastructureRegistriesNameRoute: InfrastructureRegistriesNameRoute,
   InfrastructureRegistriesNewRoute: InfrastructureRegistriesNewRoute,
   InfrastructureNodesNodeTerminalRoute: InfrastructureNodesNodeTerminalRoute,

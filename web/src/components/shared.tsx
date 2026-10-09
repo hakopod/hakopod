@@ -47,6 +47,8 @@ export function Status({ value, small }: { value?: string; small?: boolean }) {
               'expiring',
               'pending dns',
               'incomplete',
+              'warning',
+              'review required',
             ].includes(status)
           ? 'warning'
           : 'neutral'

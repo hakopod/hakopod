@@ -35,7 +35,8 @@ function DeploymentDetail() {
   const navigationRoot = useActiveSection(tab, '.tab-list')
   const [cancelOpen, setCancelOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [resumeError, setResumeError] = useState('')
+  const [cancelError, setCancelError] = useState('')
   const [cleanupError, setCleanupError] = useState('')
   const deployment = useQuery({
     queryKey: ['deployment', deploymentId],
@@ -233,7 +234,40 @@ function DeploymentDetail() {
             Cancel deployment
           </Button>
         )}
-        {release.status === 'failed' && !release.recovery_state && release.result?.status === 'partial' && application.data?.revision === release.revision && scope.can('deployments:write') && <Button disabled={busy} onClick={async()=>{setBusy(true);setError('');try{await unwrap(client.POST('/deployments/{id}/resume',{params:{path:{id:release.id},header:{'Idempotency-Key':crypto.randomUUID()}},body:{expected_revision:release.revision}}));await Promise.all([deployment.refetch(),application.refetch()])}catch(err){setError(message(err))}finally{setBusy(false)}}}>{busy?'Resuming…':'Resume failed services'}</Button>}
+        {release.status === 'failed' &&
+          !release.recovery_state &&
+          release.result?.status === 'partial' &&
+          application.data?.revision === release.revision &&
+          scope.can('deployments:write') && (
+            <div className="flex min-w-0 flex-col items-end gap-2">
+              <Button
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  setResumeError('')
+                  try {
+                    await unwrap(
+                      client.POST('/deployments/{id}/resume', {
+                        params: {
+                          path: { id: release.id },
+                          header: { 'Idempotency-Key': crypto.randomUUID() },
+                        },
+                        body: { expected_revision: release.revision },
+                      }),
+                    )
+                    await Promise.all([deployment.refetch(), application.refetch()])
+                  } catch (err) {
+                    setResumeError(message(err))
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              >
+                {busy ? 'Resuming…' : 'Resume failed services'}
+              </Button>
+              {resumeError && <RequestError error={resumeError} />}
+            </div>
+          )}
         <Button
           size="icon"
           variant="ghost"
@@ -580,7 +614,7 @@ function DeploymentDetail() {
             Resources already applied may remain. Cancellation does not tear down workloads or imply
             a rollback. The recorded deployment result reports what happened.
           </Note>
-          {error && <RequestError error={error} />}
+          {cancelError && <RequestError error={cancelError} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setCancelOpen(false)}>
@@ -591,7 +625,7 @@ function DeploymentDetail() {
             disabled={busy}
             onClick={async () => {
               setBusy(true)
-              setError('')
+              setCancelError('')
               try {
                 await unwrap(
                   client.POST('/deployments/{id}/cancel', {
@@ -602,7 +636,7 @@ function DeploymentDetail() {
                 setCancelOpen(false)
                 void queryClient.invalidateQueries({ queryKey: ['deployment', release.id] })
               } catch (err) {
-                setError(message(err))
+                setCancelError(message(err))
               } finally {
                 setBusy(false)
               }

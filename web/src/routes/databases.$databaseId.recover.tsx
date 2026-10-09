@@ -12,6 +12,10 @@ import { FormError, FormPage, FormSection } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
+import {
+  CompatibilityReport,
+  type CompatibilityReportValue,
+} from '../components/compatibility-report'
 
 export const Route = createFileRoute('/databases/$databaseId/recover')({ component: Page })
 function Page() {
@@ -26,6 +30,7 @@ function Recover({ id }: { id: string }) {
     gcTime: 0,
   })
   const [artifact, setArtifact] = useState('')
+  const [relatedArtifacts, setRelatedArtifacts] = useState<string[]>([])
   const [plan, setPlan] = useState<components['schemas']['BackupRestorePlan'] | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState('')
@@ -60,6 +65,12 @@ function Recover({ id }: { id: string }) {
       !a.deletion_pending,
   )
   const selected = artifacts.data.items.find((a) => a.id === artifact)
+  const relatedOptions = artifacts.data.items
+    .filter(
+      (value) =>
+        value.id !== artifact && value.scope === selected?.scope && !value.deletion_pending,
+    )
+    .slice(0, 16)
   const expired = Boolean(plan && Date.parse(plan.expires_at) <= Date.now())
   const search = { project: d.project, environment: d.environment }
   if (d.status !== 'ready' || d.revision !== 1 || d.recovery)
@@ -93,7 +104,10 @@ function Recover({ id }: { id: string }) {
                 await unwrap(
                   client.POST('/databases/{id}/restore-plan', {
                     params: { path: { id } },
-                    body: { artifact_id: artifact },
+                    body: {
+                      artifact_id: artifact,
+                      related_artifact_ids: relatedArtifacts,
+                    } as any,
                   }),
                 ),
               )
@@ -116,12 +130,17 @@ function Recover({ id }: { id: string }) {
       >
         <FormSection title="Archive and target">
           <p>
-            Target: {d.spec.name} · {engineName(d.spec.engine)} {d.spec.version} · {d.project} / {d.environment}
+            Target: {d.spec.name} · {engineName(d.spec.engine)} {d.spec.version} · {d.project} /{' '}
+            {d.environment}
           </p>
           {!eligible.length && (
             <Empty
               title="No eligible archives"
-              description={d.spec.engine === 'vitess' ? 'Create a verified Vitess 23 logical backup from another database. Restore also requires the same shard count and table-routing schema.' : 'Create a backup from another database with a compatible engine and version before recovering into this target.'}
+              description={
+                d.spec.engine === 'vitess'
+                  ? 'Create a verified Vitess 23 logical backup from another database. Restore also requires the same shard count and table-routing schema.'
+                  : 'Create a backup from another database with a compatible engine and version before recovering into this target.'
+              }
               action={
                 <Button asChild>
                   <Link to="/backups/new">Run backup</Link>
@@ -139,16 +158,16 @@ function Recover({ id }: { id: string }) {
               onValueChange={(value) => {
                 setArtifact(value)
                 setPlan(null)
+                setRelatedArtifacts([])
                 setConfirmation('')
                 key.current = ''
               }}
               options={[
                 { value: '', label: 'Choose a matching archive' },
-                ...eligible
-                  .map((a) => ({
-                    value: a.id,
-                    label: `${timestamp(a.captured_at || a.created_at)} · ${a.source.managed_database_id?.slice(0, 8) || a.source.service || a.source.kind} · ${a.verified_at ? 'Verified' : 'Requires verification'}`,
-                  })),
+                ...eligible.map((a) => ({
+                  value: a.id,
+                  label: `${timestamp(a.captured_at || a.created_at)} · ${a.source.managed_database_id?.slice(0, 8) || a.source.service || a.source.kind} · ${a.verified_at ? 'Verified' : 'Requires verification'}`,
+                })),
               ]}
             />
           </label>
@@ -158,13 +177,65 @@ function Recover({ id }: { id: string }) {
             </Note>
           )}
           <Note>
-            The archive is authenticated before recovery. {d.spec.engine === 'postgresql' && 'PostgreSQL 17 archives can be staged in a separate PostgreSQL 18 database. '}Changes after the recovery point require a fresh
-            capture before final cutover.
+            The archive is authenticated before recovery.{' '}
+            {d.spec.engine === 'postgresql' &&
+              'PostgreSQL 17 archives can be staged in a separate PostgreSQL 18 database. '}
+            Changes after the recovery point require a fresh capture before final cutover.
           </Note>
-          {d.spec.engine === 'vitess' && <Note>Vitess restore authenticates the complete archive and validates its version, shard map and table-routing schema before importing data. The target keeps its separately approved native backup destination.</Note>}
+          {d.spec.engine === 'vitess' && (
+            <Note>
+              Vitess restore authenticates the complete archive and validates its version, shard map
+              and table-routing schema before importing data. The target keeps its separately
+              approved native backup destination.
+            </Note>
+          )}
+          {artifact && (
+            <div className="grid gap-2">
+              <p className="text-sm font-medium">Related recovery set</p>
+              <p className="text-sm text-muted-foreground">
+                Optionally select same-scope archives that must have a consistent recovery point.
+              </p>
+              {relatedOptions.map((value) => (
+                <label className="checkbox-row" key={value.id}>
+                  <Input
+                    type="checkbox"
+                    checked={relatedArtifacts.includes(value.id)}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setRelatedArtifacts((current) =>
+                        event.target.checked
+                          ? current.length < 16
+                            ? [...current, value.id]
+                            : current
+                          : current.filter((valueID) => valueID !== value.id),
+                      )
+                    }
+                  />
+                  <span className="min-w-0 break-words">
+                    {timestamp(value.captured_at || value.created_at)} ·{' '}
+                    {value.source.managed_database_id?.slice(0, 8) ||
+                      value.source.service ||
+                      value.source.kind}
+                  </span>
+                </label>
+              ))}
+              {!relatedOptions.length && <Note>No other same-scope archives are available.</Note>}
+              {!relatedArtifacts.length && (
+                <Note>
+                  No related archives selected. Cross-application recovery-point compatibility will
+                  remain unknown.
+                </Note>
+              )}
+            </div>
+          )}
         </FormSection>
         {plan && (
           <FormSection title="Review recovery">
+            <CompatibilityReport
+              value={
+                (plan as unknown as { compatibility?: CompatibilityReportValue }).compatibility
+              }
+            />
             <p>Archive: {selected?.id}</p>
             <p>
               Captured: {timestamp(selected?.captured_at || selected?.created_at)} · Verified:{' '}
@@ -201,9 +272,7 @@ function Recover({ id }: { id: string }) {
             </label>
           </FormSection>
         )}
-        {error && (
-          <FormError>{error}</FormError>
-        )}
+        {error && <FormError>{error}</FormError>}
         <div className="form-footer">
           <Button asChild>
             <Link to="/databases/$databaseId" params={{ databaseId: id }} search={search}>

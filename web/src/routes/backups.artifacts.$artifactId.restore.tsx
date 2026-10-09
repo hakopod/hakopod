@@ -17,7 +17,10 @@ import type { components } from '../lib/api.generated'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Copy, ErrorState, HeadingHelp, Loading, Note } from '../components/shared'
-import { CompatibilityReport, type CompatibilityReportValue } from '../components/compatibility-report'
+import {
+  CompatibilityReport,
+  type CompatibilityReportValue,
+} from '../components/compatibility-report'
 export const Route = createFileRoute('/backups/artifacts/$artifactId/restore')({
   component: RestoreBackup,
 })
@@ -37,16 +40,27 @@ function Restore({ artifactId }: { artifactId: string }) {
       ),
     gcTime: 0,
   })
+  const artifacts = useQuery({
+    queryKey: ['backup-artifacts', 'restore-related'],
+    queryFn: ({ signal }) => unwrap(client.GET('/backup-artifacts', { signal })),
+    gcTime: 0,
+  })
   const [selected, setSelected] = useState('')
+  const [relatedArtifacts, setRelatedArtifacts] = useState<string[]>([])
   const [plan, setPlan] = useState<components['schemas']['BackupRestorePlan'] | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const [requestKey, setRequestKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  if (artifact.isPending || targets.isPending) return <Loading />
-  if (artifact.error || targets.error || !artifact.data)
-    return <ErrorState error={artifact.error || targets.error} />
+  if (artifact.isPending || artifacts.isPending || targets.isPending) return <Loading />
+  if (artifact.error || artifacts.error || targets.error || !artifact.data)
+    return <ErrorState error={artifact.error || artifacts.error || targets.error} />
   const item = artifact.data
+  const relatedOptions = artifacts.data.items
+    .filter(
+      (value) => value.id !== item.id && value.scope === item.scope && !value.deletion_pending,
+    )
+    .slice(0, 16)
   const eligible =
     targets.data?.items.filter(
       (target) =>
@@ -60,7 +74,10 @@ function Restore({ artifactId }: { artifactId: string }) {
           target.managed_database_id !== item.source.managed_database_id),
     ) || []
   const target = eligible.find((value) => sourceKey(value) === selected)
-  const compatibilityBlocked = Boolean((plan as unknown as { compatibility?: CompatibilityReportValue } | null)?.compatibility?.blocked)
+  const compatibilityBlocked = Boolean(
+    (plan as unknown as { compatibility?: CompatibilityReportValue } | null)?.compatibility
+      ?.blocked,
+  )
   return (
     <FormPage
       title={plan ? 'Review database restore' : 'Restore a stored backup'}
@@ -144,7 +161,11 @@ function Restore({ artifactId }: { artifactId: string }) {
             description={`Expires ${timestamp(plan.expires_at)}`}
             icon="database"
           >
-            <CompatibilityReport value={(plan as unknown as { compatibility?: CompatibilityReportValue }).compatibility} />
+            <CompatibilityReport
+              value={
+                (plan as unknown as { compatibility?: CompatibilityReportValue }).compatibility
+              }
+            />
             <dl className="service-definition-list">
               <div>
                 <dt>Target database</dt>
@@ -190,36 +211,71 @@ function Restore({ artifactId }: { artifactId: string }) {
             </label>
           </FormSection>
         ) : (
-          <FormSection
-            title="Target database"
-            description={`Only available ${engineLabel(item.source.engine)} targets are shown.`}
-            icon="database"
-          >
-            <label>
-              Restore to
-              <SelectField
-                label="Restore to"
-                value={selected}
-                disabled={item.deletion_pending}
-                onValueChange={(value) => setSelected(value)}
-                options={[
-                  {
-                    value: '',
-                    label: 'Choose a compatible database',
-                  },
-                  ...(eligible.map((value) => ({
-                    value: sourceKey(value),
-                    label: value.managed_database_name || sourceLabel(value),
-                  })) ?? []),
-                ]}
-              />
-            </label>
-            {!eligible.length && (
-              <Note>
-                Create a separate, unused compatible database before restoring this artifact.
-              </Note>
-            )}
-          </FormSection>
+          <>
+            <FormSection
+              title="Target database"
+              description={`Only available ${engineLabel(item.source.engine)} targets are shown.`}
+              icon="database"
+            >
+              <label>
+                Restore to
+                <SelectField
+                  label="Restore to"
+                  value={selected}
+                  disabled={item.deletion_pending}
+                  onValueChange={(value) => setSelected(value)}
+                  options={[
+                    {
+                      value: '',
+                      label: 'Choose a compatible database',
+                    },
+                    ...(eligible.map((value) => ({
+                      value: sourceKey(value),
+                      label: value.managed_database_name || sourceLabel(value),
+                    })) ?? []),
+                  ]}
+                />
+              </label>
+              {!eligible.length && (
+                <Note>
+                  Create a separate, unused compatible database before restoring this artifact.
+                </Note>
+              )}
+            </FormSection>
+            <FormSection title="Related recovery set">
+              <p className="text-sm text-muted-foreground">
+                Optionally select same-scope archives that must have a consistent recovery point.
+              </p>
+              {relatedOptions.map((value) => (
+                <label className="checkbox-row" key={value.id}>
+                  <Input
+                    type="checkbox"
+                    checked={relatedArtifacts.includes(value.id)}
+                    disabled={item.deletion_pending}
+                    onChange={(event) =>
+                      setRelatedArtifacts((current) =>
+                        event.target.checked
+                          ? current.length < 16
+                            ? [...current, value.id]
+                            : current
+                          : current.filter((id) => id !== value.id),
+                      )
+                    }
+                  />
+                  <span className="min-w-0 break-words">
+                    {timestamp(value.captured_at || value.created_at)} · {sourceLabel(value.source)}
+                  </span>
+                </label>
+              ))}
+              {!relatedOptions.length && <Note>No other same-scope archives are available.</Note>}
+              {!relatedArtifacts.length && (
+                <Note>
+                  No related archives selected. Cross-application recovery-point compatibility will
+                  remain unknown.
+                </Note>
+              )}
+            </FormSection>
+          </>
         )}
         {error && <ErrorState error={error} />}
       </div>
@@ -268,7 +324,10 @@ function Restore({ artifactId }: { artifactId: string }) {
                 const value = await unwrap(
                   client.POST('/databases/{id}/restore-plan', {
                     params: { path: { id: target.managed_database_id } },
-                    body: { artifact_id: artifactId },
+                    body: {
+                      artifact_id: artifactId,
+                      related_artifact_ids: relatedArtifacts,
+                    } as any,
                   }),
                 )
                 setPlan(value)
@@ -278,7 +337,11 @@ function Restore({ artifactId }: { artifactId: string }) {
                 const value = await unwrap(
                   client.POST('/backup-artifacts/{id}/restore-plan', {
                     params: { path: { id: artifactId } },
-                    body: { application_id: target.application_id, service: target.service },
+                    body: {
+                      application_id: target.application_id,
+                      service: target.service,
+                      related_artifact_ids: relatedArtifacts,
+                    } as any,
                   }),
                 )
                 setPlan(value)
