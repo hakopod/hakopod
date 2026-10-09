@@ -79,7 +79,15 @@ func (s *Store) AcceptMigrationLockRecovery(ctx context.Context, p Principal, da
 		if !bytes.Equal(oldHash, hash[:]) {
 			return empty, ErrConflict
 		}
-		return scanDatabaseMigrationRecovery(tx.QueryRow(ctx, `SELECT `+databaseMigrationRecoveryColumns+` FROM database_migration_lock_recovery_operations WHERE id=$1`, oldID))
+		op, scanErr := scanDatabaseMigrationRecovery(tx.QueryRow(ctx, `SELECT `+databaseMigrationRecoveryColumns+` FROM database_migration_lock_recovery_operations WHERE id=$1`, oldID))
+		if scanErr != nil {
+			return empty, scanErr
+		}
+		d, databaseErr := s.DatabaseInternal(ctx, op.DatabaseID)
+		if databaseErr != nil || !p.AllowsDatabase(d.Project, d.Environment, true) || !p.Allows("deployments:write", d.Project, d.Environment, op.Plan.ApplicationName) {
+			return empty, ErrForbidden
+		}
+		return op, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return empty, err

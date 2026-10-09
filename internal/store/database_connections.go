@@ -42,14 +42,24 @@ type databaseConnectionReview struct {
 	Plan DatabaseConnectionPlan `json:"plan"`
 	Spec spec.Application       `json:"spec"`
 }
-type databaseConnectionContext struct{}
+type databaseConnectionContext struct{ reviewID, provisioningOperationID, provisioningLease string }
 
+func databaseConnectionReviewContext(ctx context.Context) databaseConnectionContext {
+	value, _ := ctx.Value(databaseConnectionContext{}).(databaseConnectionContext)
+	return value
+}
 func databaseConnectionReviewID(ctx context.Context) string {
-	id, _ := ctx.Value(databaseConnectionContext{}).(string)
-	return id
+	return databaseConnectionReviewContext(ctx).reviewID
 }
 
 func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, appID, service, variable, endpoint string, clusterAware bool, options ...DatabaseConnectionOptions) (DatabaseConnectionPlan, error) {
+	return s.planDatabaseConnection(ctx, p, id, appID, service, variable, endpoint, clusterAware, true, options...)
+}
+func (s *Store) validateDatabaseConnection(ctx context.Context, p Principal, id, appID, service, variable, endpoint string, options DatabaseConnectionOptions) error {
+	_, err := s.planDatabaseConnection(ctx, p, id, appID, service, variable, endpoint, false, false, options)
+	return err
+}
+func (s *Store) planDatabaseConnection(ctx context.Context, p Principal, id, appID, service, variable, endpoint string, clusterAware, persist bool, options ...DatabaseConnectionOptions) (DatabaseConnectionPlan, error) {
 	d, err := s.Database(ctx, p, id, true)
 	if err != nil {
 		return DatabaseConnectionPlan{}, err
@@ -163,6 +173,9 @@ func (s *Store) PlanDatabaseConnection(ctx context.Context, p Principal, id, app
 	if d.Recovery != nil {
 		plan.Warnings = append(plan.Warnings, "Writes after the captured recovery point are absent from this copy. Pause source writes and take a fresh capture before final cutover when necessary.")
 	}
+	if !persist {
+		return plan, nil
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return plan, err
@@ -202,14 +215,31 @@ func (s *Store) AcceptDatabaseConnection(ctx context.Context, p Principal, id, r
 	if err != nil {
 		return Deployment{}, err
 	}
-	ctx = context.WithValue(ctx, databaseConnectionContext{}, reviewID)
+	ctx = context.WithValue(ctx, databaseConnectionContext{}, databaseConnectionContext{reviewID: reviewID})
+	return s.Accept(ctx, p, d.Project, d.Environment, review.Spec, review.Plan.ApplicationRevision, idem)
+}
+
+func (s *Store) AcceptProvisionedDatabaseConnection(ctx context.Context, p Principal, id, reviewID, confirmation, idem, operationID, lease string) (Deployment, error) {
+	var review databaseConnectionReview
+	if err := s.Pool.QueryRow(ctx, "SELECT payload FROM managed_database_reviews WHERE id=$1 AND database_id=$2 AND identity_id=$3 AND kind='connection'", reviewID, id, p.ID).Scan(&review); err != nil {
+		return Deployment{}, err
+	}
+	if confirmation != review.Plan.ApplicationName {
+		return Deployment{}, fmt.Errorf("%w: confirm the application name", ErrInput)
+	}
+	d, err := s.Database(ctx, p, id, true)
+	if err != nil {
+		return Deployment{}, err
+	}
+	ctx = context.WithValue(ctx, databaseConnectionContext{}, databaseConnectionContext{reviewID: reviewID, provisioningOperationID: operationID, provisioningLease: lease})
 	return s.Accept(ctx, p, d.Project, d.Environment, review.Spec, review.Plan.ApplicationRevision, idem)
 }
 
 // Review consumption shares the deployment transaction and its row locks, so
 // rejection cannot consume a review or leave a changed spec without a release.
 func consumeDatabaseConnectionReview(ctx context.Context, tx pgx.Tx, p Principal, a Application, next spec.Application) error {
-	id := databaseConnectionReviewID(ctx)
+	connection := databaseConnectionReviewContext(ctx)
+	id := connection.reviewID
 	if id == "" {
 		return nil
 	}
@@ -232,8 +262,19 @@ func consumeDatabaseConnectionReview(ctx context.Context, tx pgx.Tx, p Principal
 	if err = validateDatabaseBinding(d, plan.Binding); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, "UPDATE managed_database_reviews SET consumed_at=now() WHERE id=$1", id)
-	return err
+	if _, err = tx.Exec(ctx, "UPDATE managed_database_reviews SET consumed_at=now() WHERE id=$1", id); err != nil {
+		return err
+	}
+	if connection.provisioningOperationID != "" {
+		tag, updateErr := tx.Exec(ctx, `UPDATE database_application_provisioning_operations SET status='succeeded',phase='deployment',message='The login was verified and a replacement application deployment was queued.',lease='',lease_until=NULL,finished_at=now() WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>now()`, connection.provisioningOperationID, connection.provisioningLease)
+		if updateErr != nil {
+			return updateErr
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrConflict
+		}
+	}
+	return nil
 }
 
 func (s *Store) InspectDatabaseRecovery(ctx context.Context, p Principal, id, jobID, confirmation string, revision int64) (database.Resource, error) {
