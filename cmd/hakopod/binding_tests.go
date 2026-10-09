@@ -26,3 +26,15 @@ func testBindingConnection(ctx context.Context, c *client, application store.App
 	}
 	return nil
 }
+
+func inspectBinding(ctx context.Context, c *client, application store.Application, service, variable string) error {
+	if _, exists := application.Spec.Services[service].Bindings[variable]; !exists {
+		return fmt.Errorf("inspect-binding requires --service and --variable naming a saved binding")
+	}
+	path := "/applications/" + url.PathEscape(application.ID) + "/services/" + url.PathEscape(service) + "/bindings/" + url.PathEscape(variable)
+	var result map[string]any
+	if err := c.request(ctx, "GET", path, nil, "", &result); err != nil {
+		return err
+	}
+	return printJSON(result)
+}

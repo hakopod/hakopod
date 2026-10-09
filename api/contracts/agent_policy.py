@@ -2630,6 +2630,8 @@ POLICIES = {'acceptHumanInvite': {'boundary': 'identity',
                        'sensitive_fields': []}}
 
 # Connection tests execute a fixed helper and authenticate with the bound account.
+POLICIES['inspectServiceBinding'] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'review':'none','prerequisite':'','sensitive_fields':[]}
+POLICIES['getDatabasePrivateAccessGuide'] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'review':'none','prerequisite':'','sensitive_fields':[]}
 POLICIES['testServiceBinding'] = {'boundary': 'project', 'category': 'write', 'exposure': 'generic', 'permissions': ['deployments:write'], 'review': 'canonical', 'prerequisite': '', 'sensitive_fields': []}
 
 # Invocations require application authority and owner headers from a trusted caller.

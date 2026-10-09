@@ -400,6 +400,13 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "inspectServiceBinding",
+    "method": "GET",
+    "path": "/applications/{id}/services/{service}/bindings/{variable}",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "listSourceBuilds",
     "method": "GET",
     "path": "/builds",
@@ -914,6 +921,13 @@ export const agentRoutes = [
     "id": "getDatabaseMetricHistory",
     "method": "GET",
     "path": "/databases/{id}/metrics",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "getDatabasePrivateAccessGuide",
+    "method": "POST",
+    "path": "/databases/{id}/private-access",
     "category": "read",
     "boundary": "project"
   },

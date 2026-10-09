@@ -169,6 +169,10 @@ func (s *Server) testServiceBinding(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "binding_test_audit_unavailable", "The test finished, but its audit record could not be saved. Refresh and try again.")
 		return
 	}
+	if err := s.Store.RecordBindingTest(r.Context(), completed.value); err != nil {
+		problem(w, 503, "binding_test_evidence_unavailable", "The test finished, but its result could not be saved. Refresh and test again.")
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	write(w, 200, completed.value)
 }

@@ -165,3 +165,10 @@ schemas['DatabaseRoutingObservation'] = obj({'kind': S, 'ready': B, 'message': S
 schemas['DatabaseObservation']['properties']['routing'] = ref('DatabaseRoutingObservation')
 schemas['DatabaseCoordinationObservation'] = obj({'ready': B, 'message': S, 'members': {'type': 'array', 'items': ref('DatabaseMember'), 'maxItems': 3}}, ['ready', 'members'])
 schemas['DatabaseObservation']['properties']['coordination'] = ref('DatabaseCoordinationObservation')
+
+schemas['DatabasePrivateAccessInput'] = obj({'location': {'type':'string','enum':['local','ssh','kubernetes']}, 'endpoint':S, 'ssh_host':S, 'kube_context':S, 'local_port':{'type':'integer','minimum':1024,'maximum':65535}}, ['location','endpoint'])
+schemas['DatabasePrivateAccessStep'] = obj({'title':S,'instruction':S,'command':S}, ['title','instruction'])
+schemas['DatabasePrivateAccessGuide'] = obj({'schema_version':{'type':'integer','const':1},'database_id':S,'revision':I,'observed_at':T,'location':S,'endpoint':ref('DatabaseEndpoint'),'steps':array(ref('DatabasePrivateAccessStep')),'warnings':array(S),'blockers':array(S)}, ['schema_version','database_id','revision','observed_at','location','endpoint','steps','warnings','blockers'])
+route('/databases/{id}/private-access','post','getDatabasePrivateAccessGuide',ref('DatabasePrivateAccessGuide'),ref('DatabasePrivateAccessInput'))
+
+paths['/databases/{id}/private-access']['post']['summary'] = 'Generate private database connection steps for the selected client location. Requires database read access in the project. Commands use observed endpoints and contain no credentials. This operation does not open a tunnel or test the connection.'

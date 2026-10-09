@@ -26,20 +26,7 @@ import (
 
 // BindingTestResult identifies the exact pod tested. It contains no connection
 // values, credential fingerprints, driver errors or application output.
-type BindingTestResult struct {
-	SchemaVersion         int                  `json:"schema_version"`
-	ApplicationID         string               `json:"application_id"`
-	Service               string               `json:"service"`
-	Variable              string               `json:"variable"`
-	Revision              int64                `json:"revision"`
-	Pod                   string               `json:"pod,omitempty"`
-	PodUID                string               `json:"pod_uid,omitempty"`
-	ObservedAt            time.Time            `json:"observed_at"`
-	Outcome               string               `json:"outcome"`
-	SnapshotResolved      bool                 `json:"snapshot_resolved"`
-	LoadedMatchesSnapshot *bool                `json:"loaded_matches_snapshot"`
-	Stages                []bindingprobe.Stage `json:"stages"`
-}
+type BindingTestResult = bindingprobe.TestResult
 
 // TestServiceBinding runs one fixed helper command. The request may identify
 // only a declared binding and an owned running pod, never a URL or command.
@@ -180,6 +167,13 @@ func (c *Client) TestServiceBinding(ctx context.Context, t Target, service, vari
 		return unavailable("pod_changed", "The tested pod was replaced or stopped. Test its replacement before using this result.")
 	}
 	result.Stages, result.ObservedAt = stages, time.Now().UTC()
+	result.Evidence.SecretUID = string(loadedSecret.UID)
+	result.Evidence.SecretVersion = loadedSecret.ResourceVersion
+	for _, status := range selected.Status.ContainerStatuses {
+		if status.Name == "app" && status.State.Running != nil {
+			result.Evidence.ContainerID = status.ContainerID
+		}
+	}
 	if result.SnapshotResolved && len(measured.Fingerprint) == 64 {
 		mac := hmac.New(sha256.New, []byte(request.Nonce))
 		_, _ = mac.Write([]byte(expected.URL))

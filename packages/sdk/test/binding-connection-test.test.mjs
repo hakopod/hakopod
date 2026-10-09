@@ -37,3 +37,12 @@ test("connection testing rejects undeclared variables before issuing an executio
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, "GET");
 });
+
+test("binding inspection is read-only and sends no credentials", async () => {
+  const { client, calls } = fixture();
+  await client.application("application-fixture").service("api").inspectBinding("DATABASE_URL");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].method, "GET");
+  assert.equal(calls[1].path, "/api/v1/applications/application-fixture/services/api/bindings/DATABASE_URL");
+  assert.equal(calls[1].body, undefined);
+});

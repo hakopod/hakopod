@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -121,6 +122,26 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 			return fmt.Errorf("switchover-retry requires --operation-id, --revision and --name matching the database; retry resumes the same approved target")
 		}
 		method, path, body = "POST", path+"/"+id+"/switchover-retry", map[string]any{"operation_id": connection.OperationID, "expected_revision": revision, "confirm_name": confirmation}
+	case "private-access":
+		f, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		var input database.PrivateAccessInput
+		decoder := json.NewDecoder(io.LimitReader(f, 2049))
+		decoder.DisallowUnknownFields()
+		if err = decoder.Decode(&input); err != nil {
+			return err
+		}
+		var trailing any
+		if decoder.Decode(&trailing) != io.EOF {
+			return fmt.Errorf("private-access requires exactly one JSON object")
+		}
+		if err = input.Validate(); err != nil {
+			return err
+		}
+		method, path, body = "POST", path+"/"+id+"/private-access", input
 	case "trust", "connections":
 		path += "/" + id + "/" + action
 	case "metrics":
