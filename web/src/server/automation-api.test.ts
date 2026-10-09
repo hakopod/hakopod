@@ -17,12 +17,42 @@ test('external database automation routes keep method boundaries and exclude cre
     [`external-databases/${id}/connection-plan`, 'POST'],
     [`external-database-operations/${id}`, 'GET'],
   ]) {
-    const response = await forwardAutomationAPI(new Request(`https://dashboard.example/api/v1/${path}`, { method, headers: { Authorization: 'Bearer hp_external_fixture', Cookie: 'ambient-session', 'Idempotency-Key': 'external-fixture-key' }, ...(method !== 'GET' ? { body: '{}' } : {}) }))
+    const response = await forwardAutomationAPI(
+      new Request(`https://dashboard.example/api/v1/${path}`, {
+        method,
+        headers: {
+          Authorization: 'Bearer hp_external_fixture',
+          Cookie: 'ambient-session',
+          'Idempotency-Key': 'external-fixture-key',
+        },
+        ...(method !== 'GET' ? { body: '{}' } : {}),
+      }),
+    )
     assert.equal(response.status, 200, `${method} ${path}`)
   }
   assert.equal(mock.mock.callCount(), 5)
-  assert.equal((await forwardAutomationAPI(new Request(`https://dashboard.example/api/v1/external-databases/${id}/credentials`, { headers: { Authorization: 'Bearer hp_external_fixture' } }))).status, 404)
-  assert.equal((await forwardAutomationAPI(new Request(`https://dashboard.example/api/v1/external-databases/${id}/trust`, { method: 'POST', headers: { Authorization: 'Bearer hp_external_fixture' }, body: '{}' }))).status, 405)
+  assert.equal(
+    (
+      await forwardAutomationAPI(
+        new Request(`https://dashboard.example/api/v1/external-databases/${id}/credentials`, {
+          headers: { Authorization: 'Bearer hp_external_fixture' },
+        }),
+      )
+    ).status,
+    404,
+  )
+  assert.equal(
+    (
+      await forwardAutomationAPI(
+        new Request(`https://dashboard.example/api/v1/external-databases/${id}/trust`, {
+          method: 'POST',
+          headers: { Authorization: 'Bearer hp_external_fixture' },
+          body: '{}',
+        }),
+      )
+    ).status,
+    405,
+  )
   assert.equal(mock.mock.callCount(), 5)
 })
 
@@ -70,27 +100,52 @@ test('platform automation preserves exact routes, bearer scope and review author
   const body = '{"project":"owned","environment":"production","expected_revision":3}'
   const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
     const target = new URL(String(url))
-    assert.ok(cases.some(([path, method]) => target.pathname === `/api/v1/${path}` && init?.method === method))
+    assert.ok(
+      cases.some(
+        ([path, method]) => target.pathname === `/api/v1/${path}` && init?.method === method,
+      ),
+    )
     assert.equal(target.search, '?project=owned&environment=production')
     const headers = new Headers(init?.headers)
     assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
     assert.equal(headers.get('Cookie'), null)
     assert.equal(headers.get('X-Hakopod-Workspace'), id)
     assert.equal(headers.get('Idempotency-Key'), 'platform-review-fixture')
-    if (init?.method === 'POST') assert.equal(new TextDecoder().decode(init.body as Uint8Array), body)
+    if (init?.method === 'POST')
+      assert.equal(new TextDecoder().decode(init.body as Uint8Array), body)
     return Response.json({ accepted: true })
   })
   for (const [path, method] of cases) {
-    const response = await request(`${path}?project=owned&environment=production`, method, method === 'POST' ? body : undefined, {
-      Cookie: 'ambient-session', 'X-Hakopod-Workspace': id, 'Idempotency-Key': 'platform-review-fixture',
-    })
+    const response = await request(
+      `${path}?project=owned&environment=production`,
+      method,
+      method === 'POST' ? body : undefined,
+      {
+        Cookie: 'ambient-session',
+        'X-Hakopod-Workspace': id,
+        'Idempotency-Key': 'platform-review-fixture',
+      },
+    )
     assert.equal(response.status, 200, path)
     assert.equal(response.headers.get('Cache-Control'), 'no-store')
-    assert.equal((await request(path, method === 'GET' ? 'POST' : 'GET', method === 'GET' ? '{}' : undefined)).status, 405, path)
+    assert.equal(
+      (await request(path, method === 'GET' ? 'POST' : 'GET', method === 'GET' ? '{}' : undefined))
+        .status,
+      405,
+      path,
+    )
   }
   assert.equal((await request(`managed-platforms/${id}/trust/extra`)).status, 404)
   assert.equal((await request(`managed-platforms/${id}/credentials`)).status, 404)
-  assert.equal((await request(`managed-platforms/${id}/trust`, 'GET', undefined, { Authorization: '', Cookie: 'ambient-session' })).status, 401)
+  assert.equal(
+    (
+      await request(`managed-platforms/${id}/trust`, 'GET', undefined, {
+        Authorization: '',
+        Cookie: 'ambient-session',
+      })
+    ).status,
+    401,
+  )
   assert.equal(mocked.mock.callCount(), cases.length)
 })
 
@@ -107,19 +162,35 @@ test('public endpoint automation preserves scoped authority, review bodies and m
     [`database-public-endpoint-operations/${operation}`, 'GET'],
   ]
   const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
-    assert.ok(cases.some(([path, method]) => new URL(String(url)).pathname === `/api/v1/${path}` && init?.method === method))
+    assert.ok(
+      cases.some(
+        ([path, method]) =>
+          new URL(String(url)).pathname === `/api/v1/${path}` && init?.method === method,
+      ),
+    )
     const headers = new Headers(init?.headers)
     assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
     assert.equal(headers.get('Cookie'), null)
     assert.equal(headers.get('X-Hakopod-Workspace'), id)
     assert.equal(headers.get('Idempotency-Key'), 'endpoint-fixture-key')
-    if (init?.method !== 'GET') assert.equal(new TextDecoder().decode(init?.body as Uint8Array), '{"expected_endpoint_revision":3}')
+    if (init?.method !== 'GET')
+      assert.equal(
+        new TextDecoder().decode(init?.body as Uint8Array),
+        '{"expected_endpoint_revision":3}',
+      )
     return Response.json({ accepted: true })
   })
   for (const [path, method] of cases) {
-    const response = await request(path, method, method === 'GET' ? undefined : '{"expected_endpoint_revision":3}', {
-      Cookie: 'ambient-session', 'X-Hakopod-Workspace': id, 'Idempotency-Key': 'endpoint-fixture-key',
-    })
+    const response = await request(
+      path,
+      method,
+      method === 'GET' ? undefined : '{"expected_endpoint_revision":3}',
+      {
+        Cookie: 'ambient-session',
+        'X-Hakopod-Workspace': id,
+        'Idempotency-Key': 'endpoint-fixture-key',
+      },
+    )
     assert.equal(response.status, 200, `${method} ${path}`)
   }
   assert.equal(mocked.mock.callCount(), cases.length)
@@ -129,8 +200,12 @@ test('public endpoint automation preserves scoped authority, review bodies and m
     [`databases/${id}/public-endpoints`, 'DELETE'],
     [`databases/${id}/public-endpoints/${endpoint}`, 'POST'],
     [`database-public-endpoint-operations/${operation}`, 'DELETE'],
-  ]) assert.equal((await request(path, method, method === 'GET' ? undefined : '{}')).status, 405)
-  assert.equal((await request(`databases/${id}/public-endpoints/${endpoint}/credentials`)).status, 404)
+  ])
+    assert.equal((await request(path, method, method === 'GET' ? undefined : '{}')).status, 405)
+  assert.equal(
+    (await request(`databases/${id}/public-endpoints/${endpoint}/credentials`)).status,
+    404,
+  )
   assert.equal(mocked.mock.callCount(), cases.length)
 })
 
@@ -147,7 +222,8 @@ test('database node discovery preserves explicit scope and is read-only', async 
   const response = await request(path)
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('Cache-Control'), 'no-store')
-  for (const method of ['POST', 'PUT', 'DELETE']) assert.equal((await request(path, method, '{}')).status, 405)
+  for (const method of ['POST', 'PUT', 'DELETE'])
+    assert.equal((await request(path, method, '{}')).status, 405)
   assert.equal(mocked.mock.callCount(), 1)
 })
 
@@ -290,6 +366,12 @@ test('SDK lifecycle routes forward scoped machine credentials and DELETE confirm
     ['POST', 'databases/db/credentials'],
     ['POST', 'databases/db/connection-plan'],
     ['POST', 'databases/db/connect'],
+    ['POST', 'databases/db/application-provisioning-plan'],
+    ['POST', 'databases/db/application-provision'],
+    ['GET', 'database-application-provisioning-operations/operation'],
+    ['POST', 'databases/db/migration-lock-recovery-plan'],
+    ['POST', 'databases/db/migration-lock-recover'],
+    ['GET', 'database-migration-lock-recovery-operations/operation'],
     ['POST', 'virtual-networks/plan'],
     ['POST', 'virtual-networks'],
     ['PUT', 'virtual-networks/private'],
@@ -334,10 +416,7 @@ test('SDK forwarding retains administrative exclusions and bounds DELETE input',
   const upstream = t.mock.method(globalThis, 'fetch', async () => {
     throw new Error('must not forward')
   })
-  for (const path of [
-    'installation',
-    'auth/security',
-  ])
+  for (const path of ['installation', 'auth/security'])
     assert.equal((await request(path)).status, 404, path)
   assert.equal((await request('databases/db', 'DELETE', 'x'.repeat(1024 * 1024 + 1))).status, 413)
   assert.equal(upstream.mock.callCount(), 0)
@@ -430,7 +509,9 @@ test('SQL and pod execution preserve exact bearer requests and reject other meth
     return Response.json({ outcome: 'unknown', operation_id: 'fixture' }, { status: 409 })
   })
   for (const path of paths) {
-    const response = await request(`${path}?project=demo&environment=development`, 'POST', body, { Cookie: 'ambient-browser' })
+    const response = await request(`${path}?project=demo&environment=development`, 'POST', body, {
+      Cookie: 'ambient-browser',
+    })
     assert.equal(response.status, 409)
     assert.deepEqual(await response.json(), { outcome: 'unknown', operation_id: 'fixture' })
     assert.equal((await request(path)).status, 405)
@@ -440,31 +521,59 @@ test('SQL and pod execution preserve exact bearer requests and reject other meth
   assert.equal(mocked.mock.callCount(), 2)
 })
 
-
 test('invocation transport preserves owner authority and rejects browser credentials and unregistered methods', async (t) => {
   const base = `applications/${app}/services/worker/invocations`
   const id = 'b'.repeat(32)
-  const cases = [[base, 'POST'], [base, 'GET'], [`${base}/${id}`, 'GET'], [`${base}/${id}/cancel`, 'POST'], [`${base}/${id}/logs`, 'GET']]
+  const cases = [
+    [base, 'POST'],
+    [base, 'GET'],
+    [`${base}/${id}`, 'GET'],
+    [`${base}/${id}/cancel`, 'POST'],
+    [`${base}/${id}/logs`, 'GET'],
+  ]
   const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
     const target = new URL(String(url))
-    assert.ok(cases.some(([path, method]) => target.pathname === `/api/v1/${path}` && init?.method === method))
+    assert.ok(
+      cases.some(
+        ([path, method]) => target.pathname === `/api/v1/${path}` && init?.method === method,
+      ),
+    )
     assert.equal(target.search, '?correlation_id=execution-1&active=true')
     const headers = new Headers(init?.headers)
     assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
     assert.equal(headers.get('X-Hakopod-Owner-Scope'), 'tenant-1')
     assert.equal(headers.get('Idempotency-Key'), 'retry-1')
     assert.equal(headers.get('Cookie'), null)
-    if (init?.method === 'POST') assert.equal(new TextDecoder().decode(init.body as Uint8Array), '{"inputs":{}}')
+    if (init?.method === 'POST')
+      assert.equal(new TextDecoder().decode(init.body as Uint8Array), '{"inputs":{}}')
     return Response.json({ cleanup_pending: true }, { status: 202 })
   })
   for (const [path, method] of cases) {
-    const response = await request(`${path}?correlation_id=execution-1&active=true`, method, method === 'POST' ? '{"inputs":{}}' : undefined,
-      { Cookie: 'ambient-session', 'X-Hakopod-Owner-Scope': 'tenant-1', 'Idempotency-Key': 'retry-1' })
+    const response = await request(
+      `${path}?correlation_id=execution-1&active=true`,
+      method,
+      method === 'POST' ? '{"inputs":{}}' : undefined,
+      {
+        Cookie: 'ambient-session',
+        'X-Hakopod-Owner-Scope': 'tenant-1',
+        'Idempotency-Key': 'retry-1',
+      },
+    )
     assert.equal(response.status, 202)
     assert.equal(response.headers.get('Cache-Control'), 'no-store')
-    assert.equal((await request(path, method, method === 'POST' ? '{}' : undefined, { Authorization: '', Cookie: 'ambient-session' })).status, 401)
+    assert.equal(
+      (
+        await request(path, method, method === 'POST' ? '{}' : undefined, {
+          Authorization: '',
+          Cookie: 'ambient-session',
+        })
+      ).status,
+      401,
+    )
     assert.equal((await request(path, 'DELETE', '{}')).status, 405)
-    const browserRequest = new Request(`https://dashboard.example/api/${path}`, { headers: { Cookie: 'ambient-session' } })
+    const browserRequest = new Request(`https://dashboard.example/api/${path}`, {
+      headers: { Cookie: 'ambient-session' },
+    })
     assert.equal((await proxy({ request: browserRequest, params: { _splat: path } })).status, 404)
   }
   assert.equal((await request(`${base}/${id}/exec`, 'POST', '{}')).status, 404)
@@ -474,9 +583,20 @@ test('invocation transport preserves owner authority and rejects browser credent
 test('session control transport preserves exact owner and generation authority', async (t) => {
   const base = `applications/${app}/services/worker/sessions`
   const id = 'c'.repeat(32)
-  const cases = [[base, 'POST'], [base, 'GET'], [`${base}/${id}`, 'GET'], [`${base}/${id}`, 'DELETE'], [`${base}/${id}/heartbeat`, 'POST']]
+  const cases = [
+    [base, 'POST'],
+    [base, 'GET'],
+    [`${base}/${id}`, 'GET'],
+    [`${base}/${id}`, 'DELETE'],
+    [`${base}/${id}/heartbeat`, 'POST'],
+  ]
   const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
-    assert.ok(cases.some(([path, method]) => new URL(String(url)).pathname === `/api/v1/${path}` && init?.method === method))
+    assert.ok(
+      cases.some(
+        ([path, method]) =>
+          new URL(String(url)).pathname === `/api/v1/${path}` && init?.method === method,
+      ),
+    )
     const headers = new Headers(init?.headers)
     assert.equal(headers.get('Authorization'), 'Bearer hp_fixture')
     assert.equal(headers.get('Cookie'), null)
@@ -485,9 +605,21 @@ test('session control transport preserves exact owner and generation authority',
     return Response.json({ status: 'ready' })
   })
   for (const [path, method] of cases) {
-    const response = await request(path, method, method === 'GET' ? undefined : '{}', { Cookie: 'ambient', 'X-Hakopod-Owner-Scope': 'tenant-a', 'X-Hakopod-Session-Generation': 'generation-a' })
+    const response = await request(path, method, method === 'GET' ? undefined : '{}', {
+      Cookie: 'ambient',
+      'X-Hakopod-Owner-Scope': 'tenant-a',
+      'X-Hakopod-Session-Generation': 'generation-a',
+    })
     assert.equal(response.status, 200)
-    assert.equal((await request(path, method, method === 'GET' ? undefined : '{}', { Authorization: '', Cookie: 'ambient' })).status, 401)
+    assert.equal(
+      (
+        await request(path, method, method === 'GET' ? undefined : '{}', {
+          Authorization: '',
+          Cookie: 'ambient',
+        })
+      ).status,
+      401,
+    )
     const browser = new Request(`https://dashboard.example/api/${path}`)
     assert.equal((await proxy({ request: browser, params: { _splat: path } })).status, 404)
   }
@@ -499,9 +631,21 @@ test('session binary transport exceeds JSON size safely and retains capacity unt
   const mocked = t.mock.method(globalThis, 'fetch', async (_url: unknown, init?: RequestInit) => {
     assert.equal(new Headers(init?.headers).get('X-Hakopod-Owner-Scope'), 'tenant-a')
     assert.equal((init?.body as Uint8Array).byteLength, 2 * 1024 * 1024)
-    return new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 2])) } }), { headers: { 'Content-Type': 'application/octet-stream' } })
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2]))
+        },
+      }),
+      { headers: { 'Content-Type': 'application/octet-stream' } },
+    )
   })
-  const submit = () => request(path, 'POST', 'x'.repeat(2 * 1024 * 1024), { 'X-Hakopod-Owner-Scope': 'tenant-a', 'X-Hakopod-Session-Generation': 'generation-a', 'Idempotency-Key': 'call-once' })
+  const submit = () =>
+    request(path, 'POST', 'x'.repeat(2 * 1024 * 1024), {
+      'X-Hakopod-Owner-Scope': 'tenant-a',
+      'X-Hakopod-Session-Generation': 'generation-a',
+      'Idempotency-Key': 'call-once',
+    })
   const first = await submit()
   const second = await submit()
   try {
@@ -514,14 +658,33 @@ test('session binary transport exceeds JSON size safely and retains capacity unt
     const next = await submit()
     assert.equal(next.status, 200)
     await next.body?.cancel()
-  } finally { await first.body?.cancel(); await second.body?.cancel() }
+  } finally {
+    await first.body?.cancel()
+    await second.body?.cancel()
+  }
 })
 
 test('session stream cancellation fails the stream instead of reporting a successful EOF', async (t) => {
   const path = `applications/${app}/services/worker/sessions/${'d'.repeat(32)}/call`
   const abort = new AbortController()
-  t.mock.method(globalThis, 'fetch', async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1])) } })))
-  const input = new Request(`https://dashboard.example/api/v1/${path}`, { method: 'POST', body: '{}', signal: abort.signal, headers: { Authorization: 'Bearer hp_fixture', 'X-Hakopod-Owner-Scope': 'tenant-a' } })
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1]))
+          },
+        }),
+      ),
+  )
+  const input = new Request(`https://dashboard.example/api/v1/${path}`, {
+    method: 'POST',
+    body: '{}',
+    signal: abort.signal,
+    headers: { Authorization: 'Bearer hp_fixture', 'X-Hakopod-Owner-Scope': 'tenant-a' },
+  })
   const response = await forwardAutomationAPI(input)
   const reader = response.body!.getReader()
   assert.equal((await reader.read()).value?.byteLength, 1)
