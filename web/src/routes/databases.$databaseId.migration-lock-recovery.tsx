@@ -225,8 +225,16 @@ function Page() {
               <dd>{plan.evidence.profile}</dd>
             </div>
             <div>
+              <dt className="text-muted-foreground">Pinned application image</dt>
+              <dd className="break-all">{plan.evidence.application_image}</dd>
+            </div>
+            <div>
               <dt className="text-muted-foreground">Logical database</dt>
               <dd>{plan.evidence.logical_database}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Observed</dt>
+              <dd>{timestamp(plan.evidence.observed_at)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Knex lock rows</dt>
@@ -235,11 +243,22 @@ function Page() {
               </dd>
             </div>
             <div>
+              <dt className="text-muted-foreground">Startup lock rows</dt>
+              <dd>
+                {plan.evidence.startup_locked_rows} locked of {plan.evidence.startup_lock_rows} ·{' '}
+                {plan.evidence.fresh_startup_heartbeats} fresh heartbeats
+              </dd>
+            </div>
+            <div>
               <dt className="text-muted-foreground">Active sessions, pods, jobs, locks</dt>
               <dd>
                 {plan.evidence.active_migrator_sessions}, {plan.evidence.active_application_pods},{' '}
                 {plan.evidence.active_migration_jobs}, {plan.evidence.active_migration_locks}
               </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Schema fingerprint</dt>
+              <dd className="break-all">{plan.evidence.schema_fingerprint}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Evidence digest</dt>

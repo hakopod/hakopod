@@ -255,6 +255,10 @@ function Page() {
               <dt className="text-muted-foreground">Secret</dt>
               <dd>{plan.secret_reference}</dd>
             </div>
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground">Granted access</dt>
+              <dd>{plan.privileges.join(', ')}</dd>
+            </div>
           </dl>
         )}
         {plan?.warnings.map((w) => (
