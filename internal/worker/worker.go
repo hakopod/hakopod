@@ -133,13 +133,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	if baseTimeout == 0 {
 		baseTimeout = 10 * time.Minute
 	}
-	budgetSpec := d.Spec
-	if d.RecoveryState == "running" && d.RecoverySpec != nil {
-		budgetSpec = *d.RecoverySpec
-	}
 	deployTimeout := deploymentAttemptTimeout(d.Spec, baseTimeout*2/3)
-	recoveryTimeout := deploymentAttemptTimeout(budgetSpec, baseTimeout/2)
-	operationTimeout := deploymentOperationTimeout(baseTimeout, deployTimeout, recoveryTimeout)
 	var drainAllowance time.Duration
 	if actionsDrainCandidate(d) {
 		// Preparation only reads immutable releases and bounded slot metadata.
@@ -160,6 +154,16 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 			return // A metadata read failure remains resumable with the claim.
 		}
 	}
+	lookupCtx, stopLookup := context.WithTimeout(parent, min(baseTimeout, 5*time.Second))
+	previousRelease, err := w.Store.LastHealthyRelease(lookupCtx, a.ID, d.Revision)
+	lookupErr := lookupCtx.Err()
+	stopLookup()
+	if err != nil || lookupErr != nil {
+		return // A bounded durable read failure remains resumable with the claim.
+	}
+	budgetSpec := deploymentRecoveryBudgetSpec(d, previousRelease)
+	recoveryTimeout := deploymentAttemptTimeout(budgetSpec, baseTimeout/2)
+	operationTimeout := deploymentOperationTimeout(baseTimeout, deployTimeout, recoveryTimeout)
 	ctx, cancelTimeout := context.WithDeadline(parent, started.Add(operationTimeout+drainAllowance))
 	defer cancelTimeout()
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -222,11 +226,6 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	}()
 	defer func() { cancel(nil); <-guardDone }()
 	emit(cluster.Event{Type: "running", Message: "Reconciling immutable application release"})
-	previousRelease, err := w.Store.LastHealthyRelease(ctx, a.ID, d.Revision)
-	if err != nil {
-		cancel(errDatabase)
-		return
-	}
 	var previous *spec.Application
 	if previousRelease != nil {
 		previous = previousRelease.ResolvedSpec
@@ -383,6 +382,16 @@ func deploymentAttemptTimeout(app spec.Application, fallback time.Duration) time
 		}
 	}
 	return max(fallback, requested)
+}
+
+func deploymentRecoveryBudgetSpec(deployment store.Deployment, previous *store.Deployment) spec.Application {
+	if deployment.RecoveryState == "running" && deployment.RecoverySpec != nil {
+		return *deployment.RecoverySpec
+	}
+	if previous != nil && previous.ResolvedSpec != nil {
+		return *previous.ResolvedSpec
+	}
+	return deployment.Spec
 }
 
 func deploymentOperationTimeout(base, deploy, recovery time.Duration) time.Duration {
