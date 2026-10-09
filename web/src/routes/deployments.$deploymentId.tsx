@@ -144,6 +144,19 @@ function DeploymentDetail() {
   const imageResolved =
     Boolean(release.resolved_spec) ||
     (release.events || []).some((event) => event.type === 'resolved')
+  let currentServiceEvent: NonNullable<typeof release.events>[number] | undefined
+  for (const event of release.events || []) {
+    if (!event.service) continue
+    if (event.type === 'applying') currentServiceEvent = event
+    if (
+      currentServiceEvent?.service === event.service &&
+      ['ready', 'completed', 'failed'].includes(event.type)
+    )
+      currentServiceEvent = undefined
+  }
+  const currentService = currentServiceEvent
+    ? release.spec.services[currentServiceEvent.service]
+    : undefined
   const stages: PipelineStage[] = [
     {
       id: 'accepted',
@@ -325,6 +338,14 @@ function DeploymentDetail() {
       {release.error && <ErrorState title="Deployment needs attention" error={release.error} />}
       {release.cancel_requested && (
         <Note>Cancellation requested. Waiting for the reconciler to reach a safe boundary.</Note>
+      )}
+      {currentServiceEvent && currentService && (
+        <div className="application-metadata runtime-summary" role="status">
+          <span>Current step</span>
+          <strong>{currentService.job ? 'Deployment job' : 'Startup and readiness'}</strong>
+          <code>{currentServiceEvent.service}</code>
+          <span>{currentServiceEvent.message}</span>
+        </div>
       )}
       <div className="ops-run-layout">
         <aside className="ops-run-list" aria-label="Deployment history">

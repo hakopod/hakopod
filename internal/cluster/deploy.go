@@ -970,7 +970,7 @@ func (c *Client) readinessError(t Target, service string, cause error) error {
 	if message == "" {
 		message = "pods did not become ready; check application health and cluster capacity"
 	}
-	return fmt.Errorf("%s: rollout stopped (%v): %s", service, cause, message)
+	return fmt.Errorf("%s: rollout stopped: %s: %w", service, message, cause)
 }
 
 // cleanup discovers bounded, owned stale resources as well as the previous

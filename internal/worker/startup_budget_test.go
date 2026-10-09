@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
+	"github.com/hakopod/hakopod/internal/store"
 )
 
 func TestDeploymentAttemptTimeoutIncludesReviewedSequentialWork(t *testing.T) {
@@ -25,5 +26,20 @@ func TestDeploymentAttemptTimeoutIncludesReviewedSequentialWork(t *testing.T) {
 	}
 	if got, want := deploymentOperationTimeout(10*time.Minute, 11*time.Minute, 5*time.Minute), 16*time.Minute+30*time.Second; got != want {
 		t.Fatalf("expanded operation timeout = %s, want %s", got, want)
+	}
+}
+
+func TestDeploymentRecoveryBudgetUsesTheWorkloadThatRollbackWillApply(t *testing.T) {
+	desired := spec.Application{Services: map[string]spec.Service{"web": {StartupTimeoutSeconds: 30}}}
+	previous := spec.Application{Services: map[string]spec.Service{"web": {StartupTimeoutSeconds: 600}}}
+	deployment := store.Deployment{Spec: desired}
+	priorRelease := &store.Deployment{ResolvedSpec: &previous}
+	if got := deploymentRecoveryBudgetSpec(deployment, priorRelease); got.Services["web"].StartupTimeoutSeconds != 600 {
+		t.Fatalf("fresh rollback budget used the attempted release: %+v", got.Services["web"])
+	}
+	resumed := spec.Application{Services: map[string]spec.Service{"web": {StartupTimeoutSeconds: 900}}}
+	deployment.RecoveryState, deployment.RecoverySpec = "running", &resumed
+	if got := deploymentRecoveryBudgetSpec(deployment, priorRelease); got.Services["web"].StartupTimeoutSeconds != 900 {
+		t.Fatalf("resumed rollback budget ignored its durable recovery spec: %+v", got.Services["web"])
 	}
 }
