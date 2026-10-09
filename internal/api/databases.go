@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -469,7 +470,41 @@ func (s *Server) reconcileDatabase(parent context.Context) {
 			}
 		}
 	}
-	reconcileDatabaseProvisioning(ctx, s.Cluster, d, op.Phase, password, before, finish)
+	progressFinish := finish
+	if (op.Kind == "resize" || op.Kind == "resize-retry") && op.Review != nil {
+		progressFinish = func(status, phase, message string, observation database.Observation) {
+			if status == "queued" && (phase == "provisioning" || phase == "observing") {
+				phase, message = databaseResizeProgress(d, *op.Review, observation)
+			}
+			finish(status, phase, message, observation)
+		}
+	}
+	reconcileDatabaseProvisioning(ctx, s.Cluster, d, op.Phase, password, before, progressFinish)
+}
+
+func databaseResizeProgress(d database.Resource, review database.ResizePlan, observed database.Observation) (string, string) {
+	if observed.Revision != d.Revision || len(observed.Members) == 0 {
+		return "observing", "Waiting for current-revision member and controller evidence before reporting replacement or replication progress."
+	}
+	if review.PreviousPrimary != "" && observed.Primary != "" && observed.Primary != review.PreviousPrimary {
+		return "primary-transition", "The controller changed the primary member. Waiting for verified routing and client reconnection."
+	}
+	ready := 0
+	catchingUp := false
+	for _, member := range observed.Members {
+		if member.Ready {
+			ready++
+		}
+		phase := strings.ToLower(strings.TrimSpace(member.Phase))
+		catchingUp = catchingUp || phase == "syncing" || phase == "recovering" || phase == "joining" || phase == "catching-up"
+	}
+	if len(observed.Members) > 0 && ready < d.Spec.Members() {
+		if catchingUp {
+			return "replication-catch-up", "Waiting for replacement members to report that replication catch-up is complete."
+		}
+		return "replica-replacement", "The database controller reports fewer ready members than the requested topology. Availability can change during replacement."
+	}
+	return "verification", "The requested topology is present. Waiting for native health, routing and replication verification."
 }
 
 type databaseProvisioningRuntime interface {

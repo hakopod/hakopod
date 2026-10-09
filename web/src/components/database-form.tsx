@@ -173,6 +173,7 @@ function DatabaseAllocationForm({
         <FormSection title="Database and allocation">
           {spec.engine === 'mysql' && <Note>MySQL member resources and storage are fixed at creation. Recover into a new database to change per-member resources. Clusters support 2, 4 or 6 voting replicas.</Note>}
           {spec.engine === 'mongodb' && <Note>MongoDB member resources and storage are fixed at creation. Recover into a new database to change per-member resources. Clusters support 2, 4 or 6 voting replicas. Removing replicas retains their volumes until the database is deleted.</Note>}
+          {review?.plan && <Note><strong>{review.plan.strategy}</strong><br />{review.plan.expected_interruption}</Note>}
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
               Name

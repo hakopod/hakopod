@@ -263,6 +263,7 @@ function Detail() {
                       {op.finished_at && <span>Finished {timestamp(op.finished_at)}</span>}
                     </div>
                     {op.message && <p>{op.message}</p>}
+                    {op.progress?.length ? <ol className="grid gap-2 border-l border-border pl-3 text-sm" aria-label="Operation progress">{op.progress.map((stage) => <li key={`${stage.id}-${stage.observed_at}`}><div className="flex flex-wrap items-center gap-2"><strong>{stage.id.replaceAll('-', ' ')}</strong><Status value={stage.state} small /><time dateTime={stage.observed_at}>{timestamp(stage.observed_at)}</time></div>{stage.message && <p className="text-muted-foreground">{stage.message}</p>}</li>)}</ol> : null}
                     {canManage && op.id === operations.data.items[0]?.id && votingDatabase(d.spec.engine) && d.spec.mode === 'cluster' && d.status === 'failed' && op.revision === d.revision && ['resize', 'resize-retry'].includes(op.kind) && op.status === 'failed' && <Button asChild><Link to="/databases/$databaseId/resize-retry" params={{ databaseId: id }} search={{ ...search, operation: op.id }}>Review retry</Link></Button>}
                     {canManage && op.kind === 'switchover' && op.status === 'failed' && op.switchover && op.phase !== 'switchover' && <Button asChild><Link to="/databases/$databaseId/switchover" params={{ databaseId: id }} search={{ ...search, operation: op.phase === 'review' ? undefined : op.id }}>{op.phase === 'review' ? 'Review current topology' : 'Review retry'}</Link></Button>}
                   </li>
