@@ -21,6 +21,9 @@ func TestDeploymentAttemptTimeoutIncludesReviewedSequentialWork(t *testing.T) {
 	if got := deploymentAttemptTimeout(spec.Application{}, 4*time.Minute); got != 4*time.Minute {
 		t.Fatalf("default deployment timeout changed: %s", got)
 	}
+	if got := deploymentAttemptTimeout(spec.Application{}, 10*time.Second); got != 10*time.Second {
+		t.Fatalf("short default deployment timeout changed: %s", got)
+	}
 	if got := deploymentOperationTimeout(10*time.Minute, 10*time.Minute*2/3, 5*time.Minute); got != 10*time.Minute {
 		t.Fatalf("default operation timeout changed: %s", got)
 	}
