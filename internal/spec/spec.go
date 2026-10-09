@@ -40,6 +40,7 @@ type Service struct {
 	Job                     *Job                    `json:"job,omitempty" toml:"job"`
 	Files                   map[string]File         `json:"files,omitempty" toml:"files"`
 	Bindings                map[string]Binding      `json:"bindings,omitempty" toml:"bindings"`
+	DatabaseClientProfiles  map[string]string       `json:"database_client_profiles,omitempty" toml:"database_client_profiles"`
 	HTTP                    map[string]HTTPEndpoint `json:"http,omitempty" toml:"http"`
 	Architecture            string                  `json:"architecture,omitempty" toml:"architecture"`
 	Volume                  *Volume                 `json:"volume,omitempty" toml:"volume"`

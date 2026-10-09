@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestDatabaseConnectionReviewAndGrantLifecycle(t *testing.T) {
 	if err = s.RecordDatabaseStep(ctx, claim, database.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now().UTC()}, "succeeded", "ready", ""); err != nil {
 		t.Fatal(err)
 	}
-	app, err := spec.Normalize(spec.Application{SchemaVersion: 1, Name: "connection-fixture", Services: map[string]spec.Service{"api": {Image: "nginx:alpine", Env: map[string]string{"DATABASE_URL": "previous-connection"}}}})
+	app, err := spec.Normalize(spec.Application{SchemaVersion: 1, Name: "connection-fixture", Services: map[string]spec.Service{"api": {Image: "nginx:alpine", Env: map[string]string{"DATABASE_URL": "previous-connection"}, DatabaseClientProfiles: map[string]string{"DATABASE_URL": spec.DatabaseClientLibpqURLV1}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +57,9 @@ func TestDatabaseConnectionReviewAndGrantLifecycle(t *testing.T) {
 	if _, ok := release.Spec.Services["api"].Env["DATABASE_URL"]; ok {
 		t.Fatal("old environment value retained")
 	}
+	if release.Spec.Services["api"].DatabaseClientProfiles["DATABASE_URL"] != spec.DatabaseClientLibpqURLV1 {
+		t.Fatal("database client profile was not retained")
+	}
 	replay, err := s.AcceptDatabaseConnection(ctx, p, d.ID, plan.ID, app.Name, "reviewed-cutover")
 	if err != nil || replay.ID != release.ID {
 		t.Fatal("idempotent cutover", err)
@@ -78,6 +82,39 @@ func TestDatabaseConnectionReviewAndGrantLifecycle(t *testing.T) {
 	changed.Services["api"] = svc
 	if _, err = s.Accept(ctx, appKey, d.Project, d.Environment, changed, 3, "change-approved-binding"); !errors.Is(err, ErrForbidden) {
 		t.Fatal("application key changed grant", err)
+	}
+}
+
+func TestDatabaseConnectionReviewRejectsUnsupportedManagedPrivateCAClient(t *testing.T) {
+	s, p, d := databaseFixture(t)
+	ctx := context.Background()
+	d.Spec.Engine = "redis"
+	d.Spec.Version = "8"
+	d.Spec = d.Spec.WithSecureDefaults()
+	if _, err := s.AcceptDatabase(ctx, p, d, 0, "create-redis-profile-fixture", "create"); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := s.ClaimDatabaseOperation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecordDatabaseStep(ctx, claim, database.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now().UTC()}, "succeeded", "ready", ""); err != nil {
+		t.Fatal(err)
+	}
+	app, err := spec.Normalize(spec.Application{SchemaVersion: 1, Name: "glitchtip-profile-fixture", Services: map[string]spec.Service{"main": {
+		Image:                  "glitchtip/glitchtip:6.1.0",
+		Env:                    map[string]string{"VALKEY_URL": "redis://valkey:6379"},
+		DatabaseClientProfiles: map[string]string{"VALKEY_URL": spec.DatabaseClientGlitchTipValkeyV21},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := s.Accept(ctx, p, d.Project, d.Environment, app, 0, "create-glitchtip-profile-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.PlanDatabaseConnection(ctx, p, d.ID, accepted.ApplicationID, "main", "VALKEY_URL", "read_write", false); !errors.Is(err, ErrInput) || !strings.Contains(err.Error(), "cannot load the private CA") {
+		t.Fatalf("unsupported managed private-CA client was not rejected: %v", err)
 	}
 }
 

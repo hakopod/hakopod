@@ -3,11 +3,14 @@ package cluster
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
@@ -20,6 +23,7 @@ import (
 const databaseTrustLabel = "hakopod.io/database-trust"
 const databaseTrustVolume = "hakopod-database-trust"
 const databaseTrustDirectory = "/var/run/secrets/hakopod-database"
+const nodeExtraCABundle = "node-extra-ca-v1.pem"
 
 var databaseTrustID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
@@ -38,10 +42,27 @@ func databaseTrustName(service string, data map[string]string) string {
 
 func databaseTrustObject(t Target, name string) *corev1.ConfigMap {
 	data := map[string]string{}
+	nodeCAs := map[string]string{}
 	for variable, binding := range t.Spec.Services[name].Bindings {
 		if ca := t.databaseConnections[name][variable].CA; binding.ManagedDatabase != "" && ca != "" {
 			data[binding.ManagedDatabase+".crt"] = ca
+			if spec.DatabaseClientProfile(t.Spec.Services[name], variable) == spec.DatabaseClientNodeExtraCAV1 {
+				nodeCAs[binding.ManagedDatabase] = ca
+			}
 		}
+	}
+	ids := make([]string, 0, len(nodeCAs))
+	for id := range nodeCAs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var bundle strings.Builder
+	for _, id := range ids {
+		bundle.WriteString(strings.TrimSpace(nodeCAs[id]))
+		bundle.WriteByte('\n')
+	}
+	if bundle.Len() != 0 {
+		data[nodeExtraCABundle] = bundle.String()
 	}
 	labels := labelsFor(t, name)
 	labels[databaseTrustLabel] = "true"
@@ -55,6 +76,9 @@ func applyDatabaseTrustMount(t Target, name string, pod *corev1.PodSpec) {
 	}
 	pod.Volumes = append(pod.Volumes, corev1.Volume{Name: databaseTrustVolume, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: cm.Name}, DefaultMode: ptr(int32(0444))}}})
 	pod.Containers[0].VolumeMounts = append(pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: databaseTrustVolume, MountPath: databaseTrustDirectory, ReadOnly: true})
+	if cm.Data[nodeExtraCABundle] != "" {
+		pod.Containers[0].Env = append(pod.Containers[0].Env, corev1.EnvVar{Name: "NODE_EXTRA_CA_CERTS", Value: databaseTrustDirectory + "/" + nodeExtraCABundle})
+	}
 }
 
 func (c *Client) prepareDatabaseTrust(ctx context.Context, t Target, name string) error {
@@ -67,6 +91,14 @@ func (c *Client) prepareDatabaseTrust(ctx context.Context, t Target, name string
 	}
 	total := 0
 	for key, ca := range cm.Data {
+		if key == nodeExtraCABundle {
+			roots := x509.NewCertPool()
+			if !roots.AppendCertsFromPEM([]byte(ca)) {
+				return fmt.Errorf("invalid database client trust bundle")
+			}
+			total += len(ca)
+			continue
+		}
 		if len(key) != 36 || !databaseTrustID.MatchString(key[:32]) || key[32:] != ".crt" {
 			return fmt.Errorf("invalid database trust identity")
 		}
@@ -234,6 +266,21 @@ func (c *Client) RenewDatabaseTrust(ctx context.Context, t Target, emit func(Eve
 	}
 	renew := func(pod *corev1.PodSpec) (bool, error) {
 		volume, mount := -1, false
+		if len(pod.Containers) == 0 {
+			return false, fmt.Errorf("database trust workload container is missing")
+		}
+		nodeTrust := 0
+		for _, env := range pod.Containers[0].Env {
+			if env.Name == "NODE_EXTRA_CA_CERTS" {
+				if env.Value != databaseTrustDirectory+"/"+nodeExtraCABundle || env.ValueFrom != nil {
+					return false, fmt.Errorf("database client trust environment changed")
+				}
+				nodeTrust++
+			}
+		}
+		if (wanted.Data[nodeExtraCABundle] != "") != (nodeTrust == 1) {
+			return false, fmt.Errorf("database client trust environment changed; redeploy the accepted revision")
+		}
 		for i, v := range pod.Volumes {
 			if v.Name == databaseTrustVolume {
 				if volume != -1 || v.ConfigMap == nil {

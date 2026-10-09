@@ -29,6 +29,9 @@ func BindingSecretKey(name string) string { return "__binding_" + name }
 
 func validateBindings(app Application) error {
 	for name, s := range app.Services {
+		if err := validateDatabaseClientProfiles(app, name, s); err != nil {
+			return err
+		}
 		if len(s.Bindings) > 16 {
 			return fmt.Errorf("services.%s.bindings: at most 16 bindings", name)
 		}
