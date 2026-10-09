@@ -275,7 +275,7 @@ function Cleanup() {
         )}
         {error && <FormError>{error}</FormError>}
       </FormSection>
-      <div className="form-footer">
+      <div className="form-footer !static">
         <Button asChild>
           <Link to="/infrastructure" search={{ tab: 'nodes' }}>
             Back
