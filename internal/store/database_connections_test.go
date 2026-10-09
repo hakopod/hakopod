@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -85,7 +84,7 @@ func TestDatabaseConnectionReviewAndGrantLifecycle(t *testing.T) {
 	}
 }
 
-func TestDatabaseConnectionReviewRejectsUnsupportedManagedPrivateCAClient(t *testing.T) {
+func TestDatabaseConnectionReviewPreservesGlitchTipManagedTLSProfile(t *testing.T) {
 	s, p, d := databaseFixture(t)
 	ctx := context.Background()
 	d.Spec.Engine = "redis"
@@ -113,8 +112,12 @@ func TestDatabaseConnectionReviewRejectsUnsupportedManagedPrivateCAClient(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.PlanDatabaseConnection(ctx, p, d.ID, accepted.ApplicationID, "main", "VALKEY_URL", "read_write", false); !errors.Is(err, ErrInput) || !strings.Contains(err.Error(), "cannot load the private CA") {
-		t.Fatalf("unsupported managed private-CA client was not rejected: %v", err)
+	plan, err := s.PlanDatabaseConnection(ctx, p, d.ID, accepted.ApplicationID, "main", "VALKEY_URL", "read_write", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Binding.Protocol != "redis" {
+		t.Fatal("GlitchTip connection review did not preserve Redis")
 	}
 }
 

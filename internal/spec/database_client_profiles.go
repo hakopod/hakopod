@@ -50,7 +50,19 @@ func validateDatabaseClientProfiles(app Application, serviceName string, service
 			if _, ok := service.Bindings["NODE_EXTRA_CA_CERTS"]; ok {
 				return fmt.Errorf("services.%s.database_client_profiles.%s: NODE_EXTRA_CA_CERTS is already defined", serviceName, variable)
 			}
-		case DatabaseClientLibpqURLV1, DatabaseClientGlitchTipValkeyV21:
+		case DatabaseClientGlitchTipValkeyV21:
+			for _, generated := range []string{"SSL_CERT_FILE", "SSL_CERT_DIR"} {
+				if _, ok := effective.Env[generated]; ok {
+					return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
+				}
+				if _, ok := effective.Secrets[generated]; ok {
+					return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
+				}
+				if _, ok := service.Bindings[generated]; ok {
+					return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
+				}
+			}
+		case DatabaseClientLibpqURLV1:
 		default:
 			return fmt.Errorf("services.%s.database_client_profiles.%s: unsupported profile", serviceName, variable)
 		}
@@ -62,12 +74,10 @@ func validateDatabaseClientProfiles(app Application, serviceName string, service
 			if binding.Protocol != "postgres" {
 				return fmt.Errorf("services.%s.database_client_profiles.%s: this profile requires PostgreSQL", serviceName, variable)
 			}
-		case DatabaseClientNodeExtraCAV1:
+		case DatabaseClientNodeExtraCAV1, DatabaseClientGlitchTipValkeyV21:
 			if binding.Protocol != "redis" {
 				return fmt.Errorf("services.%s.database_client_profiles.%s: this profile requires Redis", serviceName, variable)
 			}
-		case DatabaseClientGlitchTipValkeyV21:
-			return fmt.Errorf("services.%s.database_client_profiles.%s: GlitchTip 6.1 cannot load the private CA for managed Redis", serviceName, variable)
 		}
 	}
 	if infisicalPostgres > 1 {

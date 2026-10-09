@@ -6,16 +6,20 @@ the managed connection flow replaces a saved environment value or secret.
 
 The Infisical `v0.165.10` profile supplies PostgreSQL's public CA through
 `DB_ROOT_CERT` and supplies one additive Node.js CA bundle for all profiled Redis
-connections. The GlitchTip `v6.1.0` profile supports the verified PostgreSQL URL.
-Hakopod rejects managed Redis for this GlitchTip version because its Valkey
-client cannot load Hakopod's private CA. These profiles do not disable hostname
-or certificate verification.
+connections. The GlitchTip `v6.1.0` profile supports the verified PostgreSQL URL
+and configures its pinned Rust Valkey client to load the image's system bundle
+and Hakopod's mounted private CAs together. These profiles do not disable
+hostname or certificate verification.
 
 Source inspection used these pinned revisions:
 
 - Infisical `222cd2d37f96c2d8678f36f0523af0514b43cb8b`: `backend/src/db/instance.ts` and `backend/src/lib/config/redis.ts`
 - GlitchTip `dcef83161b881a14010cd44fd4b33f67134e92dd`: `glitchtip/settings.py`
 - django-vcache `d7486659f10b00aa6fa8dcc1e53ee0f99043c171`: `src/connection.rs` and `Cargo.toml`
+- redis-rs `d408f2a8efdafa5582bfb6f8bbd8750d22846ec9`: `redis/src/connection.rs`
+- rustls-native-certs `71e4dd82ad584ac93c41a5ec694f255530da97d3` (`0.8.3`): `src/lib.rs`
 
 The source contracts and Hakopod rendering logic are covered by repository
-tests. Runtime acceptance remains pending.
+tests. Driver-level acceptance against the pinned Infisical and GlitchTip images
+verified the correct CA and rejected a wrong CA. Full application deployment
+acceptance remains pending.

@@ -24,6 +24,7 @@ const databaseTrustLabel = "hakopod.io/database-trust"
 const databaseTrustVolume = "hakopod-database-trust"
 const databaseTrustDirectory = "/var/run/secrets/hakopod-database"
 const nodeExtraCABundle = "node-extra-ca-v1.pem"
+const glitchTipSystemCABundle = "/etc/ssl/certs/ca-certificates.crt"
 
 var databaseTrustID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
@@ -79,6 +80,22 @@ func applyDatabaseTrustMount(t Target, name string, pod *corev1.PodSpec) {
 	if cm.Data[nodeExtraCABundle] != "" {
 		pod.Containers[0].Env = append(pod.Containers[0].Env, corev1.EnvVar{Name: "NODE_EXTRA_CA_CERTS", Value: databaseTrustDirectory + "/" + nodeExtraCABundle})
 	}
+	if glitchTipManagedRedisTrust(t, name) {
+		pod.Containers[0].Env = append(pod.Containers[0].Env,
+			corev1.EnvVar{Name: "SSL_CERT_FILE", Value: glitchTipSystemCABundle},
+			corev1.EnvVar{Name: "SSL_CERT_DIR", Value: databaseTrustDirectory},
+		)
+	}
+}
+
+func glitchTipManagedRedisTrust(t Target, name string) bool {
+	service := t.Spec.Services[name]
+	for variable, binding := range service.Bindings {
+		if binding.ManagedDatabase != "" && t.databaseConnections[name][variable].CA != "" && spec.DatabaseClientProfile(service, variable) == spec.DatabaseClientGlitchTipValkeyV21 {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) prepareDatabaseTrust(ctx context.Context, t Target, name string) error {
@@ -269,7 +286,7 @@ func (c *Client) RenewDatabaseTrust(ctx context.Context, t Target, emit func(Eve
 		if len(pod.Containers) == 0 {
 			return false, fmt.Errorf("database trust workload container is missing")
 		}
-		nodeTrust := 0
+		nodeTrust, sslFile, sslDirectory := 0, 0, 0
 		for _, env := range pod.Containers[0].Env {
 			if env.Name == "NODE_EXTRA_CA_CERTS" {
 				if env.Value != databaseTrustDirectory+"/"+nodeExtraCABundle || env.ValueFrom != nil {
@@ -277,8 +294,24 @@ func (c *Client) RenewDatabaseTrust(ctx context.Context, t Target, emit func(Eve
 				}
 				nodeTrust++
 			}
+			if env.Name == "SSL_CERT_FILE" {
+				if env.Value != glitchTipSystemCABundle || env.ValueFrom != nil {
+					return false, fmt.Errorf("database client trust environment changed")
+				}
+				sslFile++
+			}
+			if env.Name == "SSL_CERT_DIR" {
+				if env.Value != databaseTrustDirectory || env.ValueFrom != nil {
+					return false, fmt.Errorf("database client trust environment changed")
+				}
+				sslDirectory++
+			}
 		}
 		if (wanted.Data[nodeExtraCABundle] != "") != (nodeTrust == 1) {
+			return false, fmt.Errorf("database client trust environment changed; redeploy the accepted revision")
+		}
+		glitchTipTrust := glitchTipManagedRedisTrust(t, name)
+		if glitchTipTrust != (sslFile == 1 && sslDirectory == 1) || sslFile > 1 || sslDirectory > 1 {
 			return false, fmt.Errorf("database client trust environment changed; redeploy the accepted revision")
 		}
 		for i, v := range pod.Volumes {
