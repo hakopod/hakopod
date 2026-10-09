@@ -18,7 +18,7 @@ jobs:
       HAKOPOD_TEST_DATABASE_URL: postgres://hakopod_release:ephemeral-release-only@127.0.0.1:5432/postgres?sslmode=disable
     services:
       postgres:
-        image: postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        image: mirror.gcr.io/library/postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
         env:
           POSTGRES_USER: hakopod_release
           POSTGRES_PASSWORD: ephemeral-release-only
