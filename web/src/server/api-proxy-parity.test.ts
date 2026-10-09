@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { allowed, proxy } from './api-proxy.ts'
+import { allowed, proxy, proxyTimeoutMilliseconds } from './api-proxy.ts'
 import { sealSession, sessionCookie } from './session.ts'
 
 // These endpoints use dedicated authentication transports.
@@ -132,6 +132,16 @@ test('recovery workflow transport rejects unregistered paths', () => {
     `applications/${'a'.repeat(32)}/services/web/bindings/DATABASE_URL/admin`,
     `databases/${'a'.repeat(32)}/private-access/execute`,
   ]) assert.equal(allowed.some((pattern) => pattern.test(path)), false, path)
+})
+
+test('migration lock inspection outlives its bounded backend review', () => {
+  assert.equal(
+    proxyTimeoutMilliseconds(
+      `databases/${'a'.repeat(32)}/migration-lock-recovery-plan`,
+      'POST',
+    ),
+    45000,
+  )
 })
 
 test('deployment events preserve streaming, reconnection cursor and cancellation', async (t) => {

@@ -116,6 +116,8 @@ export function proxyTimeoutMilliseconds(path: string, method: string) {
     return 11 * 60 * 1000
   if (path.endsWith('/logs')) return 5 * 60 * 1000
   if (/^databases\/[a-f0-9]{32}\/restore-plan$/.test(path) && method === 'POST') return 90000
+  if (/^databases\/[a-f0-9]{32}\/migration-lock-recovery-plan$/.test(path) && method === 'POST')
+    return 45000
   return 30000
 }
 
