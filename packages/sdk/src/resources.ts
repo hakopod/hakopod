@@ -687,6 +687,26 @@ export class DatabasePublicEndpointRun {
   }
 }
 
+export class DatabaseApplicationProvisioningRun {
+  constructor(private context: Context, readonly id: string, readonly databaseId: string, readonly idempotencyKey?: string) {}
+  async get(options: RequestOptions = {}): Promise<Schema["DatabaseApplicationProvisioningOperation"]> {
+    const operation = await this.context.transport.request<Schema["DatabaseApplicationProvisioningOperation"]>("GET", "/database-application-provisioning-operations/{id}", { ...options, params: { id: this.id } });
+    if (operation.id !== this.id || operation.database_id !== this.databaseId) throw new HakopodError("The API returned another application provisioning operation.", "invalid_response");
+    return operation;
+  }
+  wait(options: WaitOptions<Schema["DatabaseApplicationProvisioningOperation"]> = {}) { return waitFor(this.id, (signal) => this.get({ signal }), options); }
+}
+
+export class DatabaseMigrationLockRecoveryRun {
+  constructor(private context: Context, readonly id: string, readonly databaseId: string, readonly idempotencyKey?: string) {}
+  async get(options: RequestOptions = {}): Promise<Schema["DatabaseMigrationLockRecoveryOperation"]> {
+    const operation = await this.context.transport.request<Schema["DatabaseMigrationLockRecoveryOperation"]>("GET", "/database-migration-lock-recovery-operations/{id}", { ...options, params: { id: this.id } });
+    if (operation.id !== this.id || operation.database_id !== this.databaseId) throw new HakopodError("The API returned another migration lock recovery operation.", "invalid_response");
+    return operation;
+  }
+  wait(options: WaitOptions<Schema["DatabaseMigrationLockRecoveryOperation"]> = {}) { return waitFor(this.id, (signal) => this.get({ signal }), options); }
+}
+
 export class DatabaseRef {
   #context: Context;
   #name?: string;
@@ -735,6 +755,32 @@ export class DatabaseRef {
         "invalid_response",
       );
     return result;
+  }
+  async applicationProvisioningPlan(input: { applicationId: string; service: string; variable: string; endpoint?: string; role?: string; database?: string; secretReference?: string }, options: RequestOptions = {}): Promise<Review<Schema["DatabaseApplicationProvisioningPlan"], DatabaseApplicationProvisioningRun>> {
+    const current = await this.get(options);
+    if (current.spec.engine !== "postgresql" || current.status !== "ready") throw new HakopodError("Application database provisioning requires a ready managed PostgreSQL database.", "invalid_option");
+    const body = { application_id: required(input.applicationId, "application ID"), service: required(input.service, "service"), variable: required(input.variable, "variable"), ...(input.endpoint === undefined ? {} : { endpoint: required(input.endpoint, "endpoint") }), ...(input.role === undefined ? {} : { role: required(input.role, "role") }), ...(input.database === undefined ? {} : { database: required(input.database, "database") }), ...(input.secretReference === undefined ? {} : { secret_reference: required(input.secretReference, "secretReference") }) };
+    const plan = await this.#context.transport.request<Schema["DatabaseApplicationProvisioningPlan"]>("POST", "/databases/{id}/application-provisioning-plan", { ...options, params: { id: current.id }, body });
+    if (plan.database_id !== current.id || plan.database_revision !== current.revision || plan.application_id !== body.application_id || plan.service !== body.service || plan.variable !== body.variable) throw new HakopodError("The API reviewed another application database provisioning request.", "invalid_response");
+    return new Review(plan, async (reviewed, applyOptions) => {
+      const key = idempotencyKey(applyOptions.idempotencyKey);
+      const operation = await this.#context.transport.request<Schema["DatabaseApplicationProvisioningOperation"]>("POST", "/databases/{id}/application-provision", { ...applyOptions, idempotencyKey: key, params: { id: reviewed.database_id }, body: { review_id: reviewed.id, confirm_application: reviewed.application_name } });
+      if (operation.database_id !== reviewed.database_id || operation.plan.id !== reviewed.id) throw new HakopodError("The API accepted another application provisioning review.", "invalid_response");
+      return new DatabaseApplicationProvisioningRun(this.#context, operation.id, operation.database_id, key);
+    });
+  }
+  async migrationLockRecoveryPlan(input: { applicationId: string; service: string; variable: string }, options: RequestOptions = {}): Promise<Review<Schema["DatabaseMigrationLockRecoveryPlan"], DatabaseMigrationLockRecoveryRun>> {
+    const current = await this.get(options);
+    if (current.spec.engine !== "postgresql" || current.status !== "ready") throw new HakopodError("Migration lock recovery requires a ready managed PostgreSQL database.", "invalid_option");
+    const body = { application_id: required(input.applicationId, "application ID"), service: required(input.service, "service"), variable: required(input.variable, "variable"), profile: "infisical-knex-postgresql-v1" };
+    const plan = await this.#context.transport.request<Schema["DatabaseMigrationLockRecoveryPlan"]>("POST", "/databases/{id}/migration-lock-recovery-plan", { ...options, params: { id: current.id }, body });
+    if (plan.evidence.database_id !== current.id || plan.evidence.database_revision !== current.revision || plan.evidence.application_id !== body.application_id || plan.evidence.service !== body.service || plan.evidence.variable !== body.variable || plan.evidence.profile !== body.profile) throw new HakopodError("The API reviewed another migration lock recovery request.", "invalid_response");
+    return new Review(plan, async (reviewed, applyOptions) => {
+      const key = idempotencyKey(applyOptions.idempotencyKey);
+      const operation = await this.#context.transport.request<Schema["DatabaseMigrationLockRecoveryOperation"]>("POST", "/databases/{id}/migration-lock-recover", { ...applyOptions, idempotencyKey: key, params: { id: reviewed.evidence.database_id }, body: { review_id: reviewed.id, confirm_application: reviewed.application_name, confirm_database: reviewed.database_name } });
+      if (operation.database_id !== reviewed.evidence.database_id || operation.plan.id !== reviewed.id) throw new HakopodError("The API accepted another migration lock recovery review.", "invalid_response");
+      return new DatabaseMigrationLockRecoveryRun(this.#context, operation.id, operation.database_id, key);
+    });
   }
   async create(
     input: DatabaseInput,
