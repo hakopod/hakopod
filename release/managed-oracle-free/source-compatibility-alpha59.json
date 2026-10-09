@@ -1,0 +1,926 @@
+{
+  "bootstrap": {
+    "base_commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "base_release": "v0.1.0-alpha.58",
+    "reviewed_release": "v0.1.0-alpha.59",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py",
+      "release/verify-oracle-free-runtime.py"
+    ]
+  },
+  "control_plane_commit": "e38c24b1c09c3d035f77128b1555c513602e9ec8",
+  "delta": {
+    "baseline_sha256": "abb8257312e917f7e5f8832b0ffc21ece91c3151fdb6e18eac93c564f0c85e44",
+    "changes": [
+      {
+        "after": "2fbea2bfe981060245dd22e6190d96e5e7a48ecef5a4944f3ee085066c6f0788",
+        "before": "8727c99448e922799396c0e8fc115b07d3b500da75857f0f3c0910cd655cc6f3",
+        "path": "api/contracts/agent_policy.py",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a34f4c06bc455c8ae8a4adf5d2341eb6a4a6f913b2a6f56a8c592bfbdf3d0de9",
+        "before": null,
+        "path": "api/contracts/binding_tests.py",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "6917974f66998b58e7ead534715b16fbd64749eb2ed3ce85e17ea7b72b4456f8",
+        "before": "fcba8b89de9120b3943446e4abddca3075bb02c73f24a86003ac355c7de0104d",
+        "path": "api/contracts/lifecycle.py",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "cb80c112e3b95a2ba0af20828cfc80887dca9b5cf02d08dc0577e5298e2e4d39",
+        "before": "4c8c68282c882504fb0b48f7e18cf63e40b9dcabd085169eb68849deed387e36",
+        "path": "api/contracts/managed_databases.py",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "53ede5c6e2d73f8be9ab57b7fd7c850854d884f0b2b219dbfa7ee00df4d7da9d",
+        "before": null,
+        "path": "api/contracts/zz_job_invocations.py",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "07d6e6079e7a6553609fc605536bf27870e0ce4fd263e457232610bdd630e4cb",
+        "before": null,
+        "path": "api/contracts/zz_sandbox_sessions.py",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "0f5d1ab0947d43607ce1eac204aac5797a4aa5bb94dd14f464906f4a3ff39c0a",
+        "before": "a7de6b713139dbe894c0d97aa4bb14ab8d95906d9126e428dfe153ae9c2bfa28",
+        "path": "api/openapi.json",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "88544830135a50e18199ff8f6045c8aab89335ea7f7866aa5ca9a05225e36fe7",
+        "before": "5856f697550bb7befad510995c5131b99bf808610da12dbc2eeb2eaccb91f7d6",
+        "path": "api/operation-summaries.json",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "afa425146f245a40f1f06ef95e11dba5f9d8d8045868ba3068e82f26fd5b59be",
+        "before": "1903ee01817a572fc509324039a0849c18b018ac9b193ea78791c8efeebf911f",
+        "path": "cmd/hakopod-server/main.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "3c0723bdfca548af216143a3b8ebe49e012ece8a6679e2009752fd95e8509a35",
+        "before": "c9a0a95422f0c8fbf06f4d747b339272d4365b9b52e770a8c29c301c3844372d",
+        "path": "cmd/hakopod-server/operator_config.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "4176b1b6fa1560d4cb36389a421c8a8251890d4b7a1a9c0f1834eadca975bdee",
+        "before": "9912601314bd7a5cdcf9c4571ee7c908f79f79bea9d870969a9b6280299c1cc6",
+        "path": "cmd/hakopod-server/runtime_profile_config_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "a5ad64b13b23e366dccc9d560cbecb97cb6ab32ab8f7e3385171a8f89e96c010",
+        "before": "cdd09b01abe6d0371b89d566f77ae1b87ebbd3f74bf5c801a6c591898162b174",
+        "path": "go.mod",
+        "reason": "MySQL v1.10.1 moved from the indirect block to the direct block; its version and the complete go.sum dependency graph are unchanged."
+      },
+      {
+        "after": "99f67ba512bb8bc3e244413bf1024d7be2bfba9b6e6c94f40bf07fbfa4caf9fd",
+        "before": "0ea3b378ea608a781232a2ab81125ccf1cd37a623ec9c8d8ffd7bcaee8f8aeba",
+        "path": "internal/api/alarms.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "46b4b35cfd70f4682d35ff780df4a91bcb3e14223bd618e8d3c27b0ca5779d0a",
+        "before": "5c142a7c781e3e3b845f9ca9ba5c76a247d4f2a2f89d85e6f0cdd307d981765e",
+        "path": "internal/api/api.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "6a1a5523ed070118cc88bfc26a546ad24981fbaa91db8e06963f6ff1c74a6ed1",
+        "before": null,
+        "path": "internal/api/binding_tests.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "abdca921c7fc8fd9417e22850a1a643a69a24dca8b93e069a043d9af8f52dc84",
+        "before": null,
+        "path": "internal/api/binding_tests_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "89d480459674cf53ff9c460a5eddd718ce68cc266206939c95dbf97ad3f87012",
+        "before": "8fcf46a16c22dbbef970d2affa0b2f5997854f21ed758848411d18599db8dbb9",
+        "path": "internal/api/databases.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "66a3693b6f14c70427586f81e6928d37af74b5f66aab4975ef0a90e0d883f84a",
+        "before": null,
+        "path": "internal/api/invocation_worker.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "17357beb8a14cf44fd18370c172e91af18e8df6d27b166d2d2c4a6ffba59baa1",
+        "before": null,
+        "path": "internal/api/invocations.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "1b97231f0044b900a0d2933be50c57aded9a9c0e924c29bf01dfa52337c1f1aa",
+        "before": null,
+        "path": "internal/api/invocations_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "270be7656d306541af9ff41e5c358eb0cba66263ff96a1525e4ff772b8cb32b0",
+        "before": null,
+        "path": "internal/api/live_invocations_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "39f6e7a9b6b8bff8921f309d9c417fd7b65bee596113bfa0693a914339b95ee4",
+        "before": null,
+        "path": "internal/api/live_sandbox_sessions_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "1a07646214eb6717d2fce521c9e8495a3b40c915d4a6417435baad3fb65fde09",
+        "before": "84400c622aebee6b96ae7ea599b15d6b3ccbf02c257d666b5f1b57e96dd1e51f",
+        "path": "internal/api/response_guard_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "6cd5ccdd92fa16da61d24262b4f25d402e2880e2b477ea29d9ec2df7695333ce",
+        "before": "b227dc9f5da87e39e1c917f34770a6324549effd9fcc6b1a11700747b7f6f47c",
+        "path": "internal/api/runtime_actions.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "29cbd43d74784c22585b205e58672e0fdce2b0aac7293ecccc1f35ef8b535855",
+        "before": null,
+        "path": "internal/api/sandbox_native_fixture_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "ce1cf3a5b3452feafb67ad8a77347c7b673742efc018e928a565e5a953cfcfe5",
+        "before": null,
+        "path": "internal/api/sandbox_sessions.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "80d54bfc00f976bbddaec1a654ce99f5741aa1670bf96b0c45081bd88fc5bb42",
+        "before": null,
+        "path": "internal/api/sandbox_sessions_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "5aecf70a9b1f74c5cb9cbe86cb8cbdd3c661a374e7670c68540f3d5fa7c719f9",
+        "before": null,
+        "path": "internal/api/sandbox_worker.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "30a7dc2f005644161d48c2bcada752d51fcf84b6e1d8312b3e884bb911426a0c",
+        "before": null,
+        "path": "internal/bindingprobe/probe.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "78d269bc54a2501e1747e8696c4112fac47812c6bdf15c54ff6cead6ac5b30bb",
+        "before": null,
+        "path": "internal/bindingprobe/probe_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "35bd24f4e50811d222f6202913137eca48e0061d5d71e26830feb0d80239e1e5",
+        "before": null,
+        "path": "internal/bindingprobe/public.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "267f3887376c0b96e9f76f101854cc1364b1fed2de347b2d1bfd054842c6a761",
+        "before": null,
+        "path": "internal/bindingprobe/public_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "2f6acec2eeda5a433bc6031e8046d5bd7afef775ae55c61cdb8dbcaf77ccdd02",
+        "before": null,
+        "path": "internal/cluster/binding_probe.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "bee6960a6e34b8de901c697e0c439b5ee37634fcf950117c0966a2f9ae233b11",
+        "before": null,
+        "path": "internal/cluster/database_binding_refresh.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "db2fb4b1e3f64a0154f9dea7c1a84100b2663a49fce8926b4baa2aa27930c09d",
+        "before": null,
+        "path": "internal/cluster/database_binding_refresh_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "1c8e23ef3e0d20cca18f6c55aa028c2d4ac199069be969c0121cc53498af8ca2",
+        "before": "f738ae2e6f6b4c61be196288e1c27f30b01899e6a9c9023f9b6f3a0e1ee00b13",
+        "path": "internal/cluster/database_clickhouse.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "1505b6b2d2b05354cbe26cdf9c2a650adecfeedd2b34993fb7c1a3342e8a158e",
+        "before": null,
+        "path": "internal/cluster/database_clickhouse_access_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "71409de384a0991cfd890ba7b0ed75d1768cd7111d9008a9915cac786e5e3ce0",
+        "before": "43f825d0b64e9031437c2823de6c4b376434a8ecde1ca342a9ee00b23f6b7c31",
+        "path": "internal/cluster/database_clickhouse_health.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "4a3e09ce9b88f28a69c0b79afb7cbd2466461c02f9af4e531ae9a3ae15217e6c",
+        "before": null,
+        "path": "internal/cluster/database_client_profiles_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "bc35acace90ed866d80a5ee3b66abeedf8982955b9b52595fde5a8e42fd4fdcf",
+        "before": null,
+        "path": "internal/cluster/database_failure_evidence.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a8d6ca505c55213768bb89abee1fa2616bf5473e07830b7cdac124671116a56f",
+        "before": null,
+        "path": "internal/cluster/database_failure_evidence_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "cf1a5a2cd010f24a97ca5ce746f76f3835c01ae51441e720d9f9db54464f44a6",
+        "before": "a7b27af19abf00c77e24a55df485f2cbb4c0351e41af2d6d2323f3f21ebc221d",
+        "path": "internal/cluster/database_oracle_enterprise_health.go",
+        "reason": "The Enterprise-only observer records generic memory-limit failure evidence; Oracle Free dispatch does not call this Enterprise observer."
+      },
+      {
+        "after": "33b31a7e0ccf2f3dae679735e6a93b3ef7fd979f01e38cc717232cbdb514c694",
+        "before": "d8055f57f3b63c071dc1ae8606d6b8cae728b3046db7440f03b27858b89d506e",
+        "path": "internal/cluster/database_trust.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "c5ee3ab08fb56e3a7e5a026d0c81ef9c449cdb51b7879c689c676e569182682a",
+        "before": "d9710b6dcea9ed51024486cd34db93602fb4df2b7c56ed8608e0fcaaa298b48e",
+        "path": "internal/cluster/databases.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "f42c44b938a698b63d88c1b5264bc0a8b2673269a5892dab76f4d87c5cd46a30",
+        "before": "9a12894e1047b465de233c6fce5dae52afbd0ad076ee3641a3495457d69cf2e7",
+        "path": "internal/cluster/deploy.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "5069fcdfdd3c863e0f4d5b145186156332e05e02111fc289cc1c9e096f527e08",
+        "before": null,
+        "path": "internal/cluster/environment_snapshots.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "6bbb6525399a1d534b75018ed6da4af0312683dbadef77ef3882122d6ba23047",
+        "before": null,
+        "path": "internal/cluster/environment_snapshots_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "a8f41daef2ddf9f75e47e04f3b9620eec53b958e8438268257a7eeeb0896af0c",
+        "before": null,
+        "path": "internal/cluster/invocation_templates.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "d993e86e23b2405d7075b76f44f9e19676fe02383da054611f5f8f76147435ed",
+        "before": null,
+        "path": "internal/cluster/invocations.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "b6a483edaad637f0af1bb36dbf7449b30a4b76d5e19471a503adc043db4209fd",
+        "before": null,
+        "path": "internal/cluster/invocations_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "4bf02ffab86c91fd49095ea283e0a7964370dd104bacfe97055ecca21b768487",
+        "before": "030744da6f3f3b76787260e0497d21d23ddadc3de36a9064866065cc16817e60",
+        "path": "internal/cluster/jobs.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "f28301875ead007abe89838fb42a4cdf94bb4bca5bf23bd855c5916adcb4d0dc",
+        "before": "9bfac38f5073992d2320446e04e11ecc32c7dd7899a8e46318120e1f9d28ff49",
+        "path": "internal/cluster/lifecycle_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "8265502e37e6de030a696dbcbf3bba0146e341901feb580208acdd5987048c73",
+        "before": null,
+        "path": "internal/cluster/live_application_database_tls_profiles_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "007e93feaa4dff9506586914836988ccf5dbdc6371952bcc7fb88197427a8004",
+        "before": null,
+        "path": "internal/cluster/live_atomic_binding_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "b7b6128eef62163ca4cca8bdfb36cb3786b60e0effdf82d06bf6673a56509f1f",
+        "before": null,
+        "path": "internal/cluster/live_binding_probe_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "acbca48d75f777d3864155f0dc1ca18675068136321a1a1fed2529b947499612",
+        "before": null,
+        "path": "internal/cluster/live_binding_rollout_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "fbca79f91e4cc251f5dac1dd89554637ace15b0e6a80f28ddfe77d94e93a7de7",
+        "before": null,
+        "path": "internal/cluster/live_database_clickhouse_access_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "799caf35721621f8fe7ae7b7358d9fd95ea2f0f1a2921ab0cd1852acc17a777f",
+        "before": null,
+        "path": "internal/cluster/live_database_failure_evidence_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "721370cf896dd92840b00f35f68bc755e744c015cc1187fee18f6071228276bd",
+        "before": null,
+        "path": "internal/cluster/live_invocations_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "075f84e7b1e1a7ead53de8aec91b7f4503e0c5e9154b052c3cb7859bbc56c9b6",
+        "before": null,
+        "path": "internal/cluster/live_sandbox_runtime_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "55c7bf50a3ec02e24c414fe8c5001742e24347145d7d845cf93f20c87e0baa63",
+        "before": "e70a26830b490e004033a0f26f0bb236a11ae24fd7340a513151f255b04dd4e6",
+        "path": "internal/cluster/live_secret_setup_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "45332cf68e1a8fe2cbe8bfb0868f918827c5ca7389013774cfff8a6c11cef997",
+        "before": null,
+        "path": "internal/cluster/live_startup_budget_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "a21560a35a0c20097ce51c8142b166590d4a344e5b31bb01e47ad568f005a80c",
+        "before": "c86a72283bbd88a7dc2e52bfa31859deb8303fef57f3771084fa32eb37a929cc",
+        "path": "internal/cluster/observe.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "c2fb9ddda1012a216e4687007ec19723b10ef62965fb5752164f54843787ab62",
+        "before": "416d2b89bddc707a98a2d7582bca55e9ec1d05cbd3796b99e81f516d74c0d736",
+        "path": "internal/cluster/placement.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "fe38d8c41d479a04a684f1e7bc22e195c5c302c67abc9f610188665cce95682d",
+        "before": "79a12681688b7ff3b176d4b17d147c678e973690358864097831e2c6d1d453e5",
+        "path": "internal/cluster/preflight.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "4ad0ac963b162af6709c60c95726ccf516880e4bedbb0bfa8237f0195404c15c",
+        "before": "2b79cdf332430af3ec7477c9d8b25bcd3beea6bfba35a0e400f3117dcb1a4b23",
+        "path": "internal/cluster/readiness.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "270dad620bd3ffa5bdce78d45c72d626d4efd330e1e0b656d870a79e71e4a97d",
+        "before": null,
+        "path": "internal/cluster/retired_secret_refs.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "083a1afe18f4464decac68842928755c98b90a68a1c4d88543846031e1da27f4",
+        "before": null,
+        "path": "internal/cluster/retired_secrets.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "4d824989290af22b9693b46d9fa1061e7ba071fceebf641d132b952e0959cfb8",
+        "before": null,
+        "path": "internal/cluster/retired_secrets_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "e699858f21a652638ac0622cb2cea0e108143e0c4e557c6e7671cd85279db716",
+        "before": "54c215b80506dea6f345c151688ebd8af3177724a9f8363c2431ac04f08a06ab",
+        "path": "internal/cluster/runtime_profile.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "1c7b299ee5b05d6696dcf08f6d4bd7e0b494312cdf17e1d6628b413f66f3fadf",
+        "before": null,
+        "path": "internal/cluster/sandbox_session_cleanup.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "b517542f242f403a9b2c23bf9b8a6f7d95aca9dc8c488f53900034e5277f369c",
+        "before": null,
+        "path": "internal/cluster/sandbox_session_inventory.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "43b20f1a5cfc4b9e04c3e0e11a44fead93a6c52b99513c5c24c2ba17ac6db6e3",
+        "before": null,
+        "path": "internal/cluster/sandbox_session_pods.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "8b97039dd15323de6caec56b0e1763c9884de06ae8d208b8a3af20290c4e31f2",
+        "before": null,
+        "path": "internal/cluster/sandbox_session_registry.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "66dfa13183f397ddae02b5421b5509602ee29e7f4a5ce204d29340b0dbf046cd",
+        "before": null,
+        "path": "internal/cluster/sandbox_session_registry_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "4a1e8dcc7ab8073592735d751a53f30395b64343033484475a2605b2d692eda8",
+        "before": null,
+        "path": "internal/cluster/sandbox_session_streams.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "3a4edd7732453b1ee194d6b5ce0b268a7ebb7ff863673de6a1e4acb795ca76ff",
+        "before": null,
+        "path": "internal/cluster/sandbox_session_streams_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "e39c90758f04b5640839059e29e89f3f83fb28b4ef53309b55996416c6f700e4",
+        "before": null,
+        "path": "internal/cluster/sandbox_sessions.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "2b7c766af37bbc6efa9716432fe8d744dedf3bc753a0e27c7c0da0746bbcfdcf",
+        "before": null,
+        "path": "internal/cluster/sandbox_sessions_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "6cfcc8f59f1e50a381feb4e96f7e06ec6352739cd705e4c63067c15a602f04d8",
+        "before": "aaa4fcd51354892d59bc8bebacc29a78ef2255ec3dbea185f07db9c39b445617",
+        "path": "internal/cluster/scheduled_jobs.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "c7f246631d4892967e7b6169b9012618540bf76890cffb2a5678b64461886e9c",
+        "before": "4fded0cc42f5258a0e98a125b4cb542977251e839df3dde51ee3a38c97cb7001",
+        "path": "internal/cluster/secret_requirements.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "2d05924052d5a86c1179d98bbf87691885b8dd466fb9cb5f599336c5ebb01ac5",
+        "before": "c204576d52914b0621e58f7ed429c2f134a196c921e03b23167d1a731f0ab637",
+        "path": "internal/cluster/secret_requirements_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "c52cb784f9e2e611f9d3259c626adc419f769912e79fe54a100b47095b24d64c",
+        "before": null,
+        "path": "internal/cluster/session_resources.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "5863ea7414ca56380c23ef62fff662bb8625bcfb0b88d95b1beb6e2f88aa0907",
+        "before": null,
+        "path": "internal/cluster/session_templates.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "23916f8d43899a049a51ef6fdb00fcfab26337d7c422aa22dc764a640805087c",
+        "before": null,
+        "path": "internal/cluster/session_templates_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "4d1f4166e91e5678f2861647faba442b763a3020f76f8773a3283567b7d902b7",
+        "before": "b724aea7c84d93b3391a6ea4c7f210b1c537be3f7e30acc892f270e0febd5b89",
+        "path": "internal/cluster/types.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "f17264e5476621fabb25dd4a4a6de62fd8fe8d0667469f09ae820c807e8e8ac0",
+        "before": "9eca86047ead717f60853eca571d11b5ed4bfd89e8c9a56b0a077232c2f05b98",
+        "path": "internal/cluster/workload_secrets.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "03e5e443dbf0d21adebe1f8e04a23269e76e2bca1d15759a7a55e8f40cf889c1",
+        "before": "3a2f18266609bcb8a55ca2cc7fbfa2219f7f07e1af554d47a47daa52fdc48f40",
+        "path": "internal/cluster/workloads.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "fa6e91e142ccae4642d27d4bbf38cb86064f7c8f0715d2448c082ee38875348a",
+        "before": "cfd3d1d2c8aa0d8d77b97155bd29b385a9b90b57ed49887de4ba68d69fdc363c",
+        "path": "internal/database/capacity.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "ccc2bb75f134b53ee786e7b143a49e9cc44b4baa3c25fcaad1ae99d646d8ee83",
+        "before": null,
+        "path": "internal/database/clickhouse_access.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "b2c0bdeea910a32bca059a9a17f8e5869fc29a73f86d634d5a9a6691d99bd5a3",
+        "before": null,
+        "path": "internal/database/clickhouse_access_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "4d958f9fdd46bf71d6992d61d2f079bb0ea61048663d32167d24e6ceb995938e",
+        "before": "3f1938d6d820246c01308e7c96515aa6c6c73468c5995b3c066cb2db74f10437",
+        "path": "internal/database/model.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "60c8552d19a7097df578356f3812b5c01b2b3988489e8de21aff57028dc6991b",
+        "before": null,
+        "path": "internal/database/recommendation.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "4bcf822656ba1d5f0bdd5bf996c309cac5d7c6f85fdb3d99ddf3c27dab6ce2ff",
+        "before": null,
+        "path": "internal/database/recommendation_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "0aacb10cb87db0a1db7d79f2b6099a5fcb2b7384a11dc22d402336dbebc4440e",
+        "before": null,
+        "path": "internal/invocation/crypto.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "aee9d787ca9ee949fe576b7ecc8a75a5298fc30c417e4ccd8e892b7567cf7de8",
+        "before": null,
+        "path": "internal/invocation/crypto_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "8fe274e00ecffbd6ec3b32358f09eb5a00178d704ade646e0c0954c7ad91d0e3",
+        "before": null,
+        "path": "internal/invocation/inputs.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "d50c8609ab4f70345af1fc68fd8f57c008b72d4d13ee364c31a586d01177ef41",
+        "before": null,
+        "path": "internal/invocation/model.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a37ac6c0e3b5a4e51596699dacb87dc81ba3202e4ebdd4b972a5f9459536aa49",
+        "before": "fbe280dc9b6b4bbf9038f99a9cba4cd3a6853f1c29aac60b642e91f9a04cf3eb",
+        "path": "internal/management/runtime.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "b2c18f995491d2d09318246f9e2b87891ec2ca8d327be01aef2ddb975b01c4b4",
+        "before": null,
+        "path": "internal/sandbox/model.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "f248fa749053d2e7d609fa10ad09ab8c5b9576df185aa1941d579d7c11f64bb6",
+        "before": null,
+        "path": "internal/sandbox/model_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "3039d5836259aff593119072b6d4e6c429610560e66246f04db102fe412e2c76",
+        "before": null,
+        "path": "internal/sessionguard/guard.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "904140968b761840e0ea25fcfb9ef32e12f1c36be8291d4b74717dc832d5ef3c",
+        "before": null,
+        "path": "internal/sessionguard/guard_linux.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "1a3f59c4197da6537a3e4357df9ce1301a36fdd85e28cb0f4def4b6840b4d964",
+        "before": null,
+        "path": "internal/sessionguard/guard_linux_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "ac42cb27b9adf6c8464ef26d4d7b7d6c949071b46be98cce3c74b4c1b7a24fd6",
+        "before": null,
+        "path": "internal/sessionguard/guard_other.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "30da496227b126584b8bc4e28a0f9104e738ff2fa33fe5d8c10a82cfcb3a75da",
+        "before": null,
+        "path": "internal/sessionguard/guard_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "c2a08f2a258e80c5a05081f58bf82988014c87c25eb04807ac514f2d9d28aa31",
+        "before": null,
+        "path": "internal/sessionguard/network_linux.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "6f9f1b512e329ba522a09f974fa7d2f6f9ace61aafbfb7232b63d0e069766741",
+        "before": null,
+        "path": "internal/sessionguard/network_linux_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "913aeab2159b233e862b856dc600a2063e58929332534ebf522d03a5d7ba5b67",
+        "before": "2cfc28aba79e4c32bb991850e970fa4628995e64963d073b11e7b6fc90d6f339",
+        "path": "internal/spec/bindings.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "e88682a36320dd4e9c1ca461d3d4f9c42c307327780957bf28697b345a76db5b",
+        "before": null,
+        "path": "internal/spec/database_client_profiles.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "daaa86507df2cf0d1e872a73aaf85a3828f7ebced18f88f32378a39b3acdd7f7",
+        "before": null,
+        "path": "internal/spec/database_client_profiles_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "20ba5129371da30794ddac740af849c7be4bea45b9dac58b938b6ceb6f02a3c9",
+        "before": null,
+        "path": "internal/spec/invocations_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "0a3f99b23aeea891e778550068e524dd759e9eeb9a9003cdd6b752f3951205bd",
+        "before": "39392d03e7cc88d5bfe56a72caaa0ca9a19d9ad1d6683c3e9dfb955e16af3114",
+        "path": "internal/spec/lifecycle.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "7bf218ecc57a24bff6aeb230b3aa207facc2b81568d8327af070d82af1df9a17",
+        "before": "4b687c94f31b69ab89b584c1d9b959044f45ef24f0bef0915f4784e5a7e1940c",
+        "path": "internal/spec/lifecycle_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "bc5bf211ada2079b92357e75343a5fb9c3e90d0b262f7bbcd2f1d983e94add30",
+        "before": null,
+        "path": "internal/spec/migration_startup_templates_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "76ccaaf62bd80e59e34ccdd0a9fb006a15231b74fcf6f53254fbdcb4e74db877",
+        "before": "35d4e45b2dccae92672e0387b8cb3acc655ce1b21d69f5e251909f426bd93263",
+        "path": "internal/spec/preview.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "3ef275b4ac77fa0e5219bf7a44bbae01a8450310819e4b59afef92849f5c9c6f",
+        "before": null,
+        "path": "internal/spec/sandbox_sessions.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "141edae5d95dc550932c027b91bceb8497c8d448344019b8afa1566908f72a46",
+        "before": null,
+        "path": "internal/spec/sandbox_sessions_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "e9d18571fd18e29ee7ee242d5fd90f9bde55392781f6c1ddf5222e2ec42f7634",
+        "before": "dbff7d06321085817c8cb11d4cfd0fe02098ca9d83268a330d42b4aef639118d",
+        "path": "internal/spec/spec.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "bc6bdb94c29030d654f1ea717bc32845f160f3ce5b47b19b98ac219f3a49083a",
+        "before": "6c6dcb3b55ee468f48dcc01f3eba3f89d6bc3250bcbc14ad59cb6326e5d17718",
+        "path": "internal/spec/spec_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "d41b5676da7bc9a64d3db87aa18df4c63b5b63000a58b77500148f39c1369c9d",
+        "before": null,
+        "path": "internal/store/087_job_invocations.sql",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a19bc4df9921caae61efd1f84e5c1d6d4bcaccba4b5f30dfc9c9fb9afc107284",
+        "before": null,
+        "path": "internal/store/088_sandbox_sessions.sql",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "f4e3e6ab0409cf134bea8a0f5a0e8ac5be9973c0412270679e5a06d5b1ddcb05",
+        "before": null,
+        "path": "internal/store/089_database_failure_evidence.sql",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "063f69486b98358ddcdf5623180840a8793abf6ff940103055d57350b87e1b6c",
+        "before": null,
+        "path": "internal/store/database_clickhouse_access_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "1b2adf9ccf43f41da34dff9f4bd97aa4b35e84908af52cde79b7301a884fcf3d",
+        "before": "547a57a09dc940a5b590a854130a7a0c702a10dc59be6e657c806d2c61dbc8a0",
+        "path": "internal/store/database_connections.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "3efa4789fbcf37b2507ea944525737334ad56fb97b70c71cb1c5f2076d451b93",
+        "before": "b141164148aac4c6ceca9724449179bf551f8241e32841d9eab12ad62d472dc0",
+        "path": "internal/store/database_connections_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "46e8277b9482ff9ed4d6ec5d46a69de839d1be5676193ca46e92af50a85b89ff",
+        "before": null,
+        "path": "internal/store/database_failures.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "ac8d2a2e144660201e39e40ef6f7e8b40b8f168d50c4f3a634563096327127ee",
+        "before": null,
+        "path": "internal/store/database_failures_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "7e97367404ee85ab57acb675696e48952838069e3147affe011de5ab07a8185d",
+        "before": "41b2fa57f5519312be18a84acb4f91a678c76183df2f36a3b1bd91a705e1cc76",
+        "path": "internal/store/database_observation_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "8c5bcb31ccdd10c030dadf8192630afe0f913c1ffd89fb7f77b082d4906eb9c3",
+        "before": null,
+        "path": "internal/store/database_recommendations.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "64aee64426cb7062f0cab129cfff3457d9f875508286d11d94d2d285c6d8f5ea",
+        "before": null,
+        "path": "internal/store/database_recommendations_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "c50535569ecf7a40c0a1e0deaa85dd6dbd9575af9964c2fb16a90a2df900eb85",
+        "before": "b19cd28d242dfa05652e951e1f1a8967a932f255b86b1a50fa21189d5de644c5",
+        "path": "internal/store/deletion.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "0b0cefdbe6f3b818ca25e8c25e0ae67aaff3ba63fef12571976a9f056f6bec6e",
+        "before": null,
+        "path": "internal/store/invocations.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a676a54bacfde4a76ac984d022ce9ad389f76097a6f28e8d64c19a3fb9b29808",
+        "before": null,
+        "path": "internal/store/invocations_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "b82af5ae2076d9092500a91d99457a2c6fe60dc764a51e8fea6aec5b4bfdf51b",
+        "before": "d311d4e962e5fbfae616912244cad44f2a2d8bc57be1922634e88299a4a79751",
+        "path": "internal/store/managed_databases.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "cc4797ae87202693db9b4648d97b55b90387b758b7ee11304302f9a930942ff0",
+        "before": "d89336788998cf78bda0aa87bf9a59e4423904a64c1df0f0de657531e0acf7d4",
+        "path": "internal/store/operations.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "07b6eebe6dbf4fbc0f4cf6bea55d7036768ac9d19ce60fe6f104f38d040b7451",
+        "before": null,
+        "path": "internal/store/sandbox_reconcile.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a4bc6fb313c4ecef916d16164f365e8106c99591c52dbde1f35811c9b615d4e3",
+        "before": null,
+        "path": "internal/store/sandbox_sessions.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "8ce0778fa9f21bd074d5b2548f80c14ac58ede7f9b6783570d130f9986cb34ee",
+        "before": null,
+        "path": "internal/store/sandbox_sessions_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "ce01bee0072ade22a4e821ab6c0cb2607118bc3dd123bc09f596975d3a9d6a7a",
+        "before": "257dd536b4b6db83b98ccfcb268302d4507f94d8c6b0d012ef13dd0a654a53d6",
+        "path": "internal/store/store.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a022dbba7b7dfb80202e7096102c04feead2c1d6ff800edee42becf5df83563e",
+        "before": null,
+        "path": "internal/worker/startup_budget_test.go",
+        "reason": "This test covers shared alpha.59 control-plane behavior and does not change a managed runtime image, engine reconciler or native harness."
+      },
+      {
+        "after": "00e8ce1432f6bfd79030feb79396a7e515700ae38e8612eb94cf76962c05bb55",
+        "before": "3ddea4f075551f87ac737e136d2d26bdda5dd67eb156187d1ef5ceb363618b55",
+        "path": "internal/worker/worker.go",
+        "reason": "Alpha.59 changes shared application binding, startup, diagnostics or API behavior; managed runtime images, engine reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "73c63ddad1e032dce2547ea328e5029660c4a2fad4c8e1c03e06c65530647fc6",
+        "before": "c8bf3aef04f152a3095f6d4add797de38bbaac4a208e6b40ffcccc340fbb8c4c",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Alpha.59 adds a one-release exact compatibility bootstrap while retaining engine, image, build, patch and native harness protections."
+      },
+      {
+        "after": "40a35b720a34675354c5fa4a382cbc770963968cb64fe1e7b938c8bd879d35f6",
+        "before": "a2aefadb58b8660825d99b49ee924bfaabadb98f92622a0732d2314447d00be1",
+        "path": "release/verify-oracle-free-runtime.py",
+        "reason": "Alpha.59 lets Oracle retain native evidence only through the exact reviewed shared-source delta; Oracle-specific sources and artifacts remain protected."
+      },
+      {
+        "after": "d6ff512b227a5fad0ccdf5df972378ffe9a9df0722d729bfb21102e4c8153ca4",
+        "before": "bc7803c4b6d9e289c426d2787e7abd527e261c9b94a0154d2ac2b5bd8f4784f1",
+        "path": "templates/blueprints/glitchtip/README.md",
+        "reason": "The pinned application template declares verified client TLS settings; managed runtime images, reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "8457b63f5fd70374d6a08809675332899e1ae3d3750f0da04287c3a83dfe4713",
+        "before": "d2440c601a0c481f942ad61230bf85a10a086347b4f46c4dae1638c316f8eec1",
+        "path": "templates/blueprints/glitchtip/hakopod.toml",
+        "reason": "The pinned application template declares verified client TLS settings; managed runtime images, reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "a65a896360d4ee5b2293a40a79564420f8d09dc6601115c6187cd7650ec56188",
+        "before": "01207e807ac285831f81985274284f3b44f3fa4a0815d27629cec538e44fdba2",
+        "path": "templates/blueprints/infisical/README.md",
+        "reason": "The pinned application template declares verified client TLS settings; managed runtime images, reconciliation and native harnesses are unchanged."
+      },
+      {
+        "after": "6977a2c351beade0c5ead30122f2edfbeec01c111abb0774970af16fb3375dfa",
+        "before": "c9bdd238974e8dd275c54e115a11b421a9e0933ef6562da470b38d906f67f0f6",
+        "path": "templates/blueprints/infisical/hakopod.toml",
+        "reason": "The pinned application template declares verified client TLS settings; managed runtime images, reconciliation and native harnesses are unchanged."
+      }
+    ],
+    "current_sha256": "91118228b34e34767b03fada3e2f1f7b22be6f09a4fd8e5c840922949f45d723"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestBindingRefreshPublishesEnvironmentAndTrustTogether",
+      "TestBindingRefreshPreservesLegacyEnvironmentConsumers",
+      "TestBindingProbeProfileRejectsStaleGeneratedCA",
+      "TestInfisicalProfileInjectsOnlyBase64PublicCA",
+      "TestGlitchTipProfileAddsPrivateAndSystemTrustPaths",
+      "TestServiceStartupTimeoutControlsDeploymentBudget"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/37905790616"
+  },
+  "reviewed_release": "v0.1.0-alpha.59",
+  "runtime": "oracle-free",
+  "schema_version": 1
+}
