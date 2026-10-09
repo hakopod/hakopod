@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func TestLiveApplicationDatabaseTLSProfiles(t *testing.T) {
@@ -27,6 +28,10 @@ func TestLiveApplicationDatabaseTLSProfiles(t *testing.T) {
 		t.Skip("opt-in application database TLS profile acceptance")
 	}
 	path := os.Getenv("HAKOPOD_TEST_KUBECONFIG")
+	config, err := clientcmd.LoadFromFile(path)
+	if err != nil || config.CurrentContext != "k3d-hakopod-dev" {
+		t.Fatal("application TLS acceptance requires k3d-hakopod-dev")
+	}
 	c, err := New(path, Options{AppDomain: "127.0.0.1.sslip.io", RolloutTimeout: 12 * time.Minute})
 	if err != nil {
 		t.Fatal(err)

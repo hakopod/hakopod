@@ -156,7 +156,7 @@ func (c *Client) StartInvocation(ctx context.Context, r invocation.Record, input
 		return result, err
 	}
 	d := deployment(t, r.Service, s, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
-	if _, err := c.pinWorkloadEnvironment(ctx, t, r.Service, &d.Spec.Template); err != nil {
+	if _, err := c.pinResolvedWorkloadEnvironment(ctx, t, r.Service, &d.Spec.Template); err != nil {
 		return result, err
 	}
 	if err = c.prepareAWSIdentity(ctx, t, r.Service, s, d); err != nil {

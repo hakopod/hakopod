@@ -253,6 +253,99 @@ func (c *Client) cleanupDatabaseTrust(ctx context.Context, t Target, name, keep 
 	return nil
 }
 
+// renewPodDatabaseTrust changes a supplied template so callers can publish
+// its public CA and environment snapshot in one Kubernetes update.
+func (c *Client) renewPodDatabaseTrust(ctx context.Context, t Target, name string, pod *corev1.PodSpec) (bool, error) {
+	wanted := databaseTrustObject(t, name)
+	if len(wanted.Data) == 0 {
+		for _, volume := range pod.Volumes {
+			if volume.Name == databaseTrustVolume {
+				return false, fmt.Errorf("database trust was removed; redeploy the accepted revision")
+			}
+		}
+		return false, nil
+	}
+	volume, mount := -1, false
+	if len(pod.Containers) == 0 {
+		return false, fmt.Errorf("database trust workload container is missing")
+	}
+	nodeProfile := wanted.Data[nodeExtraCABundle] != ""
+	glitchTipProfile := glitchTipManagedRedisTrust(t, name)
+	nodeTrust, sslFile, sslDirectory := 0, 0, 0
+	for _, env := range pod.Containers[0].Env {
+		if nodeProfile && env.Name == "NODE_EXTRA_CA_CERTS" {
+			if env.Value != databaseTrustDirectory+"/"+nodeExtraCABundle || env.ValueFrom != nil {
+				return false, fmt.Errorf("database client trust environment changed")
+			}
+			nodeTrust++
+		}
+		if glitchTipProfile && env.Name == "SSL_CERT_FILE" {
+			if env.Value != glitchTipSystemCABundle || env.ValueFrom != nil {
+				return false, fmt.Errorf("database client trust environment changed")
+			}
+			sslFile++
+		}
+		if glitchTipProfile && env.Name == "SSL_CERT_DIR" {
+			if env.Value != databaseTrustDirectory || env.ValueFrom != nil {
+				return false, fmt.Errorf("database client trust environment changed")
+			}
+			sslDirectory++
+		}
+	}
+	if nodeProfile && nodeTrust != 1 {
+		return false, fmt.Errorf("database client trust environment changed; redeploy the accepted revision")
+	}
+	if glitchTipProfile && (sslFile != 1 || sslDirectory != 1) {
+		return false, fmt.Errorf("database client trust environment changed; redeploy the accepted revision")
+	}
+	for i, v := range pod.Volumes {
+		if v.Name == databaseTrustVolume {
+			if volume != -1 || v.ConfigMap == nil {
+				return false, fmt.Errorf("database trust volume changed; redeploy the accepted revision")
+			}
+			volume = i
+		}
+	}
+	if volume == -1 || len(pod.Containers) == 0 {
+		return false, fmt.Errorf("database trust volume is missing; redeploy the accepted revision")
+	}
+	for _, m := range pod.Containers[0].VolumeMounts {
+		if m.Name == databaseTrustVolume {
+			if m.MountPath != databaseTrustDirectory || !m.ReadOnly || m.SubPath != "" || m.SubPathExpr != "" {
+				return false, fmt.Errorf("database trust mount changed")
+			}
+			mount = true
+		}
+	}
+	v := &pod.Volumes[volume]
+	if !mount || len(v.ConfigMap.Items) != 0 || v.ConfigMap.DefaultMode == nil || *v.ConfigMap.DefaultMode != 0444 || v.ConfigMap.Optional != nil && *v.ConfigMap.Optional {
+		return false, fmt.Errorf("database trust mount permissions changed")
+	}
+	old, err := c.kube.CoreV1().ConfigMaps(Namespace(t.ApplicationID)).Get(ctx, v.ConfigMap.Name, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if err = databaseTrustOwned(old, t, name); err != nil {
+		return false, err
+	}
+	if len(old.Data) != len(wanted.Data) {
+		return false, fmt.Errorf("database bindings changed; redeploy the accepted revision")
+	}
+	for key := range old.Data {
+		if _, ok := wanted.Data[key]; !ok {
+			return false, fmt.Errorf("database bindings changed; redeploy the accepted revision")
+		}
+	}
+	if v.ConfigMap.Name == wanted.Name {
+		return false, c.cleanupDatabaseTrust(ctx, t, name, wanted.Name)
+	}
+	if err = c.prepareDatabaseTrust(ctx, t, name); err != nil {
+		return false, err
+	}
+	v.ConfigMap.Name = wanted.Name
+	return true, nil
+}
+
 // RenewDatabaseTrust runs under the application's durable maintenance claim.
 // It changes only the CA volume reference. One-off Jobs retain their immutable
 // snapshot; scheduled Jobs receive renewed trust for their next run.
@@ -277,90 +370,6 @@ func (c *Client) RenewDatabaseTrust(ctx context.Context, t Target, emit func(Eve
 		return err
 	}
 	t.databaseConnections = selected.databaseConnections
-	wanted := databaseTrustObject(t, name)
-	if len(wanted.Data) == 0 {
-		return nil
-	}
-	renew := func(pod *corev1.PodSpec) (bool, error) {
-		volume, mount := -1, false
-		if len(pod.Containers) == 0 {
-			return false, fmt.Errorf("database trust workload container is missing")
-		}
-		nodeTrust, sslFile, sslDirectory := 0, 0, 0
-		for _, env := range pod.Containers[0].Env {
-			if env.Name == "NODE_EXTRA_CA_CERTS" {
-				if env.Value != databaseTrustDirectory+"/"+nodeExtraCABundle || env.ValueFrom != nil {
-					return false, fmt.Errorf("database client trust environment changed")
-				}
-				nodeTrust++
-			}
-			if env.Name == "SSL_CERT_FILE" {
-				if env.Value != glitchTipSystemCABundle || env.ValueFrom != nil {
-					return false, fmt.Errorf("database client trust environment changed")
-				}
-				sslFile++
-			}
-			if env.Name == "SSL_CERT_DIR" {
-				if env.Value != databaseTrustDirectory || env.ValueFrom != nil {
-					return false, fmt.Errorf("database client trust environment changed")
-				}
-				sslDirectory++
-			}
-		}
-		if (wanted.Data[nodeExtraCABundle] != "") != (nodeTrust == 1) {
-			return false, fmt.Errorf("database client trust environment changed; redeploy the accepted revision")
-		}
-		glitchTipTrust := glitchTipManagedRedisTrust(t, name)
-		if glitchTipTrust != (sslFile == 1 && sslDirectory == 1) || sslFile > 1 || sslDirectory > 1 {
-			return false, fmt.Errorf("database client trust environment changed; redeploy the accepted revision")
-		}
-		for i, v := range pod.Volumes {
-			if v.Name == databaseTrustVolume {
-				if volume != -1 || v.ConfigMap == nil {
-					return false, fmt.Errorf("database trust volume changed; redeploy the accepted revision")
-				}
-				volume = i
-			}
-		}
-		if volume == -1 || len(pod.Containers) == 0 {
-			return false, fmt.Errorf("database trust volume is missing; redeploy the accepted revision")
-		}
-		for _, m := range pod.Containers[0].VolumeMounts {
-			if m.Name == databaseTrustVolume {
-				if m.MountPath != databaseTrustDirectory || !m.ReadOnly || m.SubPath != "" || m.SubPathExpr != "" {
-					return false, fmt.Errorf("database trust mount changed")
-				}
-				mount = true
-			}
-		}
-		v := &pod.Volumes[volume]
-		if !mount || len(v.ConfigMap.Items) != 0 || v.ConfigMap.DefaultMode == nil || *v.ConfigMap.DefaultMode != 0444 || v.ConfigMap.Optional != nil && *v.ConfigMap.Optional {
-			return false, fmt.Errorf("database trust mount permissions changed")
-		}
-		old, err := c.kube.CoreV1().ConfigMaps(Namespace(t.ApplicationID)).Get(ctx, v.ConfigMap.Name, metav1.GetOptions{})
-		if err != nil {
-			return false, err
-		}
-		if err = databaseTrustOwned(old, t, name); err != nil {
-			return false, err
-		}
-		if len(old.Data) != len(wanted.Data) {
-			return false, fmt.Errorf("database bindings changed; redeploy the accepted revision")
-		}
-		for key := range old.Data {
-			if _, ok := wanted.Data[key]; !ok {
-				return false, fmt.Errorf("database bindings changed; redeploy the accepted revision")
-			}
-		}
-		if v.ConfigMap.Name == wanted.Name {
-			return false, c.cleanupDatabaseTrust(ctx, t, name, wanted.Name)
-		}
-		if err = c.prepareDatabaseTrust(ctx, t, name); err != nil {
-			return false, err
-		}
-		v.ConfigMap.Name = wanted.Name
-		return true, nil
-	}
 	check := func(obj metav1.Object, revisionKey string) error {
 		if owned(obj, t) != nil || obj.GetDeletionTimestamp() != nil || obj.GetLabels()[serviceKey] != name || obj.GetAnnotations()[revisionKey] != strconv.FormatInt(t.Revision, 10) {
 			return fmt.Errorf("database trust renewal deferred until the accepted deployment is current")
@@ -376,7 +385,7 @@ func (c *Client) RenewDatabaseTrust(ctx context.Context, t Target, emit func(Eve
 		if err = check(current, jobRevision); err != nil {
 			return err
 		}
-		changed, err := renew(&current.Spec.JobTemplate.Spec.Template.Spec)
+		changed, err := c.renewPodDatabaseTrust(ctx, t, name, &current.Spec.JobTemplate.Spec.Template.Spec)
 		if err != nil || !changed {
 			return err
 		}
@@ -395,7 +404,7 @@ func (c *Client) RenewDatabaseTrust(ctx context.Context, t Target, emit func(Eve
 		if err = check(current, "hakopod.io/revision"); err != nil {
 			return err
 		}
-		changed, err := renew(&current.Spec.Template.Spec)
+		changed, err := c.renewPodDatabaseTrust(ctx, t, name, &current.Spec.Template.Spec)
 		if err != nil || !changed {
 			return err
 		}

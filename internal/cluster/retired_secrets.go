@@ -14,6 +14,8 @@ import (
 )
 
 var errRetiredConsumerTerminating = errors.New("retired credential consumer is terminating")
+var errRetiredSecretReferenced = errors.New("a workload still references a retired service secret")
+var errRetiredAccountSecretReferenced = errors.New("a service account still references a retired service secret")
 
 // Retire generated credentials only after their service and all consumers stop.
 // Platform secret references, certificates and current services remain intact.
@@ -97,7 +99,7 @@ func (c *Client) checkRetiredSecretConsumers(ctx context.Context, ns string, ser
 				if meta.GetDeletionTimestamp() != nil {
 					return errRetiredConsumerTerminating
 				}
-				return fmt.Errorf("a workload still references a retired service secret")
+				return errRetiredSecretReferenced
 			}
 		}
 		return nil
@@ -227,12 +229,12 @@ func (c *Client) checkRetiredSecretConsumers(ctx context.Context, ns string, ser
 	for _, a := range accounts.Items {
 		for _, ref := range a.Secrets {
 			if _, used := secrets[ref.Name]; used {
-				return fmt.Errorf("a service account still references a retired service secret")
+				return errRetiredAccountSecretReferenced
 			}
 		}
 		for _, ref := range a.ImagePullSecrets {
 			if _, used := secrets[ref.Name]; used {
-				return fmt.Errorf("a service account still references a retired service secret")
+				return errRetiredAccountSecretReferenced
 			}
 		}
 	}

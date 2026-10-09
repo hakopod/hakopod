@@ -6,15 +6,16 @@ import (
 	"strconv"
 
 	"github.com/hakopod/hakopod/internal/spec"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const bindingVerifiedSnapshot = "hakopod.io/binding-verified-snapshot"
 
 // RefreshDatabaseBindings runs under the application's durable runtime claim.
-// It refreshes only environment references; images, replicas and completed
-// jobs retain their accepted configuration. New invocations resolve their own
-// credentials when they start.
+// It refreshes environment and public CA references together; images, replicas
+// and completed jobs retain their accepted configuration. New invocations
+// resolve their own credentials when they start.
 func (c *Client) RefreshDatabaseBindings(ctx context.Context, t Target, emit func(Event), name string) error {
 	svc, ok := t.Spec.Services[name]
 	if !ok {
@@ -53,10 +54,7 @@ func (c *Client) RefreshDatabaseBindings(ctx context.Context, t Target, emit fun
 		if err = check(current, jobRevision); err != nil {
 			return err
 		}
-		if err = c.prepareWorkloadSecrets(ctx, t, name, svc); err != nil {
-			return err
-		}
-		changed, err := c.pinWorkloadEnvironment(ctx, t, name, &current.Spec.JobTemplate.Spec.Template)
+		changed, err := c.refreshBindingTemplate(ctx, t, name, &current.Spec.JobTemplate.Spec.Template)
 		if err != nil || !changed {
 			return err
 		}
@@ -79,10 +77,7 @@ func (c *Client) RefreshDatabaseBindings(ctx context.Context, t Target, emit fun
 	if err = check(current, "hakopod.io/revision"); err != nil {
 		return err
 	}
-	if err = c.prepareWorkloadSecrets(ctx, t, name, svc); err != nil {
-		return err
-	}
-	changed, err := c.pinWorkloadEnvironment(ctx, t, name, &current.Spec.Template)
+	changed, err := c.refreshBindingTemplate(ctx, t, name, &current.Spec.Template)
 	if err != nil {
 		return err
 	}
@@ -95,7 +90,7 @@ func (c *Client) RefreshDatabaseBindings(ctx context.Context, t Target, emit fun
 			return err
 		}
 		if emit != nil {
-			emit(Event{Type: "binding_rollout", Service: name, Message: "Database binding values changed. Replacing affected pods with the new environment snapshot."})
+			emit(Event{Type: "binding_rollout", Service: name, Message: "Database binding settings changed. Replacing affected pods with the new values and public CA."})
 		}
 		return nil
 	}
@@ -125,4 +120,20 @@ func (c *Client) RefreshDatabaseBindings(ctx context.Context, t Target, emit fun
 		}
 	}
 	return nil
+}
+
+// Both references change on the local candidate. A failure leaves the caller's
+// template unchanged, and the caller publishes the pair in one update.
+func (c *Client) refreshBindingTemplate(ctx context.Context, t Target, name string, template *corev1.PodTemplateSpec) (bool, error) {
+	candidate := template.DeepCopy()
+	environmentChanged, err := c.pinResolvedWorkloadEnvironment(ctx, t, name, candidate)
+	if err != nil {
+		return false, err
+	}
+	trustChanged, err := c.renewPodDatabaseTrust(ctx, t, name, &candidate.Spec)
+	if err != nil {
+		return false, err
+	}
+	*template = *candidate
+	return environmentChanged || trustChanged, nil
 }
