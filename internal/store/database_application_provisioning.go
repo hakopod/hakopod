@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/database"
+	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -82,6 +83,9 @@ func (s *Store) PlanDatabaseApplicationProvisioning(ctx context.Context, p Princ
 	if !provisionedPostgresIdentifier.MatchString(role) || !provisionedPostgresIdentifier.MatchString(logicalDatabase) || !provisionedSecretReference.MatchString(secret) || len(encryptedPassword) < 29 || len(encryptedPassword) > 1024 {
 		return database.ApplicationProvisioningPlan{}, ErrInput
 	}
+	if err = s.validateDatabaseConnection(ctx, p, d.ID, a.ID, service, variable, endpoint, DatabaseConnectionOptions{Username: role, Database: logicalDatabase, Password: &spec.SecretRef{Ref: secret}, SSLMode: "verify-full"}); err != nil {
+		return database.ApplicationProvisioningPlan{}, err
+	}
 	plan := database.ApplicationProvisioningPlan{SchemaVersion: database.ApplicationProvisioningSchemaVersion, ID: NewID(), DatabaseID: d.ID, DatabaseRevision: d.Revision, ApplicationID: a.ID, ApplicationName: a.Name, ApplicationRevision: a.Revision, Service: service, Variable: variable, Endpoint: endpoint, Role: role, LogicalDatabase: logicalDatabase, SecretReference: secret, Privileges: []string{"CONNECT", "TEMPORARY", "CREATE and USAGE on public schema", "all privileges on owned objects"}, Warnings: []string{"Creates one PostgreSQL login and logical database owned by that login.", "The generated password is stored only as encrypted operation material and an application-scoped secret.", "The application deployment is queued only after native privilege verification succeeds."}, ExpiresAt: time.Now().UTC().Add(database.ReviewLifetime)}
 	review := databaseApplicationProvisioningReview{Plan: plan, EncryptedPassword: append([]byte(nil), encryptedPassword...)}
 	if _, err = s.Pool.Exec(ctx, `INSERT INTO managed_database_reviews(id,database_id,identity_id,revision,kind,payload,expires_at) VALUES($1,$2,$3,$4,'application-provisioning',$5,$6)`, plan.ID, d.ID, p.ID, d.Revision, JSON(review), plan.ExpiresAt); err != nil {
@@ -118,7 +122,15 @@ func (s *Store) AcceptDatabaseApplicationProvisioning(ctx context.Context, p Pri
 		if !bytes.Equal(oldHash, hash[:]) {
 			return empty, ErrConflict
 		}
-		return scanDatabaseApplicationProvisioning(tx.QueryRow(ctx, `SELECT `+databaseApplicationProvisioningColumns+` FROM database_application_provisioning_operations WHERE id=$1`, oldID))
+		op, scanErr := scanDatabaseApplicationProvisioning(tx.QueryRow(ctx, `SELECT `+databaseApplicationProvisioningColumns+` FROM database_application_provisioning_operations WHERE id=$1`, oldID))
+		if scanErr != nil {
+			return empty, scanErr
+		}
+		d, databaseErr := s.DatabaseInternal(ctx, op.DatabaseID)
+		if databaseErr != nil || !p.AllowsDatabase(d.Project, d.Environment, true) || !p.Allows("deployments:write", d.Project, d.Environment, op.Plan.ApplicationName) {
+			return empty, ErrForbidden
+		}
+		return op, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return empty, err
