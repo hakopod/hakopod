@@ -473,7 +473,7 @@ func (s *Server) reconcileDatabase(parent context.Context) {
 	progressFinish := finish
 	if (op.Kind == "resize" || op.Kind == "resize-retry") && op.Review != nil {
 		progressFinish = func(status, phase, message string, observation database.Observation) {
-			if status == "queued" && (phase == "provisioning" || phase == "observing") {
+			if status == "queued" && phase == "provisioning" {
 				phase, message = databaseResizeProgress(d, *op.Review, observation)
 			}
 			finish(status, phase, message, observation)

@@ -43,7 +43,18 @@ func (s *Store) ResumeDeployment(ctx context.Context, p Principal, id string, ex
 		if replayID != id || !bytes.Equal(replayHash, hash[:]) {
 			return Deployment{}, fmt.Errorf("%w: idempotency key reused with different input", ErrConflict)
 		}
-		return scanDep(tx.QueryRow(ctx, "SELECT "+depCols+" FROM deployments WHERE id=$1", id))
+		replayed, err := scanDep(tx.QueryRow(ctx, "SELECT "+depCols+" FROM deployments WHERE id=$1", id))
+		if err != nil {
+			return Deployment{}, err
+		}
+		application, err := scanApp(tx.QueryRow(ctx, "SELECT "+appCols+" FROM applications WHERE id=$1", replayed.ApplicationID))
+		if err != nil {
+			return Deployment{}, err
+		}
+		if !p.Allows("deployments:write", application.Project, application.Environment, application.Name) {
+			return Deployment{}, ErrForbidden
+		}
+		return replayed, nil
 	}
 	if err != pgx.ErrNoRows {
 		return Deployment{}, err

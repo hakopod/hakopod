@@ -104,52 +104,64 @@ func (s *Server) serverCleanupExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := who(r)
-	var existingID, existingReview, existingStatus string
-	var existingReceipt map[string]any
-	err := s.Store.Pool.QueryRow(r.Context(), `SELECT id,review_id,status,receipt FROM server_cleanup_operations WHERE identity_id=$1 AND idempotency_key=$2`, p.ID, idem).Scan(&existingID, &existingReview, &existingStatus, &existingReceipt)
-	if err == nil {
-		if existingReview != in.ReviewID {
-			problem(w, 409, "idempotency_conflict", "This retry key belongs to another cleanup review.")
-			return
-		}
-		s.serverCleanupResult(w, r, existingID, existingStatus, existingReceipt, false, nil)
-		return
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		failure(w, err)
-		return
-	}
 	tx, err := s.Store.Pool.Begin(r.Context())
 	if err != nil {
 		failure(w, err)
 		return
 	}
 	defer tx.Rollback(r.Context())
+	// Serialize acceptance for this retry key before checking whether it exists.
+	if _, err = tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "cleanup:"+p.ID+":"+idem); err != nil {
+		failure(w, err)
+		return
+	}
+	var id, reviewID, keyID, status string
 	var inventory cleanupInventory
-	if err = tx.QueryRow(r.Context(), `SELECT inventory FROM server_cleanup_reviews WHERE id=$1 AND identity_id=$2 AND key_id=$3 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`, in.ReviewID, p.ID, p.KeyID).Scan(&inventory); err != nil {
-		problem(w, 409, "cleanup_review_expired", "Cleanup review is missing, expired or already used.")
-		return
-	}
-	op := store.NewID()
-	if _, err = tx.Exec(r.Context(), `INSERT INTO server_cleanup_operations(id,review_id,identity_id,key_id,idempotency_key,status) VALUES($1,$2,$3,$4,$5,'running')`, op, in.ReviewID, p.ID, p.KeyID, idem); err != nil {
+	var receipt map[string]any
+	err = tx.QueryRow(r.Context(), `SELECT o.id,o.review_id,o.key_id,o.status,o.receipt,r.inventory FROM server_cleanup_operations o JOIN server_cleanup_reviews r ON r.id=o.review_id WHERE o.identity_id=$1 AND o.idempotency_key=$2`, p.ID, idem).Scan(&id, &reviewID, &keyID, &status, &receipt, &inventory)
+	if err == nil {
+		if reviewID != in.ReviewID || keyID != p.KeyID {
+			problem(w, 409, "idempotency_conflict", "This retry key belongs to another cleanup review or credential.")
+			return
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
 		failure(w, err)
 		return
-	}
-	if _, err = tx.Exec(r.Context(), `UPDATE server_cleanup_reviews SET consumed_at=now() WHERE id=$1`, in.ReviewID); err != nil {
-		failure(w, err)
-		return
+	} else {
+		if err = tx.QueryRow(r.Context(), `SELECT inventory FROM server_cleanup_reviews WHERE id=$1 AND identity_id=$2 AND key_id=$3 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`, in.ReviewID, p.ID, p.KeyID).Scan(&inventory); err != nil {
+			problem(w, 409, "cleanup_review_expired", "Cleanup review is missing, expired or already used.")
+			return
+		}
+		id = store.NewID()
+		status = "running"
+		if _, err = tx.Exec(r.Context(), `INSERT INTO server_cleanup_operations(id,review_id,identity_id,key_id,idempotency_key,status) VALUES($1,$2,$3,$4,$5,'running')`, id, in.ReviewID, p.ID, p.KeyID, idem); err != nil {
+			failure(w, err)
+			return
+		}
+		if _, err = tx.Exec(r.Context(), `UPDATE server_cleanup_reviews SET consumed_at=now() WHERE id=$1`, in.ReviewID); err != nil {
+			failure(w, err)
+			return
+		}
+		if _, err = tx.Exec(r.Context(), `INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'server.cleanup.requested',$3,$4)`, p.ID, p.KeyID, id, store.JSON(map[string]any{"review_id": in.ReviewID, "planned_bytes": inventory.PlannedBytes, "items": len(inventory.Items)})); err != nil {
+			failure(w, err)
+			return
+		}
 	}
 	if err = tx.Commit(r.Context()); err != nil {
 		failure(w, err)
 		return
 	}
-	if err = s.Store.RuntimeAudit(r.Context(), p, "server.cleanup.requested", op, map[string]any{"review_id": in.ReviewID, "planned_bytes": inventory.PlannedBytes, "items": len(inventory.Items)}); err != nil {
-		failure(w, err)
-		return
+	if status != "succeeded" && status != "failed" {
+		// The helper journals exact item identities before deletion. Replaying this
+		// request resumes the same operation; a concurrent dispatch cannot delete twice.
+		var observed map[string]any
+		if err = s.cleanupMaintenance(r, "/cleanup/execute", map[string]any{"schema_version": 1, "operation_id": id, "items": inventory.Items}, &observed); err == nil {
+			receipt = observed
+		} else {
+			receipt = nil
+		}
 	}
-	var receipt map[string]any
-	err = s.cleanupMaintenance(r, "/cleanup/execute", map[string]any{"schema_version": 1, "operation_id": op, "items": inventory.Items}, &receipt)
-	s.serverCleanupResult(w, r, op, "running", receipt, true, func() error { return err })
+	s.serverCleanupResult(w, r, id, status, receipt)
 }
 
 func (s *Server) serverCleanupOperation(w http.ResponseWriter, r *http.Request) {
@@ -164,44 +176,114 @@ func (s *Server) serverCleanupOperation(w http.ResponseWriter, r *http.Request) 
 		failure(w, err)
 		return
 	}
-	s.serverCleanupResult(w, r, id, status, receipt, false, nil)
+	// A status read observes the helper; it never starts or resumes removal.
+	if status != "succeeded" && status != "failed" {
+		receipt = nil
+	}
+	s.serverCleanupResult(w, r, id, status, receipt)
 }
 
-func (s *Server) serverCleanupResult(w http.ResponseWriter, r *http.Request, id, status string, receipt map[string]any, executed bool, executeErr func() error) {
+func validCleanupReceipt(id string, receipt map[string]any) bool {
+	schema, ok := receipt["schema_version"].(float64)
+	if !ok || schema != 1 || receipt["operation_id"] != id {
+		return false
+	}
+	state, _ := receipt["status"].(string)
+	switch state {
+	case "not_started", "running", "interrupted", "succeeded":
+	default:
+		return false
+	}
+	if state == "not_started" {
+		return true
+	}
+	count := 0
+	for _, name := range []string{"removed", "skipped", "uncertain"} {
+		entries, ok := receipt[name].([]any)
+		if !ok {
+			return false
+		}
+		count += len(entries)
+	}
+	if count > 256 {
+		return false
+	}
+	for _, name := range []string{"planned_bytes", "available_before_bytes"} {
+		value, ok := receipt[name].(float64)
+		if !ok || value < 0 {
+			return false
+		}
+	}
+	if state == "succeeded" {
+		for _, name := range []string{"removed_bytes", "available_after_bytes", "reclaimed_bytes"} {
+			value, ok := receipt[name].(float64)
+			if !ok || value < 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s *Server) serverCleanupResult(w http.ResponseWriter, r *http.Request, id, status string, receipt map[string]any) {
 	w.Header().Set("Cache-Control", "no-store")
 	if status == "succeeded" || status == "failed" {
 		write(w, 200, map[string]any{"id": id, "status": status, "receipt": receipt})
 		return
 	}
-	if executeErr != nil && executeErr() != nil {
-		var observed map[string]any
-		if err := s.cleanupMaintenance(r, "/cleanup/status?operation_id="+id, nil, &observed); err != nil {
-			write(w, 202, map[string]any{"id": id, "status": "running"})
+	if receipt == nil {
+		if err := s.cleanupMaintenance(r, "/cleanup/status?operation_id="+id, nil, &receipt); err != nil {
+			write(w, 202, map[string]any{"id": id, "status": "running", "message": "The cleanup receipt is unavailable. Refresh status or retry the same request."})
 			return
 		}
-		receipt = observed
 	}
-	if receiptStatus, _ := receipt["status"].(string); receiptStatus == "running" {
-		write(w, 202, map[string]any{"id": id, "status": "running"})
+	if !validCleanupReceipt(id, receipt) {
+		problem(w, 503, "cleanup_receipt_invalid", "Cleanup receipt is unavailable or invalid. Keep the same retry key when retrying.")
 		return
 	}
-	if schema, _ := receipt["schema_version"].(float64); schema != 1 || receipt["operation_id"] != id {
-		problem(w, 503, "cleanup_receipt_invalid", "Cleanup receipt is unavailable or invalid.")
-		return
-	}
-	if receiptStatus, _ := receipt["status"].(string); receiptStatus == "failed" {
-		_, _ = s.Store.Pool.Exec(r.Context(), `UPDATE server_cleanup_operations SET status='failed',receipt=$2,finished_at=now() WHERE id=$1 AND status='running'`, id, store.JSON(receipt))
-		problem(w, 409, "cleanup_failed", "Cleanup stopped safely. Changed or protected files were not removed.")
-		return
-	}
-	p := who(r)
-	if err := s.Store.RuntimeAudit(r.Context(), p, "server.cleanup.completed", id, receipt); err != nil {
+	complete := receipt["status"] == "succeeded"
+	tx, err := s.Store.Pool.Begin(r.Context())
+	if err != nil {
 		failure(w, err)
 		return
 	}
-	if _, err := s.Store.Pool.Exec(r.Context(), `UPDATE server_cleanup_operations SET status='succeeded',receipt=$2,finished_at=now() WHERE id=$1 AND status='running'`, id, store.JSON(receipt)); err != nil {
+	defer tx.Rollback(r.Context())
+	var storedStatus string
+	if err = tx.QueryRow(r.Context(), `SELECT status FROM server_cleanup_operations WHERE id=$1 FOR UPDATE`, id).Scan(&storedStatus); err != nil {
 		failure(w, err)
 		return
 	}
-	write(w, 200, map[string]any{"id": id, "status": "succeeded", "receipt": receipt, "executed": executed})
+	// A slower status request must not replace the completed receipt.
+	if storedStatus == "succeeded" || storedStatus == "failed" {
+		if err = tx.QueryRow(r.Context(), `SELECT receipt FROM server_cleanup_operations WHERE id=$1`, id).Scan(&receipt); err != nil {
+			failure(w, err)
+			return
+		}
+		status = storedStatus
+	} else {
+		status = "running"
+		if complete {
+			status = "succeeded"
+		}
+		if _, err = tx.Exec(r.Context(), `UPDATE server_cleanup_operations SET status=$2,receipt=$3,finished_at=CASE WHEN $2='succeeded' THEN now() ELSE NULL END WHERE id=$1`, id, status, store.JSON(receipt)); err != nil {
+			failure(w, err)
+			return
+		}
+		if complete {
+			p := who(r)
+			if _, err = tx.Exec(r.Context(), `INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'server.cleanup.completed',$3,$4)`, p.ID, p.KeyID, id, store.JSON(receipt)); err != nil {
+				failure(w, err)
+				return
+			}
+		}
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		failure(w, err)
+		return
+	}
+	code := http.StatusAccepted
+	if status == "succeeded" || status == "failed" {
+		code = http.StatusOK
+	}
+	write(w, code, map[string]any{"id": id, "status": status, "receipt": receipt})
 }

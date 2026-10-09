@@ -317,7 +317,7 @@ func (s *Service) create(ctx context.Context, j Job) (*Artifact, error) {
 	}(), Scope: Scope(j.Source), ScheduleID: j.ScheduleID, CreatedAt: time.Now().UTC()}
 	artifact.SourceRevision = target.Revision
 	artifact.SourceVersion = target.SourceVersion
-	artifact.CompatibilityEvidence = CompatibilityEvidence{ApplicationRevision: target.Revision, RuntimeFingerprint: target.RuntimeFingerprint, EncryptionRecipient: d.EncryptionRecipient, Dependencies: append([]string(nil), target.Dependencies...)}
+	artifact.CompatibilityEvidence = CompatibilityEvidence{ApplicationImages: target.ApplicationImages, ApplicationRevision: target.Revision, RuntimeFingerprint: target.RuntimeFingerprint, EncryptionRecipient: d.EncryptionRecipient, Dependencies: append([]string(nil), target.Dependencies...)}
 	artifact.CapturedAt = &capturedAt
 	if target.Kind == "database" {
 		artifact.CompatibilityEvidence.RelatedRecoveryPoints = map[string]time.Time{target.Service: capturedAt}
@@ -752,7 +752,7 @@ func (s *Service) engineCreate(ctx context.Context, j Job, d Destination, c Cred
 	if err = verifyEngineBackup(ctx, store, prefix, status); err != nil {
 		return nil, err
 	}
-	return &Artifact{ID: j.ID, JobID: j.ID, DestinationID: d.ID, Source: target.Source, ObjectKey: prefix, SHA256: "", Bytes: status.Bytes, Format: engineArtifactPrefix + target.Engine, Scope: Scope(j.Source), ScheduleID: j.ScheduleID, CreatedAt: time.Now().UTC(), CompatibilityEvidence: CompatibilityEvidence{ApplicationRevision: target.Revision, RuntimeFingerprint: target.RuntimeFingerprint, EncryptionRecipient: d.EncryptionRecipient, Dependencies: append([]string(nil), target.Dependencies...)}}, nil
+	return &Artifact{ID: j.ID, JobID: j.ID, DestinationID: d.ID, Source: target.Source, ObjectKey: prefix, SHA256: "", Bytes: status.Bytes, Format: engineArtifactPrefix + target.Engine, Scope: Scope(j.Source), ScheduleID: j.ScheduleID, CreatedAt: time.Now().UTC(), CompatibilityEvidence: CompatibilityEvidence{ApplicationImages: target.ApplicationImages, ApplicationRevision: target.Revision, RuntimeFingerprint: target.RuntimeFingerprint, EncryptionRecipient: d.EncryptionRecipient, Dependencies: append([]string(nil), target.Dependencies...)}}, nil
 }
 
 // verifyEngineBackup is the only independent evidence this kind of backup ever

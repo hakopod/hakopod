@@ -483,10 +483,13 @@ def cleanup_preview():
         if not root.exists(): continue
         root_stat = root.lstat()
         if not root.is_dir() or root.is_symlink() or root_stat.st_uid != CLEANUP_OWNER_UID or root_stat.st_mode & 0o022: continue
-        for path in sorted(root.iterdir(), key=lambda item: item.name):
+        for path in root.iterdir():
             scanned += 1
             if scanned > 512 or time.monotonic() > deadline: raise ValueError('Cleanup inventory exceeded its scan bound')
-            item = cleanup_item(path, category, now)
+            try:
+                item = cleanup_item(path, category, now)
+            except FileNotFoundError:
+                continue
             if item: items.append(item); planned += item['bytes']
             if len(items) > 256: raise ValueError('Cleanup inventory exceeds 256 files')
             if planned > 8 << 30: raise ValueError('Cleanup inventory exceeds 8 GiB')
@@ -497,43 +500,112 @@ def cleanup_preview():
             'planned_bytes': planned}
 
 
+def cleanup_save(path, value):
+    temporary = path.with_suffix('.tmp')
+    with temporary.open('w') as stream:
+        os.chmod(temporary, 0o600)
+        json.dump(value, stream)
+        stream.write('\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(path)
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def cleanup_execute(body):
     if set(body) != {'schema_version', 'operation_id', 'items'} or body['schema_version'] != 1 or not re.fullmatch(r'[0-9a-f]{32}', body['operation_id']) or not isinstance(body['items'], list) or len(body['items']) > 256:
         raise ValueError('Invalid cleanup operation')
+    ids = set()
+    for item in body['items']:
+        if not isinstance(item, dict) or set(item) != {'id', 'category', 'path', 'bytes'} or not isinstance(item['id'], str) or not re.fullmatch(r'[0-9a-f]{64}', item['id']) or item['id'] in ids or not isinstance(item['bytes'], int) or item['bytes'] < 0 or item['bytes'] > 512 << 20:
+            raise ValueError('Invalid cleanup item')
+        ids.add(item['id'])
+    if sum(item['bytes'] for item in body['items']) > 8 << 30:
+        raise ValueError('Cleanup exceeds 8 GiB')
+    request_hash = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
     receipt_path = STATE / ('cleanup-' + body['operation_id'] + '.json')
-    if receipt_path.exists(): return json.loads(receipt_path.read_text())
-    if not LOCK.acquire(blocking=False): raise ValueError('Another maintenance operation is running')
-    install_lock = INSTALL_LOCK.open('a')
+    if not LOCK.acquire(blocking=False):
+        raise ValueError('Another maintenance operation is running')
+    install_lock = None
+    receipt = None
     try:
+        install_lock = INSTALL_LOCK.open('a')
         fcntl.flock(install_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if receipt_path.exists():
+            receipt = json.loads(receipt_path.read_text())
+            if receipt.get('request_hash') != request_hash:
+                raise ValueError('Cleanup operation identity changed')
+            if receipt.get('status') == 'succeeded':
+                return receipt
+        if receipt is None:
+            receipt = {'schema_version': 1, 'operation_id': body['operation_id'], 'request_hash': request_hash,
+                       'status': 'running', 'removed': [], 'skipped': [], 'uncertain': [],
+                       'planned_bytes': sum(item['bytes'] for item in body['items']),
+                       'available_before_bytes': shutil.disk_usage('/var/lib/hakopod').free}
+        receipt['status'] = 'running'
+        cleanup_save(receipt_path, receipt)
         reviewed = {item['id']: item for item in cleanup_preview()['items']}
-        before = shutil.disk_usage('/var/lib/hakopod').free; removed = []; skipped = []; deadline=time.monotonic()+20
+        done = {item['id'] for category in ['removed', 'skipped', 'uncertain'] for item in receipt[category]}
+        deadline = time.monotonic() + 20
         for requested in body['items']:
-            if time.monotonic()>deadline: raise ValueError('Cleanup exceeded its time bound')
-            if not isinstance(requested, dict) or set(requested) != {'id', 'category', 'path', 'bytes'}: raise ValueError('Invalid cleanup item')
+            if requested['id'] in done:
+                continue
+            if time.monotonic() > deadline:
+                raise ValueError('Cleanup exceeded its time bound')
             current = reviewed.get(requested['id'])
-            if current != requested: skipped.append({'id': requested.get('id', ''), 'reason': 'file changed or is protected'}); continue
-            path = Path(current['path']); immediate=cleanup_item(path,current['category'],time.time())
-            if immediate != current: skipped.append({'id':current['id'],'reason':'file changed or is protected'});continue
-            path.unlink(); removed.append({'id': current['id'], 'bytes': current['bytes']})
+            if current != requested:
+                category = 'uncertain' if receipt.get('pending_id') == requested['id'] else 'skipped'
+                receipt[category].append({'id': requested['id'], 'reason': 'file changed, missing or protected'})
+                receipt.pop('pending_id', None)
+                cleanup_save(receipt_path, receipt)
+                continue
+            path = Path(current['path'])
+            try:
+                immediate = cleanup_item(path, current['category'], time.time())
+            except FileNotFoundError:
+                immediate = None
+            if immediate != current:
+                receipt['skipped'].append({'id': current['id'], 'reason': 'file changed or is protected'})
+                receipt.pop('pending_id', None)
+                cleanup_save(receipt_path, receipt)
+                continue
+            receipt['pending_id'] = current['id']
+            cleanup_save(receipt_path, receipt)
+            path.unlink()
+            receipt['removed'].append({'id': current['id'], 'bytes': current['bytes']})
+            receipt.pop('pending_id', None)
+            cleanup_save(receipt_path, receipt)
         after = shutil.disk_usage('/var/lib/hakopod').free
-        receipt = {'schema_version': 1, 'operation_id': body['operation_id'], 'removed': removed, 'skipped': skipped, 'planned_bytes': sum(item['bytes'] for item in body['items']),
-                'removed_bytes': sum(item['bytes'] for item in removed), 'available_before_bytes': before, 'available_after_bytes': after,
-                'reclaimed_bytes': max(0, after-before), 'completed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
-        temporary=receipt_path.with_suffix('.tmp');temporary.write_text(json.dumps(receipt)+'\n');os.chmod(temporary,0o600);temporary.replace(receipt_path)
+        receipt.update(status='succeeded', removed_bytes=sum(item['bytes'] for item in receipt['removed']),
+                       available_after_bytes=after, reclaimed_bytes=max(0, after-receipt['available_before_bytes']),
+                       completed_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+        cleanup_save(receipt_path, receipt)
         return receipt
     except Exception:
-        failed={'schema_version':1,'operation_id':body['operation_id'],'status':'failed','message':'Cleanup stopped before it could record a successful receipt.'}
-        temporary=receipt_path.with_suffix('.tmp');temporary.write_text(json.dumps(failed)+'\n');os.chmod(temporary,0o600);temporary.replace(receipt_path)
+        if receipt is not None and receipt.get('request_hash') == request_hash:
+            receipt['status'] = 'interrupted'
+            receipt['removed_bytes'] = sum(item['bytes'] for item in receipt['removed'])
+            cleanup_save(receipt_path, receipt)
         raise
     finally:
-        install_lock.close(); LOCK.release()
+        if install_lock is not None: install_lock.close()
+        LOCK.release()
 
 
 def cleanup_status(operation_id):
-    if not re.fullmatch(r'[0-9a-f]{32}', operation_id): raise ValueError('Invalid cleanup operation')
-    receipt=STATE / ('cleanup-' + operation_id + '.json')
-    return json.loads(receipt.read_text()) if receipt.is_file() else {'schema_version':1,'operation_id':operation_id,'status':'running'}
+    if not re.fullmatch(r'[0-9a-f]{32}', operation_id):
+        raise ValueError('Invalid cleanup operation')
+    receipt = STATE / ('cleanup-' + operation_id + '.json')
+    if not receipt.is_file():
+        return {'schema_version': 1, 'operation_id': operation_id, 'status': 'not_started'}
+    result = json.loads(receipt.read_text())
+    if result.get('status') == 'running' and not LOCK.locked():
+        result['status'] = 'interrupted'
+    return result
 
 
 def logs():

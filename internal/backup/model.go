@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -129,8 +131,9 @@ func (d DestinationInput) Validate() error {
 }
 
 type Target struct {
-	SourceVersion       string `json:"source_version,omitempty"`
-	ManagedDatabaseName string `json:"managed_database_name,omitempty"`
+	ApplicationImages   map[string]string `json:"application_images,omitempty"`
+	SourceVersion       string            `json:"source_version,omitempty"`
+	ManagedDatabaseName string            `json:"managed_database_name,omitempty"`
 	Source
 	ApplicationName    string   `json:"application_name,omitempty"`
 	Revision           int64    `json:"revision"`
@@ -164,6 +167,7 @@ type Artifact struct {
 }
 
 type CompatibilityEvidence struct {
+	ApplicationImages     map[string]string    `json:"application_images,omitempty"`
 	ApplicationRevision   int64                `json:"application_revision,omitempty"`
 	RuntimeFingerprint    string               `json:"runtime_fingerprint,omitempty"`
 	EncryptionRecipient   string               `json:"encryption_recipient,omitempty"`
@@ -233,14 +237,15 @@ func (s Schedule) Validate() error {
 }
 
 type RestorePlan struct {
-	ID            string              `json:"id"`
-	ArtifactID    string              `json:"artifact_id"`
-	Target        Target              `json:"target"`
-	Confirmation  string              `json:"confirmation"`
-	Scope         string              `json:"scope"`
-	Warnings      []string            `json:"warnings"`
-	Compatibility CompatibilityReport `json:"compatibility"`
-	ExpiresAt     time.Time           `json:"expires_at"`
+	RelatedArtifactIDs []string            `json:"related_artifact_ids,omitempty"`
+	ID                 string              `json:"id"`
+	ArtifactID         string              `json:"artifact_id"`
+	Target             Target              `json:"target"`
+	Confirmation       string              `json:"confirmation"`
+	Scope              string              `json:"scope"`
+	Warnings           []string            `json:"warnings"`
+	Compatibility      CompatibilityReport `json:"compatibility"`
+	ExpiresAt          time.Time           `json:"expires_at"`
 }
 
 type CompatibilityCheck struct {
@@ -267,38 +272,60 @@ func RestoreCompatibility(a Artifact, target Target, encrypted bool, now time.Ti
 	} else {
 		add("backup_age", "checked", "The backup recovery point is recorded.", a.CapturedAt.UTC().Format(time.RFC3339))
 	}
-	if a.Source.Engine == target.Engine && a.SourceVersion != "" {
-		add("database_version", "checked", "The database engine and recorded source version are available for engine validation.", a.Source.Engine+" "+a.SourceVersion)
-	} else if a.Source.Engine == target.Engine {
-		add("database_version", "unknown", "The database engine matches, but this archive has no recorded source version.", a.Source.Engine)
+	if a.Source.Engine != target.Engine {
+		add("database_version", "blocker", "The source and target database engines differ.", a.Source.Engine+" to "+target.Engine)
+	} else if a.SourceVersion == "" || target.SourceVersion == "" {
+		add("database_version", "unknown", "A source or target database version is unavailable.", a.SourceVersion+" to "+target.SourceVersion)
+	} else if a.SourceVersion == target.SourceVersion || (a.Source.Engine == "postgresql" && a.SourceVersion == "17" && target.SourceVersion == "18") {
+		add("database_version", "checked", "The recorded database versions support this restore path.", a.SourceVersion+" to "+target.SourceVersion)
 	} else {
-		add("database_version", "blocker", "The database engine or source version does not match the selected target.", "")
+		add("database_version", "blocker", "These database versions do not have a supported restore path.", a.SourceVersion+" to "+target.SourceVersion)
 	}
 	if encrypted {
 		add("encryption_identity", "unknown", "The destination encryption recipient reference matches. The private recovery identity is checked before restore changes the target.", "")
 	} else {
 		add("encryption_key", "blocker", "The required destination encryption key reference is unavailable.", "")
 	}
-	if a.Source.Kind == "database" && a.CompatibilityEvidence.ApplicationRevision > 0 && a.CompatibilityEvidence.RuntimeFingerprint != "" {
-		add("application_version", "unknown", "The source application revision and runtime fingerprint were captured, but no target application version was selected for comparison.", fmt.Sprintf("revision %d, %s", a.CompatibilityEvidence.ApplicationRevision, a.CompatibilityEvidence.RuntimeFingerprint))
-		if len(a.CompatibilityEvidence.Dependencies) > 0 {
-			add("dependencies", "checked", "Declared dependency recovery points were captured.", fmt.Sprintf("%d dependencies", len(a.CompatibilityEvidence.Dependencies)))
-		} else {
-			add("dependencies", "unknown", "No related dependency recovery points were captured.", "")
-		}
-	} else if a.Source.Kind == "database" {
-		add("application_version", "unknown", "The archive format predates an immutable application runtime inventory.", "")
-		add("dependencies", "unknown", "The archive does not contain a complete dependency recovery set.", "")
+	if len(a.CompatibilityEvidence.ApplicationImages) == 0 || len(target.ApplicationImages) == 0 {
+		add("application_version", "unknown", "Source or target application images were not captured for comparison.", "")
+	} else if !maps.Equal(a.CompatibilityEvidence.ApplicationImages, target.ApplicationImages) {
+		add("application_version", "warning", "Source and target application images differ. Check schema and application compatibility before cutover.", fmt.Sprintf("source revision %d; target revision %d", a.CompatibilityEvidence.ApplicationRevision, target.Revision))
 	} else {
-		add("application_version", "unknown", "This database archive has no associated application version.", "")
-		add("dependencies", "unknown", "No related application recovery points were declared.", "")
+		pinned := true
+		for _, image := range target.ApplicationImages {
+			if !strings.Contains(image, "@sha256:") {
+				pinned = false
+			}
+		}
+		if pinned {
+			add("application_version", "checked", "The declared source and target application image digests match.", fmt.Sprintf("%d images", len(target.ApplicationImages)))
+		} else {
+			add("application_version", "unknown", "The declared image references match, but mutable tags do not prove identical application versions.", "")
+		}
+	}
+	sourceDependencies := slices.Clone(a.CompatibilityEvidence.Dependencies)
+	targetDependencies := slices.Clone(target.Dependencies)
+	slices.Sort(sourceDependencies)
+	slices.Sort(targetDependencies)
+	if len(a.CompatibilityEvidence.ApplicationImages) == 0 || len(target.ApplicationImages) == 0 {
+		add("dependencies", "unknown", "The source or target application dependency inventory is unavailable.", "")
+	} else if slices.Equal(sourceDependencies, targetDependencies) {
+		add("dependencies", "checked", "The declared dependency relationships match. Data recovery points are checked separately.", fmt.Sprintf("%d relationships", len(sourceDependencies)))
+	} else {
+		add("dependencies", "warning", "The declared dependency relationships differ. Review related services before cutover.", fmt.Sprintf("%d source; %d target", len(sourceDependencies), len(targetDependencies)))
 	}
 	points := a.CompatibilityEvidence.RelatedRecoveryPoints
 	if len(points) < 2 {
 		add("related_recovery_points", "unknown", "No multi-service recovery set was captured.", "")
 	} else {
 		var earliest, latest time.Time
+		validPoints := true
 		for _, point := range points {
+			if point.IsZero() || point.After(now) {
+				validPoints = false
+				add("related_recovery_points", "blocker", "A selected archive has no valid recovery point.", "")
+				continue
+			}
 			if earliest.IsZero() || point.Before(earliest) {
 				earliest = point
 			}
@@ -306,10 +333,12 @@ func RestoreCompatibility(a Artifact, target Target, encrypted bool, now time.Ti
 				latest = point
 			}
 		}
-		if latest.Sub(earliest) > 5*time.Minute {
+		if !validPoints {
+			// Invalid points already have an explicit blocker.
+		} else if latest.Sub(earliest) > 5*time.Minute {
 			add("related_recovery_points", "blocker", "Related recovery points are inconsistent by more than five minutes.", fmt.Sprintf("%s to %s", earliest.UTC().Format(time.RFC3339), latest.UTC().Format(time.RFC3339)))
 		} else {
-			add("related_recovery_points", "checked", "Related recovery points are within the five-minute consistency window.", fmt.Sprintf("%d recovery points", len(points)))
+			add("related_recovery_points", "checked", "Selected recovery points are within five minutes. This does not prove transactional consistency across services.", fmt.Sprintf("%d recovery points", len(points)))
 		}
 	}
 	blocked := false

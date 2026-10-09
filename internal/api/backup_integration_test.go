@@ -165,7 +165,7 @@ func TestManagedRestoreHTTPConflictPreservesReviewAndTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	destination, err := db.PutBackupDestination(ctx, principal, backup.Destination{ID: store.NewID(), Name: "restore-http-destination", EncryptedCredentials: []byte("sealed-test-fixture")}, 0)
+	destination, err := db.PutBackupDestination(ctx, principal, backup.Destination{ID: store.NewID(), Name: "restore-http-destination", EncryptedCredentials: []byte("sealed-test-fixture"), EncryptionRecipient: "age-fixture"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

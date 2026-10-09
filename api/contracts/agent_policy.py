@@ -2653,6 +2653,11 @@ POLICIES['planDatabaseCapacity'] = {
     'sensitive_fields': [],
 }
 
+POLICIES['resumeDeployment'] = {'boundary':'project','category':'deploy','exposure':'generic','permissions':['deployments:write'],'review':'canonical','prerequisite':'','sensitive_fields':[]}
+# Cache removal is available through the installation owner workflow only.
+for operation in ['reviewServerCleanup','executeServerCleanup','getServerCleanupOperation']:
+    POLICIES[operation] = {'boundary':'installation','category':'human','exposure':'prerequisite','permissions':['admin'],'review':'canonical','prerequisite':'Use the self-hosted installation owner cleanup review.','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

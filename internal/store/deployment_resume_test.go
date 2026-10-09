@@ -45,6 +45,13 @@ func TestResumeDeploymentSelectsFailedAndDependentsAtSameRevision(t *testing.T) 
 	if err != nil || replay.ResumeGeneration != 1 {
 		t.Fatal(err, replay.ResumeGeneration)
 	}
+	narrowed := p
+	narrowed.Admin = false
+	narrowed.Owner = false
+	narrowed.Project = "other"
+	if _, err = s.ResumeDeployment(ctx, narrowed, d.ID, d.Revision, "resume-request-one"); !errors.Is(err, ErrForbidden) {
+		t.Fatal("replay skipped current scope authorization", err)
+	}
 	claim, err = s.Claim(ctx)
 	if err != nil || claim == nil || claim.Deployment.ResumeGeneration != 1 || claim.Deployment.StartedAt == nil {
 		t.Fatal(err, claim)

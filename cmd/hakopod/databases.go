@@ -232,7 +232,29 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 		if artifact == "" {
 			return fmt.Errorf("restore-plan requires --artifact-id")
 		}
-		method, path, body = "POST", path+"/"+id+"/restore-plan", map[string]any{"artifact_id": artifact}
+		request := map[string]any{"artifact_id": artifact}
+		if file != "" {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				return err
+			}
+			if len(data) > 8192 {
+				return fmt.Errorf("recovery set file exceeds 8 KiB")
+			}
+			var selection struct {
+				RelatedArtifactIDs []string `json:"related_artifact_ids"`
+			}
+			decoder := json.NewDecoder(strings.NewReader(string(data)))
+			decoder.DisallowUnknownFields()
+			if err = decoder.Decode(&selection); err != nil {
+				return err
+			}
+			if len(selection.RelatedArtifactIDs) > 16 {
+				return fmt.Errorf("select at most 16 related archives")
+			}
+			request["related_artifact_ids"] = selection.RelatedArtifactIDs
+		}
+		method, path, body = "POST", path+"/"+id+"/restore-plan", request
 	case "restore":
 		if artifact == "" || review == "" || confirmation == "" {
 			return fmt.Errorf("restore requires --artifact-id, --review-id and --name from the recovery review")

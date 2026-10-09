@@ -22,6 +22,68 @@ class MaintenanceTests(unittest.TestCase):
                 receipt=m.cleanup_execute({'schema_version':1,'operation_id':'b'*32,'items':review['items']})
                 self.assertFalse(removable.exists());self.assertEqual(receipt['removed_bytes'],review['planned_bytes'])
 
+    def cleanup_fixture(self, tmp):
+        import contextlib
+        stack=contextlib.ExitStack(); self.addCleanup(stack.close)
+        state=Path(tmp); root=state/'downloads'; root.mkdir(mode=0o700)
+        for name in ['one.tar','two.tar']:
+            path=root/name;path.write_bytes(b'x'*4096);os.utime(path,(1,1))
+        for name,value in {'STATE':state,'INSTALL_LOCK':state/'install.lock','CLEANUP_OWNER_UID':os.getuid()}.items():
+            stack.enter_context(patch.object(m,name,value))
+        stack.enter_context(patch.object(m.shutil,'disk_usage',return_value=type('D',(),{'total':100000,'free':50000})()))
+        return root,{'schema_version':1,'operation_id':'c'*32,'items':m.cleanup_preview()['items']}
+
+    def test_cleanup_replay_retains_receipt_and_rejects_different_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root,body=self.cleanup_fixture(tmp)
+            first=m.cleanup_execute(body);self.assertEqual(first,m.cleanup_execute(body))
+            self.assertEqual(len(first['removed']),2);self.assertEqual(first['reclaimed_bytes'],0)
+            with self.assertRaises(ValueError):m.cleanup_execute(dict(body,items=[]))
+            self.assertEqual(m.cleanup_status(body['operation_id'])['status'],'succeeded')
+            self.assertFalse(m.LOCK.locked())
+
+    def test_cleanup_interruption_preserves_progress_and_resumes_remaining_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root,body=self.cleanup_fixture(tmp);unlink=Path.unlink;calls=[]
+            def interrupted(path,*args,**kwargs):
+                if path.parent==root:
+                    calls.append(path)
+                    if len(calls)==2:raise OSError('fixture interrupt')
+                return unlink(path,*args,**kwargs)
+            with patch.object(Path,'unlink',interrupted),self.assertRaises(OSError):m.cleanup_execute(body)
+            receipt=m.cleanup_status(body['operation_id']);self.assertEqual(receipt['status'],'interrupted')
+            self.assertEqual(len(receipt['removed']),1);self.assertGreater(receipt['removed_bytes'],0)
+            self.assertFalse(m.LOCK.locked())
+            receipt=m.cleanup_execute(body);self.assertEqual(len(receipt['removed']),2);self.assertEqual(receipt['status'],'succeeded')
+
+    def test_cleanup_crash_after_unlink_keeps_uncertain_bytes_separate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root,body=self.cleanup_fixture(tmp);save=m.cleanup_save
+            def crash(path,value):
+                if len(value['removed'])==1 and value['status']=='running':raise SystemExit('fixture process crash')
+                save(path,value)
+            with patch.object(m,'cleanup_save',crash),self.assertRaises(SystemExit):m.cleanup_execute(body)
+            self.assertEqual(m.cleanup_status(body['operation_id'])['status'],'interrupted')
+            receipt=m.cleanup_execute(body)
+            self.assertEqual(len(receipt['uncertain']),1);self.assertEqual(len(receipt['removed']),1)
+            self.assertEqual(receipt['removed_bytes'],body['items'][1]['bytes'])
+
+    def test_cleanup_cannot_unlink_symlinks_hardlinks_or_files_outside_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root,body=self.cleanup_fixture(tmp)
+            outside=Path(tmp)/'database';outside.write_bytes(b'keep')
+            Path(body['items'][0]['path']).unlink();Path(body['items'][0]['path']).symlink_to(outside)
+            os.link(Path(body['items'][1]['path']),root/'linked')
+            receipt=m.cleanup_execute(body)
+            self.assertEqual(receipt['removed'],[]);self.assertEqual(len(receipt['skipped']),2)
+            self.assertEqual(outside.read_bytes(),b'keep')
+
+    def test_cleanup_releases_lock_when_lock_file_open_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root,body=self.cleanup_fixture(tmp)
+            with patch.object(m,'INSTALL_LOCK',Path(tmp)/'missing'/'lock'),self.assertRaises(FileNotFoundError):m.cleanup_execute(body)
+            self.assertFalse(m.LOCK.locked())
+
     def test_versions_channels_and_order(self):
         self.assertLess(m.version_key('0.1.0-alpha.4'),m.version_key('0.1.0-alpha.10'))
         self.assertLess(m.version_key('0.1.0-alpha.10'),m.version_key('0.1.0'))

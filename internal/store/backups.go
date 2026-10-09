@@ -614,6 +614,19 @@ func (s *Store) acceptBackupRestoreOnce(ctx context.Context, p Principal, artifa
 	if err != nil {
 		return j, err
 	}
+	a, err = backupRecoverySet(ctx, tx, p, a, plan.RelatedArtifactIDs)
+	if err != nil {
+		return j, err
+	}
+	if plan.Target.Kind == "database" {
+		var revision int64
+		if err = tx.QueryRow(ctx, "SELECT revision FROM applications WHERE id=$1 FOR SHARE", plan.Target.ApplicationID).Scan(&revision); err != nil {
+			return j, err
+		}
+		if revision != plan.Target.Revision {
+			return j, fmt.Errorf("%w: the target application changed; create a new restore review", backup.ErrConflict)
+		}
+	}
 	keyMatches := destination.EncryptionRecipient != "" && (a.CompatibilityEvidence.EncryptionRecipient == "" || a.CompatibilityEvidence.EncryptionRecipient == destination.EncryptionRecipient)
 	if current := backup.RestoreCompatibility(a, plan.Target, keyMatches, time.Now()); current.Blocked || plan.Compatibility.Blocked {
 		return j, backup.ErrConflict

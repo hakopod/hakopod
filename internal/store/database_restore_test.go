@@ -25,7 +25,7 @@ func TestManagedRestoreReviewsRejectSavedAndDeployedConnections(t *testing.T) {
 	if err = s.RecordDatabaseStep(ctx, claim, database.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now().UTC()}, "succeeded", "ready", ""); err != nil {
 		t.Fatal(err)
 	}
-	destination, err := s.PutBackupDestination(ctx, p, backup.Destination{ID: NewID(), Name: "restore-review-fixture", EncryptedCredentials: []byte("sealed-test-fixture")}, 0)
+	destination, err := s.PutBackupDestination(ctx, p, backup.Destination{ID: NewID(), Name: "restore-review-fixture", EncryptedCredentials: []byte("sealed-test-fixture"), EncryptionRecipient: "age-fixture"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

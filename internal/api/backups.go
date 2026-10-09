@@ -366,13 +366,14 @@ func (s *Server) planBackupRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		ApplicationID string `json:"application_id"`
-		Service       string `json:"service"`
+		ApplicationID      string   `json:"application_id"`
+		RelatedArtifactIDs []string `json:"related_artifact_ids"`
+		Service            string   `json:"service"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	a, err := s.Store.BackupArtifact(r.Context(), r.PathValue("id"))
+	a, err := s.Store.BackupArtifact(store.WithBackupPrincipal(r.Context(), who(r)), r.PathValue("id"))
 	if err != nil {
 		backupFailure(w, err)
 		return
@@ -405,9 +406,16 @@ func (s *Server) planBackupRestore(w http.ResponseWriter, r *http.Request) {
 	target.Database = "hp_restore_" + id[:20]
 	destination, destinationErr := s.Store.BackupDestination(store.WithBackupPrincipal(r.Context(), who(r)), a.DestinationID)
 	keyAvailable := destinationErr == nil && destination.EncryptionRecipient != "" && (a.CompatibilityEvidence.EncryptionRecipient == "" || a.CompatibilityEvidence.EncryptionRecipient == destination.EncryptionRecipient)
+	a, err = s.Store.BackupRecoverySet(r.Context(), who(r), a, in.RelatedArtifactIDs)
+	if err != nil {
+		backupFailure(w, err)
+		return
+	}
 	compatibility := backup.RestoreCompatibility(a, target, keyAvailable, time.Now())
-	plan := backup.RestorePlan{ID: id, ArtifactID: a.ID, Target: target, Confirmation: target.Database, Scope: a.Scope, Compatibility: compatibility, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: restoreWarnings(a.Source)}
+	plan := backup.RestorePlan{RelatedArtifactIDs: in.RelatedArtifactIDs, ID: id, ArtifactID: a.ID, Target: target, Confirmation: target.Database, Scope: a.Scope, Compatibility: compatibility, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: restoreWarnings(a.Source)}
 	if compatibility.Blocked {
+		plan.ID = ""
+		plan.Confirmation = ""
 		write(w, 200, plan)
 		return
 	}
