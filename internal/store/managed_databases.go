@@ -13,7 +13,7 @@ import (
 )
 
 const databaseCols = `id,project,environment,revision,spec,status,observation,created_at,updated_at,deleted_at,credentials,recovery`
-const databaseOperationCols = `id,database_id,revision,kind,status,phase,message,spec,created_at,started_at,finished_at,identity_id,key_id,lease,review,switchover`
+const databaseOperationCols = `id,database_id,revision,kind,status,phase,message,progress,spec,created_at,started_at,finished_at,identity_id,key_id,lease,review,switchover`
 
 func scanDatabase(row scanner) (database.Resource, error) {
 	var d database.Resource
@@ -22,7 +22,7 @@ func scanDatabase(row scanner) (database.Resource, error) {
 }
 func scanDatabaseOperation(row scanner) (database.Operation, error) {
 	var o database.Operation
-	err := row.Scan(&o.ID, &o.DatabaseID, &o.Revision, &o.Kind, &o.Status, &o.Phase, &o.Message, &o.Spec, &o.CreatedAt, &o.StartedAt, &o.FinishedAt, &o.IdentityID, &o.KeyID, &o.Lease, &o.Review, &o.Switchover)
+	err := row.Scan(&o.ID, &o.DatabaseID, &o.Revision, &o.Kind, &o.Status, &o.Phase, &o.Message, &o.Progress, &o.Spec, &o.CreatedAt, &o.StartedAt, &o.FinishedAt, &o.IdentityID, &o.KeyID, &o.Lease, &o.Review, &o.Switchover)
 	return o, err
 }
 func (p Principal) AllowsDatabase(project, environment string, write bool) bool {
@@ -344,7 +344,16 @@ func (s *Store) RecordDatabaseStep(ctx context.Context, o database.Operation, ob
 		return err
 	}
 	defer tx.Rollback(ctx)
-	tag, err := tx.Exec(ctx, "UPDATE managed_database_operations SET status=$3,phase=$4,message=$5,next_attempt_at=now()+interval '3 seconds',lease='',lease_until=NULL,finished_at=CASE WHEN $3='queued' THEN NULL ELSE now() END WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>now()", o.ID, o.Lease, status, phase, message)
+	stageState := "running"
+	if status == "succeeded" {
+		stageState = "succeeded"
+	} else if status == "failed" || status == "cancelled" {
+		stageState = "failed"
+	}
+	stage := database.OperationStage{ID: phase, State: stageState, Message: message, ObservedAt: time.Now().UTC()}
+	tag, err := tx.Exec(ctx, `UPDATE managed_database_operations SET status=$3,phase=$4,message=$5,
+ progress=(SELECT COALESCE(jsonb_agg(CASE WHEN value->>'state'='running' THEN jsonb_set(value,'{state}','"succeeded"'::jsonb) ELSE value END ORDER BY value->>'observed_at'),'[]'::jsonb) FROM (SELECT value FROM jsonb_array_elements(COALESCE(progress,'[]'::jsonb)) value WHERE value->>'id'<>$4 ORDER BY value->>'observed_at' DESC LIMIT 31) prior) || $6::jsonb,
+ next_attempt_at=now()+interval '3 seconds',lease='',lease_until=NULL,finished_at=CASE WHEN $3='queued' THEN NULL ELSE now() END WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>now()`, o.ID, o.Lease, status, phase, message, JSON([]database.OperationStage{stage}))
 	if err != nil {
 		return err
 	}

@@ -306,6 +306,7 @@ type Operation struct {
 	Status     string                  `json:"status"`
 	Phase      string                  `json:"phase"`
 	Message    string                  `json:"message"`
+	Progress   []OperationStage        `json:"progress"`
 	Spec       Spec                    `json:"spec"`
 	CreatedAt  time.Time               `json:"created_at"`
 	StartedAt  *time.Time              `json:"started_at,omitempty"`
@@ -313,6 +314,13 @@ type Operation struct {
 	IdentityID string                  `json:"-"`
 	KeyID      string                  `json:"-"`
 	Lease      string                  `json:"-"`
+}
+
+type OperationStage struct {
+	ID         string    `json:"id"`
+	State      string    `json:"state"`
+	Message    string    `json:"message"`
+	ObservedAt time.Time `json:"observed_at"`
 }
 
 // BackupEvidence refers to bytes checked against their recorded digest. Upload
@@ -327,14 +335,17 @@ type BackupEvidence struct {
 }
 
 type ResizePlan struct {
-	Current             Spec            `json:"current"`
-	Proposed            Spec            `json:"proposed"`
-	ExpectedRevision    int64           `json:"expected_revision"`
-	TopologyFingerprint string          `json:"topology_fingerprint"`
-	Backup              *BackupEvidence `json:"backup,omitempty"`
-	BlockedReasons      []string        `json:"blocked_reasons"`
-	Warnings            []string        `json:"warnings"`
-	ExpiresAt           time.Time       `json:"expires_at"`
+	Current              Spec            `json:"current"`
+	Proposed             Spec            `json:"proposed"`
+	ExpectedRevision     int64           `json:"expected_revision"`
+	TopologyFingerprint  string          `json:"topology_fingerprint"`
+	Backup               *BackupEvidence `json:"backup,omitempty"`
+	BlockedReasons       []string        `json:"blocked_reasons"`
+	Warnings             []string        `json:"warnings"`
+	ExpiresAt            time.Time       `json:"expires_at"`
+	Strategy             string          `json:"strategy"`
+	ExpectedInterruption string          `json:"expected_interruption"`
+	PreviousPrimary      string          `json:"previous_primary,omitempty"`
 }
 
 type ResizeRetryReview struct {
@@ -347,7 +358,15 @@ type ResizeRetryReview struct {
 }
 
 func PlanResize(db Resource, next Spec, evidence *BackupEvidence, now time.Time) (ResizePlan, error) {
-	p := ResizePlan{Current: db.Spec, Proposed: next, ExpectedRevision: db.Revision, TopologyFingerprint: db.Observation.TopologyFingerprint, Backup: evidence, BlockedReasons: []string{}, Warnings: []string{}, ExpiresAt: now.Add(ReviewLifetime)}
+	p := ResizePlan{Current: db.Spec, Proposed: next, ExpectedRevision: db.Revision, TopologyFingerprint: db.Observation.TopologyFingerprint, Backup: evidence, BlockedReasons: []string{}, Warnings: []string{}, ExpiresAt: now.Add(ReviewLifetime), Strategy: "controller-managed rolling change", ExpectedInterruption: "Availability can change during member replacement. Connections can close when a primary member changes; applications must reconnect.", PreviousPrimary: db.Observation.Primary}
+	if db.Spec.Engine == "redis" {
+		p.Strategy = "online resharding and replica reconciliation"
+		p.ExpectedInterruption = "Resharding can increase latency or interrupt requests. Cluster-aware clients must refresh routing and retry safely."
+	}
+	if db.Spec.Engine == "mysql" || db.Spec.Engine == "mongodb" {
+		p.Strategy = "controller-managed replica replacement"
+		p.ExpectedInterruption = "Availability can change while replicas catch up. A controller-elected primary change can close connections."
+	}
 	if err := next.Validate(); err != nil {
 		return p, err
 	}
