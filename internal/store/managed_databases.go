@@ -351,9 +351,13 @@ func (s *Store) RecordDatabaseStep(ctx context.Context, o database.Operation, ob
 		stageState = "failed"
 	}
 	stage := database.OperationStage{ID: phase, State: stageState, Message: message, ObservedAt: time.Now().UTC()}
+	previousState := "succeeded"
+	if stageState == "failed" {
+		previousState = "failed"
+	}
 	tag, err := tx.Exec(ctx, `UPDATE managed_database_operations SET status=$3,phase=$4,message=$5,
- progress=(SELECT COALESCE(jsonb_agg(CASE WHEN value->>'state'='running' THEN jsonb_set(value,'{state}','"succeeded"'::jsonb) ELSE value END ORDER BY value->>'observed_at'),'[]'::jsonb) FROM (SELECT value FROM jsonb_array_elements(COALESCE(progress,'[]'::jsonb)) value WHERE value->>'id'<>$4 ORDER BY value->>'observed_at' DESC LIMIT 31) prior) || $6::jsonb,
- next_attempt_at=now()+interval '3 seconds',lease='',lease_until=NULL,finished_at=CASE WHEN $3='queued' THEN NULL ELSE now() END WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>now()`, o.ID, o.Lease, status, phase, message, JSON([]database.OperationStage{stage}))
+ progress=(SELECT COALESCE(jsonb_agg(CASE WHEN value->>'state'='running' THEN jsonb_set(value,'{state}',to_jsonb($7::text)) ELSE value END ORDER BY value->>'observed_at'),'[]'::jsonb) FROM (SELECT value FROM jsonb_array_elements(COALESCE(progress,'[]'::jsonb)) value WHERE value->>'id'<>$4 ORDER BY value->>'observed_at' DESC LIMIT 31) prior) || $6::jsonb,
+ next_attempt_at=now()+interval '3 seconds',lease='',lease_until=NULL,finished_at=CASE WHEN $3='queued' THEN NULL ELSE now() END WHERE id=$1 AND lease=$2 AND status='running' AND lease_until>now()`, o.ID, o.Lease, status, phase, message, JSON([]database.OperationStage{stage}), previousState)
 	if err != nil {
 		return err
 	}
