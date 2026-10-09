@@ -536,6 +536,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "image", a.Image, b.Image, false)
 		add(name, "job", a.Job, b.Job, false)
 		add(name, "bindings", a.Bindings, b.Bindings, false)
+		add(name, "database_client_profiles", a.DatabaseClientProfiles, b.DatabaseClientProfiles, false)
 		add(name, "http", a.HTTP, b.HTTP, false)
 		// File bodies belong in the reviewed source, never in event/diff summaries.
 		if !reflect.DeepEqual(a.Files, b.Files) {

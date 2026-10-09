@@ -67,3 +67,18 @@ func TestDatabaseClientProfileRejectsGeneratedEnvironmentCollisions(t *testing.T
 		t.Fatalf("GlitchTip CA collision was accepted: %v", err)
 	}
 }
+
+func TestDatabaseClientProfileAppearsInServiceDiff(t *testing.T) {
+	before := databaseProfileApplication(DatabaseClientLibpqURLV1, nil)
+	after := databaseProfileApplication(DatabaseClientLibpqURLV1, nil)
+	service := after.Services["api"]
+	service.DatabaseClientProfiles["DATABASE_URL"] = DatabaseClientGlitchTipValkeyV21
+	after.Services["api"] = service
+	changes := Diff(&before, after)
+	for _, change := range changes {
+		if change.Service == "api" && change.Field == "database_client_profiles" {
+			return
+		}
+	}
+	t.Fatal("database client profile change was omitted from the deployment review")
+}
