@@ -92,6 +92,15 @@ func (c *Client) GetPlatformSecret(ctx context.Context, name string) (*corev1.Se
 	if err := c.platformNamespace(ctx, false); err != nil {
 		return nil, err
 	}
+	return c.getPlatformSecretInVerifiedNamespace(ctx, name)
+}
+
+// The caller must verify ownership of PlatformNamespace for this operation.
+// Keep exact-name reads and platform-secret ownership checks in one place.
+func (c *Client) getPlatformSecretInVerifiedNamespace(ctx context.Context, name string) (*corev1.Secret, error) {
+	if err := validPlatformSecretName(name); err != nil {
+		return nil, err
+	}
 	secret, err := c.kube.CoreV1().Secrets(PlatformNamespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
