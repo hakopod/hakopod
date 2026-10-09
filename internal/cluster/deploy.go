@@ -392,6 +392,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 	for _, key := range keys {
 		container.Env = append(container.Env, corev1.EnvVar{Name: key, Value: svc.Env[key]})
 	}
+	startupTimeout := serviceStartupTimeout(svc, deadline)
 	if svc.Port != 0 {
 		handler := corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(svc.Port)}}
 		if svc.Healthcheck != "" {
@@ -400,12 +401,12 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 		container.ReadinessProbe = &corev1.Probe{ProbeHandler: handler, PeriodSeconds: 3, TimeoutSeconds: 2, FailureThreshold: 3, SuccessThreshold: 1}
 		// A startup probe is deliberately TCP: a failing readiness endpoint must
 		// not be silently reused as a liveness restart policy.
-		container.StartupProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(svc.Port)}}, PeriodSeconds: 2, TimeoutSeconds: 2, FailureThreshold: 60}
+		container.StartupProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(svc.Port)}}, PeriodSeconds: 2, TimeoutSeconds: 2, FailureThreshold: int32((startupTimeout + 2*time.Second - 1) / (2 * time.Second))}
 	}
 	for _, p := range spec.ServicePorts(svc) {
 		container.Ports = append(container.Ports, corev1.ContainerPort{Name: p.Name, ContainerPort: p.TargetPort, Protocol: corev1.Protocol(p.Protocol)})
 	}
-	seconds := int32(deadline.Seconds())
+	seconds := int32(startupTimeout.Seconds())
 	if seconds < 30 {
 		seconds = 30
 	}
@@ -437,6 +438,13 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 	configureBindingProbe(svc, &result.Spec.Template.Spec, image)
 	applyWorkloadPolicy(t.policy, &result.Spec.Template.Spec)
 	return result
+}
+
+func serviceStartupTimeout(svc spec.Service, fallback time.Duration) time.Duration {
+	if svc.StartupTimeoutSeconds != 0 {
+		return time.Duration(svc.StartupTimeoutSeconds) * time.Second
+	}
+	return fallback
 }
 
 func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc spec.Service) (int64, error) {
@@ -807,7 +815,8 @@ func (c *Client) applyHPA(ctx context.Context, t Target, name string, svc spec.S
 }
 
 func (c *Client) waitReady(ctx context.Context, t Target, service string, generation int64) error {
-	ctx, cancel := context.WithTimeout(ctx, c.options.RolloutTimeout)
+	timeout := serviceStartupTimeout(t.Spec.Services[service], c.options.RolloutTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	for {

@@ -26,6 +26,20 @@ func TestMinimalDefaultsAndWorker(t *testing.T) {
 	}
 }
 
+func TestServiceStartupTimeout(t *testing.T) {
+	app, err := Parse([]byte(minimum + "startup_timeout_seconds=600\n"))
+	if err != nil || app.Services["web"].StartupTimeoutSeconds != 600 {
+		t.Fatal(app.Services["web"].StartupTimeoutSeconds, err)
+	}
+	for name, value := range map[string]string{"too-short": "9", "too-long": "901"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Parse([]byte(minimum + "startup_timeout_seconds=" + value + "\n")); err == nil {
+				t.Fatal("accepted invalid service startup timeout")
+			}
+		})
+	}
+}
+
 func TestStrictValidation(t *testing.T) {
 	cases := []struct{ name, source, contains string }{
 		{"unknown", minimum + "privileged=true", "services.web.privileged"},

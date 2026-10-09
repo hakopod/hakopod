@@ -75,6 +75,7 @@ DNS routing and certificate coverage are separate checks.
 | `replicas` | Per-service saved count; defaults to 1, allowed 1–20 (Cloud: at most 3) |
 | `suspended` | false; true stops the service and pauses autoscaling while retaining its saved replicas |
 | `healthcheck` | Optional HTTP readiness path; a port otherwise gets TCP readiness |
+| `startup_timeout_seconds` | Optional 10–900 second startup and readiness budget for a regular service; omission uses the installation rollout timeout |
 | `readiness` | Optional declared-listener check: tcp, smtp or smtp_starttls; combined with healthcheck when present |
 | `update_strategy` | rolling by default; recreate stops the old revision before starting its replacement |
 | `env` | Explicit nonsecret variables, max128, each value max4KiB |

@@ -436,7 +436,9 @@ export function DeploymentForm({
                       Node: {service.node_name || 'Automatic placement'}
                       {service.serverless
                         ? ` · Serverless HTTP · ${service.serverless.min_replicas === 1 ? 'Always warm · 1 replica' : `0–1 replicas · sleep after ${service.serverless.idle_seconds ?? 300}s idle`} · ${service.serverless.max_concurrency ?? 16} concurrent requests · startup wait ${service.serverless.startup_timeout_seconds ?? 60}s · request limit ${service.serverless.request_timeout_seconds ?? 60}s`
-                        : ''}
+                        : service.startup_timeout_seconds
+                          ? ` · startup wait ${service.startup_timeout_seconds}s`
+                          : ' · installation startup wait'}
                     </small>
                     <small>
                       Limits: {profile.CPULimit} CPU / {profile.MemoryLimit} memory per{' '}

@@ -129,15 +129,22 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	started := time.Now()
 	d := c.Deployment
 	a := c.App
-	timeout := w.Timeout
-	if timeout == 0 {
-		timeout = 10 * time.Minute
+	baseTimeout := w.Timeout
+	if baseTimeout == 0 {
+		baseTimeout = 10 * time.Minute
 	}
+	budgetSpec := d.Spec
+	if d.RecoveryState == "running" && d.RecoverySpec != nil {
+		budgetSpec = *d.RecoverySpec
+	}
+	deployTimeout := deploymentAttemptTimeout(d.Spec, baseTimeout*2/3)
+	recoveryTimeout := deploymentAttemptTimeout(budgetSpec, baseTimeout/2)
+	operationTimeout := deploymentOperationTimeout(baseTimeout, deployTimeout, recoveryTimeout)
 	var drainAllowance time.Duration
 	if actionsDrainCandidate(d) {
 		// Preparation only reads immutable releases and bounded slot metadata.
 		// Keep this short before starting the guard, inside the original deadline.
-		prepareCtx, stopPrepare := context.WithDeadline(parent, started.Add(min(timeout, actionsDrainPreparationTimeout)))
+		prepareCtx, stopPrepare := context.WithDeadline(parent, started.Add(min(baseTimeout, actionsDrainPreparationTimeout)))
 		if err := w.Store.Reauthorize(prepareCtx, d.KeyID, a.Project, a.Environment, a.Name); err != nil {
 			stopPrepare()
 			if errors.Is(err, store.ErrUnauthorized) || errors.Is(err, store.ErrForbidden) {
@@ -153,7 +160,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 			return // A metadata read failure remains resumable with the claim.
 		}
 	}
-	ctx, cancelTimeout := context.WithDeadline(parent, started.Add(timeout+drainAllowance))
+	ctx, cancelTimeout := context.WithDeadline(parent, started.Add(operationTimeout+drainAllowance))
 	defer cancelTimeout()
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -281,7 +288,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	}
 	// Add the complete lifetime to both budgets. Taking two thirds of the
 	// expanded outer budget would still interrupt an eligible busy runner.
-	deployCtx, endDeploy := context.WithTimeout(ctx, timeout*2/3+drainAllowance)
+	deployCtx, endDeploy := context.WithTimeout(ctx, deployTimeout+drainAllowance)
 	observation, err := w.Cluster.Deploy(deployCtx, target, emit)
 	endDeploy()
 	if err == nil {
@@ -322,10 +329,11 @@ func (w *Worker) recoverRelease(parent, ctx context.Context, c *store.Claim, tar
 		failedSpec := target.Spec
 		target.Previous = &failedSpec
 		target.Spec = *d.RecoverySpec
-		timeout := w.Timeout / 2
-		if timeout == 0 {
-			timeout = 5 * time.Minute
+		fallback := w.Timeout / 2
+		if fallback == 0 {
+			fallback = 5 * time.Minute
 		}
+		timeout := deploymentAttemptTimeout(target.Spec, fallback)
 		bounded, stop := context.WithTimeout(ctx, timeout)
 		result, err := w.Cluster.Deploy(bounded, target, emit)
 		stop()
@@ -355,6 +363,33 @@ func (w *Worker) recoverRelease(parent, ctx context.Context, c *store.Claim, tar
 		message += "; recovery " + d.RecoveryState + ": " + d.RecoveryError
 	}
 	w.finish(parent, c, "failed", message, d.Result)
+}
+
+// deploymentAttemptTimeout expands the existing worker deadline only for
+// reviewed workload budgets. Reconciliation is sequential, so declared startup
+// waits and deployment jobs are added. The application schema bounds both the
+// service count and every individual timeout.
+func deploymentAttemptTimeout(app spec.Application, fallback time.Duration) time.Duration {
+	requested := 30 * time.Second
+	for _, service := range app.Services {
+		if service.Job != nil {
+			if service.Job.Schedule == nil && service.Job.Invocation == nil {
+				requested += time.Duration(service.Job.TimeoutSeconds)*time.Second + 30*time.Second
+			}
+			continue
+		}
+		if service.StartupTimeoutSeconds != 0 {
+			requested += time.Duration(service.StartupTimeoutSeconds) * time.Second
+		}
+	}
+	return max(fallback, requested)
+}
+
+func deploymentOperationTimeout(base, deploy, recovery time.Duration) time.Duration {
+	if deploy <= base*2/3 && recovery <= base/2 {
+		return base
+	}
+	return max(base, deploy+recovery+30*time.Second)
 }
 
 func (w *Worker) handleFailure(parent, ctx context.Context, c *store.Claim, err error, result any) {

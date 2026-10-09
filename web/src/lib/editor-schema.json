@@ -805,6 +805,12 @@
           "$ref": "#/components/schemas/ServiceBinding"
         }
       },
+      "startup_timeout_seconds": {
+        "type": "integer",
+        "minimum": 10,
+        "maximum": 900,
+        "description": "Maximum seconds to wait for a regular service to start and become ready. Omit this field to use the installation rollout timeout."
+      },
       "http": {
         "type": "object",
         "additionalProperties": {

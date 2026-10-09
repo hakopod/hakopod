@@ -59,6 +59,7 @@ func TestLifecycleRejectsInvalidAndUnsafeInputs(t *testing.T) {
 		"job-listener":   {Job: &Job{}, Port: 80},
 		"job-retries":    {Job: &Job{Retries: 4}},
 		"job-timeout":    {Job: &Job{TimeoutSeconds: 901}},
+		"job-startup":    {Job: &Job{}, StartupTimeoutSeconds: 120},
 		"job-replicas":   {Job: &Job{}, Replicas: 2},
 		"job-health":     {Job: &Job{}, Healthcheck: "/health"},
 		"file-system":    {Files: map[string]File{"config": {MountPath: "/proc/config", Content: &content}}},

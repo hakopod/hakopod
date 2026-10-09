@@ -143,6 +143,32 @@ export function ServiceExecutionFields({
           </div>
         )}
       </div>
+      {!service.job && !service.serverless && !service.actions && !service.session && (
+        <label className="grid gap-1">
+          Startup wait (seconds)
+          <Input
+            type="number"
+            min={10}
+            max={900}
+            disabled={disabled}
+            placeholder="Installation default"
+            value={service.startup_timeout_seconds ?? ''}
+            aria-label={`${name} startup wait seconds`}
+            error={fieldError(error, `services.${name}.startup_timeout_seconds`)}
+            onChange={(event) =>
+              onChange({
+                startup_timeout_seconds: event.target.value
+                  ? Number(event.target.value)
+                  : undefined,
+              })
+            }
+          />
+          <span className="field-help">
+            Maximum time for this service to start and become ready. Leave blank to use the
+            installation rollout timeout.
+          </span>
+        </label>
+      )}
       <div className="grid gap-2">
         <label className="flex min-h-11 items-center gap-2">
           <input
