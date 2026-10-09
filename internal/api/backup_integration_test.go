@@ -452,7 +452,15 @@ func TestBackupDurabilityAuthorizationScheduling(t *testing.T) {
 	if _, err = db.Pool.Exec(ctx, "INSERT INTO backup_artifacts(id,job_id,destination_id,source,object_key,sha256,bytes,format,scope) VALUES($1,$2,$3,$4,$5,$6,128,'transaction-fixture','metadata transaction test only')", artifactID, store.NewID(), d.ID, store.JSON(source), backup.ObjectKey(d, artifactID), strings.Repeat("0", 64)); err != nil {
 		t.Fatal(err)
 	}
-	plan := backup.RestorePlan{ID: store.NewID(), ArtifactID: artifactID, Target: backup.Target{Source: backup.Source{Kind: "database", Engine: "postgresql", Database: "hp_restore_12345678901234567890"}}, Confirmation: "hp_restore_12345678901234567890", ExpiresAt: time.Now().Add(time.Minute)}
+	targetSpec, err := spec.Normalize(spec.Application{Name: "restore-target", Services: map[string]spec.Service{"db": {Image: "postgres:17"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetDeployment, err := db.Accept(ctx, principal, "demo", "development", targetSpec, 0, "restore-target-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := backup.RestorePlan{ID: store.NewID(), ArtifactID: artifactID, Target: backup.Target{Source: backup.Source{Kind: "database", ApplicationID: targetDeployment.ApplicationID, Service: "db", Engine: "postgresql", Database: "hp_restore_12345678901234567890"}, Revision: targetDeployment.Revision}, Confirmation: "hp_restore_12345678901234567890", ExpiresAt: time.Now().Add(time.Minute)}
 	if err = db.SaveBackupRestorePlan(ctx, principal, plan); err != nil {
 		t.Fatal(err)
 	}
