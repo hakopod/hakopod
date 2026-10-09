@@ -64,6 +64,7 @@ type Service struct {
 	UpdateStrategy          string                  `json:"update_strategy,omitempty" toml:"update_strategy"`
 	Readiness               *Readiness              `json:"readiness,omitempty" toml:"readiness"`
 	Healthcheck             string                  `json:"healthcheck,omitempty" toml:"healthcheck"`
+	StartupTimeoutSeconds   int32                   `json:"startup_timeout_seconds,omitempty" toml:"startup_timeout_seconds,omitempty"`
 	Env                     map[string]string       `json:"env,omitempty" toml:"env"`
 	Command                 []string                `json:"command,omitempty" toml:"command"`
 	Args                    []string                `json:"args,omitempty" toml:"args"`
@@ -298,6 +299,12 @@ func Normalize(input Application) (Application, error) {
 			if svc.Port == 0 || len(svc.Healthcheck) > 2048 || !strings.HasPrefix(svc.Healthcheck, "/") || strings.HasPrefix(svc.Healthcheck, "//") || err != nil || path.Host != "" || path.Fragment != "" {
 				return Application{}, fmt.Errorf("%s.healthcheck: use an HTTP path on a service with a port, such as /readyz", field)
 			}
+		}
+		if svc.StartupTimeoutSeconds != 0 && (svc.StartupTimeoutSeconds < 10 || svc.StartupTimeoutSeconds > 900) {
+			return Application{}, fmt.Errorf("%s.startup_timeout_seconds: must be between 10 and 900", field)
+		}
+		if svc.StartupTimeoutSeconds != 0 && (svc.Job != nil || svc.Session != nil || svc.Actions != nil || svc.Serverless != nil) {
+			return Application{}, fmt.Errorf("%s.startup_timeout_seconds: use only for a regular service", field)
 		}
 		if svc.UpdateStrategy != "" && svc.UpdateStrategy != "rolling" && svc.UpdateStrategy != "recreate" {
 			return Application{}, fmt.Errorf("%s.update_strategy: choose rolling or recreate", field)
@@ -542,6 +549,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "resources", a.Resources, b.Resources, false)
 		add(name, "replicas", a.Replicas, b.Replicas, false)
 		add(name, "healthcheck", a.Healthcheck, b.Healthcheck, false)
+		add(name, "startup_timeout_seconds", a.StartupTimeoutSeconds, b.StartupTimeoutSeconds, false)
 		add(name, "readiness", a.Readiness, b.Readiness, false)
 		add(name, "backend_http2", a.BackendHTTP2, b.BackendHTTP2, false)
 		add(name, "update_strategy", a.UpdateStrategy, b.UpdateStrategy, false)

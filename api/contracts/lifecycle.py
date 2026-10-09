@@ -2,6 +2,7 @@ schemas['DeploymentJob'] = obj({'timeout_seconds': {'type': 'integer', 'minimum'
 schemas['ConfigurationFile'] = obj({'mount_path': S, 'content': S, 'secret': ref('SecretRef'), 'mode': {'type': 'integer', 'enum': [288, 292]}}, ['mount_path'])
 schemas['ServiceBinding'] = obj({'service': S, 'protocol': {'type': 'string', 'enum': ['http','postgres','mysql','redis','amqp']}, 'database': S, 'username': S, 'password': ref('SecretRef')}, ['protocol'])
 schemas['Service']['properties'].update({'job': ref('DeploymentJob'), 'files': mapping(ref('ConfigurationFile')), 'bindings': mapping(ref('ServiceBinding'))})
+schemas['Service']['properties']['startup_timeout_seconds'] = {'type': 'integer', 'minimum': 10, 'maximum': 900, 'description': 'Maximum seconds to wait for a regular service to start and become ready. Omit this field to use the installation rollout timeout.'}
 
 schemas['HTTPEndpoint'] = obj({'port': I, 'domain': S}, ['port'])
 schemas['Service']['properties']['http'] = mapping(ref('HTTPEndpoint'))

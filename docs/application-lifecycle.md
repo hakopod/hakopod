@@ -38,6 +38,24 @@ Kubernetes may take time to terminate its pod. A crash, retry or new revision ca
 repeat external side effects: migrations must be idempotent. This is not an
 exactly-once transaction, and rollback never reverses database migrations.
 
+Applications that run migrations inside their normal server process can set a
+service startup budget instead of declaring a separate job:
+
+```toml
+[services.web]
+image = "registry.example.com/app:1"
+port = 8080
+startup_timeout_seconds = 600
+```
+
+The budget accepts 10–900 seconds and covers container startup and readiness.
+If it is omitted, the service uses the installation rollout timeout. Hakopod
+also extends the durable deployment deadline for reviewed service and job
+budgets. Use a separate deployment job only when the application provides a
+supported migration command that can run independently. Keep an application's
+integrated migration process intact when startup owns migration locking or
+other required initialization.
+
 Changing an existing service into a job (or the reverse) requires a separate
 removal deployment first. Persistent volumes are retained. Jobs sharing mounts
 with other workloads require an appropriate ReadWriteMany storage class. Regular

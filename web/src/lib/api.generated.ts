@@ -5027,6 +5027,8 @@ export interface components {
             bindings?: {
                 [key: string]: components["schemas"]["ServiceBinding"];
             };
+            /** @description Maximum seconds to wait for a regular service to start and become ready. Omit this field to use the installation rollout timeout. */
+            startup_timeout_seconds?: number;
             http?: {
                 [key: string]: components["schemas"]["HTTPEndpoint"];
             };

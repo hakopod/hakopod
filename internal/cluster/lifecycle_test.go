@@ -71,6 +71,24 @@ func TestJobReconciliationCompletionAndFailure(t *testing.T) {
 	}
 }
 
+func TestServiceStartupTimeoutControlsDeploymentBudget(t *testing.T) {
+	target := testTarget(t)
+	service := target.Spec.Services["worker"]
+	service.Port = 8080
+	service.StartupTimeoutSeconds = 601
+	d := deployment(target, "worker", service, 2*time.Minute)
+	probe := d.Spec.Template.Spec.Containers[0].StartupProbe
+	if probe == nil || probe.FailureThreshold != 301 || *d.Spec.ProgressDeadlineSeconds != 601 {
+		t.Fatal("declared startup timeout was not applied", probe, d.Spec.ProgressDeadlineSeconds)
+	}
+	service.StartupTimeoutSeconds = 0
+	d = deployment(target, "worker", service, 2*time.Minute)
+	probe = d.Spec.Template.Spec.Containers[0].StartupProbe
+	if probe == nil || probe.FailureThreshold != 60 || *d.Spec.ProgressDeadlineSeconds != 120 {
+		t.Fatal("installation rollout timeout was not preserved", probe, d.Spec.ProgressDeadlineSeconds)
+	}
+}
+
 func TestConfigurationFilesAreImmutableAndScoped(t *testing.T) {
 	target := testTarget(t)
 	s := target.Spec.Services["worker"]
