@@ -22,6 +22,9 @@ func (s *Server) installationOwner(w http.ResponseWriter, r *http.Request) bool 
 	return true
 }
 func (s *Server) registerInstallationRoutes(m *http.ServeMux) {
+	m.HandleFunc("POST /api/v1/installation/cleanup/review", s.serverCleanupReview)
+	m.HandleFunc("POST /api/v1/installation/cleanup/execute", s.serverCleanupExecute)
+	m.HandleFunc("GET /api/v1/installation/cleanup/operations/{id}", s.serverCleanupOperation)
 	m.HandleFunc("GET /api/v1/installation/status", s.installationStatus)
 	m.HandleFunc("GET /api/v1/installation/logs", s.installationLogs)
 	m.HandleFunc("POST /api/v1/installation/logs/query", s.queryInstallationLogs)

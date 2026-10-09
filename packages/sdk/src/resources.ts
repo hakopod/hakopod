@@ -980,7 +980,7 @@ export class DatabaseRef {
   /** Restore into this separate, empty database. Existing source data stays available. */
   async restorePlan(
     artifactId: string,
-    options: RequestOptions = {},
+    options: RequestOptions & { relatedArtifactIds?: string[] } = {},
   ): Promise<Review<Schema["BackupRestorePlan"], BackupRun>> {
     const current = await this.get(options);
     const plan = await this.#context.transport.request<
@@ -988,7 +988,7 @@ export class DatabaseRef {
     >("POST", "/databases/{id}/restore-plan", {
       ...options,
       params: { id: current.id },
-      body: { artifact_id: required(artifactId, "backup artifact ID") },
+      body: { artifact_id: required(artifactId, "backup artifact ID"), ...(options.relatedArtifactIds ? { related_artifact_ids: options.relatedArtifactIds } : {}) },
     });
     if (
       plan.artifact_id !== artifactId ||

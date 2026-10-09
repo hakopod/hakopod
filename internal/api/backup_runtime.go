@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -262,7 +263,7 @@ func (r *backupRuntime) Resolve(ctx context.Context, source backup.Source) (back
 	target.Pod = options.Pod
 	target.PodUID = string(uid)
 	target.RuntimeFingerprint = string(uid)
-	target.Dependencies = append([]string(nil), service.DependsOn...)
+	target.ApplicationImages, target.Dependencies = backupApplicationInventory(a.Spec)
 	target.Available = true
 	if source.Engine == "postgresql" {
 		var version bytes.Buffer
@@ -650,4 +651,18 @@ func clickhouseEngineStatus(output, running, done, failed, failure string) (back
 		return status, nil
 	}
 	return backup.EngineStatus{}, fmt.Errorf("ClickHouse reported an unrecognized operation status")
+}
+
+// Capture references and relationships, never environment values or secrets.
+func backupApplicationInventory(application spec.Application) (map[string]string, []string) {
+	images := make(map[string]string, len(application.Services))
+	dependencies := []string{}
+	for name, service := range application.Services {
+		images[name] = service.Image
+		for _, dependency := range service.DependsOn {
+			dependencies = append(dependencies, name+" -> "+dependency)
+		}
+	}
+	sort.Strings(dependencies)
+	return images, dependencies
 }

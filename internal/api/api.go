@@ -192,6 +192,7 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("POST /api/v1/compose/convert", s.convertCompose)
 	routes.HandleFunc("POST /api/v1/deployments", s.deploy)
 	routes.HandleFunc("GET /api/v1/deployments/{id}", s.deployment)
+	routes.HandleFunc("POST /api/v1/deployments/{id}/resume", s.resumeDeployment)
 	routes.HandleFunc("GET /api/v1/idempotency/{key}", s.idempotentDeployment)
 	routes.HandleFunc("GET /api/v1/deployments/{id}/events", s.events)
 	routes.HandleFunc("POST /api/v1/deployments/{id}/cancel", s.cancel)

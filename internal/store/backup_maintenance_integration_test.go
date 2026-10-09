@@ -36,7 +36,7 @@ func newBackupMaintenanceFixture(t *testing.T) backupMaintenanceFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	destination, err := s.PutBackupDestination(ctx, p, backup.Destination{ID: NewID(), Name: "maintenance-wait-fixture", EncryptedCredentials: []byte("sealed-test-fixture")}, 0)
+	destination, err := s.PutBackupDestination(ctx, p, backup.Destination{ID: NewID(), Name: "maintenance-wait-fixture", EncryptedCredentials: []byte("sealed-test-fixture"), EncryptionRecipient: "age-fixture"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

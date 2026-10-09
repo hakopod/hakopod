@@ -303,6 +303,14 @@ func TestLiveEncryptedDatabaseBackupsAndRestores(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	principal, err := db.Authenticate(ctx, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, raw, err = db.CreateKey(ctx, principal, store.KeyInput{Name: "Backup native credential fixture", Permissions: []string{"admin", "agent:admin", "agent:credentials"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	endpoint, access, secret, s3client := liveBackupObjectStore(t, ctx)
 	management := &api.Server{Store: db, Cluster: runtime, Auth: api.AuthConfig{EncryptionKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{11}, 32))}}
 	state := t.TempDir()
@@ -324,6 +332,7 @@ func TestLiveEncryptedDatabaseBackupsAndRestores(t *testing.T) {
 		t.Fatal("real S3 write/read/delete test", status)
 	}
 	fixtures := []liveBackupDatabase{createLiveBackupDatabase(t, ctx, db, kube, "postgresql"), createLiveBackupDatabase(t, ctx, db, kube, "mysql")}
+	var capturedArtifacts []backup.Artifact
 	var postgresArtifact backup.Artifact
 	var postgresRestored string
 	for _, fixture := range fixtures {
@@ -362,6 +371,10 @@ func TestLiveEncryptedDatabaseBackupsAndRestores(t *testing.T) {
 		artifact, err := db.BackupArtifact(ctx, job.ArtifactID)
 		if err != nil {
 			t.Fatal(err)
+		}
+		capturedArtifacts = append(capturedArtifacts, artifact)
+		if artifact.CapturedAt == nil || len(artifact.CompatibilityEvidence.ApplicationImages) == 0 || artifact.CompatibilityEvidence.EncryptionRecipient != created.Destination.EncryptionRecipient {
+			t.Fatal("capture omitted compatibility evidence")
 		}
 		if fixture.source.Engine == "postgresql" && artifact.Bytes < backup.PartSize {
 			t.Fatal("PostgreSQL fixture did not exercise multipart upload")
@@ -405,6 +418,23 @@ func TestLiveEncryptedDatabaseBackupsAndRestores(t *testing.T) {
 		}
 		t.Logf("%s: actual encrypted object %d bytes, fresh database restore %d rows; original database unchanged", fixture.source.Engine, artifact.Bytes, expected)
 	}
+	var relatedPlan backup.RestorePlan
+	if status := client.request("POST", "/backup-artifacts/"+postgresArtifact.ID+"/restore-plan", map[string]any{"application_id": fixtures[0].application.ID, "service": "db", "related_artifact_ids": []string{capturedArtifacts[1].ID}}, &relatedPlan, ""); status != 200 {
+		t.Fatal("related recovery review", status)
+	}
+	if len(relatedPlan.RelatedArtifactIDs) != 1 || relatedPlan.Compatibility.Blocked {
+		t.Fatal("related capture evidence missing or blocked", relatedPlan.Compatibility)
+	}
+	found := false
+	for _, check := range relatedPlan.Compatibility.Checks {
+		if check.Code == "related_recovery_points" && check.Status == "checked" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("actual recovery points were not compared")
+	}
+	t.Log("restore compatibility compared recorded application images, key references and two actual captured recovery points")
 	// The management database is external to Kubernetes in this test. pg_dump
 	// reads that real temporary database; restore targets only the new fixture DB.
 	var managementJob backup.Job
