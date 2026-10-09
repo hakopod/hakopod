@@ -340,11 +340,16 @@ function DeploymentDetail() {
         <Note>Cancellation requested. Waiting for the reconciler to reach a safe boundary.</Note>
       )}
       {currentServiceEvent && currentService && (
-        <div className="application-metadata runtime-summary" role="status">
-          <span>Current step</span>
+        <div
+          className="grid min-w-0 gap-1 border-y border-border py-3 text-sm sm:grid-cols-[auto_auto_auto_minmax(0,1fr)] sm:items-baseline sm:gap-x-3"
+          role="status"
+        >
+          <span className="text-xs text-muted-foreground">Current step</span>
           <strong>{currentService.job ? 'Deployment job' : 'Startup and readiness'}</strong>
-          <code>{currentServiceEvent.service}</code>
-          <span>{currentServiceEvent.message}</span>
+          <code className="break-all text-xs">{currentServiceEvent.service}</code>
+          <span className="min-w-0 break-words text-muted-foreground">
+            {currentServiceEvent.message}
+          </span>
         </div>
       )}
       <div className="ops-run-layout">
