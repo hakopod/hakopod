@@ -1520,7 +1520,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test one declared database binding from its running application container. Requires deployments:read in the application scope. The fixed helper reads the loaded variable and performs a bounded TLS and read-only query check; no URL, credential, command or SQL is accepted or returned. */
+        /** Test one declared database binding from its running application container. Requires deployments:write in the application scope because the test executes a helper and authenticates to the database. The fixed helper reads the container environment and performs a bounded connection and read-only query check. TLS bindings require certificate and hostname verification; explicitly plaintext bindings report TLS as not configured. No URL, credential, command or SQL is accepted or returned. */
         post: operations["testServiceBinding"];
         delete?: never;
         options?: never;
@@ -5064,6 +5064,9 @@ export interface components {
             bindings?: {
                 [key: string]: components["schemas"]["ServiceBinding"];
             };
+            database_client_profiles?: {
+                [key: string]: string;
+            };
             /** @description Maximum seconds to wait for a regular service to start and become ready. Omit this field to use the installation rollout timeout. */
             startup_timeout_seconds?: number;
             http?: {
@@ -6092,7 +6095,7 @@ export interface components {
             /** @enum {string} */
             outcome: "passed" | "failed" | "unsupported" | "unavailable" | "stale";
             snapshot_resolved: boolean;
-            /** @description Whether the helper read the last resolved workload snapshot in the current revision. Null means the comparison could not be verified. This does not inspect unsynchronized external secret-provider values. */
+            /** @description Whether the container value, generated trust and current workload template match the binding resolved for this request. Null means the comparison could not be verified. */
             loaded_matches_snapshot: boolean | null;
             stages: components["schemas"]["BindingTestStage"][];
         };

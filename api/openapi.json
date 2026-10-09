@@ -23573,6 +23573,12 @@
               "$ref": "#/components/schemas/ServiceBinding"
             }
           },
+          "database_client_profiles": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "startup_timeout_seconds": {
             "type": "integer",
             "minimum": 10,
@@ -27441,7 +27447,7 @@
               "boolean",
               "null"
             ],
-            "description": "Whether the helper read the last resolved workload snapshot in the current revision. Null means the comparison could not be verified. This does not inspect unsynchronized external secret-provider values."
+            "description": "Whether the container value, generated trust and current workload template match the binding resolved for this request. Null means the comparison could not be verified."
           },
           "stages": {
             "type": "array",

@@ -14,8 +14,9 @@ environment. The pod template names that exact snapshot.
 
 The existing maintenance worker checks bound services under the application's
 durable runtime claim. If the resolved database, username, password, or SSL mode
-changes, it updates the environment snapshot and starts a rollout. Only affected
-services roll. The same values do not start another rollout.
+changes, it updates the environment snapshot and starts a rollout. The new
+values and public CA enter the pod template together. Only affected services
+roll. The same values do not start another rollout.
 
 A later maintenance pass checks the actual ready pods against the current
 template before recording `binding_ready`. That checks their image, environment
@@ -29,7 +30,9 @@ receive the new settings; active jobs keep the settings they started with.
 Retained ReplicaSets and pods protect their old snapshots until they are no
 longer referenced. Each application can retain at most 128 environment snapshots.
 If retained workloads fill that history, cleanup must happen before another
-snapshot can be created.
+snapshot can be created. Older workloads that still reference a mutable
+environment Secret keep its original values until those workloads are retired.
+New pods use immutable snapshots.
 
 This is reconciliation, not an immediate notification from an external secret
 provider. A change becomes visible after Hakopod resolves it. A failed provider
@@ -66,8 +69,9 @@ binding whose SSL option permits a weaker check, the diagnostic still requires
 a valid hostname and certificate chain. The application driver's own behavior
 depends on its selected settings and TLS profile.
 
-A successful test also compares the container's value with the latest resolved
-snapshot. It uses a fresh keyed comparison inside the helper; the API response
+A successful test also compares the container's value with the binding resolved
+for that request. The resolver runs again before the result is returned. A
+change during the test leaves the current configuration unverified. It uses a fresh keyed comparison inside the helper; the API response
 does not contain a password or credential fingerprint. A mismatch is shown as
 **Current configuration not verified**, even if the old credentials still work.
 The controller checks the pod identity, current template, saved revision and
