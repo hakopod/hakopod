@@ -20,6 +20,8 @@ import { databaseVersions } from '../lib/database-create'
 import { DatabaseCreate } from './database-create'
 import { DatabaseClickHouseAccess } from './database-clickhouse-access'
 import { databaseRequestedCapacity, routerInstances, votingDatabase, databaseStorageGiB, engineName } from '../lib/database-view'
+import { DatabaseCapacityPlan } from './database-capacity-plan'
+import type { components } from '../lib/api.generated'
 
 const initial: DatabaseSpec = {
   schema_version: 1,
@@ -63,6 +65,8 @@ function DatabaseAllocationForm({
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [capacityPlan, setCapacityPlan] = useState<components['schemas']['DatabaseCapacityPlan'] | null>(null)
+  const [capacityPlanError, setCapacityPlanError] = useState('')
   const [showCustomResources, setShowCustomResources] = useState(
     () =>
       !resourcePresets.some((preset) => preset.cpu === spec.cpu && preset.memory === spec.memory),
@@ -80,6 +84,8 @@ function DatabaseAllocationForm({
     setReview(null)
     setConfirmed(false)
     key.current = ''
+    setCapacityPlan(null)
+    setCapacityPlanError('')
   }
   if (!canManage)
     return (
@@ -114,6 +120,13 @@ function DatabaseAllocationForm({
           setError('')
           try {
             if (!review) {
+              try {
+                setCapacityPlan(await unwrap(client.POST('/database-capacity-plan', {
+                  body: { project, environment, database_id: database?.id, spec: apiDatabaseSpec(spec) },
+                })))
+              } catch (planError) {
+                setCapacityPlanError(message(planError))
+              }
               setReview(
                 database
                   ? await unwrap(
@@ -376,6 +389,11 @@ function DatabaseAllocationForm({
         </FormSection>
         {review && (
           <FormSection title="Review">
+            {capacityPlan && <DatabaseCapacityPlan plan={capacityPlan} onApply={() => update({
+              cpu: capacityPlan.recommendation.cpu_milli % 1000 === 0 ? String(capacityPlan.recommendation.cpu_milli / 1000) : `${capacityPlan.recommendation.cpu_milli}m`,
+              memory: capacityPlan.recommendation.memory_bytes % 2 ** 30 === 0 ? `${capacityPlan.recommendation.memory_bytes / 2 ** 30}Gi` : `${capacityPlan.recommendation.memory_bytes / 2 ** 20}Mi`,
+            })} />}
+            {capacityPlanError && <Note>Resource recommendation unavailable: {capacityPlanError}. Your entered values are preserved.</Note>}
             {database && (
               <p>
                 Current: {databaseSummary(database.spec)}; {database.spec.cpu} CPU,{' '}

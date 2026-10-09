@@ -26,7 +26,7 @@ type databaseConnectionFlags struct {
 
 func databaseCommand(ctx context.Context, c *client, project, environment string, args []string, file, idem, review, artifact, confirmation string, revision int64, connection databaseConnectionFlags) error {
 	if len(args) == 0 || len(args) > 2 {
-		return fmt.Errorf("database requires list, nodes, show, create, resize-plan, resize, resize-retry-plan, resize-retry, switchover-plan, switchover, switchover-retry, operation, public-endpoint-capabilities, public-endpoint-list, public-endpoint-plan, public-endpoint-publish, public-endpoint-revoke, public-endpoint-operation, delete, credentials, trust, metrics, connections, restore-plan, restore, connection-plan, connect or inspect, followed by an ID where needed")
+		return fmt.Errorf("database requires list, nodes, show, create, capacity-plan, resize-plan, resize, resize-retry-plan, resize-retry, switchover-plan, switchover, switchover-retry, operation, public-endpoint-capabilities, public-endpoint-list, public-endpoint-plan, public-endpoint-publish, public-endpoint-revoke, public-endpoint-operation, delete, credentials, trust, metrics, connections, restore-plan, restore, connection-plan, connect or inspect, followed by an ID where needed")
 	}
 	action := args[0]
 	if action != "connection-plan" && (connection.Username != "" || connection.Database != "" || connection.PasswordSecret != "" || connection.SSLMode != "") {
@@ -45,8 +45,11 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 	if len(args) == 2 {
 		id = args[1]
 	}
-	if action != "list" && action != "nodes" && action != "create" && !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(id) {
+	if action != "list" && action != "nodes" && action != "create" && action != "capacity-plan" && !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(id) {
 		return fmt.Errorf("provide the managed database ID")
+	}
+	if action == "capacity-plan" && id != "" && !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(id) {
+		return fmt.Errorf("provide a valid managed database ID or omit it for a creation plan")
 	}
 	method, path := "GET", "/databases"
 	var body any
@@ -129,7 +132,7 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 			return fmt.Errorf("database metrics range must be 1h, 6h or 24h")
 		}
 		path += "/" + id + "/metrics?" + url.Values{"range": {window}}.Encode()
-	case "create", "resize-plan", "resize":
+	case "create", "capacity-plan", "resize-plan", "resize":
 		f, err := os.Open(file)
 		if err != nil {
 			return err
@@ -145,11 +148,17 @@ func databaseCommand(ctx context.Context, c *client, project, environment string
 		}
 		method = "POST"
 		body = map[string]any{"spec": spec}
-		if action == "create" {
+		if action == "create" || action == "capacity-plan" {
 			if project == "" || environment == "" {
-				return fmt.Errorf("database create requires project and environment")
+				return fmt.Errorf("database %s requires project and environment", action)
 			}
 			body = map[string]any{"project": project, "environment": environment, "spec": spec}
+			if action == "capacity-plan" {
+				path = "/database-capacity-plan"
+				if id != "" {
+					body.(map[string]any)["database_id"] = id
+				}
+			}
 		} else {
 			path += "/" + id + "/" + action
 			if action == "resize" {

@@ -112,6 +112,15 @@ test("database failure history uses the retained evidence endpoint", async () =>
   assert.equal(calls.at(-1).path, `/databases/${database.id}/failures`);
   assert.equal(calls.at(-1).method, "GET");
 });
+test("database capacity planning sends the selected scope and optional database identity", async () => {
+  const response = { advisory: true };
+  const { client, calls } = fixture(() => Response.json(response));
+  const selected = client.in({ project: "orders", environment: "staging" });
+  assert.deepEqual(await selected.databaseCapacityPlan(database.spec, database.id), response);
+  assert.equal(calls[0].path, "/database-capacity-plan");
+  assert.equal(calls[0].method, "POST");
+  assert.deepEqual(calls[0].body, { project: "orders", environment: "staging", database_id: database.id, spec: database.spec });
+});
 test("connect uses the machine key scope and requires an explicit scope for installation keys", async () => {
   const options = {
     apiUrl: "https://fixture.invalid",

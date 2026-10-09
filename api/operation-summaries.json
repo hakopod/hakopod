@@ -225,6 +225,7 @@
   "observeSourceBuild": "Read the state of a source build run.",
   "openHostTerminal": "Open a terminal session on the specified authorized host.",
   "planBackupRestore": "Prepare a plan to restore the selected backup.",
+  "planDatabaseCapacity": "Calculate an advisory database size and recovery allocation from bounded current evidence.",
   "planDeployment": "Prepare a deployment plan for the application.",
   "planServiceMove": "Prepare a plan to move an application service.",
   "planSource": "Prepare a deployment plan from the application source configuration.",

@@ -10661,6 +10661,77 @@
         "summary": "List candidate nodes for managed database placement."
       }
     },
+    "/database-capacity-plan": {
+      "post": {
+        "operationId": "planDatabaseCapacity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseCapacityPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "project": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": "string"
+                  },
+                  "database_id": {
+                    "type": "string"
+                  },
+                  "spec": {
+                    "$ref": "#/components/schemas/ManagedDatabaseSpec"
+                  }
+                },
+                "required": [
+                  "project",
+                  "environment",
+                  "spec"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "Calculate an advisory database size and recovery allocation from the requested topology, current saved connections and bounded resource samples. This request does not reserve capacity or change the database.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Calculate an advisory database size and recovery allocation from bounded current evidence."
+      }
+    },
     "/databases/{id}": {
       "get": {
         "operationId": "getManagedDatabase",
@@ -31448,6 +31519,204 @@
           "architecture",
           "available",
           "reason"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseCapacity": {
+        "type": "object",
+        "properties": {
+          "cpu_milli": {
+            "type": "integer"
+          },
+          "memory_bytes": {
+            "type": "integer"
+          },
+          "storage_gib": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu_milli",
+          "memory_bytes",
+          "storage_gib"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseResourceAmount": {
+        "type": "object",
+        "properties": {
+          "cpu_milli": {
+            "type": "integer"
+          },
+          "memory_bytes": {
+            "type": "integer"
+          },
+          "storage_gib": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu_milli",
+          "memory_bytes",
+          "storage_gib"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseCapacityAvailability": {
+        "type": "object",
+        "properties": {
+          "known": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/DatabaseCapacity"
+          },
+          "used": {
+            "$ref": "#/components/schemas/DatabaseCapacity"
+          },
+          "remaining": {
+            "$ref": "#/components/schemas/DatabaseCapacity"
+          },
+          "after_plan": {
+            "$ref": "#/components/schemas/DatabaseCapacity"
+          }
+        },
+        "required": [
+          "known",
+          "limit",
+          "used",
+          "remaining",
+          "after_plan"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseRecommendationUsage": {
+        "type": "object",
+        "properties": {
+          "current_available": {
+            "type": "boolean"
+          },
+          "current_cpu_milli": {
+            "type": "number"
+          },
+          "current_memory_bytes": {
+            "type": "integer"
+          },
+          "peak_24h_cpu_milli": {
+            "type": "number"
+          },
+          "peak_24h_memory_bytes": {
+            "type": "integer"
+          },
+          "samples_24h": {
+            "type": "integer"
+          },
+          "oldest_sample_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "newest_sample_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "connected_applications": {
+            "type": "integer"
+          },
+          "connected_services": {
+            "type": "integer"
+          },
+          "connections_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "current_available",
+          "samples_24h",
+          "connected_applications",
+          "connected_services",
+          "connections_truncated"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseSizingRecommendation": {
+        "type": "object",
+        "properties": {
+          "policy_version": {
+            "type": "integer"
+          },
+          "cpu_milli": {
+            "type": "integer"
+          },
+          "memory_bytes": {
+            "type": "integer"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "policy_version",
+          "cpu_milli",
+          "memory_bytes",
+          "confidence",
+          "reasons"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseCapacityPlan": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ManagedDatabaseSpec"
+          },
+          "per_member": {
+            "$ref": "#/components/schemas/DatabaseResourceAmount"
+          },
+          "requested_allocation": {
+            "$ref": "#/components/schemas/DatabaseCapacity"
+          },
+          "effective_allocation": {
+            "$ref": "#/components/schemas/DatabaseCapacity"
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/DatabaseCapacityAvailability"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/DatabaseRecommendationUsage"
+          },
+          "recommendation": {
+            "$ref": "#/components/schemas/DatabaseSizingRecommendation"
+          },
+          "advisory": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "spec",
+          "per_member",
+          "requested_allocation",
+          "effective_allocation",
+          "capacity",
+          "usage",
+          "recommendation",
+          "advisory"
         ],
         "additionalProperties": false
       },

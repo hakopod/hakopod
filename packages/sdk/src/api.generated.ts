@@ -2362,6 +2362,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/database-capacity-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Calculate an advisory database size and recovery allocation from bounded current evidence.
+         * @description Calculate an advisory database size and recovery allocation from the requested topology, current saved connections and bounded resource samples. This request does not reserve capacity or change the database.
+         */
+        post: operations["planDatabaseCapacity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/databases/{id}": {
         parameters: {
             query?: never;
@@ -7128,6 +7148,58 @@ export interface components {
             provider?: string;
             reserved_cpu_milli?: number;
             reserved_memory_bytes?: number;
+        };
+        DatabaseCapacity: {
+            cpu_milli: number;
+            memory_bytes: number;
+            storage_gib: number;
+        };
+        DatabaseResourceAmount: {
+            cpu_milli: number;
+            memory_bytes: number;
+            storage_gib: number;
+        };
+        DatabaseCapacityAvailability: {
+            known: boolean;
+            reason?: string;
+            limit: components["schemas"]["DatabaseCapacity"];
+            used: components["schemas"]["DatabaseCapacity"];
+            remaining: components["schemas"]["DatabaseCapacity"];
+            after_plan: components["schemas"]["DatabaseCapacity"];
+        };
+        DatabaseRecommendationUsage: {
+            current_available: boolean;
+            current_cpu_milli?: number;
+            current_memory_bytes?: number;
+            peak_24h_cpu_milli?: number;
+            peak_24h_memory_bytes?: number;
+            samples_24h: number;
+            /** Format: date-time */
+            oldest_sample_at?: string;
+            /** Format: date-time */
+            newest_sample_at?: string;
+            connected_applications: number;
+            connected_services: number;
+            connections_truncated: boolean;
+        };
+        DatabaseSizingRecommendation: {
+            policy_version: number;
+            cpu_milli: number;
+            memory_bytes: number;
+            /** @enum {string} */
+            confidence: "low" | "medium" | "high";
+            reasons: string[];
+        };
+        DatabaseCapacityPlan: {
+            database_id?: string;
+            spec: components["schemas"]["ManagedDatabaseSpec"];
+            per_member: components["schemas"]["DatabaseResourceAmount"];
+            requested_allocation: components["schemas"]["DatabaseCapacity"];
+            effective_allocation: components["schemas"]["DatabaseCapacity"];
+            capacity: components["schemas"]["DatabaseCapacityAvailability"];
+            usage: components["schemas"]["DatabaseRecommendationUsage"];
+            recommendation: components["schemas"]["DatabaseSizingRecommendation"];
+            advisory: boolean;
         };
         DatabaseConnectionReference: {
             application_id: string;
@@ -14692,6 +14764,44 @@ export interface operations {
                         items: components["schemas"]["DatabasePlacementNode"][];
                         limit: number;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    planDatabaseCapacity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    project: string;
+                    environment: string;
+                    database_id?: string;
+                    spec: components["schemas"]["ManagedDatabaseSpec"];
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseCapacityPlan"];
                 };
             };
             /** @description Error */

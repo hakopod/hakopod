@@ -55,6 +55,8 @@ import { HeadingHelp, Note } from './shared'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
+import { DatabaseCapacityPlan } from './database-capacity-plan'
+import type { components } from '../lib/api.generated'
 
 const sizes = [
   { name: 'Small', cpu: '250m', memory: '512Mi', icon: Server },
@@ -71,6 +73,8 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [attempted, setAttempted] = useState(false)
+  const [capacityPlan, setCapacityPlan] = useState<components['schemas']['DatabaseCapacityPlan'] | null>(null)
+  const [capacityPlanError, setCapacityPlanError] = useState('')
   const key = useRef('')
   const title = useRef<HTMLDivElement>(null)
   const previousStep = useRef(step)
@@ -108,7 +112,18 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
     setError('')
     setVisited(step)
     key.current = ''
+    setCapacityPlan(null)
+    setCapacityPlanError('')
   }
+  useEffect(() => {
+    if (step !== 4 || issue || capacityPlan) return
+    let active = true
+    setCapacityPlanError('')
+    void unwrap(client.POST('/database-capacity-plan', { body: { project, environment, spec: apiDatabaseSpec(spec) } }))
+      .then((plan) => { if (active) setCapacityPlan(plan) })
+      .catch((err) => { if (active) setCapacityPlanError(message(err)) })
+    return () => { active = false }
+  }, [capacityPlan, environment, issue, project, spec, step])
   const move = (next: number) => {
     setStep(next)
     setAttempted(false)
@@ -977,6 +992,11 @@ export function DatabaseCreate({ project, environment }: { project: string; envi
 
             {step === 4 && (
               <div className="grid gap-4">
+                {capacityPlan && <DatabaseCapacityPlan plan={capacityPlan} onApply={() => update({
+                  cpu: capacityPlan.recommendation.cpu_milli % 1000 === 0 ? String(capacityPlan.recommendation.cpu_milli / 1000) : `${capacityPlan.recommendation.cpu_milli}m`,
+                  memory: capacityPlan.recommendation.memory_bytes % 2 ** 30 === 0 ? `${capacityPlan.recommendation.memory_bytes / 2 ** 30}Gi` : `${capacityPlan.recommendation.memory_bytes / 2 ** 20}Mi`,
+                })} />}
+                {capacityPlanError && <Note>Resource recommendation unavailable: {capacityPlanError}. Your entered values are preserved.</Note>}
                 {['oracle', 'duckdb'].includes(spec.engine) && (
                   <Note>
                     This database has one instance. Restarts interrupt connections; applications
