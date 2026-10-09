@@ -2,13 +2,15 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"k8s.io/client-go/util/retry"
 	"net"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -21,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/util/retry"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -122,96 +125,15 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 			return c.observationAfterFailure(target), err
 		}
 	}
-	for _, name := range order {
-		svc := target.Spec.Services[name]
-		if svc.Actions != nil {
-			if c.actionsReconcile == nil {
-				return Observation{}, fmt.Errorf("Managed Actions controller is unavailable")
-			}
-			continue
+	if err := c.deployServices(ctx, target, order, emit); err != nil {
+		observed := c.observationAfterFailure(target)
+		var progress *DeploymentProgressError
+		if errors.As(err, &progress) {
+			observed.Attempt = &progress.Observation
 		}
-		if err := ctx.Err(); err != nil {
-			return c.observationAfterFailure(target), err
-		}
-		if svc.Session != nil {
-			if err := c.applySessionTemplate(ctx, target, name, svc); err != nil {
-				return c.observationAfterFailure(target), err
-			}
-			emit(Event{Type: "configured", Service: name, Message: "Session template configured. An authorized API request must start each worker."})
-			continue
-		}
-		if svc.Job != nil && svc.Job.Invocation != nil {
-			if err := c.applyInvocationTemplate(ctx, target, name, svc); err != nil {
-				return c.observationAfterFailure(target), err
-			}
-			emit(Event{Type: "configured", Service: name, Message: "Invocation template configured; execution requires a scoped API request"})
-			continue
-		}
-		if svc.Job != nil && svc.Job.Schedule != nil {
-			if err := c.applyScheduledJob(ctx, target, name, svc); err != nil {
-				return c.observationAfterFailure(target), err
-			}
-			emit(Event{Type: "scheduled", Service: name, Message: "Scheduled job configured with overlap prevention and bounded history"})
-			continue
-		}
-		if svc.Job != nil {
-			emit(Event{Type: "applying", Service: name, Message: "Running deployment job; dependent services wait for successful completion"})
-			if err := c.runJob(ctx, target, name, svc); err != nil {
-				emit(Event{Type: "failed", Service: name, Message: err.Error()})
-				return c.observationAfterFailure(target), err
-			}
-			emit(Event{Type: "completed", Service: name, Message: "Deployment job completed successfully"})
-			continue
-		}
-		message := "Applying digest-pinned Deployment with readiness-gated rolling update"
-		if target.policy != nil && target.policy.Recreate {
-			message = "Replacing Deployment within its reserved capacity; traffic may briefly pause"
-		}
-		emit(Event{Type: "applying", Service: name, Message: message})
-		// Remove an old HPA before taking manual ownership of replicas.
-		if svc.Autoscaling == nil || svc.Suspended {
-			if err := c.applyHPA(ctx, target, name, svc); err != nil {
-				return c.observationAfterFailure(target), fmt.Errorf("%s autoscaling: %w", name, err)
-			}
-		}
-		generation, err := c.applyDeployment(ctx, target, name, svc)
-		if err != nil {
-			return c.observationAfterFailure(target), fmt.Errorf("%s: %w", name, err)
-		}
-		if svc.Autoscaling != nil && !svc.Suspended {
-			if err := c.applyHPA(ctx, target, name, svc); err != nil {
-				return c.observationAfterFailure(target), fmt.Errorf("%s autoscaling: %w", name, err)
-			}
-		}
-		if err := c.waitReady(ctx, target, name, generation); err != nil {
-			emit(Event{Type: "failed", Service: name, Message: err.Error()})
-			return c.observationAfterFailure(target), err
-		}
-		if svc.Public {
-			if err := c.applyIngress(ctx, target, name, svc); err != nil {
-				return c.observationAfterFailure(target), err
-			}
-			// A reviewed ingress certificate change can select a new source.
-			// Finish its backend restart before declaring this release ready.
-			automatic := false
-			for _, mount := range svc.CertificateMounts {
-				automatic = automatic || mount.Source == "ingress"
-			}
-			if automatic {
-				if err := c.RenewBackendCertificates(ctx, target, emit, name); err != nil {
-					return c.observationAfterFailure(target), err
-				}
-				current, err := c.kube.AppsV1().Deployments(Namespace(target.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
-				if err != nil {
-					return c.observationAfterFailure(target), err
-				}
-				if err = c.waitReady(ctx, target, name, current.Generation); err != nil {
-					return c.observationAfterFailure(target), err
-				}
-			}
-		}
-		emit(Event{Type: "ready", Service: name, Message: "All desired replicas are ready on the new revision"})
+		return observed, err
 	}
+
 	if err := c.ReconcilePublicTCP(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
@@ -253,6 +175,217 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 		err = fmt.Errorf("release did not remain healthy at final observation")
 	}
 	return observed, err
+}
+
+func (c *Client) deployServices(ctx context.Context, target Target, order []string, emit func(Event)) error {
+	selected := target.ResumeServices
+	if len(selected) == 0 {
+		selected = append([]string(nil), order...)
+	}
+	for _, name := range selected {
+		if _, ok := target.Spec.Services[name]; !ok {
+			return fmt.Errorf("resume service %s is not in the accepted revision", name)
+		}
+	}
+	return scheduleServices(ctx, target.Spec, selected, func(name string) error { return c.deployService(ctx, target, name, emit) }, emit)
+}
+
+func scheduleServices(ctx context.Context, app spec.Application, selectedNames []string, run func(string) error, emit func(Event)) error {
+	order, _ := spec.Order(app)
+	selected := map[string]bool{}
+	for _, name := range selectedNames {
+		selected[name] = true
+	}
+	pending := map[string]bool{}
+	succeeded := map[string]bool{}
+	failed := map[string]error{}
+	attempted := []string{}
+	for name := range selected {
+		pending[name] = true
+	}
+	for len(pending) > 0 {
+		ready := []string{}
+		for _, name := range order {
+			if !pending[name] {
+				continue
+			}
+			blocked, wait := false, false
+			for _, dep := range app.Services[name].DependsOn {
+				if !selected[dep] {
+					continue
+				}
+				if failed[dep] != nil {
+					blocked = true
+					break
+				}
+				if !succeeded[dep] {
+					wait = true
+				}
+			}
+			if blocked {
+				err := fmt.Errorf("%s: dependency failed", name)
+				failed[name] = err
+				delete(pending, name)
+				emit(Event{Type: "blocked", Service: name, Message: "A dependency failed; this service was not changed"})
+			} else if !wait {
+				ready = append(ready, name)
+			}
+		}
+		if len(ready) == 0 {
+			if len(pending) > 0 {
+				return fmt.Errorf("deployment dependency scheduler made no progress")
+			}
+			break
+		}
+		if len(ready) > 4 {
+			ready = ready[:4]
+		}
+		type result struct {
+			name string
+			err  error
+		}
+		results := make(chan result, len(ready))
+		var wg sync.WaitGroup
+		for _, name := range ready {
+			delete(pending, name)
+			attempted = append(attempted, name)
+			wg.Add(1)
+			go func(name string) {
+				defer wg.Done()
+				if err := ctx.Err(); err != nil {
+					results <- result{name, err}
+					return
+				}
+				results <- result{name, run(name)}
+			}(name)
+		}
+		wg.Wait()
+		close(results)
+		for item := range results {
+			if item.err != nil {
+				failed[item.name] = item.err
+			} else {
+				succeeded[item.name] = true
+			}
+		}
+	}
+	if len(failed) > 0 {
+		names := make([]string, 0, len(failed))
+		succeededNames := make([]string, 0, len(succeeded))
+		blockedNames := []string{}
+		for name := range failed {
+			names = append(names, name)
+			if !slices.Contains(attempted, name) {
+				blockedNames = append(blockedNames, name)
+			}
+		}
+		for name := range succeeded {
+			succeededNames = append(succeededNames, name)
+		}
+		sort.Strings(names)
+		sort.Strings(attempted)
+		sort.Strings(succeededNames)
+		sort.Strings(blockedNames)
+		return &DeploymentProgressError{Cause: failed[names[0]], Observation: DeploymentAttemptObservation{Attempted: attempted, Succeeded: succeededNames, Failed: names, Blocked: blockedNames}}
+	}
+	return nil
+}
+
+type DeploymentProgressError struct {
+	Cause       error
+	Observation DeploymentAttemptObservation
+}
+
+func (e *DeploymentProgressError) Error() string { return e.Cause.Error() }
+func (e *DeploymentProgressError) Unwrap() error { return e.Cause }
+
+func (c *Client) deployService(ctx context.Context, target Target, name string, emit func(Event)) error {
+	svc := target.Spec.Services[name]
+	if svc.Actions != nil {
+		if c.actionsReconcile == nil {
+			return fmt.Errorf("Managed Actions controller is unavailable")
+		}
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if svc.Session != nil {
+		if err := c.applySessionTemplate(ctx, target, name, svc); err != nil {
+			return err
+		}
+		emit(Event{Type: "configured", Service: name, Message: "Session template configured. An authorized API request must start each worker."})
+		return nil
+	}
+	if svc.Job != nil && svc.Job.Invocation != nil {
+		if err := c.applyInvocationTemplate(ctx, target, name, svc); err != nil {
+			return err
+		}
+		emit(Event{Type: "configured", Service: name, Message: "Invocation template configured; execution requires a scoped API request"})
+		return nil
+	}
+	if svc.Job != nil && svc.Job.Schedule != nil {
+		if err := c.applyScheduledJob(ctx, target, name, svc); err != nil {
+			return err
+		}
+		emit(Event{Type: "scheduled", Service: name, Message: "Scheduled job configured with overlap prevention and bounded history"})
+		return nil
+	}
+	if svc.Job != nil {
+		emit(Event{Type: "applying", Service: name, Message: "Running deployment job; dependent services wait for successful completion"})
+		if err := c.runJob(ctx, target, name, svc); err != nil {
+			emit(Event{Type: "failed", Service: name, Message: err.Error()})
+			return err
+		}
+		emit(Event{Type: "completed", Service: name, Message: "Deployment job completed successfully"})
+		return nil
+	}
+	message := "Applying digest-pinned Deployment with readiness-gated rolling update"
+	if target.policy != nil && target.policy.Recreate {
+		message = "Replacing Deployment within its reserved capacity; traffic may briefly pause"
+	}
+	emit(Event{Type: "applying", Service: name, Message: message})
+	if svc.Autoscaling == nil || svc.Suspended {
+		if err := c.applyHPA(ctx, target, name, svc); err != nil {
+			return fmt.Errorf("%s autoscaling: %w", name, err)
+		}
+	}
+	generation, err := c.applyDeployment(ctx, target, name, svc)
+	if err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if svc.Autoscaling != nil && !svc.Suspended {
+		if err := c.applyHPA(ctx, target, name, svc); err != nil {
+			return fmt.Errorf("%s autoscaling: %w", name, err)
+		}
+	}
+	if err := c.waitReady(ctx, target, name, generation); err != nil {
+		emit(Event{Type: "failed", Service: name, Message: err.Error()})
+		return err
+	}
+	if svc.Public {
+		if err := c.applyIngress(ctx, target, name, svc); err != nil {
+			return err
+		}
+		automatic := false
+		for _, mount := range svc.CertificateMounts {
+			automatic = automatic || mount.Source == "ingress"
+		}
+		if automatic {
+			if err := c.RenewBackendCertificates(ctx, target, emit, name); err != nil {
+				return err
+			}
+			current, err := c.kube.AppsV1().Deployments(Namespace(target.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			if err = c.waitReady(ctx, target, name, current.Generation); err != nil {
+				return err
+			}
+		}
+	}
+	emit(Event{Type: "ready", Service: name, Message: "All desired replicas are ready on the new revision"})
+	return nil
 }
 
 func (c *Client) observationAfterFailure(target Target) Observation {

@@ -244,7 +244,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 		resolved = &app
 		emit(cluster.Event{Type: "resolved", Message: "All container images resolved to immutable digests"})
 	}
-	target := cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, OperationID: d.ID, Revision: d.Revision, Spec: *resolved, Previous: previous}
+	target := cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, OperationID: d.ID, Revision: d.Revision, Spec: *resolved, Previous: previous, ResumeServices: d.ResumeServices}
 	target.BeforeStep = func(stepCtx context.Context) error {
 		if err := stepCtx.Err(); err != nil {
 			return err
@@ -305,6 +305,11 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	}
 	message := err.Error()
 	emit(cluster.Event{Type: "failed", Message: message})
+	if observation.Attempt != nil && len(observation.Attempt.Failed) > 0 {
+		emit(cluster.Event{Type: "resume_available", Message: "Healthy independent services were retained. Resume retries failed and dependent services at this accepted revision."})
+		w.finish(parent, c, "failed", message, observation)
+		return
+	}
 	skip := spec.RecoveryBlocked(*resolved, previous)
 	if err := c.BeginRecovery(ctx, previousRelease, message, skip); err != nil {
 		cancel(errDatabase)

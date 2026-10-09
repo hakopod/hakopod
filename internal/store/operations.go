@@ -415,6 +415,14 @@ func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 			}
 			return nil, err
 		}
+		if d.ResumeGeneration > 0 && d.ResumeKeyID != "" {
+			if _, err = conn.Exec(ctx, "UPDATE deployment_resume_attempts SET status='running',started_at=COALESCE(started_at,now()) WHERE deployment_id=$1 AND generation=$2 AND status IN ('queued','running')", d.ID, d.ResumeGeneration); err != nil {
+				release()
+				return nil, err
+			}
+			d.KeyID = d.ResumeKeyID
+			d.IdentityID = d.ResumeIdentityID
+		}
 		a, err := s.Application(ctx, v.app)
 		if err != nil {
 			release()
@@ -529,6 +537,11 @@ func finishTransaction(ctx context.Context, tx pgx.Tx, d Deployment, status, mes
 	}
 	if tag.RowsAffected() != 1 {
 		return fmt.Errorf("%w: operation is no longer running or available", ErrClaimLost)
+	}
+	if d.ResumeGeneration > 0 {
+		if _, err = tx.Exec(ctx, "UPDATE deployment_resume_attempts SET status=$3,error=$4,result=$5,finished_at=now() WHERE deployment_id=$1 AND generation=$2 AND status='running'", d.ID, d.ResumeGeneration, status, message, JSON(result)); err != nil {
+			return err
+		}
 	}
 	appStatus := status
 	if status == "failed" && d.RecoveryState == "succeeded" {

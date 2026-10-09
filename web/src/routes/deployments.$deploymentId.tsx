@@ -233,6 +233,7 @@ function DeploymentDetail() {
             Cancel deployment
           </Button>
         )}
+        {release.status === 'failed' && !release.recovery_state && release.result?.status === 'partial' && application.data?.revision === release.revision && scope.can('deployments:write') && <Button disabled={busy} onClick={async()=>{setBusy(true);setError('');try{await unwrap(client.POST('/deployments/{id}/resume',{params:{path:{id:release.id},header:{'Idempotency-Key':crypto.randomUUID()}},body:{expected_revision:release.revision}}));await Promise.all([deployment.refetch(),application.refetch()])}catch(err){setError(message(err))}finally{setBusy(false)}}}>{busy?'Resuming…':'Resume failed services'}</Button>}
         <Button
           size="icon"
           variant="ghost"
