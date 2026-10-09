@@ -379,6 +379,20 @@ function DatabaseConnections({
         <h2>Connections</h2>
         <span className="db-kicker">Private network</span>
       </div>
+      {canManage && d.spec.engine === 'postgresql' && d.status === 'ready' && (
+        <div className="flex flex-wrap gap-2 px-4 py-3">
+          <Button asChild variant="primary">
+            <Link to="/databases/$databaseId/provision-application" params={{ databaseId: id }} search={{ project: d.project, environment: d.environment }}>
+              Create database for application
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link to="/databases/$databaseId/migration-lock-recovery" params={{ databaseId: id }} search={{ project: d.project, environment: d.environment }}>
+              Recover migration lock
+            </Link>
+          </Button>
+        </div>
+      )}
       {!d.observation.endpoints?.length ? (
         <p className="db-inline-notice">No verified endpoints yet.</p>
       ) : (

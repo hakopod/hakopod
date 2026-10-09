@@ -20,13 +20,25 @@ const routes: [RegExp, string[]][] = [
   [/^auth\/device\/(?:start|token)$/, ['POST']],
   // Session calls retain explicit owner and generation authority.
   [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions$/, ['GET', 'POST']],
-  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions\/[a-f0-9]{32}$/, ['GET', 'DELETE']],
-  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions\/[a-f0-9]{32}\/(?:heartbeat|call)$/, ['POST']],
+  [
+    /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions\/[a-f0-9]{32}$/,
+    ['GET', 'DELETE'],
+  ],
+  [
+    /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions\/[a-f0-9]{32}\/(?:heartbeat|call)$/,
+    ['POST'],
+  ],
   // Invocation callers use explicit machine credentials and tenant owner authority.
   [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations$/, ['GET', 'POST']],
   [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}$/, ['GET']],
-  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}\/cancel$/, ['POST']],
-  [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}\/logs$/, ['GET']],
+  [
+    /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}\/cancel$/,
+    ['POST'],
+  ],
+  [
+    /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/invocations\/[a-f0-9]{32}\/logs$/,
+    ['GET'],
+  ],
   [/^applications$/, ['GET']],
   [/^applications\/[A-Za-z0-9_-]+$/, ['GET', 'DELETE']],
   [/^applications\/[A-Za-z0-9_-]+\/provenance$/, ['GET']],
@@ -60,10 +72,14 @@ const routes: [RegExp, string[]][] = [
   [/^databases\/[A-Za-z0-9_-]+$/, ['GET', 'DELETE']],
   [/^databases\/[A-Za-z0-9_-]+\/(?:operations|connections|trust|metrics)$/, ['GET']],
   [
-    /^databases\/[A-Za-z0-9_-]+\/(?:credentials|resize-plan|resize-retry-plan|resize-retry|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry)$/,
+    /^databases\/[A-Za-z0-9_-]+\/(?:credentials|resize-plan|resize-retry-plan|resize-retry|resize|restore-plan|connection-plan|connect|inspect|switchover-plan|switchover|switchover-retry|application-provisioning-plan|application-provision|migration-lock-recovery-plan|migration-lock-recover)$/,
     ['POST'],
   ],
   [/^database-operations\/[A-Za-z0-9_-]+$/, ['GET']],
+  [
+    /^database-(?:application-provisioning|migration-lock-recovery)-operations\/[A-Za-z0-9_-]+$/,
+    ['GET'],
+  ],
   [/^databases\/[a-f0-9]{32}\/public-endpoint-capabilities$/, ['GET']],
   [/^databases\/[a-f0-9]{32}\/public-endpoint-plan$/, ['POST']],
   [/^databases\/[a-f0-9]{32}\/public-endpoints$/, ['GET', 'POST']],
@@ -100,7 +116,11 @@ export async function forwardAutomationAPI(request: Request) {
   const url = new URL(request.url)
   const path = url.pathname.slice('/api/v1/'.length)
   const route = url.pathname.startsWith('/api/v1/')
-    ? routes.find(([pattern]) => pattern.test(path)) || (() => {const generated=generatedAgentRoute(path);return generated ? [new RegExp('^$'), generated.methods] as [RegExp,string[]] : undefined})()
+    ? routes.find(([pattern]) => pattern.test(path)) ||
+      (() => {
+        const generated = generatedAgentRoute(path)
+        return generated ? ([new RegExp('^$'), generated.methods] as [RegExp, string[]]) : undefined
+      })()
     : undefined
   if (!route)
     return Response.json(
@@ -134,7 +154,11 @@ export async function forwardAutomationAPI(request: Request) {
       const value = request.headers.get(name)
       if (value !== null) headers.set(name, value)
     }
-    if (/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/(?:invocations|sessions)(?:\/|$)/.test(path)) {
+    if (
+      /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/(?:invocations|sessions)(?:\/|$)/.test(
+        path,
+      )
+    ) {
       const owner = request.headers.get('X-Hakopod-Owner-Scope')
       if (owner !== null) headers.set('X-Hakopod-Owner-Scope', owner)
     }
@@ -182,36 +206,70 @@ let activeSessionCalls = 0
 // Keep the slot until output is consumed or cancelled, not merely until headers arrive.
 async function forwardSessionCall(request: Request, path: string, headers: Headers) {
   if (activeSessionCalls >= 2)
-    return Response.json({ error: { code: 'capacity', message: 'Session transport capacity is full. No call started. Retry this request later.' } }, { status: 429, headers: privateHeaders })
+    return Response.json(
+      {
+        error: {
+          code: 'capacity',
+          message: 'Session transport capacity is full. No call started. Retry this request later.',
+        },
+      },
+      { status: 429, headers: privateHeaders },
+    )
   activeSessionCalls++
   let released = false
-  const release = () => { if (!released) { released = true; activeSessionCalls-- } }
+  const release = () => {
+    if (!released) {
+      released = true
+      activeSessionCalls--
+    }
+  }
   try {
     const inputAbort = new AbortController()
     const inputTimer = setTimeout(() => inputAbort.abort(), 15000)
     let body: Uint8Array<ArrayBuffer> | null
     try {
-      const input = request.body?.pipeThrough(new TransformStream(), { signal: AbortSignal.any([request.signal, inputAbort.signal]) }) ?? null
+      const input =
+        request.body?.pipeThrough(new TransformStream(), {
+          signal: AbortSignal.any([request.signal, inputAbort.signal]),
+        }) ?? null
       body = await boundedBytes({ headers: request.headers, body: input }, 48 * 1024 * 1024)
-    } finally { clearTimeout(inputTimer) }
+    } finally {
+      clearTimeout(inputTimer)
+    }
     if (body === null) {
       release()
-      return Response.json({ error: { code: 'body_limit', message: 'Session input exceeds 48 MiB.' } }, { status: 413, headers: privateHeaders })
+      return Response.json(
+        { error: { code: 'body_limit', message: 'Session input exceeds 48 MiB.' } },
+        { status: 413, headers: privateHeaders },
+      )
     }
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(170000)])
-    const response = await fetch(apiURL(path), { method: 'POST', headers, body, redirect: 'error', signal })
+    const response = await fetch(apiURL(path), {
+      method: 'POST',
+      headers,
+      body,
+      redirect: 'error',
+      signal,
+    })
     const returned = new Headers(privateHeaders)
     for (const name of ['Content-Type', 'Retry-After']) {
       const value = response.headers.get(name)
       if (value !== null) returned.set(name, value)
     }
     returned.set('X-Accel-Buffering', 'no')
-    if (!response.body) { release(); return new Response(null, { status: response.status, headers: returned }) }
+    if (!response.body) {
+      release()
+      return new Response(null, { status: response.status, headers: returned })
+    }
     const reader = response.body.getReader()
     let used = 0
     let finished = false
     let output: ReadableStreamDefaultController<Uint8Array> | undefined
-    const finish = () => { finished = true; signal.removeEventListener('abort', abort); release() }
+    const finish = () => {
+      finished = true
+      signal.removeEventListener('abort', abort)
+      release()
+    }
     const abort = () => {
       if (finished) return
       finish()
@@ -229,21 +287,40 @@ async function forwardSessionCall(request: Request, path: string, headers: Heade
         try {
           const next = await reader.read()
           if (finished) return
-          if (next.done) { finish(); controller.close(); return }
+          if (next.done) {
+            finish()
+            controller.close()
+            return
+          }
           used += next.value.byteLength
           if (used > 52 * 1024 * 1024) throw new Error('Session output exceeded its limit.')
           controller.enqueue(next.value)
         } catch (error) {
           if (finished) return
           void reader.cancel().catch(() => {})
-          finish(); controller.error(error)
+          finish()
+          controller.error(error)
         }
       },
-      async cancel(reason) { try { await reader.cancel(reason) } finally { finish() } },
+      async cancel(reason) {
+        try {
+          await reader.cancel(reason)
+        } finally {
+          finish()
+        }
+      },
     })
     return new Response(stream, { status: response.status, headers: returned })
   } catch {
     release()
-    return Response.json({ error: { code: 'call_interrupted', message: 'Session call outcome is uncertain. Do not replay this request.' } }, { status: 503, headers: privateHeaders })
+    return Response.json(
+      {
+        error: {
+          code: 'call_interrupted',
+          message: 'Session call outcome is uncertain. Do not replay this request.',
+        },
+      },
+      { status: 503, headers: privateHeaders },
+    )
   }
 }
