@@ -167,10 +167,12 @@ export function Copy({
   value,
   label,
   iconOnly = false,
+  className,
 }: {
   value: string
   label?: string
   iconOnly?: boolean
+  className?: string
 }) {
   const [copied, setCopied] = useState(false)
   const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -180,6 +182,7 @@ export function Copy({
       type="button"
       size={label && !iconOnly ? 'sm' : 'icon'}
       variant="ghost"
+      className={className}
       title="Copy to clipboard"
       aria-label={copied ? 'Copied' : label || 'Copy to clipboard'}
       onClick={async () => {

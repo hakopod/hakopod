@@ -193,7 +193,11 @@ function PrivateAccess({ id }: { id: string }) {
                     >
                       <code>{step.command}</code>
                     </pre>
-                    <Copy value={step.command} label={`Copy step ${index + 1}`} />
+                    <Copy
+                      value={step.command}
+                      label={`Copy step ${index + 1}`}
+                      className="min-h-10"
+                    />
                   </div>
                 )}
               </li>

@@ -119,6 +119,7 @@ export function BindingConnectionTest({
     <div className="flex min-w-0 basis-full flex-wrap items-center gap-2">
       <Button
         size="sm"
+        className="min-h-10"
         disabled={busy}
         onClick={() => void inspect()}
         aria-label={`Inspect ${variable} binding in ${service}`}
@@ -127,6 +128,7 @@ export function BindingConnectionTest({
       </Button>
       <Button
         size="sm"
+        className="min-h-10"
         disabled={busy || !canTest}
         onClick={() => void test()}
         aria-label={`Test ${variable} connection from ${service}`}
@@ -147,7 +149,8 @@ export function BindingConnectionTest({
                       saved: 'Saved',
                       resolved: 'Resolved',
                       loaded: 'Loaded by container',
-                      connection: 'Connection verified',
+                      connection:
+                        step.status === 'passed' ? 'Connection verified' : 'Connection test',
                     }[step.name]
                   }{' '}
                   ·{' '}
@@ -181,7 +184,9 @@ export function BindingConnectionTest({
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
             <strong>
               {inspection
-                ? `Last test: ${outcomes[result.outcome].toLowerCase()}`
+                ? `${inspection.steps.some(
+                    (step) => step.name === 'connection' && step.status === 'unsupported',
+                  ) ? 'Previous' : 'Last'} test: ${outcomes[result.outcome].toLowerCase()}`
                 : outcomes[result.outcome]}
             </strong>
             <span className="text-xs text-muted-foreground">{timestamp(result.observed_at)}</span>
