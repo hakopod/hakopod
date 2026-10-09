@@ -41,8 +41,14 @@ jobs:
           persist-credentials: false
       - name: Restore public template catalog
         run: git submodule update --init templates
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - name: Build the server image with local module replacements
-        run: docker build --build-arg TARGETARCH=amd64 --tag hakopod-server:ci .
+        run: docker buildx build --load --build-arg TARGETARCH=amd64 --tag hakopod-server:ci .
   go:
     runs-on: ubuntu-24.04
     # Both the standard and native acceptance suites exercise the database.
