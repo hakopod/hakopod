@@ -31,43 +31,23 @@ func validateDatabaseClientProfiles(app Application, serviceName string, service
 			if variable != "DB_CONNECTION_URI" {
 				return fmt.Errorf("services.%s.database_client_profiles.%s: the Infisical profile requires DB_CONNECTION_URI", serviceName, variable)
 			}
-			if _, ok := effective.Env["DB_ROOT_CERT"]; ok {
-				return fmt.Errorf("services.%s.database_client_profiles.%s: DB_ROOT_CERT is already defined", serviceName, variable)
-			}
-			if _, ok := effective.Secrets["DB_ROOT_CERT"]; ok {
-				return fmt.Errorf("services.%s.database_client_profiles.%s: DB_ROOT_CERT is already defined", serviceName, variable)
-			}
-			if _, ok := service.Bindings["DB_ROOT_CERT"]; ok {
-				return fmt.Errorf("services.%s.database_client_profiles.%s: DB_ROOT_CERT is already defined", serviceName, variable)
-			}
-		case DatabaseClientNodeExtraCAV1:
-			if _, ok := effective.Env["NODE_EXTRA_CA_CERTS"]; ok {
-				return fmt.Errorf("services.%s.database_client_profiles.%s: NODE_EXTRA_CA_CERTS is already defined", serviceName, variable)
-			}
-			if _, ok := effective.Secrets["NODE_EXTRA_CA_CERTS"]; ok {
-				return fmt.Errorf("services.%s.database_client_profiles.%s: NODE_EXTRA_CA_CERTS is already defined", serviceName, variable)
-			}
-			if _, ok := service.Bindings["NODE_EXTRA_CA_CERTS"]; ok {
-				return fmt.Errorf("services.%s.database_client_profiles.%s: NODE_EXTRA_CA_CERTS is already defined", serviceName, variable)
-			}
-		case DatabaseClientGlitchTipValkeyV21:
-			for _, generated := range []string{"SSL_CERT_FILE", "SSL_CERT_DIR"} {
-				if _, ok := effective.Env[generated]; ok {
-					return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
-				}
-				if _, ok := effective.Secrets[generated]; ok {
-					return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
-				}
-				if _, ok := service.Bindings[generated]; ok {
-					return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
-				}
-			}
-		case DatabaseClientLibpqURLV1:
+		case DatabaseClientNodeExtraCAV1, DatabaseClientGlitchTipValkeyV21, DatabaseClientLibpqURLV1:
 		default:
 			return fmt.Errorf("services.%s.database_client_profiles.%s: unsupported profile", serviceName, variable)
 		}
 		if !bound || binding.ManagedDatabase == "" {
 			continue
+		}
+		for _, generated := range databaseClientGeneratedEnvironment(profile) {
+			if _, ok := effective.Env[generated]; ok {
+				return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
+			}
+			if _, ok := effective.Secrets[generated]; ok {
+				return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
+			}
+			if _, ok := service.Bindings[generated]; ok {
+				return fmt.Errorf("services.%s.database_client_profiles.%s: %s is already defined", serviceName, variable, generated)
+			}
 		}
 		switch profile {
 		case DatabaseClientInfisicalPostgresV1, DatabaseClientLibpqURLV1:
@@ -84,6 +64,19 @@ func validateDatabaseClientProfiles(app Application, serviceName string, service
 		return fmt.Errorf("services.%s.database_client_profiles: only one Infisical PostgreSQL profile is supported", serviceName)
 	}
 	return nil
+}
+
+func databaseClientGeneratedEnvironment(profile string) []string {
+	switch profile {
+	case DatabaseClientInfisicalPostgresV1:
+		return []string{"DB_ROOT_CERT"}
+	case DatabaseClientNodeExtraCAV1:
+		return []string{"NODE_EXTRA_CA_CERTS"}
+	case DatabaseClientGlitchTipValkeyV21:
+		return []string{"SSL_CERT_FILE", "SSL_CERT_DIR"}
+	default:
+		return nil
+	}
 }
 
 func DatabaseClientProfile(service Service, variable string) string {
