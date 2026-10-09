@@ -158,7 +158,7 @@ func RestoreCompatibility(m Manifest, targetKind string, now time.Time) Compatib
 	}
 	_ = json.Unmarshal(m.PlatformSpec, &source)
 	if source.Kind == targetKind && m.Release != "" && len(m.Images) > 0 {
-		add("application_version", "checked", "The platform release and digest-pinned image inventory match this platform kind.", m.Release)
+		add("application_version", "unknown", "The source platform release and digest-pinned images are captured. Target runtime compatibility is verified during restore preflight.", m.Release)
 	} else {
 		add("application_version", "blocker", "The platform kind, release or image inventory is incomplete.", "")
 	}
@@ -167,7 +167,7 @@ func RestoreCompatibility(m Manifest, targetKind string, now time.Time) Compatib
 	} else {
 		add("encryption_key", "blocker", "The archive has no encryption recipient reference.", "")
 	}
-	add("dependencies", "checked", "The immutable platform specification and owned volume inventory are present.", fmt.Sprintf("%d images, %d claims", len(m.Images), len(m.PVCs)))
+	add("dependencies", "unknown", "The immutable platform specification and owned volume inventory are present, but no separate related application recovery set was declared.", fmt.Sprintf("%d images, %d claims", len(m.Images), len(m.PVCs)))
 	add("related_recovery_points", "unknown", "No separate related application recovery set was declared for this platform archive.", "")
 	blocked := false
 	for _, check := range checks {

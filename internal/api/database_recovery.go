@@ -61,11 +61,11 @@ func (s *Server) managedDatabaseRestorePlan(w http.ResponseWriter, r *http.Reque
 	destination, destinationErr := s.Store.BackupDestination(store.WithBackupPrincipal(r.Context(), who(r)), a.DestinationID)
 	keyAvailable := destinationErr == nil && destination.EncryptionRecipient != "" && (a.CompatibilityEvidence.EncryptionRecipient == "" || a.CompatibilityEvidence.EncryptionRecipient == destination.EncryptionRecipient)
 	compatibility := backup.RestoreCompatibility(a, target, keyAvailable, time.Now())
+	plan := backup.RestorePlan{ID: store.NewID(), ArtifactID: a.ID, Target: target, Confirmation: d.Spec.Name, Scope: a.Scope, Compatibility: compatibility, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: []string{"Only this separate database will receive the archive. Source data and application connections remain available.", "The archive is downloaded and fully authenticated before recovery. A failed recovery may leave this new database partial; use another fresh target for a retry.", "Inspect the recovered data before explicitly replacing the application's saved connection and redeploying.", "Writes after the captured recovery point require another capture before final cutover."}}
 	if compatibility.Blocked {
-		problem(w, 409, "restore_incompatible", "The restore compatibility report contains a blocker.")
+		write(w, 200, plan)
 		return
 	}
-	plan := backup.RestorePlan{ID: store.NewID(), ArtifactID: a.ID, Target: target, Confirmation: d.Spec.Name, Scope: a.Scope, Compatibility: compatibility, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: []string{"Only this separate database will receive the archive. Source data and application connections remain available.", "The archive is downloaded and fully authenticated before recovery. A failed recovery may leave this new database partial; use another fresh target for a retry.", "Inspect the recovered data before explicitly replacing the application's saved connection and redeploying.", "Writes after the captured recovery point require another capture before final cutover."}}
 	if d.Spec.Engine == "redis" {
 		plan.Warnings = append(plan.Warnings, "Redis archives preserve values and expiry consistently per shard, not across all shards. Redis Cluster needs a cluster-aware client.")
 	}

@@ -60,6 +60,7 @@ function Restore({ artifactId }: { artifactId: string }) {
           target.managed_database_id !== item.source.managed_database_id),
     ) || []
   const target = eligible.find((value) => sourceKey(value) === selected)
+  const compatibilityBlocked = Boolean((plan as unknown as { compatibility?: CompatibilityReportValue } | null)?.compatibility?.blocked)
   return (
     <FormPage
       title={plan ? 'Review database restore' : 'Restore a stored backup'}
@@ -246,6 +247,7 @@ function Restore({ artifactId }: { artifactId: string }) {
             busy ||
             item.deletion_pending ||
             Boolean(plan && Date.parse(plan.expires_at) <= Date.now()) ||
+            compatibilityBlocked ||
             (plan ? confirmation !== plan.confirmation : !target)
           }
           onClick={async () => {

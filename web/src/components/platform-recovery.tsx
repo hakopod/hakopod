@@ -144,6 +144,7 @@ export function PlatformRecoveryForm({ id, kind }: { id: string; kind: 'backup' 
       (kind === 'restore' && review.intent.expected_target_revision !== target?.revision) ||
       (kind === 'backup' && review.intent.destination_revision !== destination?.revision)),
   )
+  const compatibilityBlocked = Boolean((review as unknown as { compatibility?: CompatibilityReportValue } | null)?.compatibility?.blocked)
   const reset = () => {
     setReview(null)
     setReviewRequest(null)
@@ -377,6 +378,7 @@ export function PlatformRecoveryForm({ id, kind }: { id: string; kind: 'backup' 
             busy ||
             expired ||
             changed ||
+            compatibilityBlocked ||
             Boolean(
               review && (kind === 'backup' ? !confirmedBackup : confirmation !== target?.spec.name),
             )

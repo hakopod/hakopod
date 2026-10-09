@@ -132,13 +132,14 @@ type Target struct {
 	SourceVersion       string `json:"source_version,omitempty"`
 	ManagedDatabaseName string `json:"managed_database_name,omitempty"`
 	Source
-	ApplicationName    string `json:"application_name,omitempty"`
-	Revision           int64  `json:"revision"`
-	Pod                string `json:"pod,omitempty"`
-	PodUID             string `json:"pod_uid,omitempty"`
-	RuntimeFingerprint string `json:"runtime_fingerprint,omitempty"`
-	Available          bool   `json:"available"`
-	Message            string `json:"message,omitempty"`
+	ApplicationName    string   `json:"application_name,omitempty"`
+	Revision           int64    `json:"revision"`
+	Pod                string   `json:"pod,omitempty"`
+	PodUID             string   `json:"pod_uid,omitempty"`
+	RuntimeFingerprint string   `json:"runtime_fingerprint,omitempty"`
+	Dependencies       []string `json:"dependencies,omitempty"`
+	Available          bool     `json:"available"`
+	Message            string   `json:"message,omitempty"`
 }
 
 type Artifact struct {
@@ -268,16 +269,18 @@ func RestoreCompatibility(a Artifact, target Target, encrypted bool, now time.Ti
 	}
 	if a.Source.Engine == target.Engine && a.SourceVersion != "" {
 		add("database_version", "checked", "The database engine and recorded source version are available for engine validation.", a.Source.Engine+" "+a.SourceVersion)
+	} else if a.Source.Engine == target.Engine {
+		add("database_version", "unknown", "The database engine matches, but this archive has no recorded source version.", a.Source.Engine)
 	} else {
 		add("database_version", "blocker", "The database engine or source version does not match the selected target.", "")
 	}
 	if encrypted {
-		add("encryption_key", "checked", "The destination still has the encryption recipient required to open this archive.", "")
+		add("encryption_identity", "unknown", "The destination encryption recipient reference matches. The private recovery identity is checked before restore changes the target.", "")
 	} else {
 		add("encryption_key", "blocker", "The required destination encryption key reference is unavailable.", "")
 	}
 	if a.Source.Kind == "database" && a.CompatibilityEvidence.ApplicationRevision > 0 && a.CompatibilityEvidence.RuntimeFingerprint != "" {
-		add("application_version", "checked", "The source application revision and runtime fingerprint were captured with this backup.", fmt.Sprintf("revision %d, %s", a.CompatibilityEvidence.ApplicationRevision, a.CompatibilityEvidence.RuntimeFingerprint))
+		add("application_version", "unknown", "The source application revision and runtime fingerprint were captured, but no target application version was selected for comparison.", fmt.Sprintf("revision %d, %s", a.CompatibilityEvidence.ApplicationRevision, a.CompatibilityEvidence.RuntimeFingerprint))
 		if len(a.CompatibilityEvidence.Dependencies) > 0 {
 			add("dependencies", "checked", "Declared dependency recovery points were captured.", fmt.Sprintf("%d dependencies", len(a.CompatibilityEvidence.Dependencies)))
 		} else {

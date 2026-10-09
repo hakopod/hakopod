@@ -181,7 +181,7 @@ func (r *backupRuntime) Targets(ctx context.Context) ([]backup.Target, error) {
 			if !ok {
 				continue
 			}
-			target := backup.Target{Source: source, ApplicationName: a.Name, Revision: a.Revision, Available: a.Status == "healthy"}
+			target := backup.Target{Source: source, ApplicationName: a.Name, Revision: a.Revision, Dependencies: append([]string(nil), service.DependsOn...), Available: a.Status == "healthy"}
 			if !target.Available {
 				target.Message = "Database application must have a successful deployed revision."
 			} else {
@@ -261,6 +261,8 @@ func (r *backupRuntime) Resolve(ctx context.Context, source backup.Source) (back
 	target.Revision = a.Revision
 	target.Pod = options.Pod
 	target.PodUID = string(uid)
+	target.RuntimeFingerprint = string(uid)
+	target.Dependencies = append([]string(nil), service.DependsOn...)
 	target.Available = true
 	if source.Engine == "postgresql" {
 		var version bytes.Buffer

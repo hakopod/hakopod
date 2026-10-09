@@ -610,6 +610,14 @@ func (s *Store) acceptBackupRestoreOnce(ctx context.Context, p Principal, artifa
 	if err != nil {
 		return j, err
 	}
+	destination, err := scanBackupDestination(tx.QueryRow(ctx, "SELECT "+backupDestinationCols+" FROM backup_destinations WHERE id=$1 FOR SHARE", a.DestinationID))
+	if err != nil {
+		return j, err
+	}
+	keyMatches := destination.EncryptionRecipient != "" && (a.CompatibilityEvidence.EncryptionRecipient == "" || a.CompatibilityEvidence.EncryptionRecipient == destination.EncryptionRecipient)
+	if current := backup.RestoreCompatibility(a, plan.Target, keyMatches, time.Now()); current.Blocked || plan.Compatibility.Blocked {
+		return j, backup.ErrConflict
+	}
 	if plan.Target.Kind == "managed_database" {
 		if err = validateManagedRestoreTarget(ctx, tx, a, plan.Target); err != nil {
 			return j, err
