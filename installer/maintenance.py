@@ -39,6 +39,7 @@ LOCK = threading.Lock()
 CACHE = None
 CACHE_AT = 0
 MAX_UPGRADE_CANDIDATES = 8
+CLEANUP_OWNER_UID = 0
 
 
 def version_key(value):
@@ -163,10 +164,19 @@ def download(release, name, checksums, directory, limit):
     if name not in checksums:
         raise ValueError('Required release checksum is missing')
     destination = directory / name
+    cache = STATE / 'downloads'
+    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cached = cache / (release['tag_name'].removeprefix('v') + '-' + name)
+    if cached.exists():
+        if not cached.is_file() or cached.is_symlink() or cached.stat().st_uid != CLEANUP_OWNER_UID or cached.stat().st_mode & 0o077 or cached.stat().st_size > limit or host.digest(cached) != checksums[name]:
+            raise ValueError('Cached release asset failed its identity check')
+        shutil.copyfile(cached, destination)
+        return destination
     request = urllib.request.Request(asset_url(release, name), headers={'User-Agent': 'hakopod-maintenance'})
     digest = hashlib.sha256()
     total = 0
-    with urllib.request.urlopen(request, timeout=20) as response, destination.open('xb') as output:
+    temporary = cache / ('.download-' + str(time.time_ns()))
+    with urllib.request.urlopen(request, timeout=20) as response, temporary.open('xb') as output:
         if not response.url.startswith('https://'):
             raise ValueError('Release download requires HTTPS')
         deadline = time.monotonic() + 300
@@ -180,7 +190,11 @@ def download(release, name, checksums, directory, limit):
             digest.update(chunk)
             output.write(chunk)
     if digest.hexdigest() != checksums[name]:
+        temporary.unlink(missing_ok=True)
         raise ValueError('Release checksum mismatch')
+    os.chmod(temporary, 0o600)
+    temporary.replace(cached)
+    shutil.copyfile(cached, destination)
     return destination
 
 
@@ -369,7 +383,8 @@ def perform_upgrade(target, install_lock):
             checksums = checksum_map(fetch(asset_url(release, 'SHA256SUMS'), 65536))
             if shutil.disk_usage('/var/lib/hakopod').free < 3 << 30 or shutil.disk_usage('/opt/hakopod').free < 2 << 30:
                 raise ValueError('Upgrade needs 3 GiB free for backups and 2 GiB for release staging')
-            with tempfile.TemporaryDirectory(prefix='stage-', dir=STATE) as tmp:
+            staging = STATE / 'staging'; staging.mkdir(mode=0o700, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix='stage-', dir=staging) as tmp:
                 stage = Path(tmp)
                 manifest = json.loads(download(release, 'upgrade.json', checksums, stage, 65536).read_text())
                 validate_manifest(manifest, installed, target)
@@ -447,6 +462,80 @@ def redact_log(text):
     return re.sub(r'(?i)(?:postgres(?:ql)?|https?)://[^\s@/]+:[^\s@/]+@', '[redacted]@', text)
 
 
+def cleanup_roots():
+    # Only installer-owned transient data is eligible. Releases are rollback
+    # material; backups, database/application volumes and K3s state are outside
+    # these roots and can never appear in a review.
+    return ((STATE / 'downloads', 'verified-release-cache'),)
+
+
+def cleanup_item(path, category, now):
+    stat = path.lstat()
+    if not path.is_file() or path.is_symlink() or stat.st_nlink != 1 or stat.st_uid != CLEANUP_OWNER_UID or stat.st_size < 1 or stat.st_size > 512 << 20 or now - stat.st_mtime < 86400:
+        return None
+    identity = hashlib.sha256(f'{path}:{stat.st_dev}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}'.encode()).hexdigest()
+    return {'id': identity, 'category': category, 'path': str(path), 'bytes': stat.st_blocks * 512}
+
+
+def cleanup_preview():
+    now = time.time(); deadline = time.monotonic() + 5; items = []; scanned = 0; planned = 0
+    for root, category in cleanup_roots():
+        if not root.exists(): continue
+        root_stat = root.lstat()
+        if not root.is_dir() or root.is_symlink() or root_stat.st_uid != CLEANUP_OWNER_UID or root_stat.st_mode & 0o022: continue
+        for path in sorted(root.iterdir(), key=lambda item: item.name):
+            scanned += 1
+            if scanned > 512 or time.monotonic() > deadline: raise ValueError('Cleanup inventory exceeded its scan bound')
+            item = cleanup_item(path, category, now)
+            if item: items.append(item); planned += item['bytes']
+            if len(items) > 256: raise ValueError('Cleanup inventory exceeds 256 files')
+            if planned > 8 << 30: raise ValueError('Cleanup inventory exceeds 8 GiB')
+    usage = shutil.disk_usage('/var/lib/hakopod')
+    return {'schema_version': 1, 'observed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            'filesystem': {'capacity_bytes': usage.total, 'available_bytes': usage.free}, 'items': items,
+            'protected': ['database volumes', 'application volumes', 'backup archives', 'K3s state and secrets', 'installed releases and rollback material'],
+            'planned_bytes': planned}
+
+
+def cleanup_execute(body):
+    if set(body) != {'schema_version', 'operation_id', 'items'} or body['schema_version'] != 1 or not re.fullmatch(r'[0-9a-f]{32}', body['operation_id']) or not isinstance(body['items'], list) or len(body['items']) > 256:
+        raise ValueError('Invalid cleanup operation')
+    receipt_path = STATE / ('cleanup-' + body['operation_id'] + '.json')
+    if receipt_path.exists(): return json.loads(receipt_path.read_text())
+    if not LOCK.acquire(blocking=False): raise ValueError('Another maintenance operation is running')
+    install_lock = INSTALL_LOCK.open('a')
+    try:
+        fcntl.flock(install_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        reviewed = {item['id']: item for item in cleanup_preview()['items']}
+        before = shutil.disk_usage('/var/lib/hakopod').free; removed = []; skipped = []; deadline=time.monotonic()+20
+        for requested in body['items']:
+            if time.monotonic()>deadline: raise ValueError('Cleanup exceeded its time bound')
+            if not isinstance(requested, dict) or set(requested) != {'id', 'category', 'path', 'bytes'}: raise ValueError('Invalid cleanup item')
+            current = reviewed.get(requested['id'])
+            if current != requested: skipped.append({'id': requested.get('id', ''), 'reason': 'file changed or is protected'}); continue
+            path = Path(current['path']); immediate=cleanup_item(path,current['category'],time.time())
+            if immediate != current: skipped.append({'id':current['id'],'reason':'file changed or is protected'});continue
+            path.unlink(); removed.append({'id': current['id'], 'bytes': current['bytes']})
+        after = shutil.disk_usage('/var/lib/hakopod').free
+        receipt = {'schema_version': 1, 'operation_id': body['operation_id'], 'removed': removed, 'skipped': skipped, 'planned_bytes': sum(item['bytes'] for item in body['items']),
+                'removed_bytes': sum(item['bytes'] for item in removed), 'available_before_bytes': before, 'available_after_bytes': after,
+                'reclaimed_bytes': max(0, after-before), 'completed_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+        temporary=receipt_path.with_suffix('.tmp');temporary.write_text(json.dumps(receipt)+'\n');os.chmod(temporary,0o600);temporary.replace(receipt_path)
+        return receipt
+    except Exception:
+        failed={'schema_version':1,'operation_id':body['operation_id'],'status':'failed','message':'Cleanup stopped before it could record a successful receipt.'}
+        temporary=receipt_path.with_suffix('.tmp');temporary.write_text(json.dumps(failed)+'\n');os.chmod(temporary,0o600);temporary.replace(receipt_path)
+        raise
+    finally:
+        install_lock.close(); LOCK.release()
+
+
+def cleanup_status(operation_id):
+    if not re.fullmatch(r'[0-9a-f]{32}', operation_id): raise ValueError('Invalid cleanup operation')
+    receipt=STATE / ('cleanup-' + operation_id + '.json')
+    return json.loads(receipt.read_text()) if receipt.is_file() else {'schema_version':1,'operation_id':operation_id,'status':'running'}
+
+
 def logs():
     process = subprocess.Popen(['journalctl', '--unit=hakopod-api.service', '--no-pager', '--lines=200', '--output=json', '--output-fields=__REALTIME_TIMESTAMP,MESSAGE,PRIORITY'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     timer = threading.Timer(5, process.kill)
@@ -494,6 +583,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 result = status()
             elif self.command == 'GET' and self.path == '/logs':
                 result = logs()
+            elif self.command == 'GET' and self.path == '/cleanup/preview':
+                result = cleanup_preview()
+            elif self.command == 'POST' and self.path == '/cleanup/execute':
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 256 << 10: raise ValueError('Invalid cleanup request size')
+                result = cleanup_execute(json.loads(self.rfile.read(size)))
+            elif self.command == 'GET' and self.path.startswith('/cleanup/status?'):
+                values=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,strict_parsing=True)
+                if set(values)!={'operation_id'} or len(values['operation_id'])!=1: raise ValueError('Invalid cleanup status request')
+                result=cleanup_status(values['operation_id'][0])
             elif self.command == 'POST' and self.path == '/upgrade':
                 size = int(self.headers.get('Content-Length', '0'))
                 if not 0 < size <= 256:

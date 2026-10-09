@@ -92,10 +92,16 @@ function Infrastructure() {
         action={
           <div className="toolbar-actions">
             {scope.identity.owner && (
-              <Link className="button button-secondary" to="/settings/host-access">
-                <Icon name="key" size={15} />
-                Host access
-              </Link>
+              <>
+                <Link className="button button-secondary" to="/infrastructure/cleanup">
+                  <Icon name="trash" size={15} />
+                  Safe cleanup
+                </Link>
+                <Link className="button button-secondary" to="/settings/host-access">
+                  <Icon name="key" size={15} />
+                  Host access
+                </Link>
+              </>
             )}
             {scope.identity.admin && (!tab || tab === 'nodes') && (
               <Link
