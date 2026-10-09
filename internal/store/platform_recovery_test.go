@@ -123,6 +123,24 @@ func TestPlatformRestoreRechecksSourceAndTargetCapacity(t *testing.T) {
 	}
 
 	manifest := recoveryManifestFixture(source.ID, destination.ID)
+	blockedManifest := manifest
+	blockedManifest.EncryptionRecipient = ""
+	blockedArtifactID := NewID()
+	if _, err = s.Pool.Exec(ctx, `INSERT INTO managed_platform_recovery_artifacts(id,source_platform_id,source_revision,destination_id,object_key,encrypted_bytes,encrypted_sha256,manifest,manifest_sha256,published_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now())`, blockedArtifactID, source.ID, int64(1), destination.ID, "fixtures/blocked-restore-target", int64(123), strings.Repeat("e", 64), JSON(blockedManifest), blockedManifest.Digest()); err != nil {
+		t.Fatal(err)
+	}
+	blockedRestore := platformbackup.Intent{Kind: "restore", Project: source.Project, Environment: source.Environment, SourcePlatformID: source.ID, TargetPlatformID: target.ID, ArtifactID: blockedArtifactID, ExpectedSourceRevision: 1, ExpectedTargetRevision: 1}
+	blockedReview, err := s.SavePlatformRecoveryReview(ctx, p, blockedRestore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blockedReview.ID != "" || !blockedReview.Compatibility.Blocked {
+		t.Fatalf("blocked compatibility returned an accept-capable review: %#v", blockedReview)
+	}
+	var blockedReviewCount int
+	if err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM managed_platform_recovery_reviews WHERE artifact_id=$1`, blockedArtifactID).Scan(&blockedReviewCount); err != nil || blockedReviewCount != 0 {
+		t.Fatalf("blocked compatibility persisted a review: count=%d error=%v", blockedReviewCount, err)
+	}
 	artifactID := NewID()
 	if _, err = s.Pool.Exec(ctx, `INSERT INTO managed_platform_recovery_artifacts(id,source_platform_id,source_revision,destination_id,object_key,encrypted_bytes,encrypted_sha256,manifest,manifest_sha256,published_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now())`, artifactID, source.ID, int64(1), destination.ID, "fixtures/restore-target", int64(123), strings.Repeat("e", 64), JSON(manifest), manifest.Digest()); err != nil {
 		t.Fatal(err)
@@ -338,6 +356,30 @@ func recoveryManifestFixture(platformID, destinationID string) platformbackup.Ma
 		verification[name] = strings.Repeat("b", 64)
 	}
 	return platformbackup.Manifest{SchemaVersion: platformbackup.SchemaVersion, Format: platformbackup.Format, PlatformID: platformID, PlatformRevision: 1, PlatformSpec: json.RawMessage(`{"schema_version":1,"name":"fixture","kind":"supabase"}`), Release: "fixture", Images: map[string]string{"database": "postgres@sha256:" + strings.Repeat("c", 64)}, SourceNamespace: "fixture", SourceNamespaceUID: "namespace-uid", PVCs: []platformbackup.Claim{{Component: "database", Kind: "pvc", Name: "database", UID: "pvc-uid"}}, Parts: parts, Verification: verification, FrozenAt: now.Add(-2 * time.Second), CapturedAt: now.Add(-time.Second), ThawedAt: now, Consistency: "writes blocked and claims reobserved", DestinationID: destinationID, EncryptionRecipient: "age1fixture"}
+}
+
+func neonRecoveryManifestFixture(platformID, destinationID string) platformbackup.Manifest {
+	now := time.Now().UTC()
+	manifest := platformbackup.Manifest{
+		SchemaVersion:       platformbackup.SchemaVersion,
+		Format:              platformbackup.NeonFormat,
+		PlatformID:          platformID,
+		PlatformRevision:    1,
+		PlatformSpec:        json.RawMessage(`{"schema_version":1,"name":"fixture","kind":"neon"}`),
+		Release:             "fixture",
+		Images:              map[string]string{"database": "postgres@sha256:" + strings.Repeat("c", 64)},
+		CapturedAt:          now,
+		DestinationID:       destinationID,
+		EncryptionRecipient: "age1fixture",
+		Neon: &platformbackup.NeonIdentity{
+			TenantID:           strings.Repeat("1", 32),
+			TimelineID:         strings.Repeat("2", 32),
+			TenantGeneration:   1,
+			TimelineGeneration: 1,
+		},
+	}
+	manifest.ManifestSHA256 = manifest.Digest()
+	return manifest
 }
 
 func TestManagedPlatformMutationConflictsWithActiveRecovery(t *testing.T) {
