@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
-	"github.com/hakopod/hakopod/internal/database"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/hakopod/hakopod/internal/database"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestDatabaseOperationProgressPersistsAndReplacesCurrentStage(t *testing.T) {
@@ -21,6 +24,16 @@ func TestDatabaseOperationProgressPersistsAndReplacesCurrentStage(t *testing.T) 
 	if err = s.RecordDatabaseStep(ctx, op, observation, "queued", "replica-replacement", "first"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = s.ClaimDatabaseOperation(ctx); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("a queued stage bypassed its retry delay: %v", err)
+	}
+	makeDue := func() {
+		t.Helper()
+		if _, err := s.Pool.Exec(ctx, "UPDATE managed_database_operations SET next_attempt_at=now()-interval '1 second' WHERE id=$1", op.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	makeDue()
 	op, err = s.ClaimDatabaseOperation(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -28,6 +41,7 @@ func TestDatabaseOperationProgressPersistsAndReplacesCurrentStage(t *testing.T) 
 	if err = s.RecordDatabaseStep(ctx, op, observation, "queued", "replica-replacement", "updated"); err != nil {
 		t.Fatal(err)
 	}
+	makeDue()
 	op, err = s.ClaimDatabaseOperation(ctx)
 	if err != nil {
 		t.Fatal(err)
