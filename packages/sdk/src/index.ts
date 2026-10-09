@@ -18,6 +18,8 @@ import {
   DatabaseRef,
   DatabaseRun,
   DatabasePublicEndpointRun,
+  DatabaseApplicationProvisioningRun,
+  DatabaseMigrationLockRecoveryRun,
   DeploymentRun,
   NetworkRef,
   ManagedPlatformRef,
