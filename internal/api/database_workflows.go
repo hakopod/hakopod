@@ -116,13 +116,22 @@ func (s *Server) databaseMigrationLockRecoveryPlan(w http.ResponseWriter, r *htt
 		failure(w, err)
 		return
 	}
+	principal := who(r)
+	if a.Project != d.Project || a.Environment != d.Environment || !principal.AllowsDatabase(d.Project, d.Environment, true) || !principal.Allows("deployments:write", a.Project, a.Environment, a.Name) {
+		problem(w, 403, "forbidden", "The application and database scope is not permitted.")
+		return
+	}
+	if in.Profile != database.InfisicalKnexPostgresProfile {
+		problem(w, 422, "unsupported_migration_profile", "Only the pinned Infisical Knex PostgreSQL profile is supported.")
+		return
+	}
 	svc, ok := a.Spec.Services[in.Service]
 	if !ok {
 		problem(w, 400, "invalid_request", "The selected service does not exist.")
 		return
 	}
 	binding, ok := svc.Bindings[in.Variable]
-	if !ok || binding.ManagedDatabase != d.ID || binding.Database == "" {
+	if !ok || binding.ManagedDatabase != d.ID || binding.Database == "" || svc.Image != "docker.io/infisical/infisical:v0.165.10@sha256:204bd63c7a281d9157752ce0bf8d506e7380cac5a0665324eeab8d580b069266" {
 		problem(w, 409, "unsupported_migration_profile", "The pinned Infisical recovery profile requires an explicit managed PostgreSQL database binding.")
 		return
 	}
@@ -194,7 +203,7 @@ func (s *Server) reconcileDatabaseApplicationProvisioning(parent context.Context
 	}
 	observed, err := s.Cluster.ObserveDatabase(ctx, d)
 	if err != nil || observed.Status != "ready" {
-		finish("queued", "observing", "Waiting for a healthy PostgreSQL primary.")
+		finish("queued", op.Phase, "Waiting for a healthy PostgreSQL primary.")
 		return
 	}
 	d.Observation = observed
@@ -218,7 +227,7 @@ func (s *Server) reconcileDatabaseApplicationProvisioning(parent context.Context
 		return
 	}
 	if err = s.Cluster.PutWorkloadSecret(ctx, d.Project, d.Environment, op.Plan.ApplicationName, op.Plan.SecretReference, string(password)); err != nil {
-		finish("queued", "secret", "The verified login is ready; retrying the application-scoped secret write.")
+		finish("queued", op.Phase, "The verified login is ready; retrying the application-scoped secret write.")
 		return
 	}
 	principal, err := s.Store.KeyPrincipal(ctx, op.KeyID)

@@ -132,6 +132,10 @@ func run() error {
 	databaseName := fs.String("database", "", "existing database name or Redis database number; omit for the managed default")
 	databasePasswordSecret := fs.String("password-secret", "", "native secret containing the database password in the application's scope")
 	databaseSSLMode := fs.String("ssl-mode", "", "binding SSL mode supported by the database; omit to follow its TLS policy")
+	databaseProvisionRole := fs.String("role", "", "dedicated PostgreSQL role for application database provisioning")
+	databaseProvisionSecret := fs.String("secret-reference", "", "application-scoped secret reference for the generated database password")
+	databaseMigrationProfile := fs.String("profile", "", "versioned application migration-lock recovery profile")
+	databaseConfirmName := fs.String("confirm-database", "", "database name confirmation for migration-lock recovery")
 	databaseHistoryRange := fs.String("range", "1h", "database monitoring range: 1h, 6h or 24h")
 	databaseClusterAware := fs.Bool("cluster-aware", false, "acknowledge that the application uses a cluster-aware Redis client")
 	databaseRecoveryJob := fs.String("job-id", "", "completed database recovery job to inspect")
@@ -390,6 +394,9 @@ func run() error {
 		if !explicitFile && (fs.Arg(0) == "resize-retry-plan" || fs.Arg(0) == "resize-retry") {
 			// A retry uses its saved specification, not the default application file.
 			*file = ""
+		}
+		if fs.NArg() == 2 && (fs.Arg(0) == "application-provisioning-plan" || fs.Arg(0) == "application-provision" || fs.Arg(0) == "migration-lock-recovery-plan" || fs.Arg(0) == "migration-lock-recover") {
+			return databaseWorkflowCommand(ctx, c, fs.Arg(0), fs.Arg(1), *idem, *reviewID, *name, databaseWorkflowFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, Role: *databaseProvisionRole, Database: *databaseName, SecretReference: *databaseProvisionSecret, Profile: *databaseMigrationProfile, ConfirmDatabase: *databaseConfirmName})
 		}
 		return databaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *reviewID, *artifactID, *name, *revision, databaseConnectionFlags{ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable, Endpoint: *databaseEndpoint, Username: *databaseUsername, Database: *databaseName, PasswordSecret: *databasePasswordSecret, SSLMode: *databaseSSLMode, HistoryRange: *databaseHistoryRange, JobID: *databaseRecoveryJob, TargetMember: *databaseTargetMember, OperationID: *databaseOperation, PublicEndpointID: *databasePublicEndpointID, PublicEndpointPurpose: *databasePublicEndpointPurpose, PublicEndpointCIDRs: *databasePublicEndpointCIDRs, PublicEndpointRevision: *databasePublicEndpointRevision, PublicEndpointMaxConnections: *databasePublicEndpointMaxConnections, ClusterAware: *databaseClusterAware, Inspected: *databaseInspected, Import: databaseImportFlags{*importDestination, *importEngine, *importVersion, *importCaptured}})
 	case "platform":
