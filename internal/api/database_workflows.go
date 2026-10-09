@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -272,8 +274,9 @@ func (s *Server) reconcileDatabaseApplicationProvisioning(parent context.Context
 		finish("cancelled", "authorization", "Provisioning authority changed before the application secret was written.")
 		return
 	}
-	if err = s.Cluster.PutWorkloadSecret(ctx, d.Project, d.Environment, op.Plan.ApplicationName, op.Plan.SecretReference, string(password)); err != nil {
-		finish("queued", op.Phase, "The verified login is ready; retrying the application-scoped secret write.")
+	if err = s.Cluster.PutProvisionedWorkloadSecret(ctx, d.Project, d.Environment, op.Plan.ApplicationName, op.Plan.SecretReference, string(password), op.ID); err != nil {
+		status, phase, message := applicationProvisioningSecretWriteFailure(err, op.Phase)
+		finish(status, phase, message)
 		return
 	}
 	principal, err := s.Store.KeyPrincipal(ctx, op.KeyID)
@@ -291,6 +294,13 @@ func (s *Server) reconcileDatabaseApplicationProvisioning(parent context.Context
 		return
 	}
 	// Application revision and terminal operation state commit atomically.
+}
+
+func applicationProvisioningSecretWriteFailure(err error, phase string) (string, string, string) {
+	if errors.Is(err, cluster.ErrProvisionedWorkloadSecretConflict) {
+		return "failed", "credentials", "The application secret changed after review. Review the provisioning request again."
+	}
+	return "queued", phase, "The verified login is ready; retrying the application-scoped secret write."
 }
 
 func storeDatabaseConnectionOptions(plan database.ApplicationProvisioningPlan) store.DatabaseConnectionOptions {
