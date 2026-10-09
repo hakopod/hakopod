@@ -403,7 +403,14 @@ func (s *Server) planBackupRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	id := store.NewID()
 	target.Database = "hp_restore_" + id[:20]
-	plan := backup.RestorePlan{ID: id, ArtifactID: a.ID, Target: target, Confirmation: target.Database, Scope: a.Scope, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: restoreWarnings(a.Source)}
+	destination, destinationErr := s.Store.BackupDestination(store.WithBackupPrincipal(r.Context(), who(r)), a.DestinationID)
+	keyAvailable := destinationErr == nil && destination.EncryptionRecipient != "" && (a.CompatibilityEvidence.EncryptionRecipient == "" || a.CompatibilityEvidence.EncryptionRecipient == destination.EncryptionRecipient)
+	compatibility := backup.RestoreCompatibility(a, target, keyAvailable, time.Now())
+	if compatibility.Blocked {
+		problem(w, 409, "restore_incompatible", "The restore compatibility report contains a blocker.")
+		return
+	}
+	plan := backup.RestorePlan{ID: id, ArtifactID: a.ID, Target: target, Confirmation: target.Database, Scope: a.Scope, Compatibility: compatibility, ExpiresAt: time.Now().UTC().Add(10 * time.Minute), Warnings: restoreWarnings(a.Source)}
 	if err = s.Store.SaveBackupRestorePlan(r.Context(), who(r), plan); err != nil {
 		backupFailure(w, err)
 		return

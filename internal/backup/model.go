@@ -142,23 +142,32 @@ type Target struct {
 }
 
 type Artifact struct {
-	SourceVersion   string     `json:"source_version,omitempty"`
-	SourceRevision  int64      `json:"source_revision,omitempty"`
-	CapturedAt      *time.Time `json:"captured_at,omitempty"`
-	VerifiedAt      *time.Time `json:"verified_at,omitempty"`
-	ID              string     `json:"id"`
-	JobID           string     `json:"job_id"`
-	DestinationID   string     `json:"destination_id"`
-	Source          Source     `json:"source"`
-	ObjectKey       string     `json:"object_key"`
-	SHA256          string     `json:"sha256"`
-	Bytes           int64      `json:"bytes"`
-	Format          string     `json:"format"`
-	Scope           string     `json:"scope"`
-	ScheduleID      string     `json:"schedule_id,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
-	DeletionPending bool       `json:"deletion_pending"`
+	SourceVersion         string                `json:"source_version,omitempty"`
+	SourceRevision        int64                 `json:"source_revision,omitempty"`
+	CapturedAt            *time.Time            `json:"captured_at,omitempty"`
+	VerifiedAt            *time.Time            `json:"verified_at,omitempty"`
+	ID                    string                `json:"id"`
+	JobID                 string                `json:"job_id"`
+	DestinationID         string                `json:"destination_id"`
+	Source                Source                `json:"source"`
+	ObjectKey             string                `json:"object_key"`
+	SHA256                string                `json:"sha256"`
+	Bytes                 int64                 `json:"bytes"`
+	Format                string                `json:"format"`
+	Scope                 string                `json:"scope"`
+	ScheduleID            string                `json:"schedule_id,omitempty"`
+	CreatedAt             time.Time             `json:"created_at"`
+	DeletedAt             *time.Time            `json:"deleted_at,omitempty"`
+	DeletionPending       bool                  `json:"deletion_pending"`
+	CompatibilityEvidence CompatibilityEvidence `json:"compatibility_evidence"`
+}
+
+type CompatibilityEvidence struct {
+	ApplicationRevision   int64                `json:"application_revision,omitempty"`
+	RuntimeFingerprint    string               `json:"runtime_fingerprint,omitempty"`
+	EncryptionRecipient   string               `json:"encryption_recipient,omitempty"`
+	Dependencies          []string             `json:"dependencies,omitempty"`
+	RelatedRecoveryPoints map[string]time.Time `json:"related_recovery_points,omitempty"`
 }
 
 type Job struct {
@@ -223,13 +232,90 @@ func (s Schedule) Validate() error {
 }
 
 type RestorePlan struct {
-	ID           string    `json:"id"`
-	ArtifactID   string    `json:"artifact_id"`
-	Target       Target    `json:"target"`
-	Confirmation string    `json:"confirmation"`
-	Scope        string    `json:"scope"`
-	Warnings     []string  `json:"warnings"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	ID            string              `json:"id"`
+	ArtifactID    string              `json:"artifact_id"`
+	Target        Target              `json:"target"`
+	Confirmation  string              `json:"confirmation"`
+	Scope         string              `json:"scope"`
+	Warnings      []string            `json:"warnings"`
+	Compatibility CompatibilityReport `json:"compatibility"`
+	ExpiresAt     time.Time           `json:"expires_at"`
+}
+
+type CompatibilityCheck struct {
+	Code     string `json:"code"`
+	Status   string `json:"status"`
+	Message  string `json:"message"`
+	Evidence string `json:"evidence,omitempty"`
+}
+type CompatibilityReport struct {
+	GeneratedAt time.Time            `json:"generated_at"`
+	Checks      []CompatibilityCheck `json:"checks"`
+	Blocked     bool                 `json:"blocked"`
+}
+
+func RestoreCompatibility(a Artifact, target Target, encrypted bool, now time.Time) CompatibilityReport {
+	checks := []CompatibilityCheck{}
+	add := func(code, status, message, evidence string) {
+		checks = append(checks, CompatibilityCheck{Code: code, Status: status, Message: message, Evidence: evidence})
+	}
+	if a.CapturedAt == nil {
+		add("backup_age", "unknown", "The backup has no captured recovery point.", "")
+	} else if a.CapturedAt.After(now) {
+		add("backup_age", "blocker", "The backup recovery point is in the future.", a.CapturedAt.UTC().Format(time.RFC3339))
+	} else {
+		add("backup_age", "checked", "The backup recovery point is recorded.", a.CapturedAt.UTC().Format(time.RFC3339))
+	}
+	if a.Source.Engine == target.Engine && a.SourceVersion != "" {
+		add("database_version", "checked", "The database engine and recorded source version are available for engine validation.", a.Source.Engine+" "+a.SourceVersion)
+	} else {
+		add("database_version", "blocker", "The database engine or source version does not match the selected target.", "")
+	}
+	if encrypted {
+		add("encryption_key", "checked", "The destination still has the encryption recipient required to open this archive.", "")
+	} else {
+		add("encryption_key", "blocker", "The required destination encryption key reference is unavailable.", "")
+	}
+	if a.Source.Kind == "database" && a.CompatibilityEvidence.ApplicationRevision > 0 && a.CompatibilityEvidence.RuntimeFingerprint != "" {
+		add("application_version", "checked", "The source application revision and runtime fingerprint were captured with this backup.", fmt.Sprintf("revision %d, %s", a.CompatibilityEvidence.ApplicationRevision, a.CompatibilityEvidence.RuntimeFingerprint))
+		if len(a.CompatibilityEvidence.Dependencies) > 0 {
+			add("dependencies", "checked", "Declared dependency recovery points were captured.", fmt.Sprintf("%d dependencies", len(a.CompatibilityEvidence.Dependencies)))
+		} else {
+			add("dependencies", "unknown", "No related dependency recovery points were captured.", "")
+		}
+	} else if a.Source.Kind == "database" {
+		add("application_version", "unknown", "The archive format predates an immutable application runtime inventory.", "")
+		add("dependencies", "unknown", "The archive does not contain a complete dependency recovery set.", "")
+	} else {
+		add("application_version", "unknown", "This database archive has no associated application version.", "")
+		add("dependencies", "unknown", "No related application recovery points were declared.", "")
+	}
+	points := a.CompatibilityEvidence.RelatedRecoveryPoints
+	if len(points) < 2 {
+		add("related_recovery_points", "unknown", "No multi-service recovery set was captured.", "")
+	} else {
+		var earliest, latest time.Time
+		for _, point := range points {
+			if earliest.IsZero() || point.Before(earliest) {
+				earliest = point
+			}
+			if point.After(latest) {
+				latest = point
+			}
+		}
+		if latest.Sub(earliest) > 5*time.Minute {
+			add("related_recovery_points", "blocker", "Related recovery points are inconsistent by more than five minutes.", fmt.Sprintf("%s to %s", earliest.UTC().Format(time.RFC3339), latest.UTC().Format(time.RFC3339)))
+		} else {
+			add("related_recovery_points", "checked", "Related recovery points are within the five-minute consistency window.", fmt.Sprintf("%d recovery points", len(points)))
+		}
+	}
+	blocked := false
+	for _, check := range checks {
+		if check.Status == "blocker" {
+			blocked = true
+		}
+	}
+	return CompatibilityReport{GeneratedAt: now.UTC(), Checks: checks, Blocked: blocked}
 }
 
 // Runtime resolves owned services and executes official database tools. A

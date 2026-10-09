@@ -121,11 +121,61 @@ func (i Intent) Validate() error {
 }
 
 type Review struct {
-	ID                   string    `json:"id"`
-	Intent               Intent    `json:"intent"`
-	RequestHash          string    `json:"request_hash"`
-	AuthorityFingerprint string    `json:"authority_fingerprint"`
-	ExpiresAt            time.Time `json:"expires_at"`
+	ID                   string              `json:"id"`
+	Intent               Intent              `json:"intent"`
+	RequestHash          string              `json:"request_hash"`
+	AuthorityFingerprint string              `json:"authority_fingerprint"`
+	ExpiresAt            time.Time           `json:"expires_at"`
+	Compatibility        CompatibilityReport `json:"compatibility"`
+}
+
+type CompatibilityCheck struct {
+	Code     string `json:"code"`
+	Status   string `json:"status"`
+	Message  string `json:"message"`
+	Evidence string `json:"evidence,omitempty"`
+}
+type CompatibilityReport struct {
+	GeneratedAt time.Time            `json:"generated_at"`
+	Checks      []CompatibilityCheck `json:"checks"`
+	Blocked     bool                 `json:"blocked"`
+}
+
+func RestoreCompatibility(m Manifest, targetKind string, now time.Time) CompatibilityReport {
+	checks := []CompatibilityCheck{}
+	add := func(code, status, message, evidence string) {
+		checks = append(checks, CompatibilityCheck{Code: code, Status: status, Message: message, Evidence: evidence})
+	}
+	if m.CapturedAt.IsZero() {
+		add("backup_age", "blocker", "The archive has no captured recovery point.", "")
+	} else if m.CapturedAt.After(now) {
+		add("backup_age", "blocker", "The archive recovery point is in the future.", m.CapturedAt.UTC().Format(time.RFC3339))
+	} else {
+		add("backup_age", "checked", "The archive recovery point is recorded.", m.CapturedAt.UTC().Format(time.RFC3339))
+	}
+	var source struct {
+		Kind string `json:"kind"`
+	}
+	_ = json.Unmarshal(m.PlatformSpec, &source)
+	if source.Kind == targetKind && m.Release != "" && len(m.Images) > 0 {
+		add("application_version", "checked", "The platform release and digest-pinned image inventory match this platform kind.", m.Release)
+	} else {
+		add("application_version", "blocker", "The platform kind, release or image inventory is incomplete.", "")
+	}
+	if m.EncryptionRecipient != "" {
+		add("encryption_key", "checked", "The archive declares its required encryption recipient.", m.EncryptionRecipient)
+	} else {
+		add("encryption_key", "blocker", "The archive has no encryption recipient reference.", "")
+	}
+	add("dependencies", "checked", "The immutable platform specification and owned volume inventory are present.", fmt.Sprintf("%d images, %d claims", len(m.Images), len(m.PVCs)))
+	add("related_recovery_points", "unknown", "No separate related application recovery set was declared for this platform archive.", "")
+	blocked := false
+	for _, check := range checks {
+		if check.Status == "blocker" {
+			blocked = true
+		}
+	}
+	return CompatibilityReport{GeneratedAt: now.UTC(), Checks: checks, Blocked: blocked}
 }
 
 func (m Manifest) Validate() error {
