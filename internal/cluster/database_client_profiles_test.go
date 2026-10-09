@@ -70,3 +70,23 @@ func TestInfisicalProfileInjectsOnlyBase64PublicCA(t *testing.T) {
 		t.Fatal("profile changed credentials or removed verified PostgreSQL mode")
 	}
 }
+
+func TestGlitchTipProfileAddsPrivateAndSystemTrustPaths(t *testing.T) {
+	target := testTarget(t)
+	id := strings.Repeat("d", 32)
+	service := target.Spec.Services["api"]
+	service.Bindings = map[string]spec.Binding{"VALKEY_URL": {ManagedDatabase: id, Protocol: "redis", Endpoint: "read_write"}}
+	service.DatabaseClientProfiles = map[string]string{"VALKEY_URL": spec.DatabaseClientGlitchTipValkeyV21}
+	target.Spec.Services["api"] = service
+	target.databaseConnections = map[string]map[string]DatabaseConnection{"api": {"VALKEY_URL": {URL: "rediss://database:6379/0", Port: 6379, CA: trustFixtureCA(t)}}}
+	workload := deployment(target, "api", service, time.Minute)
+	want := map[string]string{"SSL_CERT_FILE": glitchTipSystemCABundle, "SSL_CERT_DIR": databaseTrustDirectory}
+	for _, environment := range workload.Spec.Template.Spec.Containers[0].Env {
+		if value, ok := want[environment.Name]; ok && environment.Value == value && environment.ValueFrom == nil {
+			delete(want, environment.Name)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("GlitchTip trust environment is incomplete: %v", want)
+	}
+}
