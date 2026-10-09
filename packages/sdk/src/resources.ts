@@ -542,6 +542,27 @@ export class ServiceRef {
       { ...options, params: { id: current.id, service: this.name } },
     );
   }
+  /** Run the fixed connection helper in one current application container. */
+  async testConnection(
+    variable: string,
+    options: RequestOptions & { pod?: string } = {},
+  ): Promise<Schema["BindingTestResult"]> {
+    const current = await this.application.get(options);
+    if (!current.spec.services[this.name]?.bindings?.[variable])
+      throw new HakopodError(
+        "Choose a saved database binding from this service.",
+        "binding_not_found",
+      );
+    return this.context.transport.request(
+      "POST",
+      "/applications/{id}/services/{service}/bindings/{variable}/test",
+      {
+        ...options,
+        params: { id: current.id, service: this.name, variable },
+        body: { expected_revision: current.revision, ...(options.pod ? { pod: options.pod } : {}) },
+      },
+    );
+  }
   async logs(
     options: RequestOptions & { tail?: number } = {},
   ): Promise<string> {

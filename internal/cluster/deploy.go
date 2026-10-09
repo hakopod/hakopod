@@ -434,6 +434,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 		image = readinessImages[0]
 	}
 	configureReadiness(svc, &result.Spec.Template.Spec, image)
+	configureBindingProbe(svc, &result.Spec.Template.Spec, image)
 	applyWorkloadPolicy(t.policy, &result.Spec.Template.Spec)
 	return result
 }
@@ -458,6 +459,9 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	}
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	wanted := deployment(t, name, svc, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
+	if _, err := c.pinWorkloadEnvironment(ctx, t, name, &wanted.Spec.Template); err != nil {
+		return 0, err
+	}
 	if err := c.prepareAWSIdentity(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}
@@ -502,7 +506,7 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 			wanted.Spec.Template.Annotations = map[string]string{}
 		}
 		for key, value := range current.Spec.Template.Annotations {
-			if key != "hakopod.io/restart-nonce" && key != runtimeProfileAnnotation {
+			if key != "hakopod.io/restart-nonce" && key != runtimeProfileAnnotation && key != environmentSnapshotLabel {
 				wanted.Spec.Template.Annotations[key] = value
 			}
 		}
@@ -904,16 +908,23 @@ func (c *Client) readyPods(ctx context.Context, t Target, service string, dep *a
 			continue
 		}
 		active++
-		if !podReady(pod) || !reflect.DeepEqual(pod.Spec.Containers, dep.Spec.Template.Spec.Containers) {
+		if !podReady(pod) || !podUsesTemplate(&pod, &dep.Spec.Template) {
 			return false, nil
-		}
-		for key, value := range dep.Spec.Template.Labels {
-			if pod.Labels[key] != value {
-				return false, nil
-			}
 		}
 	}
 	return active == desired, nil
+}
+
+func podUsesTemplate(pod *corev1.Pod, template *corev1.PodTemplateSpec) bool {
+	if !reflect.DeepEqual(pod.Spec.Containers, template.Spec.Containers) || !reflect.DeepEqual(pod.Spec.InitContainers, template.Spec.InitContainers) || !reflect.DeepEqual(pod.Spec.Volumes, template.Spec.Volumes) || pod.Annotations[environmentSnapshotLabel] != template.Annotations[environmentSnapshotLabel] {
+		return false
+	}
+	for key, value := range template.Labels {
+		if pod.Labels[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 var errReady = fmt.Errorf("ready")

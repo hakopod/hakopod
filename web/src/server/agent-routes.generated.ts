@@ -393,6 +393,13 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "testServiceBinding",
+    "method": "POST",
+    "path": "/applications/{id}/services/{service}/bindings/{variable}/test",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
     "id": "listSourceBuilds",
     "method": "GET",
     "path": "/builds",

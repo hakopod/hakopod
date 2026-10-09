@@ -155,7 +155,10 @@ func (c *Client) StartInvocation(ctx context.Context, r invocation.Record, input
 	if err = c.prepareFiles(ctx, t, r.Service, s); err != nil {
 		return result, err
 	}
-	d := deployment(t, r.Service, s, c.options.RolloutTimeout)
+	d := deployment(t, r.Service, s, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
+	if _, err := c.pinWorkloadEnvironment(ctx, t, r.Service, &d.Spec.Template); err != nil {
+		return result, err
+	}
 	if err = c.prepareAWSIdentity(ctx, t, r.Service, s, d); err != nil {
 		return result, err
 	}
