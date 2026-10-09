@@ -63,12 +63,17 @@ func TestDatabaseObservationClaimsDistributeAndFenceExpiredWorkers(t *testing.T)
 		t.Fatal("expired work was not reclaimed", err)
 	}
 	s.ReleaseDatabaseObservation(old.d.ID, old.lease)
-	observation := database.Observation{Status: "ready", Revision: 1, ObservedAt: time.Now()}
+	failure := database.FailureEvidence{Code: "memory_limit_exceeded", Summary: "Development fixture OOM evidence.", OccurredAt: time.Now().Add(-time.Minute), ObservedAt: time.Now(), Revision: 1, Member: "database-1", MemberUID: "fixture-member", Container: "postgres", Reason: "OOMKilled", Source: "kubernetes_container_status"}
+	observation := database.Observation{Status: "ready", Revision: 1, ObservedAt: failure.ObservedAt, Failures: []database.FailureEvidence{failure}}
 	if err = s.ObserveClaimedDatabase(ctx, old.d.ID, 1, old.lease, observation); !errors.Is(err, ErrClaimLost) {
 		t.Fatal("expired worker published", err)
 	}
 	if err = s.ObserveClaimedDatabase(ctx, fresh.ID, 1, lease, observation); err != nil {
 		t.Fatal("old release displaced new worker", err)
+	}
+	var retained int
+	if err = s.Pool.QueryRow(ctx, "SELECT count(*) FROM managed_database_failure_evidence WHERE database_id=$1", fresh.ID).Scan(&retained); err != nil || retained != 1 {
+		t.Fatal("current fenced worker did not retain one failure record", retained, err)
 	}
 	s.ReleaseDatabaseObservation(fresh.ID, lease)
 	if _, _, err = s.ClaimDatabaseObservation(ctx); !errors.Is(err, pgx.ErrNoRows) {

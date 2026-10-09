@@ -15,6 +15,8 @@ const MaxMembers = 48
 const ObservationMaxAge = 30 * time.Second
 const ReviewLifetime = 10 * time.Minute
 const BackupMaxAge = time.Hour
+const MaxFailureEvidencePerObservation = 64
+const MaxFailureHistory = 32
 
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$`)
 
@@ -206,6 +208,35 @@ type Member struct {
 	Region    string     `json:"region,omitempty"`
 	Provider  string     `json:"provider,omitempty"`
 }
+
+// FailureEvidence records a bounded Kubernetes fact. Optional numeric fields
+// stay absent when Kubernetes did not report them.
+type FailureEvidence struct {
+	Code             string    `json:"code"`
+	Summary          string    `json:"summary"`
+	OccurredAt       time.Time `json:"occurred_at"`
+	ObservedAt       time.Time `json:"observed_at"`
+	Revision         int64     `json:"revision"`
+	Member           string    `json:"member"`
+	MemberUID        string    `json:"member_uid"`
+	Container        string    `json:"container"`
+	Reason           string    `json:"reason"`
+	ExitCode         *int32    `json:"exit_code,omitempty"`
+	RestartCount     *int32    `json:"restart_count,omitempty"`
+	MemoryLimitBytes *int64    `json:"memory_limit_bytes,omitempty"`
+	Source           string    `json:"source"`
+}
+
+type FailureRecord struct {
+	FailureEvidence
+	FirstSeenAt time.Time `json:"first_seen_at"`
+	LastSeenAt  time.Time `json:"last_seen_at"`
+}
+
+type FailureHistory struct {
+	Items []FailureRecord `json:"items"`
+	Limit int             `json:"limit"`
+}
 type Endpoint struct {
 	Purpose string `json:"purpose"`
 	Host    string `json:"host"`
@@ -224,6 +255,7 @@ type Observation struct {
 	Status              string                   `json:"status"`
 	Message             string                   `json:"message"`
 	Members             []Member                 `json:"members"`
+	Failures            []FailureEvidence        `json:"failures,omitempty"`
 	Endpoints           []Endpoint               `json:"endpoints"`
 	Primary             string                   `json:"primary,omitempty"`
 	SlotsAssigned       int                      `json:"slots_assigned,omitempty"`

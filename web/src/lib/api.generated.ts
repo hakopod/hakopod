@@ -2380,6 +2380,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/databases/{id}/failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read retained failure evidence for the managed database. */
+        get: operations["getDatabaseFailureHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/databases/{id}/operations": {
         parameters: {
             query?: never;
@@ -6818,6 +6835,49 @@ export interface components {
             image?: string;
             metrics?: components["schemas"]["RuntimeMetrics"];
         };
+        DatabaseFailureEvidence: {
+            code: string;
+            summary: string;
+            /** Format: date-time */
+            occurred_at: string;
+            /** Format: date-time */
+            observed_at: string;
+            revision: number;
+            member: string;
+            member_uid: string;
+            container: string;
+            reason: string;
+            exit_code?: number;
+            restart_count?: number;
+            memory_limit_bytes?: number;
+            source: string;
+        };
+        DatabaseFailureRecord: {
+            code: string;
+            summary: string;
+            /** Format: date-time */
+            occurred_at: string;
+            /** Format: date-time */
+            observed_at: string;
+            revision: number;
+            member: string;
+            member_uid: string;
+            container: string;
+            reason: string;
+            exit_code?: number;
+            restart_count?: number;
+            memory_limit_bytes?: number;
+            source: string;
+            /** Format: date-time */
+            first_seen_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+        };
+        DatabaseFailureHistory: {
+            items: components["schemas"]["DatabaseFailureRecord"][];
+            /** @constant */
+            limit: 32;
+        };
         DatabasePlacementObservation: {
             verified: boolean;
             message: string;
@@ -6839,6 +6899,7 @@ export interface components {
             status: string;
             message: string;
             members: components["schemas"]["DatabaseMember"][];
+            failures?: components["schemas"]["DatabaseFailureEvidence"][];
             endpoints: components["schemas"]["DatabaseEndpoint"][];
             primary?: string;
             slots_assigned?: number;
@@ -14704,6 +14765,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatabaseOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabaseFailureHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseFailureHistory"];
                 };
             };
             /** @description Error */

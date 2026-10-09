@@ -105,6 +105,13 @@ test("database node discovery uses the selected scope without changing the clien
   assert.equal(calls[1].url.searchParams.get("project"), scope.project);
   assert.equal(calls[1].url.searchParams.get("environment"), scope.environment);
 });
+test("database failure history uses the retained evidence endpoint", async () => {
+  const history = { items: [], limit: 32 };
+  const { client, calls } = fixture((call) => Response.json(call.path === `/databases/${database.id}` ? database : history));
+  assert.deepEqual(await client.database(database.id).failures(), history);
+  assert.equal(calls.at(-1).path, `/databases/${database.id}/failures`);
+  assert.equal(calls.at(-1).method, "GET");
+});
 test("connect uses the machine key scope and requires an explicit scope for installation keys", async () => {
   const options = {
     apiUrl: "https://fixture.invalid",

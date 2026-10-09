@@ -167,6 +167,7 @@ func (c *Client) observeOracleEnterpriseCore(ctx context.Context, d database.Res
 		return o, err
 	}
 	o.Members = members
+	o.Failures = databaseFailureEvidence(d, pods, o)
 	for _, member := range members {
 		if member.UID == "" || !member.Ready {
 			return o, fmt.Errorf("Oracle members are still initializing or replacing")

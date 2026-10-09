@@ -90,6 +90,47 @@ export function DatabaseSummary({ database: d, now }: { database: ManagedDatabas
   )
 }
 
+export function DatabaseFailures({ database: d }: { database: ManagedDatabase }) {
+  const history = useQuery({
+    queryKey: ['database-failures', d.id],
+    queryFn: ({ signal }) => unwrap(client.GET('/databases/{id}/failures', { signal, params: { path: { id: d.id } } })),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+    gcTime: 0,
+  })
+  const items = history.data?.items || []
+  if (!history.isPending && !history.error && !items.length) return null
+  return (
+    <section className="db-panel" aria-label="Retained database failures">
+      <div className="db-panel-heading">
+        <h2>Recent failures</h2>
+        <span className="db-kicker">{history.isPending ? 'Loading' : history.error ? 'Unavailable' : `${items.length} retained`}</span>
+      </div>
+      {history.error ? (
+        <p className="db-inline-notice">Failure evidence could not be refreshed.</p>
+      ) : history.isPending ? (
+        <p className="db-inline-notice">Loading retained failure evidence.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {items.slice(0, 5).map((item) => (
+            <li key={`${item.member_uid}-${item.container}-${item.occurred_at}`} className="grid gap-1 px-4 py-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <strong>{item.summary}</strong>
+                <time className="text-xs text-muted-foreground" dateTime={item.occurred_at}>{timestamp(item.occurred_at)}</time>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {item.member} · {item.container} · revision {item.revision}
+                {item.restart_count !== undefined ? ` · ${item.restart_count} restarts` : ''}
+                {item.exit_code !== undefined ? ` · exit ${item.exit_code}` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 export function DatabaseMonitoring({
   database: d,
   now,
