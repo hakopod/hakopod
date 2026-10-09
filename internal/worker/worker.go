@@ -369,17 +369,29 @@ func (w *Worker) recoverRelease(parent, ctx context.Context, c *store.Claim, tar
 // waits and deployment jobs are added. The application schema bounds both the
 // service count and every individual timeout.
 func deploymentAttemptTimeout(app spec.Application, fallback time.Duration) time.Duration {
-	requested := 30 * time.Second
+	requested := time.Duration(0)
+	explicit := false
 	for _, service := range app.Services {
 		if service.Job != nil {
 			if service.Job.Schedule == nil && service.Job.Invocation == nil {
+				if !explicit {
+					requested = 30 * time.Second
+					explicit = true
+				}
 				requested += time.Duration(service.Job.TimeoutSeconds)*time.Second + 30*time.Second
 			}
 			continue
 		}
 		if service.StartupTimeoutSeconds != 0 {
+			if !explicit {
+				requested = 30 * time.Second
+				explicit = true
+			}
 			requested += time.Duration(service.StartupTimeoutSeconds) * time.Second
 		}
+	}
+	if !explicit {
+		return fallback
 	}
 	return max(fallback, requested)
 }
