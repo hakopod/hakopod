@@ -27,6 +27,9 @@ func TestLiveParallelSecretRequirements(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if err = c.platformNamespace(ctx, false); err != nil {
+		t.Fatal("requires a preexisting development platform namespace owned by Hakopod")
+	}
 	app := requirementsApp(21)
 	app.Name = fmt.Sprintf("secret-read-%d", time.Now().UnixNano())
 	const project = "secret-read-acceptance"
@@ -45,7 +48,7 @@ func TestLiveParallelSecretRequirements(t *testing.T) {
 				t.Error("cannot inspect owned fixture for cleanup")
 				continue
 			}
-			if item.Labels["hakopod.io/secret-name"] != name || item.Labels["hakopod.io/secret-scope"] != secretScope(project, environment, app.Name) {
+			if item.Labels[managedBy] != "hakopod" || item.Labels[platformSecretLabel] != "true" || item.Labels["hakopod.io/secret-name"] != name || item.Labels["hakopod.io/secret-scope"] != secretScope(project, environment, app.Name) {
 				t.Error("fixture ownership changed; cleanup refused")
 				continue
 			}
@@ -60,10 +63,14 @@ func TestLiveParallelSecretRequirements(t *testing.T) {
 	})
 	for i := 0; i < 21; i++ {
 		name := fmt.Sprintf("token-%03d", i)
+		if _, err = c.kube.CoreV1().Secrets(PlatformNamespace).Get(ctx, workloadSecretName(project, environment, app.Name, name), metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+			t.Fatal("fixture secret must be absent before recording create intent")
+		}
+		// Track intent before the request: a failed response can follow a successful write.
+		created = append(created, name)
 		if err = c.CreateWorkloadSecret(ctx, project, environment, app.Name, name, "disposable-development-value"); err != nil {
 			t.Fatal("fixture secret creation failed")
 		}
-		created = append(created, name)
 	}
 	start := time.Now()
 	missing, err := c.MissingWorkloadSecrets(ctx, project, environment, app)
