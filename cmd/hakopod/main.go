@@ -462,6 +462,15 @@ func run() error {
 			return err
 		}
 		return printJSON(out)
+	case "resume":
+		if arg == "" || *revision < 1 || *idem == "" {
+			return &exitError{2, "resume requires a deployment ID, --revision and --idempotency-key"}
+		}
+		var out any
+		if err = c.request(ctx, "POST", "/deployments/"+url.PathEscape(arg)+"/resume", map[string]any{"expected_revision": *revision}, *idem, &out); err != nil {
+			return err
+		}
+		return printJSON(out)
 	}
 	if cfg.Project == "" || cfg.Environment == "" {
 		return &exitError{2, "project and environment are required; use --project/--environment or a saved login context"}
@@ -901,6 +910,7 @@ func help() {
   hakopod key-create --name ci --project demo --environment production --ttl 24h
   hakopod key-revoke KEY_ID
   hakopod cancel DEPLOYMENT_ID
+  hakopod resume DEPLOYMENT_ID --revision N --idempotency-key KEY
   hakopod database list --project demo --environment development
   hakopod platform list --project demo --environment development
   hakopod platform catalog --project demo --environment development

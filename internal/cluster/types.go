@@ -128,6 +128,7 @@ type Target struct {
 	Spec                                             spec.Application
 	Previous                                         *spec.Application
 	SharedNetworks                                   map[string]string
+	ResumeServices                                   []string
 	secretValues                                     map[string]map[string][]byte
 	// BeforeStep revalidates operation authority immediately before each
 	// privileged reconciliation stage. A cancelled hook prevents new effects.
@@ -151,10 +152,18 @@ type Event struct {
 }
 
 type Observation struct {
-	Revision   int64           `json:"revision,omitempty"`
-	Status     string          `json:"status"`
-	Services   []ServiceStatus `json:"services"`
-	ObservedAt time.Time       `json:"observed_at"`
+	Revision   int64                         `json:"revision,omitempty"`
+	Status     string                        `json:"status"`
+	Services   []ServiceStatus               `json:"services"`
+	Attempt    *DeploymentAttemptObservation `json:"attempt,omitempty"`
+	ObservedAt time.Time                     `json:"observed_at"`
+}
+
+type DeploymentAttemptObservation struct {
+	Attempted []string `json:"attempted"`
+	Succeeded []string `json:"succeeded"`
+	Failed    []string `json:"failed"`
+	Blocked   []string `json:"blocked"`
 }
 
 type JobRun struct {

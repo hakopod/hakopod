@@ -284,6 +284,7 @@
   "revokeKey": "Revoke the specified automation key.",
   "revokeNodeEnrollment": "Revoke the specified node enrollment request.",
   "rollbackApplication": "Request deployment of a previous application revision.",
+  "resumeDeployment": "Resume failed and dependent services in the accepted application revision.",
   "rotateExternalDatabaseCredentials": "Request credential rotation for the legacy external database registration.",
   "rotateKey": "Rotate the specified automation key.",
   "runSourceBuild": "Request a new run of the source build.",

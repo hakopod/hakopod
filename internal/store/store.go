@@ -535,6 +535,10 @@ type Deployment struct {
 	StartedAt        *time.Time             `json:"started_at"`
 	FinishedAt       *time.Time             `json:"finished_at"`
 	Events           []Event                `json:"events"`
+	ResumeGeneration int                    `json:"resume_generation"`
+	ResumeServices   []string               `json:"resume_services"`
+	ResumeIdentityID string                 `json:"-"`
+	ResumeKeyID      string                 `json:"-"`
 }
 type Event struct {
 	ID      int64     `json:"id"`
@@ -545,7 +549,7 @@ type Event struct {
 }
 
 const appCols = "id,name,project,environment,revision,status,spec,observed,created_at,updated_at,display_name,service_display_names,metadata_revision"
-const depCols = "recovery_state,recovery_revision,recovery_spec,recovery_error,id,application_id,identity_id,key_id,revision,status,spec,resolved_spec,result,error,cancel_requested,created_at,started_at,finished_at,provenance"
+const depCols = "recovery_state,recovery_revision,recovery_spec,recovery_error,id,application_id,identity_id,key_id,revision,status,spec,resolved_spec,result,error,cancel_requested,created_at,started_at,finished_at,provenance,resume_generation,resume_services,resume_identity_id,resume_key_id"
 
 type scanner interface{ Scan(...any) error }
 
@@ -556,7 +560,7 @@ func scanApp(r scanner) (Application, error) {
 }
 func scanDep(r scanner) (Deployment, error) {
 	var d Deployment
-	err := r.Scan(&d.RecoveryState, &d.RecoveryRevision, &d.RecoverySpec, &d.RecoveryError, &d.ID, &d.ApplicationID, &d.IdentityID, &d.KeyID, &d.Revision, &d.Status, &d.Spec, &d.ResolvedSpec, &d.Result, &d.Error, &d.CancelRequested, &d.CreatedAt, &d.StartedAt, &d.FinishedAt, &d.Provenance)
+	err := r.Scan(&d.RecoveryState, &d.RecoveryRevision, &d.RecoverySpec, &d.RecoveryError, &d.ID, &d.ApplicationID, &d.IdentityID, &d.KeyID, &d.Revision, &d.Status, &d.Spec, &d.ResolvedSpec, &d.Result, &d.Error, &d.CancelRequested, &d.CreatedAt, &d.StartedAt, &d.FinishedAt, &d.Provenance, &d.ResumeGeneration, &d.ResumeServices, &d.ResumeIdentityID, &d.ResumeKeyID)
 	d.Events = []Event{}
 	return d, err
 }
