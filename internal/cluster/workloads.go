@@ -102,6 +102,10 @@ func configureWorkload(d *appsv1.Deployment, s spec.Service) {
 	}
 	for key := range s.Bindings {
 		keys = append(keys, key)
+		binding := s.Bindings[key]
+		if binding.ManagedDatabase != "" && spec.DatabaseClientProfile(s, key) == spec.DatabaseClientInfisicalPostgresV1 {
+			keys = append(keys, "DB_ROOT_CERT")
+		}
 	}
 	sort.Strings(keys)
 	for _, key := range keys {

@@ -630,7 +630,7 @@ func slackEventForServiceField(field string, before, after spec.Service) (string
 	switch field {
 	case "image":
 		return "service.image.updated", "Service image change accepted"
-	case "env", "secrets", "bindings":
+	case "env", "secrets", "bindings", "database_client_profiles":
 		return "service.variables.updated", "Service variable or secret reference change accepted"
 	case "size", "resources", "gpu":
 		return "service.resources.updated", "Service resource change accepted"

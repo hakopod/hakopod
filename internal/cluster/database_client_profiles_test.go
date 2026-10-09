@@ -69,6 +69,16 @@ func TestInfisicalProfileInjectsOnlyBase64PublicCA(t *testing.T) {
 	if len(secret.Data) != 2 || !strings.Contains(string(secret.Data["DB_CONNECTION_URI"]), "sslmode=verify-full") {
 		t.Fatal("profile changed credentials or removed verified PostgreSQL mode")
 	}
+	workload := deployment(target, "api", service, time.Minute)
+	found := 0
+	for _, environment := range workload.Spec.Template.Spec.Containers[0].Env {
+		if environment.Name == "DB_ROOT_CERT" && environment.ValueFrom != nil && environment.ValueFrom.SecretKeyRef != nil && environment.ValueFrom.SecretKeyRef.Name == "api-environment" && environment.ValueFrom.SecretKeyRef.Key == "DB_ROOT_CERT" {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Fatal("Infisical did not load DB_ROOT_CERT from the generated environment Secret")
+	}
 }
 
 func TestGlitchTipProfileAddsPrivateAndSystemTrustPaths(t *testing.T) {
