@@ -85,6 +85,7 @@ function Detail() {
             {canQuery && d.spec.engine === 'postgresql' && d.status === 'ready' && (
               <Button asChild><Link to="/databases/$databaseId/query" params={{ databaseId: id }} search={search}>SQL query</Link></Button>
             )}
+            {tab === 'connections' && <Button asChild><Link to="/databases/$databaseId/private-access" params={{ databaseId: id }} search={search}>Private connection</Link></Button>}
             {canManage && d.status === 'ready' && (
               <Button asChild variant="primary">
                 <Link

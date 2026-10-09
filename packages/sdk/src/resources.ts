@@ -542,6 +542,13 @@ export class ServiceRef {
       { ...options, params: { id: current.id, service: this.name } },
     );
   }
+  /** Inspect saved, resolved, loaded and recent connection evidence. */
+  async inspectBinding(variable: string, options: RequestOptions = {}): Promise<Schema["BindingInspection"]> {
+    const current = await this.application.get(options);
+    return this.context.transport.request("GET", "/applications/{id}/services/{service}/bindings/{variable}", {
+      ...options, params: { id: current.id, service: this.name, variable },
+    });
+  }
   /** Run the fixed connection helper in one current application container. */
   async testConnection(
     variable: string,
@@ -688,6 +695,12 @@ export class DatabaseRef {
     this.#context = context;
     if ("name" in ref) this.#name = required(ref.name, "database name");
     else this.#id = required(ref.id, "database ID");
+  }
+  async privateAccess(input: Schema["DatabasePrivateAccessInput"], options: RequestOptions = {}): Promise<Schema["DatabasePrivateAccessGuide"]> {
+    const current = await this.get(options);
+    return this.#context.transport.request("POST", "/databases/{id}/private-access", {
+      ...options, params: { id: current.id }, body: input,
+    });
   }
   async get(options: RequestOptions = {}): Promise<ManagedDatabase> {
     let id = this.#id;

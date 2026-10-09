@@ -64,6 +64,7 @@ import { Route as BackupsDestinationsNewRouteImport } from './routes/backups.des
 import { Route as BackupsSchedulesNewRouteImport } from './routes/backups.schedules.new'
 import { Route as BuildsBuildIdEditRouteImport } from './routes/builds.$buildId.edit'
 import { Route as DatabasesDatabaseIdConnectRouteImport } from './routes/databases.$databaseId.connect'
+import { Route as DatabasesDatabaseIdPrivateAccessRouteImport } from './routes/databases.$databaseId.private-access'
 import { Route as DatabasesDatabaseIdPublicEndpointsRouteImport } from './routes/databases.$databaseId.public-endpoints'
 import { Route as DatabasesDatabaseIdQueryRouteImport } from './routes/databases.$databaseId.query'
 import { Route as DatabasesDatabaseIdRecoverRouteImport } from './routes/databases.$databaseId.recover'
@@ -388,6 +389,12 @@ const DatabasesDatabaseIdConnectRoute =
     path: '/connect',
     getParentRoute: () => DatabasesDatabaseIdRoute,
   } as any)
+const DatabasesDatabaseIdPrivateAccessRoute =
+  DatabasesDatabaseIdPrivateAccessRouteImport.update({
+    id: '/private-access',
+    path: '/private-access',
+    getParentRoute: () => DatabasesDatabaseIdRoute,
+  } as any)
 const DatabasesDatabaseIdPublicEndpointsRoute =
   DatabasesDatabaseIdPublicEndpointsRouteImport.update({
     id: '/public-endpoints',
@@ -678,6 +685,7 @@ export interface FileRoutesByFullPath {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/private-access': typeof DatabasesDatabaseIdPrivateAccessRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
@@ -775,6 +783,7 @@ export interface FileRoutesByTo {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/private-access': typeof DatabasesDatabaseIdPrivateAccessRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
@@ -873,6 +882,7 @@ export interface FileRoutesById {
   '/backups/schedules/new': typeof BackupsSchedulesNewRoute
   '/builds/$buildId/edit': typeof BuildsBuildIdEditRoute
   '/databases/$databaseId/connect': typeof DatabasesDatabaseIdConnectRoute
+  '/databases/$databaseId/private-access': typeof DatabasesDatabaseIdPrivateAccessRoute
   '/databases/$databaseId/public-endpoints': typeof DatabasesDatabaseIdPublicEndpointsRoute
   '/databases/$databaseId/query': typeof DatabasesDatabaseIdQueryRoute
   '/databases/$databaseId/recover': typeof DatabasesDatabaseIdRecoverRoute
@@ -972,6 +982,7 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/private-access'
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
@@ -1069,6 +1080,7 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/private-access'
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
@@ -1166,6 +1178,7 @@ export interface FileRouteTypes {
     | '/backups/schedules/new'
     | '/builds/$buildId/edit'
     | '/databases/$databaseId/connect'
+    | '/databases/$databaseId/private-access'
     | '/databases/$databaseId/public-endpoints'
     | '/databases/$databaseId/query'
     | '/databases/$databaseId/recover'
@@ -1623,6 +1636,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DatabasesDatabaseIdConnectRouteImport
       parentRoute: typeof DatabasesDatabaseIdRoute
     }
+    '/databases/$databaseId/private-access': {
+      id: '/databases/$databaseId/private-access'
+      path: '/private-access'
+      fullPath: '/databases/$databaseId/private-access'
+      preLoaderRoute: typeof DatabasesDatabaseIdPrivateAccessRouteImport
+      parentRoute: typeof DatabasesDatabaseIdRoute
+    }
     '/databases/$databaseId/public-endpoints': {
       id: '/databases/$databaseId/public-endpoints'
       path: '/public-endpoints'
@@ -1969,6 +1989,7 @@ const BuildsRouteWithChildren =
 
 interface DatabasesDatabaseIdRouteChildren {
   DatabasesDatabaseIdConnectRoute: typeof DatabasesDatabaseIdConnectRoute
+  DatabasesDatabaseIdPrivateAccessRoute: typeof DatabasesDatabaseIdPrivateAccessRoute
   DatabasesDatabaseIdPublicEndpointsRoute: typeof DatabasesDatabaseIdPublicEndpointsRoute
   DatabasesDatabaseIdQueryRoute: typeof DatabasesDatabaseIdQueryRoute
   DatabasesDatabaseIdRecoverRoute: typeof DatabasesDatabaseIdRecoverRoute
@@ -1979,6 +2000,7 @@ interface DatabasesDatabaseIdRouteChildren {
 
 const DatabasesDatabaseIdRouteChildren: DatabasesDatabaseIdRouteChildren = {
   DatabasesDatabaseIdConnectRoute: DatabasesDatabaseIdConnectRoute,
+  DatabasesDatabaseIdPrivateAccessRoute: DatabasesDatabaseIdPrivateAccessRoute,
   DatabasesDatabaseIdPublicEndpointsRoute:
     DatabasesDatabaseIdPublicEndpointsRoute,
   DatabasesDatabaseIdQueryRoute: DatabasesDatabaseIdQueryRoute,

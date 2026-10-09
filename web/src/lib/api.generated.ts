@@ -1528,6 +1528,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/services/{service}/bindings/{variable}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect saved, resolved, loaded and authenticated binding evidence. Requires deployments:read in the application scope. This operation executes no commands. A saved test expires after five minutes. Container, revision, credential or trust changes invalidate earlier verification. The response contains no connection values or fingerprints. */
+        get: operations["inspectServiceBinding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/builds": {
         parameters: {
             query?: never;
@@ -2847,6 +2864,23 @@ export interface paths {
         get: operations["getDatabaseMetricHistory"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/private-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate private database connection steps for the selected client location. Requires database read access in the project. Commands use observed endpoints and contain no credentials. This operation does not open a tunnel or test the connection. */
+        post: operations["getDatabasePrivateAccessGuide"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6099,6 +6133,25 @@ export interface components {
             loaded_matches_snapshot: boolean | null;
             stages: components["schemas"]["BindingTestStage"][];
         };
+        BindingInspectionStep: {
+            /** @enum {string} */
+            name: "saved" | "resolved" | "loaded" | "connection";
+            /** @enum {string} */
+            status: "passed" | "failed" | "unknown" | "stale" | "unsupported";
+            message: string;
+        };
+        BindingInspection: {
+            /** @constant */
+            schema_version: 1;
+            application_id: string;
+            service: string;
+            variable: string;
+            revision: number;
+            /** Format: date-time */
+            observed_at: string;
+            steps: components["schemas"]["BindingInspectionStep"][];
+            last_test?: components["schemas"]["BindingTestResult"];
+        };
         BuildConfig: {
             connection_id: string;
             /** @enum {string} */
@@ -7310,6 +7363,32 @@ export interface components {
             ready: boolean;
             message?: string;
             members: components["schemas"]["DatabaseMember"][];
+        };
+        DatabasePrivateAccessInput: {
+            /** @enum {string} */
+            location: "local" | "ssh" | "kubernetes";
+            endpoint: string;
+            ssh_host?: string;
+            kube_context?: string;
+            local_port?: number;
+        };
+        DatabasePrivateAccessStep: {
+            title: string;
+            instruction: string;
+            command?: string;
+        };
+        DatabasePrivateAccessGuide: {
+            /** @constant */
+            schema_version: 1;
+            database_id: string;
+            revision: number;
+            /** Format: date-time */
+            observed_at: string;
+            location: string;
+            endpoint: components["schemas"]["DatabaseEndpoint"];
+            steps: components["schemas"]["DatabasePrivateAccessStep"][];
+            warnings: string[];
+            blockers: string[];
         };
         ExternalDatabaseSpec: {
             /** @constant */
@@ -12521,6 +12600,39 @@ export interface operations {
             };
         };
     };
+    inspectServiceBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                variable: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BindingInspection"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listSourceBuilds: {
         parameters: {
             query: {
@@ -15835,6 +15947,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatabaseMetricHistory"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabasePrivateAccessGuide: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabasePrivateAccessInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabasePrivateAccessGuide"];
                 };
             };
             /** @description Error */

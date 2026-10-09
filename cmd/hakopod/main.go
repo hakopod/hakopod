@@ -542,12 +542,14 @@ func run() error {
 			}
 		}
 		return deploymentOutput(d, *outputJSON)
-	case "status", "logs", "rollback", "services", "networks", "terminal", "certificates", "certificate-upload", "delivery", "test-connection":
+	case "status", "logs", "rollback", "services", "networks", "terminal", "certificates", "certificate-upload", "delivery", "test-connection", "inspect-binding":
 		a, err := findApp(ctx, c, cfg, arg, *file)
 		if err != nil {
 			return err
 		}
 		switch command {
+		case "inspect-binding":
+			return inspectBinding(ctx, c, a, *service, *databaseVariable)
 		case "test-connection":
 			return testBindingConnection(ctx, c, a, *service, *databaseVariable, *pod)
 		case "certificates":
@@ -932,6 +934,7 @@ func help() {
   hakopod database public-endpoint-revoke DATABASE_ID --public-endpoint-id ENDPOINT_ID --endpoint-revision 1 --idempotency-key RETRY_KEY
   hakopod database public-endpoint-operation OPERATION_ID
   hakopod database connection-plan DATABASE_ID --application-id APP_ID --service api --variable DATABASE_URL --endpoint read_write --username app_user --database app_db --password-secret db-password --ssl-mode verify-full
+  hakopod inspect-binding APP --service api --variable DATABASE_URL
   hakopod test-connection APP --service api --variable DATABASE_URL [--pod POD]
   hakopod database connect DATABASE_ID --review-id REVIEW_ID --name APP_NAME
   hakopod database inspect DATABASE_ID --job-id JOB_ID --revision 1 --name DATABASE_NAME --inspected

@@ -158,6 +158,8 @@ func (s *Server) Handler() http.Handler {
 	s.registerTerminalRoutes(routes)
 	s.registerPodExecRoutes(routes)
 	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/bindings/{variable}/test", s.testServiceBinding)
+	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/bindings/{variable}", s.inspectServiceBinding)
+	routes.HandleFunc("POST /api/v1/databases/{id}/private-access", s.databasePrivateAccess)
 	routes.HandleFunc("PUT /api/v1/applications/{id}/name", s.renameApplication)
 	routes.HandleFunc("PUT /api/v1/applications/{id}/services/{service}/name", s.renameApplication)
 	routes.HandleFunc("PUT /api/v1/projects/{id}/name", s.renameProject)

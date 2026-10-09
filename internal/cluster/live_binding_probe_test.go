@@ -183,6 +183,22 @@ func TestLiveApplicationBindingConnection(t *testing.T) {
 			}
 			if tc.variable == "PG_OK" {
 				successful = result
+				inspection := c.InspectServiceBinding(ctx, target, "client", "PG_OK", &result)
+				for _, step := range inspection.Steps {
+					if step.Status != "passed" {
+						t.Fatalf("current live evidence not verified: %+v", inspection.Steps)
+					}
+				}
+				oldContainer := result
+				oldContainer.Evidence.ContainerID = "previous-container"
+				if c.InspectServiceBinding(ctx, target, "client", "PG_OK", &oldContainer).Steps[3].Status != "stale" {
+					t.Fatal("container replacement retained verification")
+				}
+				expired := result
+				expired.ObservedAt = time.Now().Add(-6 * time.Minute)
+				if c.InspectServiceBinding(ctx, target, "client", "PG_OK", &expired).Steps[3].Status != "stale" {
+					t.Fatal("expired evidence retained verification")
+				}
 			}
 		})
 	}
@@ -218,6 +234,9 @@ print(json.dumps({'binary_bytes':os.path.getsize(path),'peak_rss_kib':peak}))`
 	nextConnection := connections["PG_OK"]
 	nextConnection.URL = strings.Replace(nextConnection.URL, fixturePassword, "new-saved-value", 1)
 	connections["PG_OK"] = nextConnection
+	if c.InspectServiceBinding(ctx, target, "client", "PG_OK", &successful).Steps[3].Status != "stale" {
+		t.Fatal("credential rotation retained verification")
+	}
 	stale, err := c.TestServiceBinding(ctx, target, "client", "PG_OK", successful.Pod, authorize)
 	if err != nil || stale.Outcome != "stale" || stale.LoadedMatchesSnapshot == nil || *stale.LoadedMatchesSnapshot {
 		t.Fatal("an old container verified newer saved settings")

@@ -37,3 +37,23 @@ func TestBindingConnectionCLIUsesRevisionAndFailedOutcome(t *testing.T) {
 		t.Fatal("CLI tested an undeclared secret")
 	}
 }
+
+func TestBindingInspectionCLIUsesReadOnlyEndpoint(t *testing.T) {
+	a := store.Application{ID: "fixture-app", Spec: spec.Application{Services: map[string]spec.Service{"api": {Bindings: map[string]spec.Binding{"DATABASE_URL": {Protocol: "postgres"}}}}}}
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != "GET" || r.URL.Path != "/api/v1/applications/fixture-app/services/api/bindings/DATABASE_URL" {
+			t.Error("inspection did not use read endpoint")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"steps": []any{}})
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, http: server.Client()}
+	if err := inspectBinding(context.Background(), c, a, "api", "DATABASE_URL"); err != nil || calls != 1 {
+		t.Fatal(err, calls)
+	}
+	if err := inspectBinding(context.Background(), c, a, "api", "UNDECLARED"); err == nil || calls != 1 {
+		t.Fatal("undeclared variable inspected")
+	}
+}

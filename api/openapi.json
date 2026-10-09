@@ -6654,6 +6654,71 @@
         }
       }
     },
+    "/applications/{id}/services/{service}/bindings/{variable}": {
+      "get": {
+        "operationId": "inspectServiceBinding",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "variable",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingInspection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Inspect saved, resolved, loaded and authenticated binding evidence. Requires deployments:read in the application scope. This operation executes no commands. A saved test expires after five minutes. Container, revision, credential or trust changes invalidate earlier verification. The response contains no connection values or fingerprints.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "review": "none",
+          "prerequisite": "",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/builds": {
       "get": {
         "operationId": "listSourceBuilds",
@@ -12698,6 +12763,65 @@
           "sensitive_fields": []
         },
         "summary": "Read recorded metrics for the managed database."
+      }
+    },
+    "/databases/{id}/private-access": {
+      "post": {
+        "operationId": "getDatabasePrivateAccessGuide",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabasePrivateAccessGuide"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabasePrivateAccessInput"
+              }
+            }
+          }
+        },
+        "summary": "Generate private database connection steps for the selected client location. Requires database read access in the project. Commands use observed endpoints and contain no credentials. This operation does not open a tunnel or test the connection.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "review": "none",
+          "prerequisite": "",
+          "sensitive_fields": []
+        }
       }
     },
     "/external-databases": {
@@ -27471,6 +27595,85 @@
         ],
         "additionalProperties": false
       },
+      "BindingInspectionStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "saved",
+              "resolved",
+              "loaded",
+              "connection"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unknown",
+              "stale",
+              "unsupported"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "BindingInspection": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BindingInspectionStep"
+            },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "last_test": {
+            "$ref": "#/components/schemas/BindingTestResult"
+          }
+        },
+        "required": [
+          "schema_version",
+          "application_id",
+          "service",
+          "variable",
+          "revision",
+          "observed_at",
+          "steps"
+        ],
+        "additionalProperties": false
+      },
       "BuildConfig": {
         "type": "object",
         "properties": {
@@ -32126,6 +32329,112 @@
         "required": [
           "ready",
           "members"
+        ],
+        "additionalProperties": false
+      },
+      "DatabasePrivateAccessInput": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "enum": [
+              "local",
+              "ssh",
+              "kubernetes"
+            ]
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "ssh_host": {
+            "type": "string"
+          },
+          "kube_context": {
+            "type": "string"
+          },
+          "local_port": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65535
+          }
+        },
+        "required": [
+          "location",
+          "endpoint"
+        ],
+        "additionalProperties": false
+      },
+      "DatabasePrivateAccessStep": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "instruction"
+        ],
+        "additionalProperties": false
+      },
+      "DatabasePrivateAccessGuide": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "location": {
+            "type": "string"
+          },
+          "endpoint": {
+            "$ref": "#/components/schemas/DatabaseEndpoint"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabasePrivateAccessStep"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "schema_version",
+          "database_id",
+          "revision",
+          "observed_at",
+          "location",
+          "endpoint",
+          "steps",
+          "warnings",
+          "blockers"
         ],
         "additionalProperties": false
       },
