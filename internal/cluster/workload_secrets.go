@@ -3,7 +3,9 @@ package cluster
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
+
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -131,6 +133,13 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 			}
 			data[key] = []byte(value.URL)
 			total += len(key) + len(data[key])
+			if binding.ManagedDatabase != "" && value.CA != "" && spec.DatabaseClientProfile(s, key) == spec.DatabaseClientInfisicalPostgresV1 {
+				if _, exists := data["DB_ROOT_CERT"]; exists {
+					return fmt.Errorf("database client profile environment conflicts with DB_ROOT_CERT")
+				}
+				data["DB_ROOT_CERT"] = []byte(base64.StdEncoding.EncodeToString([]byte(value.CA)))
+				total += len("DB_ROOT_CERT") + len(data["DB_ROOT_CERT"])
+			}
 			continue
 		}
 		var password []byte
