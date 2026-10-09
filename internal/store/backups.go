@@ -427,12 +427,12 @@ func (s *Store) CancelBackupJob(ctx context.Context, p Principal, id string) (ba
 	return j, tx.Commit(ctx)
 }
 
-const backupArtifactCols = "id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id,created_at,deleted_at,deletion_pending,source_revision,captured_at,verified_at,source_version"
+const backupArtifactCols = "id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id,created_at,deleted_at,deletion_pending,source_revision,captured_at,verified_at,source_version,compatibility_evidence"
 
 func scanBackupArtifact(row scanner) (backup.Artifact, error) {
 	var a backup.Artifact
 	var source []byte
-	err := row.Scan(&a.ID, &a.JobID, &a.DestinationID, &source, &a.ObjectKey, &a.SHA256, &a.Bytes, &a.Format, &a.Scope, &a.ScheduleID, &a.CreatedAt, &a.DeletedAt, &a.DeletionPending, &a.SourceRevision, &a.CapturedAt, &a.VerifiedAt, &a.SourceVersion)
+	err := row.Scan(&a.ID, &a.JobID, &a.DestinationID, &source, &a.ObjectKey, &a.SHA256, &a.Bytes, &a.Format, &a.Scope, &a.ScheduleID, &a.CreatedAt, &a.DeletedAt, &a.DeletionPending, &a.SourceRevision, &a.CapturedAt, &a.VerifiedAt, &a.SourceVersion, &a.CompatibilityEvidence)
 	if err != nil {
 		return a, backupError(err)
 	}

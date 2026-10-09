@@ -178,7 +178,7 @@ func (s *Store) FinishBackupJob(ctx context.Context, j backup.Job, status, messa
 		if status != "succeeded" || a.Bytes < 1 || (len(a.SHA256) != 64 && !engineManaged) {
 			return backup.ErrInput
 		}
-		_, err = tx.Exec(ctx, "INSERT INTO backup_artifacts(id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id,source_revision,captured_at,verified_at,source_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)", a.ID, j.ID, a.DestinationID, JSON(a.Source), a.ObjectKey, a.SHA256, a.Bytes, a.Format, a.Scope, j.ScheduleID, a.SourceRevision, a.CapturedAt, a.VerifiedAt, a.SourceVersion)
+		_, err = tx.Exec(ctx, "INSERT INTO backup_artifacts(id,job_id,destination_id,source,object_key,sha256,bytes,format,scope,schedule_id,source_revision,captured_at,verified_at,source_version,compatibility_evidence) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", a.ID, j.ID, a.DestinationID, JSON(a.Source), a.ObjectKey, a.SHA256, a.Bytes, a.Format, a.Scope, j.ScheduleID, a.SourceRevision, a.CapturedAt, a.VerifiedAt, a.SourceVersion, JSON(a.CompatibilityEvidence))
 		if err != nil {
 			return err
 		}

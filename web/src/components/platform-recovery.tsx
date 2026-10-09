@@ -10,6 +10,7 @@ import { message, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { useBackupDestinations } from '../lib/backups'
 import { canAccess, useResourceScope, useScope } from '../lib/scope'
+import { CompatibilityReport, type CompatibilityReportValue } from './compatibility-report'
 import {
   managedPlatformName,
   useManagedPlatform,
@@ -330,6 +331,7 @@ export function PlatformRecoveryForm({ id, kind }: { id: string; kind: 'backup' 
             </p>
             {kind === 'restore' && <p className="break-all">Archive: {artifactID}</p>}
             <p>Review expires {timestamp(review.expires_at)}.</p>
+            <CompatibilityReport value={(review as unknown as { compatibility?: CompatibilityReportValue }).compatibility} />
             {expired && <Note>This review has expired. Refresh it before continuing.</Note>}
             {changed && (
               <Note>The source, target or destination changed. Refresh this review.</Note>

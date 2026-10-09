@@ -17,6 +17,7 @@ import type { components } from '../lib/api.generated'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Copy, ErrorState, HeadingHelp, Loading, Note } from '../components/shared'
+import { CompatibilityReport, type CompatibilityReportValue } from '../components/compatibility-report'
 export const Route = createFileRoute('/backups/artifacts/$artifactId/restore')({
   component: RestoreBackup,
 })
@@ -142,6 +143,7 @@ function Restore({ artifactId }: { artifactId: string }) {
             description={`Expires ${timestamp(plan.expires_at)}`}
             icon="database"
           >
+            <CompatibilityReport value={(plan as unknown as { compatibility?: CompatibilityReportValue }).compatibility} />
             <dl className="service-definition-list">
               <div>
                 <dt>Target database</dt>

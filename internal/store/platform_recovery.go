@@ -255,17 +255,25 @@ func (s *Store) SavePlatformRecoveryReview(ctx context.Context, p Principal, int
 			return review, ErrConflict
 		}
 		var published bool
-		var artifactFormat string
-		if err = tx.QueryRow(ctx, "SELECT published_at IS NOT NULL AND deleted_at IS NULL,manifest->>'format' FROM managed_platform_recovery_artifacts WHERE id=$1 AND source_platform_id=$2 FOR SHARE", intent.ArtifactID, intent.SourcePlatformID).Scan(&published, &artifactFormat); err != nil || !published || artifactFormat != recoveryFormat(sourceKind) {
+		var manifest platformbackup.Manifest
+		if err = tx.QueryRow(ctx, "SELECT published_at IS NOT NULL AND deleted_at IS NULL,manifest FROM managed_platform_recovery_artifacts WHERE id=$1 AND source_platform_id=$2 FOR SHARE", intent.ArtifactID, intent.SourcePlatformID).Scan(&published, &manifest); err != nil || !published || manifest.Format != recoveryFormat(sourceKind) {
 			if err != nil {
 				return review, err
 			}
 			return review, ErrConflict
 		}
+		review.Compatibility = platformbackup.RestoreCompatibility(manifest, targetKind, time.Now())
+		if review.Compatibility.Blocked {
+			return review, ErrConflict
+		}
 	}
 	requestHash := platformRecoveryHash(intent)
-	review = platformbackup.Review{ID: NewID(), Intent: intent, RequestHash: hex.EncodeToString(requestHash[:]), AuthorityFingerprint: hex.EncodeToString(fingerprint), ExpiresAt: time.Now().UTC().Add(10 * time.Minute)}
-	_, err = tx.Exec(ctx, `INSERT INTO managed_platform_recovery_reviews(id,identity_id,key_id,project,environment,kind,source_platform_id,target_platform_id,artifact_id,destination_id,destination_revision,expected_source_revision,expected_target_revision,request_hash,authority_fingerprint,reviewed_intent,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,0),$12,NULLIF($13,0),$14,$15,$16,$17)`, review.ID, p.ID, p.KeyID, intent.Project, intent.Environment, intent.Kind, intent.SourcePlatformID, intent.TargetPlatformID, intent.ArtifactID, intent.DestinationID, intent.DestinationRevision, intent.ExpectedSourceRevision, intent.ExpectedTargetRevision, requestHash[:], fingerprint, JSON(intent), review.ExpiresAt)
+	review.ID = NewID()
+	review.Intent = intent
+	review.RequestHash = hex.EncodeToString(requestHash[:])
+	review.AuthorityFingerprint = hex.EncodeToString(fingerprint)
+	review.ExpiresAt = time.Now().UTC().Add(10 * time.Minute)
+	_, err = tx.Exec(ctx, `INSERT INTO managed_platform_recovery_reviews(id,identity_id,key_id,project,environment,kind,source_platform_id,target_platform_id,artifact_id,destination_id,destination_revision,expected_source_revision,expected_target_revision,request_hash,authority_fingerprint,reviewed_intent,expires_at,compatibility) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,0),$12,NULLIF($13,0),$14,$15,$16,$17,$18)`, review.ID, p.ID, p.KeyID, intent.Project, intent.Environment, intent.Kind, intent.SourcePlatformID, intent.TargetPlatformID, intent.ArtifactID, intent.DestinationID, intent.DestinationRevision, intent.ExpectedSourceRevision, intent.ExpectedTargetRevision, requestHash[:], fingerprint, JSON(intent), review.ExpiresAt, JSON(review.Compatibility))
 	if err != nil {
 		return review, err
 	}
