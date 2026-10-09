@@ -2,7 +2,9 @@
 
 Hakopod templates can declare a versioned database client profile for a
 connection variable. The profile remains part of the service specification when
-the managed connection flow replaces a saved environment value or secret.
+the managed connection flow replaces a saved environment value or secret. A
+profile activates only for a managed database binding. Saved, bundled and
+external connections can continue to declare their own trust environment.
 
 The Infisical `v0.165.10` profile supplies PostgreSQL's public CA through
 `DB_ROOT_CERT` and supplies one additive Node.js CA bundle for all profiled Redis
