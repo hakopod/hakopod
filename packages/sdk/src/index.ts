@@ -188,6 +188,13 @@ export class Hakopod {
       query: scope(this.#context),
     });
   }
+  databaseCapacityPlan(spec: Schema["ManagedDatabaseSpec"], databaseId?: string, options: RequestOptions = {}) {
+    const selected = scope(this.#context);
+    return this.request("POST", "/database-capacity-plan", {
+      ...options,
+      body: { ...selected, spec, ...(databaseId ? { database_id: databaseId } : {}) },
+    });
+  }
   listExternalDatabases(options: RequestOptions = {}) {
     return this.request("GET", "/external-databases", { ...options, query: scope(this.#context) });
   }

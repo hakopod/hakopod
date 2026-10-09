@@ -18,6 +18,7 @@ import (
 func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
 	s.registerDatabasePublicEndpointRoutes(mux)
 	mux.HandleFunc("GET /api/v1/database-placement/nodes", s.databasePlacementNodes)
+	mux.HandleFunc("POST /api/v1/database-capacity-plan", s.databaseCapacityPlan)
 	mux.HandleFunc("GET /api/v1/database-operations/{id}", s.databaseOperation)
 	mux.HandleFunc("POST /api/v1/databases/{id}/connection-plan", s.databaseConnectionPlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/connect", s.databaseConnect)
@@ -52,6 +53,30 @@ func (s *Server) databaseFailureHistory(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	write(w, http.StatusOK, history)
+}
+
+func (s *Server) databaseCapacityPlan(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Project     string        `json:"project"`
+		Environment string        `json:"environment"`
+		DatabaseID  string        `json:"database_id,omitempty"`
+		Spec        database.Spec `json:"spec"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if !validScope(in.Project, in.Environment) {
+		problem(w, http.StatusBadRequest, "invalid_request", "provide a valid project and environment")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	plan, err := s.Store.PlanDatabaseCapacity(ctx, who(r), in.Project, in.Environment, in.DatabaseID, in.Spec)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, http.StatusOK, plan)
 }
 
 type databaseResizeRetryRuntime interface {

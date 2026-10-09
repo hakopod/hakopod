@@ -2641,6 +2641,16 @@ for operation, permission in [('createJobInvocation','jobs:invoke'),('listJobInv
 for operation, permission in [('createSandboxSession','sessions:create'),('listSandboxSessions','sessions:read'),('getSandboxSession','sessions:read'),('deleteSandboxSession','sessions:delete'),('heartbeatSandboxSession','sessions:call'),('callSandboxSession','sessions:call')]:
     POLICIES[operation] = {'boundary':'project','category':'binary' if operation == 'callSandboxSession' else ('read' if operation in ('listSandboxSessions','getSandboxSession') else 'write'),'exposure':'dedicated','permissions':[permission],'review':'none','prerequisite':'Use an exact application-scoped machine key and a verified owner scope.','sensitive_fields':[]}
 
+POLICIES['planDatabaseCapacity'] = {
+    'boundary': 'project',
+    'category': 'read',
+    'exposure': 'generic',
+    'permissions': ['deployments:read'],
+    'prerequisite': '',
+    'review': 'none',
+    'sensitive_fields': [],
+}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

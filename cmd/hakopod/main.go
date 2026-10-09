@@ -915,6 +915,7 @@ func help() {
   hakopod platform recovery-cancel OPERATION_ID
   hakopod database nodes --project demo --environment development
   hakopod database create --file database.toml --project demo --environment development
+  hakopod database capacity-plan [DATABASE_ID] --file database.toml --project demo --environment development
   hakopod database show DATABASE_ID
   hakopod database resize-plan DATABASE_ID --file database.toml
   hakopod database resize DATABASE_ID --file database.toml --review-id REVIEW_ID --revision 1

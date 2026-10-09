@@ -722,6 +722,13 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "planDatabaseCapacity",
+    "method": "POST",
+    "path": "/database-capacity-plan",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "getManagedDatabase",
     "method": "GET",
     "path": "/databases/{id}",

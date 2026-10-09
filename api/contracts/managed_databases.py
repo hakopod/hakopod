@@ -80,6 +80,24 @@ schemas['DatabaseOperation'] = obj({'id': S, 'database_id': S, 'revision': I, 'k
 route('/databases', 'get', 'listManagedDatabases', items('ManagedDatabase'), scope=True)
 schemas['DatabasePlacementNode'] = obj({'name': S, 'architecture': S, 'available': B, 'reason': S, 'zone': S, 'region': S, 'provider': S, 'reserved_cpu_milli': I, 'reserved_memory_bytes': I}, ['name', 'architecture', 'available', 'reason'])
 route('/database-placement/nodes', 'get', 'listDatabasePlacementNodes', obj({'items': array(ref('DatabasePlacementNode')), 'limit': I}, ['items', 'limit']), scope=True)
+schemas['DatabaseCapacity'] = obj({'cpu_milli': I, 'memory_bytes': I, 'storage_gib': I}, ['cpu_milli', 'memory_bytes', 'storage_gib'])
+schemas['DatabaseResourceAmount'] = obj({'cpu_milli': I, 'memory_bytes': I, 'storage_gib': I}, ['cpu_milli', 'memory_bytes', 'storage_gib'])
+schemas['DatabaseCapacityAvailability'] = obj({'known': B, 'reason': S, 'limit': ref('DatabaseCapacity'), 'used': ref('DatabaseCapacity'), 'remaining': ref('DatabaseCapacity'), 'after_plan': ref('DatabaseCapacity')}, ['known', 'limit', 'used', 'remaining', 'after_plan'])
+schemas['DatabaseRecommendationUsage'] = obj({
+    'current_available': B, 'current_cpu_milli': {'type': 'number'}, 'current_memory_bytes': I,
+    'peak_24h_cpu_milli': {'type': 'number'}, 'peak_24h_memory_bytes': I, 'samples_24h': I,
+    'oldest_sample_at': T, 'newest_sample_at': T, 'connected_applications': I,
+    'connected_services': I, 'connections_truncated': B,
+}, ['current_available', 'samples_24h', 'connected_applications', 'connected_services', 'connections_truncated'])
+schemas['DatabaseSizingRecommendation'] = obj({'policy_version': I, 'cpu_milli': I, 'memory_bytes': I, 'confidence': {'type': 'string', 'enum': ['low', 'medium', 'high']}, 'reasons': array(S)}, ['policy_version', 'cpu_milli', 'memory_bytes', 'confidence', 'reasons'])
+schemas['DatabaseCapacityPlan'] = obj({
+    'database_id': S, 'spec': ref('ManagedDatabaseSpec'), 'per_member': ref('DatabaseResourceAmount'),
+    'requested_allocation': ref('DatabaseCapacity'), 'effective_allocation': ref('DatabaseCapacity'),
+    'capacity': ref('DatabaseCapacityAvailability'), 'usage': ref('DatabaseRecommendationUsage'),
+    'recommendation': ref('DatabaseSizingRecommendation'), 'advisory': B,
+}, ['spec', 'per_member', 'requested_allocation', 'effective_allocation', 'capacity', 'usage', 'recommendation', 'advisory'])
+route('/database-capacity-plan', 'post', 'planDatabaseCapacity', ref('DatabaseCapacityPlan'), obj({'project': S, 'environment': S, 'database_id': S, 'spec': ref('ManagedDatabaseSpec')}, ['project', 'environment', 'spec']))
+paths['/database-capacity-plan']['post']['description'] = 'Calculate an advisory database size and recovery allocation from the requested topology, current saved connections and bounded resource samples. This request does not reserve capacity or change the database.'
 route('/databases', 'post', 'createManagedDatabase', ref('DatabaseOperation'), obj({'project': S, 'environment': S, 'spec': ref('ManagedDatabaseSpec')}, ['project', 'environment', 'spec']), '202', idem=True)
 route('/databases/{id}', 'get', 'getManagedDatabase', ref('ManagedDatabase'))
 route('/databases/{id}/failures', 'get', 'getDatabaseFailureHistory', ref('DatabaseFailureHistory'))
