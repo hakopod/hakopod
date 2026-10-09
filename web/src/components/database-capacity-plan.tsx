@@ -8,6 +8,8 @@ const cpu = (value: number) =>
   `${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })} CPU`
 const memory = (value: number) =>
   `${(value / 2 ** 30).toLocaleString(undefined, { maximumFractionDigits: 2 })} GiB`
+const count = (value: number, singular: string) =>
+  `${value.toLocaleString()} ${singular}${value === 1 ? '' : 's'}`
 
 export function DatabaseCapacityPlan({ plan, onApply }: { plan: Plan; onApply: () => void }) {
   const recommendation = plan.recommendation
@@ -45,15 +47,16 @@ export function DatabaseCapacityPlan({ plan, onApply }: { plan: Plan; onApply: (
         <div>
           <dt>Connected workload</dt>
           <dd>
-            {plan.usage.connected_applications} applications · {plan.usage.connected_services}{' '}
-            services{plan.usage.connections_truncated ? ' (bounded result)' : ''}
+            {count(plan.usage.connected_applications, 'application')} ·{' '}
+            {count(plan.usage.connected_services, 'service')}
+            {plan.usage.connections_truncated ? ' (bounded result)' : ''}
           </dd>
         </div>
         <div>
           <dt>Usage evidence</dt>
           <dd>
             {plan.usage.current_available ? 'Current sample available' : 'No current sample'} ·{' '}
-            {plan.usage.samples_24h} samples in 24 hours
+            {count(plan.usage.samples_24h, 'sample')} in 24 hours
           </dd>
         </div>
         <div>
