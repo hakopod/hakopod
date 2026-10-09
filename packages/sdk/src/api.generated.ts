@@ -1754,6 +1754,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/databases/{id}/application-provisioning-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review a dedicated PostgreSQL database, login and application binding. */
+        post: operations["reviewDatabaseApplicationProvisioning"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/application-provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create the reviewed PostgreSQL login and database, verify its grants and queue the application binding. */
+        post: operations["provisionDatabaseApplication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database-application-provisioning-operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the progress of an application database provisioning operation. */
+        get: operations["getDatabaseApplicationProvisioningOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/migration-lock-recovery-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inspect the supported application migration lock and review its recovery. */
+        post: operations["reviewDatabaseMigrationLockRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/databases/{id}/migration-lock-recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recheck and repair the reviewed abandoned application migration lock. */
+        post: operations["recoverDatabaseMigrationLock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/database-migration-lock-recovery-operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read migration lock recovery progress and retained evidence. */
+        get: operations["getDatabaseMigrationLockRecoveryOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/services/{service}/delivery": {
         parameters: {
             query?: never;
@@ -1836,6 +1938,23 @@ export interface paths {
         put?: never;
         /** Queue a test notification for the configured deployment target. */
         post: operations["testDeploymentNotification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deployments/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume failed and dependent services in the accepted application revision. */
+        post: operations["resumeDeployment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4951,6 +5070,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/installation/cleanup/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review exact installer cache files eligible for removal.
+         * @description Requires a self-hosted installation owner browser session. Reviews are bounded to 256 exact installer cache files and expire after ten minutes. Reuse the same retry key after interruption. GET only observes progress; POST resumes the same reviewed operation. Application and database volumes, backups, installed releases and rollback material are protected.
+         */
+        post: operations["reviewServerCleanup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/cleanup/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove the exact reviewed cache files or resume the same cleanup operation.
+         * @description Requires a self-hosted installation owner browser session. Reviews are bounded to 256 exact installer cache files and expire after ten minutes. Reuse the same retry key after interruption. GET only observes progress; POST resumes the same reviewed operation. Application and database volumes, backups, installed releases and rollback material are protected.
+         */
+        post: operations["executeServerCleanup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/cleanup/operations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the recorded progress and receipt for a server cleanup operation.
+         * @description Requires a self-hosted installation owner browser session. Reviews are bounded to 256 exact installer cache files and expire after ten minutes. Reuse the same retry key after interruption. GET only observes progress; POST resumes the same reviewed operation. Application and database volumes, backups, installed releases and rollback material are protected.
+         */
+        get: operations["getServerCleanupOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/services/{service}/sessions": {
         parameters: {
             query?: never;
@@ -5214,6 +5393,8 @@ export interface components {
             started_at?: string | null;
             finished_at?: string | null;
             events: components["schemas"]["Event"][];
+            resume_generation?: number;
+            resume_services?: string[];
             /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
@@ -6020,6 +6201,10 @@ export interface components {
             pod_uid?: string;
             available: boolean;
             message?: string;
+            application_images?: {
+                [key: string]: string;
+            };
+            dependencies?: string[];
         };
         BackupArtifact: {
             id: string;
@@ -6046,6 +6231,7 @@ export interface components {
             /** Format: date-time */
             deleted_at?: string;
             deletion_pending?: boolean;
+            compatibility_evidence?: components["schemas"]["BackupCompatibilityEvidence"];
         };
         BackupJob: {
             id: string;
@@ -6102,6 +6288,8 @@ export interface components {
             warnings: string[];
             /** Format: date-time */
             expires_at: string;
+            compatibility: components["schemas"]["RestoreCompatibilityReport"];
+            related_artifact_ids?: string[];
         };
         BindingTestStage: {
             name: string;
@@ -6347,6 +6535,102 @@ export interface components {
             application_id: string;
             expected_revision: number;
         };
+        DatabaseApplicationProvisioningPlanInput: {
+            application_id: string;
+            service: string;
+            variable: string;
+            endpoint?: string;
+            role?: string;
+            database?: string;
+            secret_reference?: string;
+        };
+        DatabaseApplicationProvisioningPlan: {
+            /** @constant */
+            schema_version: 1;
+            id: string;
+            database_id: string;
+            database_revision: number;
+            application_id: string;
+            application_name: string;
+            application_revision: number;
+            service: string;
+            variable: string;
+            endpoint: string;
+            role: string;
+            logical_database: string;
+            secret_reference: string;
+            privileges: string[];
+            warnings: string[];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        DatabaseApplicationProvisioningOperation: {
+            id: string;
+            database_id: string;
+            database_revision: number;
+            kind: string;
+            status: string;
+            phase: string;
+            message: string;
+            plan: components["schemas"]["DatabaseApplicationProvisioningPlan"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
+        DatabaseMigrationLockEvidence: {
+            schema_version: number;
+            profile: string;
+            database_id: string;
+            database_revision: number;
+            application_id: string;
+            application_revision: number;
+            service: string;
+            variable: string;
+            logical_database: string;
+            application_image: string;
+            schema_fingerprint: string;
+            knex_lock_table: string;
+            knex_lock_rows: number;
+            knex_locked_rows: number;
+            startup_lock_rows: number;
+            startup_locked_rows: number;
+            fresh_startup_heartbeats: number;
+            active_migrator_sessions: number;
+            active_application_pods: number;
+            active_migration_jobs: number;
+            active_migration_locks: number;
+            /** Format: date-time */
+            observed_at: string;
+        };
+        DatabaseMigrationLockRecoveryPlan: {
+            id: string;
+            evidence: components["schemas"]["DatabaseMigrationLockEvidence"];
+            evidence_sha256: string;
+            application_name: string;
+            database_name: string;
+            warnings: string[];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        DatabaseMigrationLockRecoveryOperation: {
+            id: string;
+            database_id: string;
+            status: string;
+            phase: string;
+            message: string;
+            plan: components["schemas"]["DatabaseMigrationLockRecoveryPlan"];
+            before: components["schemas"]["DatabaseMigrationLockEvidence"];
+            after?: components["schemas"]["DatabaseMigrationLockEvidence"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
         PublicTCPListener: {
             port: number;
             target_port: number;
@@ -6464,6 +6748,9 @@ export interface components {
             encryption_ready: boolean;
             legacy_slack_available: boolean;
             legacy_slack_reason: string;
+        };
+        DeploymentResumeInput: {
+            expected_revision: number;
         };
         /** @description A provider is installation-wide, or scoped to one project and one environment, never to a project alone. Credentials are never returned. */
         DNSProvider: {
@@ -7136,6 +7423,14 @@ export interface components {
             verified_at: string;
             sha256: string;
         };
+        DatabaseOperationStage: {
+            id: string;
+            /** @enum {string} */
+            state: "running" | "succeeded" | "failed";
+            message: string;
+            /** Format: date-time */
+            observed_at: string;
+        };
         DatabaseResizePlan: {
             current: components["schemas"]["ManagedDatabaseSpec"];
             proposed: components["schemas"]["ManagedDatabaseSpec"];
@@ -7146,6 +7441,9 @@ export interface components {
             warnings: string[];
             /** Format: date-time */
             expires_at: string;
+            strategy: string;
+            expected_interruption: string;
+            previous_primary?: string;
         };
         DatabaseResizeRetryReview: {
             operation_id: string;
@@ -7186,6 +7484,7 @@ export interface components {
             status: string;
             phase: string;
             message: string;
+            progress: components["schemas"]["DatabaseOperationStage"][];
             spec: components["schemas"]["ManagedDatabaseSpec"];
             review?: components["schemas"]["DatabaseResizePlan"];
             switchover?: components["schemas"]["DatabaseOracleSwitchoverReview"];
@@ -7866,6 +8165,7 @@ export interface components {
             authority_fingerprint: string;
             /** Format: date-time */
             expires_at: string;
+            compatibility?: components["schemas"]["RestoreCompatibilityReport"];
         };
         ManagedPlatformRecoveryRequest: {
             /** @enum {string} */
@@ -9063,6 +9363,90 @@ export interface components {
             inputs: {
                 [key: string]: unknown;
             };
+        };
+        RestoreCompatibilityCheck: {
+            code: string;
+            /** @enum {string} */
+            status: "checked" | "warning" | "unknown" | "blocker";
+            message: string;
+            evidence?: string;
+        };
+        RestoreCompatibilityReport: {
+            /** Format: date-time */
+            generated_at: string;
+            checks: components["schemas"]["RestoreCompatibilityCheck"][];
+            blocked: boolean;
+        };
+        BackupCompatibilityEvidence: {
+            application_revision?: number;
+            runtime_fingerprint?: string;
+            application_images?: {
+                [key: string]: string;
+            };
+            encryption_recipient?: string;
+            dependencies?: string[];
+            related_recovery_points?: {
+                [key: string]: string;
+            };
+        };
+        ServerCleanupItem: {
+            id: string;
+            category: string;
+            path: string;
+            bytes: number;
+        };
+        ServerCleanupInventory: {
+            /** @constant */
+            schema_version: 1;
+            /** Format: date-time */
+            observed_at: string;
+            filesystem: {
+                capacity_bytes: number;
+                available_bytes: number;
+            };
+            items: components["schemas"]["ServerCleanupItem"][];
+            protected: string[];
+            planned_bytes: number;
+        };
+        ServerCleanupReview: {
+            id: string;
+            inventory: components["schemas"]["ServerCleanupInventory"];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        ServerCleanupReceipt: {
+            schema_version: number;
+            operation_id: string;
+            /** @enum {string} */
+            status: "not_started" | "running" | "interrupted" | "succeeded";
+            request_hash?: string;
+            pending_id?: string;
+            removed?: {
+                id: string;
+                bytes: number;
+            }[];
+            skipped?: {
+                id: string;
+                reason: string;
+            }[];
+            uncertain?: {
+                id: string;
+                reason: string;
+            }[];
+            planned_bytes?: number;
+            removed_bytes?: number;
+            available_before_bytes?: number;
+            available_after_bytes?: number;
+            reclaimed_bytes?: number;
+            /** Format: date-time */
+            completed_at?: string;
+        };
+        ServerCleanupOperation: {
+            id: string;
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed";
+            receipt?: components["schemas"]["ServerCleanupReceipt"];
+            message?: string;
         };
         SandboxSession: {
             allowed_identities: string[];
@@ -12361,6 +12745,7 @@ export interface operations {
                 "application/json": {
                     application_id: string;
                     service: string;
+                    related_artifact_ids?: string[];
                 };
             };
         };
@@ -13121,6 +13506,224 @@ export interface operations {
             };
         };
     };
+    reviewDatabaseApplicationProvisioning: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseApplicationProvisioningPlanInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseApplicationProvisioningPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    provisionDatabaseApplication: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    confirm_application: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseApplicationProvisioningOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabaseApplicationProvisioningOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseApplicationProvisioningOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewDatabaseMigrationLockRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    application_id: string;
+                    service: string;
+                    variable: string;
+                    profile: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseMigrationLockRecoveryPlan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    recoverDatabaseMigrationLock: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    confirm_application: string;
+                    confirm_database: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseMigrationLockRecoveryOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getDatabaseMigrationLockRecoveryOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseMigrationLockRecoveryOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getServiceDelivery: {
         parameters: {
             query?: never;
@@ -13393,6 +13996,43 @@ export interface operations {
                         id: string;
                         status: string;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    resumeDeployment: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentResumeInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deployment"];
                 };
             };
             /** @description Error */
@@ -15673,6 +16313,7 @@ export interface operations {
             content: {
                 "application/json": {
                     artifact_id: string;
+                    related_artifact_ids?: string[];
                 };
             };
         };
@@ -21196,6 +21837,126 @@ export interface operations {
                         text: string;
                         truncated: boolean;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reviewServerCleanup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerCleanupReview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    executeServerCleanup: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    review_id: string;
+                    confirmation: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerCleanupOperation"];
+                };
+            };
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerCleanupOperation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getServerCleanupOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerCleanupOperation"];
+                };
+            };
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerCleanupOperation"];
                 };
             };
             /** @description Error */

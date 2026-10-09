@@ -60,6 +60,8 @@ test('capabilities, schema and idempotency lookups use the authenticated proxy',
     'database-placement/nodes',
     `databases/${'a'.repeat(32)}/failures`,
     `databases/${'a'.repeat(32)}/public-endpoint-capabilities`,
+    `applications/${'a'.repeat(32)}/services/web/bindings/DATABASE_URL`,
+    `installation/cleanup/operations/${'a'.repeat(32)}`,
     'managed-platforms',
     `managed-platforms/${'a'.repeat(32)}/trust`,
     `managed-platforms/${'a'.repeat(32)}/operations`,
@@ -82,11 +84,19 @@ test('capabilities, schema and idempotency lookups use the authenticated proxy',
   }
 })
 
-test('platform recovery writes preserve authentication, origin and retry authority', async (t) => {
+test('recovery workflow writes preserve authentication, origin and retry authority', async (t) => {
   for (const path of [
     'managed-platform-recovery/reviews',
     'managed-platform-recovery/operations',
     `managed-platform-recovery-operations/${'a'.repeat(32)}/cancel`,
+    `databases/${'a'.repeat(32)}/private-access`,
+    `databases/${'a'.repeat(32)}/application-provisioning-plan`,
+    `databases/${'a'.repeat(32)}/application-provision`,
+    `databases/${'a'.repeat(32)}/migration-lock-recovery-plan`,
+    `databases/${'a'.repeat(32)}/migration-lock-recover`,
+    'installation/cleanup/review',
+    'installation/cleanup/execute',
+    `deployments/${'a'.repeat(32)}/resume`,
   ]) {
     const body = '{\n "project": "fixture", "environment": "development"\n}'
     const input = new Request(`http://127.0.0.1/api/${path}`, {
@@ -112,11 +122,15 @@ test('platform recovery writes preserve authentication, origin and retry authori
   }
 })
 
-test('platform recovery transport rejects unregistered paths', () => {
+test('recovery workflow transport rejects unregistered paths', () => {
   for (const path of [
     'managed-platform-recovery/admin',
     `managed-platform-recovery-operations/${'a'.repeat(32)}/execute`,
     `managed-platforms/${'a'.repeat(32)}/recovery-operations/cancel`,
+    'installation/cleanup/all',
+    `installation/cleanup/operations/${'a'.repeat(32)}/execute`,
+    `applications/${'a'.repeat(32)}/services/web/bindings/DATABASE_URL/admin`,
+    `databases/${'a'.repeat(32)}/private-access/execute`,
   ]) assert.equal(allowed.some((pattern) => pattern.test(path)), false, path)
 })
 

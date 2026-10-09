@@ -6213,6 +6213,14 @@
                   },
                   "service": {
                     "type": "string"
+                  },
+                  "related_artifact_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "uniqueItems": true
                   }
                 },
                 "required": [
@@ -7613,6 +7621,411 @@
         "summary": "Convert a Docker Compose configuration to a Hakopod specification."
       }
     },
+    "/databases/{id}/application-provisioning-plan": {
+      "post": {
+        "operationId": "reviewDatabaseApplicationProvisioning",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseApplicationProvisioningPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseApplicationProvisioningPlanInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "none",
+          "prerequisite": "",
+          "sensitive_fields": []
+        },
+        "summary": "Review a dedicated PostgreSQL database, login and application binding."
+      }
+    },
+    "/databases/{id}/application-provision": {
+      "post": {
+        "operationId": "provisionDatabaseApplication",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseApplicationProvisioningOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_id": {
+                    "type": "string"
+                  },
+                  "confirm_application": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "review_id",
+                  "confirm_application"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "",
+          "sensitive_fields": []
+        },
+        "summary": "Create the reviewed PostgreSQL login and database, verify its grants and queue the application binding."
+      }
+    },
+    "/database-application-provisioning-operations/{id}": {
+      "get": {
+        "operationId": "getDatabaseApplicationProvisioningOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseApplicationProvisioningOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "review": "none",
+          "prerequisite": "",
+          "sensitive_fields": []
+        },
+        "summary": "Read the progress of an application database provisioning operation."
+      }
+    },
+    "/databases/{id}/migration-lock-recovery-plan": {
+      "post": {
+        "operationId": "reviewDatabaseMigrationLockRecovery",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseMigrationLockRecoveryPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "application_id": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  },
+                  "variable": {
+                    "type": "string"
+                  },
+                  "profile": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "application_id",
+                  "service",
+                  "variable",
+                  "profile"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "none",
+          "prerequisite": "",
+          "sensitive_fields": []
+        },
+        "summary": "Inspect the supported application migration lock and review its recovery."
+      }
+    },
+    "/databases/{id}/migration-lock-recover": {
+      "post": {
+        "operationId": "recoverDatabaseMigrationLock",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseMigrationLockRecoveryOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_id": {
+                    "type": "string"
+                  },
+                  "confirm_application": {
+                    "type": "string"
+                  },
+                  "confirm_database": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "review_id",
+                  "confirm_application",
+                  "confirm_database"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "",
+          "sensitive_fields": []
+        },
+        "summary": "Recheck and repair the reviewed abandoned application migration lock."
+      }
+    },
+    "/database-migration-lock-recovery-operations/{id}": {
+      "get": {
+        "operationId": "getDatabaseMigrationLockRecoveryOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseMigrationLockRecoveryOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "review": "none",
+          "prerequisite": "",
+          "sensitive_fields": []
+        },
+        "summary": "Read migration lock recovery progress and retained evidence."
+      }
+    },
     "/applications/{id}/services/{service}/delivery": {
       "get": {
         "operationId": "getServiceDelivery",
@@ -8135,6 +8548,75 @@
           "sensitive_fields": []
         },
         "summary": "Queue a test notification for the configured deployment target."
+      }
+    },
+    "/deployments/{id}/resume": {
+      "post": {
+        "operationId": "resumeDeployment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentResumeInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "deploy",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "",
+          "sensitive_fields": []
+        },
+        "summary": "Resume failed and dependent services in the accepted application revision."
       }
     },
     "/dns-providers": {
@@ -12239,6 +12721,14 @@
                 "properties": {
                   "artifact_id": {
                     "type": "string"
+                  },
+                  "related_artifact_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "uniqueItems": true
                   }
                 },
                 "required": [
@@ -22961,6 +23451,205 @@
         "summary": "Read the encrypted terminal output for one owned job invocation."
       }
     },
+    "/installation/cleanup/review": {
+      "post": {
+        "operationId": "reviewServerCleanup",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCleanupReview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "Requires a self-hosted installation owner browser session. Reviews are bounded to 256 exact installer cache files and expire after ten minutes. Reuse the same retry key after interruption. GET only observes progress; POST resumes the same reviewed operation. Application and database volumes, backups, installed releases and rollback material are protected.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the self-hosted installation owner cleanup review.",
+          "sensitive_fields": []
+        },
+        "summary": "Review exact installer cache files eligible for removal."
+      }
+    },
+    "/installation/cleanup/execute": {
+      "post": {
+        "operationId": "executeServerCleanup",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCleanupOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCleanupOperation"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_id": {
+                    "type": "string"
+                  },
+                  "confirmation": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "review_id",
+                  "confirmation"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "Requires a self-hosted installation owner browser session. Reviews are bounded to 256 exact installer cache files and expire after ten minutes. Reuse the same retry key after interruption. GET only observes progress; POST resumes the same reviewed operation. Application and database volumes, backups, installed releases and rollback material are protected.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the self-hosted installation owner cleanup review.",
+          "sensitive_fields": []
+        },
+        "summary": "Remove the exact reviewed cache files or resume the same cleanup operation."
+      }
+    },
+    "/installation/cleanup/operations/{id}": {
+      "get": {
+        "operationId": "getServerCleanupOperation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCleanupOperation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerCleanupOperation"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires a self-hosted installation owner browser session. Reviews are bounded to 256 exact installer cache files and expire after ten minutes. Reuse the same retry key after interruption. GET only observes progress; POST resumes the same reviewed operation. Application and database volumes, backups, installed releases and rollback material are protected.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the self-hosted installation owner cleanup review.",
+          "sensitive_fields": []
+        },
+        "summary": "Read the recorded progress and receipt for a server cleanup operation."
+      }
+    },
     "/applications/{id}/services/{service}/sessions": {
       "post": {
         "operationId": "createSandboxSession",
@@ -24080,6 +24769,15 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Event"
+            }
+          },
+          "resume_generation": {
+            "type": "integer"
+          },
+          "resume_services": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
           "provenance": {
@@ -27183,6 +27881,18 @@
           },
           "message": {
             "type": "string"
+          },
+          "application_images": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -27253,6 +27963,9 @@
           },
           "deletion_pending": {
             "type": "boolean"
+          },
+          "compatibility_evidence": {
+            "$ref": "#/components/schemas/BackupCompatibilityEvidence"
           }
         },
         "required": [
@@ -27463,6 +28176,17 @@
           "expires_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/RestoreCompatibilityReport"
+          },
+          "related_artifact_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "uniqueItems": true
           }
         },
         "required": [
@@ -27472,7 +28196,8 @@
           "confirmation",
           "scope",
           "warnings",
-          "expires_at"
+          "expires_at",
+          "compatibility"
         ],
         "additionalProperties": false
       },
@@ -28377,6 +29102,360 @@
         ],
         "additionalProperties": false
       },
+      "DatabaseApplicationProvisioningPlanInput": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "database": {
+            "type": "string"
+          },
+          "secret_reference": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_id",
+          "service",
+          "variable"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseApplicationProvisioningPlan": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "database_revision": {
+            "type": "integer"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "application_revision": {
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "logical_database": {
+            "type": "string"
+          },
+          "secret_reference": {
+            "type": "string"
+          },
+          "privileges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "schema_version",
+          "id",
+          "database_id",
+          "database_revision",
+          "application_id",
+          "application_name",
+          "application_revision",
+          "service",
+          "variable",
+          "endpoint",
+          "role",
+          "logical_database",
+          "secret_reference",
+          "privileges",
+          "warnings",
+          "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseApplicationProvisioningOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "database_revision": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/DatabaseApplicationProvisioningPlan"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "database_id",
+          "database_revision",
+          "kind",
+          "status",
+          "phase",
+          "message",
+          "plan",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseMigrationLockEvidence": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "database_revision": {
+            "type": "integer"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "application_revision": {
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "logical_database": {
+            "type": "string"
+          },
+          "application_image": {
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "type": "string"
+          },
+          "knex_lock_table": {
+            "type": "string"
+          },
+          "knex_lock_rows": {
+            "type": "integer"
+          },
+          "knex_locked_rows": {
+            "type": "integer"
+          },
+          "startup_lock_rows": {
+            "type": "integer"
+          },
+          "startup_locked_rows": {
+            "type": "integer"
+          },
+          "fresh_startup_heartbeats": {
+            "type": "integer"
+          },
+          "active_migrator_sessions": {
+            "type": "integer"
+          },
+          "active_application_pods": {
+            "type": "integer"
+          },
+          "active_migration_jobs": {
+            "type": "integer"
+          },
+          "active_migration_locks": {
+            "type": "integer"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "schema_version",
+          "profile",
+          "database_id",
+          "database_revision",
+          "application_id",
+          "application_revision",
+          "service",
+          "variable",
+          "logical_database",
+          "application_image",
+          "schema_fingerprint",
+          "knex_lock_table",
+          "knex_lock_rows",
+          "knex_locked_rows",
+          "startup_lock_rows",
+          "startup_locked_rows",
+          "fresh_startup_heartbeats",
+          "active_migrator_sessions",
+          "active_application_pods",
+          "active_migration_jobs",
+          "active_migration_locks",
+          "observed_at"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseMigrationLockRecoveryPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/DatabaseMigrationLockEvidence"
+          },
+          "evidence_sha256": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "database_name": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "evidence",
+          "evidence_sha256",
+          "application_name",
+          "database_name",
+          "warnings",
+          "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseMigrationLockRecoveryOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "database_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/DatabaseMigrationLockRecoveryPlan"
+          },
+          "before": {
+            "$ref": "#/components/schemas/DatabaseMigrationLockEvidence"
+          },
+          "after": {
+            "$ref": "#/components/schemas/DatabaseMigrationLockEvidence"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "database_id",
+          "status",
+          "phase",
+          "message",
+          "plan",
+          "before",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
       "PublicTCPListener": {
         "type": "object",
         "properties": {
@@ -28903,6 +29982,19 @@
           "encryption_ready",
           "legacy_slack_available",
           "legacy_slack_reason"
+        ],
+        "additionalProperties": false
+      },
+      "DeploymentResumeInput": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "expected_revision"
         ],
         "additionalProperties": false
       },
@@ -31461,6 +32553,36 @@
         ],
         "additionalProperties": false
       },
+      "DatabaseOperationStage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "message",
+          "observed_at"
+        ],
+        "additionalProperties": false
+      },
       "DatabaseResizePlan": {
         "type": "object",
         "properties": {
@@ -31494,6 +32616,15 @@
           "expires_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "strategy": {
+            "type": "string"
+          },
+          "expected_interruption": {
+            "type": "string"
+          },
+          "previous_primary": {
+            "type": "string"
           }
         },
         "required": [
@@ -31503,7 +32634,9 @@
           "topology_fingerprint",
           "blocked_reasons",
           "warnings",
-          "expires_at"
+          "expires_at",
+          "strategy",
+          "expected_interruption"
         ],
         "additionalProperties": false
       },
@@ -31657,6 +32790,12 @@
           "message": {
             "type": "string"
           },
+          "progress": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseOperationStage"
+            }
+          },
           "spec": {
             "$ref": "#/components/schemas/ManagedDatabaseSpec"
           },
@@ -31687,6 +32826,7 @@
           "status",
           "phase",
           "message",
+          "progress",
           "spec",
           "created_at"
         ],
@@ -34281,6 +35421,9 @@
           "expires_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "compatibility": {
+            "$ref": "#/components/schemas/RestoreCompatibilityReport"
           }
         },
         "required": [
@@ -39017,6 +40160,328 @@
           "correlation_id",
           "owner_scope",
           "inputs"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreCompatibilityCheck": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "checked",
+              "warning",
+              "unknown",
+              "blocker"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreCompatibilityReport": {
+        "type": "object",
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RestoreCompatibilityCheck"
+            }
+          },
+          "blocked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generated_at",
+          "checks",
+          "blocked"
+        ],
+        "additionalProperties": false
+      },
+      "BackupCompatibilityEvidence": {
+        "type": "object",
+        "properties": {
+          "application_revision": {
+            "type": "integer"
+          },
+          "runtime_fingerprint": {
+            "type": "string"
+          },
+          "application_images": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "encryption_recipient": {
+            "type": "string"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "related_recovery_points": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "ServerCleanupItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "path",
+          "bytes"
+        ],
+        "additionalProperties": false
+      },
+      "ServerCleanupInventory": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "filesystem": {
+            "type": "object",
+            "properties": {
+              "capacity_bytes": {
+                "type": "integer"
+              },
+              "available_bytes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "capacity_bytes",
+              "available_bytes"
+            ],
+            "additionalProperties": false
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServerCleanupItem"
+            },
+            "maxItems": 256
+          },
+          "protected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "planned_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "observed_at",
+          "filesystem",
+          "items",
+          "protected",
+          "planned_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "ServerCleanupReview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "inventory": {
+            "$ref": "#/components/schemas/ServerCleanupInventory"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "inventory",
+          "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "ServerCleanupReceipt": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer"
+          },
+          "operation_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "running",
+              "interrupted",
+              "succeeded"
+            ]
+          },
+          "request_hash": {
+            "type": "string"
+          },
+          "pending_id": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "bytes": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "bytes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "uncertain": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "planned_bytes": {
+            "type": "integer"
+          },
+          "removed_bytes": {
+            "type": "integer"
+          },
+          "available_before_bytes": {
+            "type": "integer"
+          },
+          "available_after_bytes": {
+            "type": "integer"
+          },
+          "reclaimed_bytes": {
+            "type": "integer"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "schema_version",
+          "operation_id",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ServerCleanupOperation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/ServerCleanupReceipt"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
         ],
         "additionalProperties": false
       },
