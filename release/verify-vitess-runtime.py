@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -13,6 +14,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 DIGEST = re.compile(r'[0-9a-f]{64}')
+CHAIN = runpy.run_path(str(ROOT / 'release/runtime-source-compatibility.py'))
 MAX_SOURCE_FILES = 4096
 MAX_SOURCE_BYTES = 128 * 1024 * 1024
 REQUIRED_TESTS = {
@@ -90,6 +92,7 @@ def source_files(root):
         'scripts/apply-managed-vitess-patches.py', 'scripts/build-managed-vitess.sh',
         'scripts/run-development-vitess-acceptance.py',
         'release/verify-vitess-runtime.py', 'release/record-vitess-qualification.py',
+        'release/runtime-source-compatibility.py',
         'installer/vitess_controller.py',
         'Dockerfile.vitess-runtime', 'Dockerfile.vitess-operator'))
     paths = sorted(set(paths))
@@ -131,6 +134,9 @@ def load_source_compatibility(root):
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise ValueError('Invalid Vitess compatibility review') from error
     version = record.get('schema_version') if isinstance(record, dict) else None
+    if version == 3:
+        CHAIN['chain_header'](root, 'vitess', record)
+        return record
     identity_field = 'qualified_candidate' if version == 2 else 'qualified_release'
     fields = {'schema_version', identity_field, 'reviewed_release', 'control_plane_commit',
               'regression_evidence', 'scopes'}
@@ -224,6 +230,10 @@ def validate_source_compatibility(root, scope, recorded, current, artifact_sha25
     if recorded == current:
         return False
     review = load_source_compatibility(root)
+    if review['schema_version'] == 3:
+        if scope not in ('runtime', 'http_harness'):
+            raise ValueError('Unknown Vitess compatibility source scope')
+        return CHAIN['validate_chain'](root, 'vitess', review, recorded, current, _protected_vitess_source, artifact_sha256, scope)
     if scope not in ('runtime', 'http_harness'):
         raise ValueError('Unknown Vitess compatibility source scope')
     if artifact_sha256 is not None and artifact_sha256 != compatibility_baseline(review)['native_manifest_sha256']:
