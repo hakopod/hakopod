@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,8 @@ type WorkloadSecret struct {
 	Name      string    `json:"name"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+var ErrProvisionedWorkloadSecretConflict = errors.New("provisioned workload secret conflict")
 
 func secretScope(project, environment, application string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(project+"/"+environment+"/"+application)))[:32]
@@ -66,6 +69,71 @@ func (c *Client) PutWorkloadSecret(ctx context.Context, project, environment, ap
 		return fmt.Errorf("at most 100 application secrets")
 	}
 	return c.PutPlatformSecret(ctx, workloadSecretName(project, environment, application, name), corev1.SecretTypeOpaque, map[string][]byte{"value": []byte(value)}, map[string]string{"hakopod.io/secret-scope": secretScope(project, environment, application), "hakopod.io/secret-name": name})
+}
+
+// PutProvisionedWorkloadSecret creates a credential owned by one durable
+// provisioning operation. A retry may reuse its exact value, but it never
+// replaces a secret created by a user or another operation.
+func (c *Client) PutProvisionedWorkloadSecret(ctx context.Context, project, environment, application, name, value, operationID string) error {
+	if len(operationID) != 32 || strings.Trim(operationID, "0123456789abcdef") != "" {
+		return fmt.Errorf("invalid provisioning operation identity")
+	}
+	items, err := c.ListWorkloadSecrets(ctx, project, environment, application)
+	if err != nil {
+		return err
+	}
+	if len(items) >= 100 {
+		found := false
+		for _, item := range items {
+			found = found || item.Name == name
+		}
+		if !found {
+			return fmt.Errorf("at most 100 application secrets")
+		}
+	}
+	secretName := workloadSecretName(project, environment, application, name)
+	if err = validPlatformSecretName(secretName); err != nil {
+		return err
+	}
+	if len(value) == 0 || len(value) > 512<<10 {
+		return fmt.Errorf("provisioned workload secret exceeds field bounds")
+	}
+	if err = c.platformNamespace(ctx, true); err != nil {
+		return err
+	}
+	scope := secretScope(project, environment, application)
+	wanted := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: PlatformNamespace,
+			Labels: map[string]string{
+				managedBy:                 "hakopod",
+				platformSecretLabel:       "true",
+				"hakopod.io/secret-scope": scope,
+				"hakopod.io/secret-name":  name,
+			},
+			Annotations: map[string]string{
+				"hakopod.io/provisioning-operation": operationID,
+				"hakopod.io/updated-at":             time.Now().UTC().Format(time.RFC3339),
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{"value": []byte(value)},
+	}
+	api := c.kube.CoreV1().Secrets(PlatformNamespace)
+	if _, err = api.Create(ctx, wanted, metav1.CreateOptions{}); err == nil {
+		return nil
+	} else if !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	existing, err := api.Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if existing.Labels[managedBy] != "hakopod" || existing.Labels[platformSecretLabel] != "true" || existing.Labels["hakopod.io/secret-scope"] != scope || existing.Labels["hakopod.io/secret-name"] != name || existing.Annotations["hakopod.io/provisioning-operation"] != operationID || existing.Type != corev1.SecretTypeOpaque || !reflect.DeepEqual(existing.Data, wanted.Data) {
+		return fmt.Errorf("%w: the secret is owned by another writer", ErrProvisionedWorkloadSecretConflict)
+	}
+	return nil
 }
 func (c *Client) DeleteWorkloadSecret(ctx context.Context, project, environment, application, name string) error {
 	return c.DeletePlatformSecret(ctx, workloadSecretName(project, environment, application, name))
