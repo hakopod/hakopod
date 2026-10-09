@@ -40,6 +40,37 @@ test('database restore planning preserves browser request cancellation', async (
   assert.equal((await proxy({ request: input, params: { _splat: path } })).status, 200)
 })
 
+test('database reliability requests preserve browser authority, revision and cancellation', async (t) => {
+  for (const path of [
+    'applications/app-a/services/api/bindings/DATABASE_URL/test',
+    'database-capacity-plan',
+  ]) {
+    const body = { expected_revision: 7, project: 'owned', environment: 'development' }
+    const controller = new AbortController()
+    const input = new Request(request(path, 'POST', body), { signal: controller.signal })
+    assert.equal(
+      (await proxy({ request: request(path, 'POST', body, false), params: { _splat: path } })).status,
+      401,
+    )
+    const foreign = new Request(input.clone())
+    foreign.headers.set('Origin', 'https://untrusted.example')
+    assert.equal((await proxy({ request: foreign, params: { _splat: path } })).status, 403)
+    const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init: RequestInit = {}) => {
+      assert.equal(new URL(String(url)).pathname, `/api/v1/${path}`)
+      assert.equal(init.method, 'POST')
+      assert.equal(init.body, JSON.stringify(body))
+      assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${token}`)
+      assert.equal(init.signal?.aborted, false)
+      controller.abort()
+      assert.equal(init.signal?.aborted, true)
+      return Response.json({ accepted: true })
+    })
+    assert.equal((await proxy({ request: input, params: { _splat: path } })).status, 200)
+    assert.equal(mocked.mock.callCount(), 1)
+    mocked.mock.restore()
+  }
+})
+
 test('managed platform catalog forwards scope through the protected session proxy', async (t) => {
   const mocked = t.mock.method(
     globalThis,
