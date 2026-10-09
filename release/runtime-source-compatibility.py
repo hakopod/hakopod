@@ -10,6 +10,17 @@ COMMIT = re.compile(r'[0-9a-f]{40}')
 TAG = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+')
 BOOTSTRAP_BASE = {'tag': 'v0.1.0-alpha.56', 'commit': 'e45bcf285eabec001e9161878c6696ce7814e54f'}
 BOOTSTRAP_RELEASE = 'v0.1.0-alpha.57'
+ALPHA59_BASE = {'tag': 'v0.1.0-alpha.58', 'commit': '2040ac12564eb4d8d769463fb9cd3e5d989b2c48'}
+ALPHA59_RELEASE = 'v0.1.0-alpha.59'
+ALPHA59_GO_MOD = {
+    'before': 'cdd09b01abe6d0371b89d566f77ae1b87ebbd3f74bf5c801a6c591898162b174',
+    'after': 'a5ad64b13b23e366dccc9d560cbecb97cb6ab32ab8f7e3385171a8f89e96c010',
+}
+ALPHA59_ORACLE_ENTERPRISE_HEALTH = {
+    'path': 'internal/cluster/database_oracle_enterprise_health.go',
+    'before': 'a7b27af19abf00c77e24a55df485f2cbb4c0351e41af2d6d2323f3f21ebc221d',
+    'after': 'cf1a5a2cd010f24a97ca5ce746f76f3835c01ae51441e720d9f9db54464f44a6',
+}
 TRUST_ROOTS = {
     'myduck': {
         'release/runtime-source-compatibility.py',
@@ -26,6 +37,10 @@ TRUST_ROOTS = {
 BOOTSTRAP_CHANGED = {
     'myduck': TRUST_ROOTS['myduck'] - {'release/record-myduck-qualification.py'},
     'oracle-free': TRUST_ROOTS['oracle-free'],
+}
+ALPHA59_BOOTSTRAP_CHANGED = {
+    'myduck': {'release/runtime-source-compatibility.py', 'release/verify-oracle-free-runtime.py'},
+    'oracle-free': {'release/runtime-source-compatibility.py', 'release/verify-oracle-free-runtime.py'},
 }
 
 
@@ -65,13 +80,15 @@ def validate(root, runtime, recorded, current, protected, artifact_sha256):
         raise ValueError(runtime + ' compatibility review lacks exact release identities')
     bootstrap = record['bootstrap']
     if bootstrap is not None:
-        expected_bootstrap = {'base_release': BOOTSTRAP_BASE['tag'], 'base_commit': BOOTSTRAP_BASE['commit'],
-                              'reviewed_release': BOOTSTRAP_RELEASE,
-                              'trust_anchor': 'authenticated-git-review',
-                              'trust_paths': sorted(BOOTSTRAP_CHANGED[runtime])}
-        if bootstrap != expected_bootstrap or baseline['tag'] != BOOTSTRAP_BASE['tag'] \
-                or baseline['commit'] != BOOTSTRAP_BASE['commit'] \
-                or record['reviewed_release'] != BOOTSTRAP_RELEASE:
+        alpha59 = record['reviewed_release'] == ALPHA59_RELEASE
+        base = ALPHA59_BASE if alpha59 else BOOTSTRAP_BASE
+        release = ALPHA59_RELEASE if alpha59 else BOOTSTRAP_RELEASE
+        paths = ALPHA59_BOOTSTRAP_CHANGED[runtime] if alpha59 else BOOTSTRAP_CHANGED[runtime]
+        expected_bootstrap = {'base_release': base['tag'], 'base_commit': base['commit'],
+                              'reviewed_release': release, 'trust_anchor': 'authenticated-git-review',
+                              'trust_paths': sorted(paths)}
+        if bootstrap != expected_bootstrap or baseline['tag'] != base['tag'] \
+                or baseline['commit'] != base['commit'] or record['reviewed_release'] != release:
             raise ValueError(runtime + ' compatibility bootstrap identity is invalid')
     evidence = record['regression_evidence']
     if (not isinstance(evidence, dict) or set(evidence) != {'url', 'tests'}
@@ -101,12 +118,22 @@ def validate(root, runtime, recorded, current, protected, artifact_sha256):
                        for value in (before, after))
                 or not isinstance(reason, str) or not 20 <= len(reason.strip()) <= 500):
             raise ValueError('Invalid, duplicate or unsafe ' + runtime + ' compatibility change')
+        exact_go_mod_reclassification = (record['reviewed_release'] == ALPHA59_RELEASE
+                                         and name == 'go.mod' and before == ALPHA59_GO_MOD['before']
+                                         and after == ALPHA59_GO_MOD['after']
+                                         and recorded.get('go.sum') == current.get('go.sum'))
+        exact_oracle_enterprise_observer = (runtime == 'oracle-free' and record['reviewed_release'] == ALPHA59_RELEASE
+                                            and name == ALPHA59_ORACLE_ENTERPRISE_HEALTH['path']
+                                            and before == ALPHA59_ORACLE_ENTERPRISE_HEALTH['before']
+                                            and after == ALPHA59_ORACLE_ENTERPRISE_HEALTH['after'])
         if name in TRUST_ROOTS[runtime]:
             if bootstrap is None:
                 raise ValueError(runtime + ' trust-root changes require the reviewed alpha.57 bootstrap')
-            if name not in BOOTSTRAP_CHANGED[runtime]:
-                raise ValueError(runtime + ' trust root is outside the fixed alpha.57 bootstrap')
-        elif protected(name):
+            allowed = ALPHA59_BOOTSTRAP_CHANGED[runtime] if record['reviewed_release'] == ALPHA59_RELEASE else BOOTSTRAP_CHANGED[runtime]
+            if name not in allowed:
+                suffix = 'alpha.59 compatibility bootstrap' if record['reviewed_release'] == ALPHA59_RELEASE else 'alpha.57 bootstrap'
+                raise ValueError(runtime + ' trust root is outside the fixed ' + suffix)
+        elif protected(name) and not (exact_go_mod_reclassification or exact_oracle_enterprise_observer):
             raise ValueError(runtime + ' runtime, image or native harness changes require new qualification')
         if expected.get(name) != before:
             raise ValueError(runtime + ' compatibility change differs from qualified baseline')
@@ -118,6 +145,8 @@ def validate(root, runtime, recorded, current, protected, artifact_sha256):
     if expected != current:
         raise ValueError(runtime + ' source changed outside the reviewed delta')
     changed_trust = {change['path'] for change in delta['changes'] if change['path'] in TRUST_ROOTS[runtime]}
-    if bootstrap is not None and changed_trust != BOOTSTRAP_CHANGED[runtime]:
+    expected_trust = (ALPHA59_BOOTSTRAP_CHANGED[runtime] if record['reviewed_release'] == ALPHA59_RELEASE
+                      else BOOTSTRAP_CHANGED[runtime])
+    if bootstrap is not None and changed_trust != expected_trust:
         raise ValueError(runtime + ' compatibility bootstrap trust-path set differs')
     return True

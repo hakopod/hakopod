@@ -319,14 +319,35 @@ class OracleQualification(unittest.TestCase):
             ORACLE.validate_acceptance(mixed, current, self.images, self.root)
 
     def test_oracle_compatibility_rejects_protected_runtime_delta(self):
-        path = self.root / "internal/cluster/new-runtime.go"; path.write_text("package cluster\n")
+        path = self.root / "internal/cluster/database_oracle_free_runtime.go"; path.write_text("package cluster\n")
         current = ORACLE.source_files(self.root)
-        self.compatibility(current, [{"path": "internal/cluster/new-runtime.go", "before": None,
-            "after": current["internal/cluster/new-runtime.go"],
+        self.compatibility(current, [{"path": "internal/cluster/database_oracle_free_runtime.go", "before": None,
+            "after": current["internal/cluster/database_oracle_free_runtime.go"],
             "reason": "Protected Oracle runtime changes require fresh cluster qualification evidence."}])
         with self.assertRaisesRegex(ValueError, "require new qualification"):
             ORACLE.COMPAT["validate"](self.root, "oracle-free", self.sources, current,
                                       ORACLE.protected_source, ORACLE.file_hash(self.directory / "manifest.json"))
+
+    def test_retained_manifest_rejects_native_http_harness_changes(self):
+        for name in ("internal/api/live_database_oracle_free_http_test.go",
+                     "internal/nativeacceptance/oracle_fixture.go",
+                     "scripts/run-development-oracle-free-http-acceptance.py",
+                     "scripts/oracle-free-http-fixtures.py"):
+            path = self.root / name
+            before = path.read_text() if path.exists() else None
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text((before or "") + "reviewed harness change\n")
+            current = ORACLE.source_files(self.root)
+            self.compatibility(current, [{"path": name, "before": self.sources.get(name),
+                "after": current[name],
+                "reason": "A native or HTTP harness change cannot reuse the retained Oracle manifest."}])
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "require new qualification"):
+                ORACLE.COMPAT["validate"](self.root, "oracle-free", self.sources, current,
+                    ORACLE.retained_manifest_protected_source, ORACLE.file_hash(self.directory / "manifest.json"))
+            if before is None:
+                path.unlink()
+            else:
+                path.write_text(before)
 
     def test_cleanup_and_source_after_are_required(self):
         for field, value in (("source_manifest_after_sha256", "9" * 64), ("exit_code", 1), ("node_uids", {"production": "c" * 36}),
