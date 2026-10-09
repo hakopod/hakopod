@@ -20,8 +20,9 @@ func TestManagedPostgresApplicationProvisioningLive(t *testing.T) {
 		t.Skip("set HAKOPOD_DATABASE_APPLICATION_PROVISIONING_TEST=1")
 	}
 	c, ctx := liveRecoveryClient(t)
-	d, observed := newRecoveryFixture(t, ctx, c, "postgresql", "17")
+	d, observed := newRecoveryFixtureConfigured(t, ctx, c, "postgresql", "17", func(spec *database.Spec) { spec.TLS = &database.TLSConfig{Mode: "required"} })
 	d.Observation = observed
+	d.Status = "ready"
 	random := make([]byte, 16)
 	if _, err := rand.Read(random); err != nil {
 		t.Fatal(err)
@@ -74,6 +75,7 @@ func TestInfisicalKnexMigrationLockRecoveryLive(t *testing.T) {
 	c, ctx := liveRecoveryClient(t)
 	d, observed := newRecoveryFixture(t, ctx, c, "postgresql", "17")
 	d.Observation = observed
+	d.Status = "ready"
 	applicationID := strings.Repeat("a", 32)
 	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: Namespace(applicationID)}}
 	if _, err := c.kube.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
@@ -86,7 +88,7 @@ func TestInfisicalKnexMigrationLockRecoveryLive(t *testing.T) {
 			member = candidate
 		}
 	}
-	setup := `DROP TABLE IF EXISTS infisical_migrations_lock; DROP TABLE IF EXISTS infisical_migrations_startup_lock; CREATE TABLE infisical_migrations_lock(index serial primary key,is_locked integer); INSERT INTO infisical_migrations_lock(is_locked) VALUES(1); CREATE TABLE infisical_migrations_startup_lock(index serial primary key,is_locked integer,session_id text,node text,heartbeat_updated_at timestamptz); INSERT INTO infisical_migrations_startup_lock(is_locked) VALUES(0);`
+	setup := `DROP TABLE IF EXISTS infisical_migrations_lock; DROP TABLE IF EXISTS infisical_migrations_startup_lock; CREATE TABLE infisical_migrations_lock(index serial primary key,is_locked integer); INSERT INTO infisical_migrations_lock(is_locked) VALUES(1); CREATE TABLE infisical_migrations_startup_lock(index serial primary key,is_locked integer,session_id varchar(255),node varchar(255),heartbeat_updated_at timestamptz); INSERT INTO infisical_migrations_startup_lock(is_locked) VALUES(0);`
 	if err := c.DatabaseExec(ctx, d, member, []string{"psql", "-Xq", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "app", "-c", setup}, nil, io.Discard); err != nil {
 		t.Fatal(err)
 	}

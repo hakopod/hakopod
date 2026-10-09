@@ -51,7 +51,7 @@ func (s *Store) PlanDatabaseApplicationProvisioning(ctx context.Context, p Princ
 	if err != nil {
 		return database.ApplicationProvisioningPlan{}, err
 	}
-	if d.Spec.Engine != "postgresql" {
+	if d.Spec.Engine != "postgresql" || !d.Spec.TLSRequired() {
 		return database.ApplicationProvisioningPlan{}, fmt.Errorf("%w: application database provisioning currently supports PostgreSQL only", ErrInput)
 	}
 	a, err := s.Application(ctx, applicationID)

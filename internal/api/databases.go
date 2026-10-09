@@ -18,6 +18,7 @@ import (
 
 func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
 	s.registerDatabasePublicEndpointRoutes(mux)
+	s.registerDatabaseWorkflowRoutes(mux)
 	mux.HandleFunc("GET /api/v1/database-placement/nodes", s.databasePlacementNodes)
 	mux.HandleFunc("POST /api/v1/database-capacity-plan", s.databaseCapacityPlan)
 	mux.HandleFunc("GET /api/v1/database-operations/{id}", s.databaseOperation)
@@ -366,6 +367,8 @@ func (s *Server) RunManagedDatabases(ctx context.Context) {
 	// A slow engine probe must not occupy the lifecycle reconciliation lane.
 	// Durable claims prevent two observation workers from probing the same DB.
 	start(time.Second, s.reconcileDatabase)
+	start(time.Second, s.reconcileDatabaseApplicationProvisioning)
+	start(time.Second, s.reconcileMigrationLockRecovery)
 	start(time.Second, s.reconcileDatabasePublicEndpoint)
 	for range 4 {
 		start(time.Second, s.refreshDatabaseObservation)
