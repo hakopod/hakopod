@@ -20,6 +20,7 @@ import { Icon } from '../components/icons'
 import {
   DatabaseIdentity,
   DatabaseSummary,
+  DatabaseFailures,
   DatabaseTopology,
   DatabaseMonitoring,
   DatabaseMembers,
@@ -145,6 +146,7 @@ function Detail() {
           This observation is stale. Member readiness and topology show the last known state.
         </Note>
       )}
+      <DatabaseFailures database={d} />
       {error && (
         <p role="alert" className="text-destructive py-3">
           {error}

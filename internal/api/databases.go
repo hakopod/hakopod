@@ -29,6 +29,7 @@ func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/databases/{id}/connections", s.databaseConnections)
 	mux.HandleFunc("GET /api/v1/databases/{id}/trust", s.databaseTrust)
 	mux.HandleFunc("GET /api/v1/databases/{id}/metrics", s.databaseMetricHistory)
+	mux.HandleFunc("GET /api/v1/databases/{id}/failures", s.databaseFailureHistory)
 	mux.HandleFunc("POST /api/v1/databases/{id}/credentials", s.databaseCredentials)
 	mux.HandleFunc("DELETE /api/v1/databases/{id}", s.deleteDatabase)
 	mux.HandleFunc("POST /api/v1/databases/{id}/resize-plan", s.databaseResizePlan)
@@ -39,6 +40,18 @@ func (s *Server) registerDatabaseRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/databases/{id}/switchover-plan", s.oracleSwitchoverPlan)
 	mux.HandleFunc("POST /api/v1/databases/{id}/switchover", s.oracleSwitchover)
 	mux.HandleFunc("POST /api/v1/databases/{id}/switchover-retry", s.oracleSwitchoverRetry)
+}
+
+func (s *Server) databaseFailureHistory(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	history, err := s.Store.DatabaseFailureHistory(ctx, who(r), r.PathValue("id"))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	write(w, http.StatusOK, history)
 }
 
 type databaseResizeRetryRuntime interface {

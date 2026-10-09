@@ -736,6 +736,13 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "getDatabaseFailureHistory",
+    "method": "GET",
+    "path": "/databases/{id}/failures",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "listDatabaseOperations",
     "method": "GET",
     "path": "/databases/{id}/operations",

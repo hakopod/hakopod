@@ -725,6 +725,7 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 	}
 	c.observeDatabasePlacement(ctx, d, &o)
 	c.observeDatabaseMetrics(ctx, d, memberPods, &o)
+	o.Failures = databaseFailureEvidence(d, memberPods, o)
 	if len(o.Members) != d.Spec.Members() || ready != d.Spec.Members() {
 		o.Message = "Waiting for database members to become ready."
 		return o, nil

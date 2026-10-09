@@ -773,6 +773,15 @@ export class DatabaseRef {
       query: { range },
     });
   }
+  async failures(
+    options: RequestOptions = {},
+  ): Promise<Schema["DatabaseFailureHistory"]> {
+    const current = await this.get(options);
+    return this.#context.transport.request("GET", "/databases/{id}/failures", {
+      ...options,
+      params: { id: current.id },
+    });
+  }
   async connections(
     options: RequestOptions = {},
   ): Promise<Schema["DatabaseConnections"]> {

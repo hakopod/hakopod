@@ -109,6 +109,7 @@
   "getCloudCapabilities": "Read capabilities exposed by the current Cloud connection.",
   "getDatabaseImport": "Read the state of the database import.",
   "getDatabaseMetricHistory": "Read recorded metrics for the managed database.",
+  "getDatabaseFailureHistory": "Read retained failure evidence for the managed database.",
   "getDatabaseOperation": "Read the state of the managed database operation.",
   "getDatabasePublicEndpointCapabilities": "Read supported options for publishing a database endpoint.",
   "getDatabasePublicEndpointOperation": "Read the state of the operation for a public database endpoint.",

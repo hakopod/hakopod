@@ -385,6 +385,9 @@ func (s *Store) RecordDatabaseStep(ctx context.Context, o database.Operation, ob
 	if err = recordDatabaseMetricPoint(ctx, tx, o.DatabaseID, o.Revision, observation); err != nil {
 		return err
 	}
+	if err = recordDatabaseFailures(ctx, tx, o.DatabaseID, o.Revision, observation.ObservedAt, observation.Failures); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 func (s *Store) ObserveDatabase(ctx context.Context, id string, revision int64, o database.Observation) error {
@@ -419,6 +422,9 @@ func (s *Store) ObserveRecoveringDatabase(ctx context.Context, id string, revisi
 	if err = recordDatabaseMetricPoint(ctx, tx, id, revision, o); err != nil {
 		return err
 	}
+	if err = recordDatabaseFailures(ctx, tx, id, revision, o.ObservedAt, o.Failures); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -442,6 +448,9 @@ func (s *Store) observeDatabase(ctx context.Context, id string, revision int64, 
 		return nil
 	}
 	if err = recordDatabaseMetricPoint(ctx, tx, id, revision, o); err != nil {
+		return err
+	}
+	if err = recordDatabaseFailures(ctx, tx, id, revision, o.ObservedAt, o.Failures); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

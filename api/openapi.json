@@ -10790,6 +10790,55 @@
         "summary": "Request deletion of the managed database."
       }
     },
+    "/databases/{id}/failures": {
+      "get": {
+        "operationId": "getDatabaseFailureHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseFailureHistory"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Read retained failure evidence for the managed database."
+      }
+    },
     "/databases/{id}/operations": {
       "get": {
         "operationId": "listDatabaseOperations",
@@ -30247,6 +30296,155 @@
         ],
         "additionalProperties": false
       },
+      "DatabaseFailureEvidence": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "member": {
+            "type": "string"
+          },
+          "member_uid": {
+            "type": "string"
+          },
+          "container": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "restart_count": {
+            "type": "integer"
+          },
+          "memory_limit_bytes": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "summary",
+          "occurred_at",
+          "observed_at",
+          "revision",
+          "member",
+          "member_uid",
+          "container",
+          "reason",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseFailureRecord": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "member": {
+            "type": "string"
+          },
+          "member_uid": {
+            "type": "string"
+          },
+          "container": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "restart_count": {
+            "type": "integer"
+          },
+          "memory_limit_bytes": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "code",
+          "summary",
+          "occurred_at",
+          "observed_at",
+          "revision",
+          "member",
+          "member_uid",
+          "container",
+          "reason",
+          "source",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseFailureHistory": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseFailureRecord"
+            },
+            "maxItems": 32
+          },
+          "limit": {
+            "type": "integer",
+            "const": 32
+          }
+        },
+        "required": [
+          "items",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
       "DatabasePlacementObservation": {
         "type": "object",
         "properties": {
@@ -30331,6 +30529,13 @@
             "items": {
               "$ref": "#/components/schemas/DatabaseMember"
             }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseFailureEvidence"
+            },
+            "maxItems": 64
           },
           "endpoints": {
             "type": "array",
