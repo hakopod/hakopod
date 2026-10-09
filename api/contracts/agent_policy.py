@@ -2658,6 +2658,11 @@ POLICIES['resumeDeployment'] = {'boundary':'project','category':'deploy','exposu
 for operation in ['reviewServerCleanup','executeServerCleanup','getServerCleanupOperation']:
     POLICIES[operation] = {'boundary':'installation','category':'human','exposure':'prerequisite','permissions':['admin'],'review':'canonical','prerequisite':'Use the self-hosted installation owner cleanup review.','sensitive_fields':[]}
 
+for operation in ['reviewDatabaseApplicationProvisioning','provisionDatabaseApplication','getDatabaseApplicationProvisioningOperation','reviewDatabaseMigrationLockRecovery','recoverDatabaseMigrationLock','getDatabaseMigrationLockRecoveryOperation']:
+    read=operation.startswith('get')
+    plan=operation.startswith('review')
+    POLICIES[operation]={'boundary':'project','category':'read' if read else 'write','exposure':'generic','permissions':['deployments:read' if read else 'deployments:write'],'review':'none' if read or plan else 'canonical','prerequisite':'','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

@@ -491,6 +491,48 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "reviewDatabaseApplicationProvisioning",
+    "method": "POST",
+    "path": "/databases/{id}/application-provisioning-plan",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "provisionDatabaseApplication",
+    "method": "POST",
+    "path": "/databases/{id}/application-provision",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "getDatabaseApplicationProvisioningOperation",
+    "method": "GET",
+    "path": "/database-application-provisioning-operations/{id}",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "reviewDatabaseMigrationLockRecovery",
+    "method": "POST",
+    "path": "/databases/{id}/migration-lock-recovery-plan",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "recoverDatabaseMigrationLock",
+    "method": "POST",
+    "path": "/databases/{id}/migration-lock-recover",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "getDatabaseMigrationLockRecoveryOperation",
+    "method": "GET",
+    "path": "/database-migration-lock-recovery-operations/{id}",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "getServiceDelivery",
     "method": "GET",
     "path": "/applications/{id}/services/{service}/delivery",
@@ -502,6 +544,13 @@ export const agentRoutes = [
     "method": "GET",
     "path": "/applications/{id}/services/{service}/certificates",
     "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "resumeDeployment",
+    "method": "POST",
+    "path": "/deployments/{id}/resume",
+    "category": "deploy",
     "boundary": "project"
   },
   {
