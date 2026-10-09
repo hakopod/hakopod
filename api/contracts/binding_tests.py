@@ -16,7 +16,7 @@ schemas['BindingTestResult'] = obj({
     'pod': S, 'pod_uid': S, 'observed_at': T,
     'outcome': {'type': 'string', 'enum': ['passed', 'failed', 'unsupported', 'unavailable', 'stale']},
     'snapshot_resolved': B,
-    'loaded_matches_snapshot': {'type': ['boolean', 'null'], 'description': 'Whether the helper read the last resolved workload snapshot in the current revision. Null means the comparison could not be verified. This does not inspect unsynchronized external secret-provider values.'},
+    'loaded_matches_snapshot': {'type': ['boolean', 'null'], 'description': 'Whether the container value, generated trust and current workload template match the binding resolved for this request. Null means the comparison could not be verified.'},
     'stages': {'type': 'array', 'items': ref('BindingTestStage'), 'maxItems': 8},
 }, ['schema_version', 'application_id', 'service', 'variable', 'revision', 'observed_at', 'outcome', 'snapshot_resolved', 'loaded_matches_snapshot', 'stages'])
 route('/applications/{id}/services/{service}/bindings/{variable}/test', 'post', 'testServiceBinding', ref('BindingTestResult'), ref('BindingTestInput'))

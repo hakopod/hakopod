@@ -23,5 +23,8 @@ Source inspection used these pinned revisions:
 
 The source contracts and Hakopod rendering logic are covered by repository
 tests. Driver-level acceptance against the pinned Infisical and GlitchTip images
-verified the correct CA and rejected a wrong CA. Full application deployment
-acceptance remains pending.
+verified the correct CA and rejected a wrong CA. Both pinned applications also
+completed migrations and reached their health endpoint with TLS-enabled
+PostgreSQL and Redis fixtures. These disposable checks covered the application
+startup and trust configuration; they did not repeat database operator lifecycle
+qualification.

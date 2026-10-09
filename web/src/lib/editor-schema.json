@@ -805,6 +805,12 @@
           "$ref": "#/components/schemas/ServiceBinding"
         }
       },
+      "database_client_profiles": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
       "startup_timeout_seconds": {
         "type": "integer",
         "minimum": 10,
