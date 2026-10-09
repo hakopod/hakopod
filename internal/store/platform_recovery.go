@@ -264,7 +264,6 @@ func (s *Store) SavePlatformRecoveryReview(ctx context.Context, p Principal, int
 		}
 		review.Compatibility = platformbackup.RestoreCompatibility(manifest, targetKind, time.Now())
 		if review.Compatibility.Blocked {
-			review.ID = NewID()
 			review.Intent = intent
 			review.ExpiresAt = time.Now().UTC().Add(10 * time.Minute)
 			return review, nil

@@ -42,10 +42,9 @@ func TestNeonRecoveryControllerStateRequiresLiveFenceAndReplacementTimeline(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := platformbackup.Manifest{Format: platformbackup.NeonFormat, Neon: &platformbackup.NeonIdentity{TenantID: strings.Repeat("1", 32), TimelineID: strings.Repeat("2", 32), TenantGeneration: 1, TimelineGeneration: 1}}
-	manifest.ManifestSHA256 = manifest.Digest()
+	manifest := neonRecoveryManifestFixture(source.ID, destination.ID)
 	artifactID := NewID()
-	if _, err = s.Pool.Exec(ctx, `INSERT INTO managed_platform_recovery_artifacts(id,source_platform_id,source_revision,destination_id,object_key,encrypted_bytes,encrypted_sha256,manifest,manifest_sha256,published_at) VALUES($1,$2,1,$3,$4,1,$5,$6,$7,now())`, artifactID, source.ID, destination.ID, "neon/controller", strings.Repeat("e", 64), JSON(map[string]any{"format": platformbackup.NeonFormat}), manifest.ManifestSHA256); err != nil {
+	if _, err = s.Pool.Exec(ctx, `INSERT INTO managed_platform_recovery_artifacts(id,source_platform_id,source_revision,destination_id,object_key,encrypted_bytes,encrypted_sha256,manifest,manifest_sha256,published_at) VALUES($1,$2,1,$3,$4,1,$5,$6,$7,now())`, artifactID, source.ID, destination.ID, "neon/controller", strings.Repeat("e", 64), JSON(manifest), manifest.ManifestSHA256); err != nil {
 		t.Fatal(err)
 	}
 	intent := platformbackup.Intent{Kind: "restore", Project: target.Project, Environment: target.Environment, SourcePlatformID: source.ID, TargetPlatformID: target.ID, ArtifactID: artifactID, ExpectedSourceRevision: 1, ExpectedTargetRevision: 1}
