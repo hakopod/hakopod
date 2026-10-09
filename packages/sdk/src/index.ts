@@ -46,6 +46,8 @@ export {
   DatabaseRef,
   DatabaseRun,
   DatabasePublicEndpointRun,
+  DatabaseApplicationProvisioningRun,
+  DatabaseMigrationLockRecoveryRun,
   DeploymentRun,
   NetworkRef,
   ManagedPlatformRef,
@@ -245,6 +247,12 @@ export class Hakopod {
   }
   databaseOperation(databaseId: string, operationId: string): DatabaseRun {
     return new DatabaseRun(this.#context, operationId, databaseId);
+  }
+  databaseApplicationProvisioningOperation(databaseId: string, operationId: string): DatabaseApplicationProvisioningRun {
+    return new DatabaseApplicationProvisioningRun(this.#context, operationId, databaseId);
+  }
+  databaseMigrationLockRecoveryOperation(databaseId: string, operationId: string): DatabaseMigrationLockRecoveryRun {
+    return new DatabaseMigrationLockRecoveryRun(this.#context, operationId, databaseId);
   }
   databasePublicEndpointOperation(databaseId: string, endpointId: string, operationId: string): DatabasePublicEndpointRun {
     return new DatabasePublicEndpointRun(this.#context, operationId, databaseId, endpointId);
