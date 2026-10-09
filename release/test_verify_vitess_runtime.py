@@ -82,7 +82,8 @@ class VitessReleaseVerificationTest(unittest.TestCase):
         (self.root / 'internal/cluster/database_vitess.go').write_text('\n'.join(source))
         for name in ('go.mod', 'go.sum', 'scripts/apply-managed-vitess-patches.py', 'scripts/build-managed-vitess.sh',
                      'scripts/run-development-vitess-acceptance.py', 'release/verify-vitess-runtime.py',
-                     'release/record-vitess-qualification.py', 'installer/vitess_controller.py'):
+                     'release/record-vitess-qualification.py',
+                     'release/runtime-source-compatibility.py', 'installer/vitess_controller.py'):
             (self.root / name).write_text('test fixture source\n')
         (self.root / 'internal/cluster/live_database_vitess_test.go').write_text('test fixture acceptance source\n')
         for name in ('internal/spec/templates.go', 'internal/cluster/volume_copy.py',
