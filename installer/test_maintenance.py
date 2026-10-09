@@ -3,11 +3,25 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import os
 from unittest.mock import patch
 
 import maintenance as m
 
 class MaintenanceTests(unittest.TestCase):
+    def test_cleanup_rechecks_exact_owned_old_file_and_reports_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state=Path(tmp); root=state/'downloads'; root.mkdir(mode=0o700)
+            removable=root/'old.tar';removable.write_bytes(b'x'*4096);os.utime(removable,(1,1))
+            fresh=root/'fresh.tar';fresh.write_bytes(b'x');
+            with patch.object(m,'STATE',state),patch.object(m,'INSTALL_LOCK',state/'install.lock'),patch.object(m,'CLEANUP_OWNER_UID',os.getuid()),patch.object(m.shutil,'disk_usage',return_value=type('D',(),{'total':10000,'free':5000})()):
+                review=m.cleanup_preview();self.assertEqual([i['path'] for i in review['items']],[str(removable)])
+                changed=dict(review['items'][0]);changed['id']='0'*64
+                receipt=m.cleanup_execute({'schema_version':1,'operation_id':'a'*32,'items':[changed]})
+                self.assertTrue(removable.exists());self.assertEqual(len(receipt['skipped']),1)
+                receipt=m.cleanup_execute({'schema_version':1,'operation_id':'b'*32,'items':review['items']})
+                self.assertFalse(removable.exists());self.assertEqual(receipt['removed_bytes'],review['planned_bytes'])
+
     def test_versions_channels_and_order(self):
         self.assertLess(m.version_key('0.1.0-alpha.4'),m.version_key('0.1.0-alpha.10'))
         self.assertLess(m.version_key('0.1.0-alpha.10'),m.version_key('0.1.0'))
