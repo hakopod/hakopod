@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/bindingprobe"
 	"github.com/hakopod/hakopod/internal/readinessprobe"
 )
 
@@ -34,6 +36,9 @@ func run() error {
 		}
 		return copyFile("/etc/ssl/certs/ca-certificates.crt", "/probe/ca-certificates.crt", 1<<20)
 	}
+	if len(os.Args) == 2 && os.Args[1] == "connection" {
+		return runConnection(os.Stdin, os.Stdout)
+	}
 	var cfg readinessprobe.Config
 	flag.StringVar(&cfg.Protocol, "protocol", "", "tcp, smtp or smtp_starttls")
 	flag.IntVar(&cfg.Port, "port", 0, "Local listener port")
@@ -47,6 +52,29 @@ func run() error {
 		return fmt.Errorf("unexpected probe arguments")
 	}
 	return readinessprobe.Check(context.Background(), cfg)
+}
+
+func runConnection(input io.Reader, output io.Writer) error {
+	decoder := json.NewDecoder(io.LimitReader(input, bindingprobe.MaxInput+1))
+	decoder.DisallowUnknownFields()
+	var request bindingprobe.Request
+	if err := decoder.Decode(&request); err != nil {
+		return writeConnectionResult(output, bindingprobe.Result{SchemaVersion: 1, Stages: []bindingprobe.Stage{{Name: "configuration", Status: "failed", Code: "invalid_request", Message: "The probe request is invalid."}}})
+	}
+	var extra any
+	if decoder.Decode(&extra) != io.EOF {
+		return writeConnectionResult(output, bindingprobe.Result{SchemaVersion: 1, Stages: []bindingprobe.Stage{{Name: "configuration", Status: "failed", Code: "invalid_request", Message: "The probe request is invalid."}}})
+	}
+	return writeConnectionResult(output, bindingprobe.Run(context.Background(), request, os.LookupEnv))
+}
+
+func writeConnectionResult(output io.Writer, result bindingprobe.Result) error {
+	encoder := json.NewEncoder(output)
+	encoder.SetEscapeHTML(true)
+	if err := encoder.Encode(result); err != nil {
+		return fmt.Errorf("cannot write bounded probe result")
+	}
+	return nil
 }
 
 func copyFile(source, destination string, limit int64) error {

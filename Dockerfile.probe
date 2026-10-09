@@ -4,6 +4,7 @@ ENV GOMEMLIMIT=256MiB GOMAXPROCS=2
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY cmd/hakopod-probe ./cmd/hakopod-probe
+COPY internal/bindingprobe ./internal/bindingprobe
 COPY internal/readinessprobe ./internal/readinessprobe
 ARG TARGETOS=linux
 ARG TARGETARCH

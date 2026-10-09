@@ -123,6 +123,81 @@ lines at 4 KiB, and custom CA bundles at 1 MiB. There is no stored probe history
 or background polling service. Helper or root-bundle image upgrades apply when
 the workload is redeployed.
 
+### Runtime database connection check contract
+
+The installed helper also has a `connection` mode. The API must execute this
+mode inside the application container. The check reads one connection value
+from the environment that the running process received. The API must not copy
+the connection value into an argument, stdin, stdout, a log, or a stored result.
+
+Execute this command:
+
+```text
+/var/run/secrets/hakopod-probe/hakopod-probe connection
+```
+
+Send one JSON object of at most 4,096 bytes on stdin:
+
+```json
+{
+  "schema_version": 1,
+  "protocol": "postgres",
+  "variable": "DATABASE_URL",
+  "ca_file": "/var/run/secrets/hakopod-database/ca.crt",
+  "timeout_ms": 15000,
+  "fingerprint_nonce": "one-use-random-value-from-the-api"
+}
+```
+
+`protocol` recognizes `postgres`, `postgresql`, `redis`, `mysql`, `vitess`,
+`myduck`, `mongodb`, `clickhouse`, and `oracle`. This helper release checks PostgreSQL, Redis, and MySQL protocol
+connections. Vitess and the MySQL endpoint of MyDuck use the MySQL check.
+MongoDB, ClickHouse, and Oracle requests return an explicit unsupported result.
+Redis requires a `rediss` URL. All checks require a CA file and verify the
+connection hostname. The total timeout must be 1 to 20 seconds.
+
+The helper writes one JSON object to stdout. It does not write connection
+values or driver errors. The result reports these stages when they apply:
+`configuration`, `dns`, `network`, `certificate`, `authentication`, and
+`query`. A successful query stage proves only that a minimal read-only query or
+command succeeded. It does not prove access to application tables or all
+required grants.
+
+```json
+{
+  "schema_version": 1,
+  "protocol": "postgres",
+  "variable": "DATABASE_URL",
+  "loaded_fingerprint": "hex-encoded-HMAC-for-trusted-comparison",
+  "stages": [
+    {
+      "name": "configuration",
+      "status": "passed",
+      "code": "variable_loaded",
+      "message": "The running process loaded a valid connection value."
+    }
+  ]
+}
+```
+
+The optional fingerprint is
+`hex(HMAC-SHA256(key=fingerprint_nonce, value=loaded_variable))`. The trusted
+API can compare this value with the expected binding in memory. The API must
+create a new nonce for each check. It must remove the fingerprint before it
+stores or returns the result. The fingerprint does not belong in operation
+logs, audit details, or user-visible API responses.
+
+The API integration must bound stdin to 4,096 bytes, stdout to 4 KiB, and the
+exec deadline to 20 seconds. It must authorize access to the application and
+service before it starts the exec. The application container does not receive
+Kubernetes credentials. The helper uses the existing read-only installed
+binary mount.
+
+The new database drivers increase the static binary. The existing installer
+still rejects a binary larger than 32 MiB, and the helper volume remains 40
+MiB. Release qualification must measure the stripped binary and installed
+files before publication. This source change does not claim a measured size.
+
 ## Development verification
 
 `TestLiveSMTPReadiness` is opt-in and refuses any context except
