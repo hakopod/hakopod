@@ -534,13 +534,6 @@ func (w *Worker) renewCertificates(parent context.Context, a store.Application, 
 	err = w.Cluster.RenewBackendCertificates(ctx, target, emit, selected)
 	if err == nil {
 		if runtime, ok := w.Cluster.(interface {
-			RenewDatabaseTrust(context.Context, cluster.Target, func(cluster.Event), string) error
-		}); ok {
-			err = runtime.RenewDatabaseTrust(ctx, target, emit, selected)
-		}
-	}
-	if err == nil {
-		if runtime, ok := w.Cluster.(interface {
 			RefreshExternalDatabaseEgress(context.Context, cluster.Target, func(cluster.Event), string) error
 		}); ok {
 			err = runtime.RefreshExternalDatabaseEgress(ctx, target, emit, selected)
@@ -551,6 +544,10 @@ func (w *Worker) renewCertificates(parent context.Context, a store.Application, 
 			RefreshDatabaseBindings(context.Context, cluster.Target, func(cluster.Event), string) error
 		}); ok {
 			err = runtime.RefreshDatabaseBindings(ctx, target, emit, selected)
+		} else if runtime, ok := w.Cluster.(interface {
+			RenewDatabaseTrust(context.Context, cluster.Target, func(cluster.Event), string) error
+		}); ok {
+			err = runtime.RenewDatabaseTrust(ctx, target, emit, selected)
 		}
 	}
 	if err != nil && ctx.Err() == nil {

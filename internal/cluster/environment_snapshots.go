@@ -40,6 +40,18 @@ func environmentSnapshotOwned(secret *corev1.Secret, t Target, service string) e
 // PodTemplate, while old pods and retained ReplicaSets keep their original
 // immutable Secret. Kubernetes cannot start an old revision with newer values.
 func (c *Client) pinWorkloadEnvironment(ctx context.Context, t Target, service string, template *corev1.PodTemplateSpec) (bool, error) {
+	return c.pinWorkloadEnvironmentValues(ctx, t, service, template, nil)
+}
+
+func (c *Client) pinResolvedWorkloadEnvironment(ctx context.Context, t Target, service string, template *corev1.PodTemplateSpec) (bool, error) {
+	values, err := c.workloadEnvironmentData(ctx, t, service, spec.EffectiveService(t.Spec, t.Spec.Services[service]))
+	if err != nil {
+		return false, err
+	}
+	return c.pinWorkloadEnvironmentValues(ctx, t, service, template, values)
+}
+
+func (c *Client) pinWorkloadEnvironmentValues(ctx context.Context, t Target, service string, template *corev1.PodTemplateSpec, values map[string][]byte) (bool, error) {
 	svc := spec.EffectiveService(t.Spec, t.Spec.Services[service])
 	if len(svc.Secrets) == 0 && len(svc.Bindings) == 0 {
 		return false, nil
@@ -55,15 +67,21 @@ func (c *Client) pinWorkloadEnvironment(ctx context.Context, t Target, service s
 	if owned(current, t) != nil || current.Labels[serviceKey] != service || current.DeletionTimestamp != nil || current.Type != corev1.SecretTypeOpaque {
 		return false, fmt.Errorf("service environment ownership changed")
 	}
-	wanted := environmentSnapshot(t, service, current.Data)
+	if values == nil {
+		values = current.Data
+	}
+	wanted := environmentSnapshot(t, service, values)
 	keys := map[string]bool{}
 	for key := range svc.Secrets {
 		keys[key] = true
 	}
-	for key := range svc.Bindings {
+	for key, binding := range svc.Bindings {
 		keys[key] = true
+		if binding.ManagedDatabase != "" && t.databaseConnections[service][key].CA != "" && spec.DatabaseClientProfile(svc, key) == spec.DatabaseClientInfisicalPostgresV1 {
+			keys["DB_ROOT_CERT"] = true
+		}
 	}
-	if len(current.Data) != len(keys) {
+	if len(wanted.Data) != len(keys) {
 		return false, fmt.Errorf("service environment snapshot has unexpected or missing values")
 	}
 	// Validate every declaration and the previous snapshot before creating or

@@ -103,7 +103,7 @@ func TestLiveApplicationBindingConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		clean, done := context.WithTimeout(context.Background(), 60*time.Second)
+		clean, done := context.WithTimeout(context.Background(), 150*time.Second)
 		defer done()
 		namespace, e := c.kube.CoreV1().Namespaces().Get(clean, ns, metav1.GetOptions{})
 		if e == nil && owned(namespace, target) == nil {
@@ -117,11 +117,22 @@ func TestLiveApplicationBindingConnection(t *testing.T) {
 		for clean.Err() == nil {
 			_, e = c.kube.CoreV1().Namespaces().Get(clean, ns, metav1.GetOptions{})
 			if apierrors.IsNotFound(e) {
-				return
+				volumes, listErr := c.kube.CoreV1().PersistentVolumes().List(clean, metav1.ListOptions{Limit: 512})
+				if listErr != nil || volumes.Continue != "" {
+					t.Error("could not verify bounded fixture volume cleanup")
+					return
+				}
+				retained := false
+				for _, volume := range volumes.Items {
+					retained = retained || volume.Spec.ClaimRef != nil && volume.Spec.ClaimRef.Namespace == ns
+				}
+				if !retained {
+					return
+				}
 			}
 			_ = sleepContext(clean, time.Second)
 		}
-		t.Error("binding fixture namespace did not finish cleanup")
+		t.Error("binding fixture namespace or persistent volumes did not finish cleanup")
 	})
 	if err = c.PutWorkloadSecret(ctx, target.Project, target.Environment, app.Name, "fixture-password", fixturePassword); err != nil {
 		t.Fatal(err)
@@ -204,14 +215,9 @@ print(json.dumps({'binary_bytes':os.path.getsize(path),'peak_rss_kib':peak}))`
 	t.Logf("Installed helper: %d bytes; measured peak resident memory: %d KiB", footprint.BinaryBytes, footprint.PeakRSSKiB)
 	// A saved value can change before its replacement pod starts. Successful
 	// authentication from the old pod must not be reported as current.
-	canonical, err := c.kube.CoreV1().Secrets(ns).Get(ctx, "client-environment", metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	canonical.Data["PG_OK"] = []byte(strings.Replace(connections["PG_OK"].URL, fixturePassword, "new-saved-value", 1))
-	if _, err = c.kube.CoreV1().Secrets(ns).Update(ctx, canonical, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
+	nextConnection := connections["PG_OK"]
+	nextConnection.URL = strings.Replace(nextConnection.URL, fixturePassword, "new-saved-value", 1)
+	connections["PG_OK"] = nextConnection
 	stale, err := c.TestServiceBinding(ctx, target, "client", "PG_OK", successful.Pod, authorize)
 	if err != nil || stale.Outcome != "stale" || stale.LoadedMatchesSnapshot == nil || *stale.LoadedMatchesSnapshot {
 		t.Fatal("an old container verified newer saved settings")

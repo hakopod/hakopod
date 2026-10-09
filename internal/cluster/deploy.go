@@ -467,7 +467,7 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	}
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	wanted := deployment(t, name, svc, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
-	if _, err := c.pinWorkloadEnvironment(ctx, t, name, &wanted.Spec.Template); err != nil {
+	if _, err := c.pinResolvedWorkloadEnvironment(ctx, t, name, &wanted.Spec.Template); err != nil {
 		return 0, err
 	}
 	if err := c.prepareAWSIdentity(ctx, t, name, svc, wanted); err != nil {

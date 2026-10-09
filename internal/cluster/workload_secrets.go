@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -92,6 +93,9 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 		if len(current.Data) == 0 {
 			return nil
 		}
+		if used, err := c.legacyEnvironmentInUse(ctx, t, current); err != nil || used {
+			return err
+		}
 		if err = beforeStep(ctx, t); err != nil {
 			return err
 		}
@@ -99,62 +103,9 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 		_, err = api.Update(ctx, current, metav1.UpdateOptions{})
 		return err
 	}
-	data := map[string][]byte{}
-	total := 0
-	for key, reference := range s.Secrets {
-		if t.secretValues != nil {
-			value, found := t.secretValues[name][key]
-			if !found {
-				return fmt.Errorf("secret snapshot is incomplete")
-			}
-			data[key] = value
-		} else {
-			// Internal native-secret helpers can run outside Deploy; external
-			// reads require the complete preflight snapshot.
-			if reference.Provider != "" {
-				return fmt.Errorf("external secret snapshot is unavailable")
-			}
-			secret, err := c.GetPlatformSecret(ctx, workloadSecretName(t.Project, t.Environment, t.Spec.Name, reference.Ref))
-			if err != nil {
-				return fmt.Errorf("secret reference %s is unavailable for this application", reference.Ref)
-			}
-			data[key] = secret.Data["value"]
-		}
-		total += len(key) + len(data[key])
-		if total > 512<<10 {
-			return fmt.Errorf("service secret values exceed 512 KiB")
-		}
-	}
-	for key, binding := range s.Bindings {
-		if binding.ManagedDatabase != "" || binding.ExternalDatabase != "" {
-			value, ok := t.databaseConnections[name][key]
-			if !ok {
-				return fmt.Errorf("managed database connection snapshot is incomplete")
-			}
-			data[key] = []byte(value.URL)
-			total += len(key) + len(data[key])
-			if binding.ManagedDatabase != "" && value.CA != "" && spec.DatabaseClientProfile(s, key) == spec.DatabaseClientInfisicalPostgresV1 {
-				if _, exists := data["DB_ROOT_CERT"]; exists {
-					return fmt.Errorf("database client profile environment conflicts with DB_ROOT_CERT")
-				}
-				data["DB_ROOT_CERT"] = []byte(base64.StdEncoding.EncodeToString([]byte(value.CA)))
-				total += len("DB_ROOT_CERT") + len(data["DB_ROOT_CERT"])
-			}
-			continue
-		}
-		var password []byte
-		if binding.Password != nil {
-			var ok bool
-			password, ok = t.secretValues[name][spec.BindingSecretKey(key)]
-			if !ok {
-				return fmt.Errorf("binding secret snapshot is incomplete")
-			}
-		}
-		data[key] = []byte(spec.BindingURL(binding, t.Spec.Services[binding.Service], password))
-		total += len(key) + len(data[key])
-	}
-	if total > 512<<10 {
-		return fmt.Errorf("service secret values exceed 512 KiB")
+	data, err := c.workloadEnvironmentData(ctx, t, name, s)
+	if err != nil {
+		return err
 	}
 	wanted := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name + "-environment", Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Type: corev1.SecretTypeOpaque, Data: data}
 	current, err := api.Get(ctx, wanted.Name, metav1.GetOptions{})
@@ -177,10 +128,90 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 	if reflect.DeepEqual(current.Data, wanted.Data) {
 		return nil
 	}
+	// Pre-snapshot ReplicaSets and Jobs still reference this mutable name.
+	// Leave their values intact; new templates use the resolved snapshot.
+	if used, err := c.legacyEnvironmentInUse(ctx, t, current); err != nil || used {
+		return err
+	}
 	wanted.ResourceVersion = current.ResourceVersion
 	if err = beforeStep(ctx, t); err != nil {
 		return err
 	}
 	_, err = api.Update(ctx, wanted, metav1.UpdateOptions{})
 	return err
+}
+
+// Resolve values without publishing them through a mutable Secret. The caller
+// can pin them together with public trust in one workload template update.
+func (c *Client) workloadEnvironmentData(ctx context.Context, t Target, name string, s spec.Service) (map[string][]byte, error) {
+	data := map[string][]byte{}
+	total := 0
+	for key, reference := range s.Secrets {
+		if t.secretValues != nil {
+			value, found := t.secretValues[name][key]
+			if !found {
+				return nil, fmt.Errorf("secret snapshot is incomplete")
+			}
+			data[key] = value
+		} else {
+			// Internal native-secret helpers can run outside Deploy; external
+			// reads require the complete preflight snapshot.
+			if reference.Provider != "" {
+				return nil, fmt.Errorf("external secret snapshot is unavailable")
+			}
+			secret, err := c.GetPlatformSecret(ctx, workloadSecretName(t.Project, t.Environment, t.Spec.Name, reference.Ref))
+			if err != nil {
+				return nil, fmt.Errorf("secret reference %s is unavailable for this application", reference.Ref)
+			}
+			data[key] = secret.Data["value"]
+		}
+		total += len(key) + len(data[key])
+		if total > 512<<10 {
+			return nil, fmt.Errorf("service secret values exceed 512 KiB")
+		}
+	}
+	for key, binding := range s.Bindings {
+		if binding.ManagedDatabase != "" || binding.ExternalDatabase != "" {
+			value, ok := t.databaseConnections[name][key]
+			if !ok {
+				return nil, fmt.Errorf("managed database connection snapshot is incomplete")
+			}
+			data[key] = []byte(value.URL)
+			total += len(key) + len(data[key])
+			profile := spec.DatabaseClientProfile(s, key)
+			if binding.ManagedDatabase != "" && profile != "" && value.CA == "" {
+				return nil, fmt.Errorf("managed database client trust is unavailable")
+			}
+			if binding.ManagedDatabase != "" && value.CA != "" && profile == spec.DatabaseClientInfisicalPostgresV1 {
+				if _, exists := data["DB_ROOT_CERT"]; exists {
+					return nil, fmt.Errorf("database client profile environment conflicts with DB_ROOT_CERT")
+				}
+				data["DB_ROOT_CERT"] = []byte(base64.StdEncoding.EncodeToString([]byte(value.CA)))
+				total += len("DB_ROOT_CERT") + len(data["DB_ROOT_CERT"])
+			}
+			continue
+		}
+		var password []byte
+		if binding.Password != nil {
+			var ok bool
+			password, ok = t.secretValues[name][spec.BindingSecretKey(key)]
+			if !ok {
+				return nil, fmt.Errorf("binding secret snapshot is incomplete")
+			}
+		}
+		data[key] = []byte(spec.BindingURL(binding, t.Spec.Services[binding.Service], password))
+		total += len(key) + len(data[key])
+	}
+	if total > 512<<10 {
+		return nil, fmt.Errorf("service secret values exceed 512 KiB")
+	}
+	return data, nil
+}
+
+func (c *Client) legacyEnvironmentInUse(ctx context.Context, t Target, secret *corev1.Secret) (bool, error) {
+	err := c.checkRetiredSecretConsumers(ctx, Namespace(t.ApplicationID), nil, map[string]corev1.Secret{secret.Name: *secret})
+	if errors.Is(err, errRetiredSecretReferenced) || errors.Is(err, errRetiredAccountSecretReferenced) || errors.Is(err, errRetiredConsumerTerminating) {
+		return true, nil
+	}
+	return false, err
 }

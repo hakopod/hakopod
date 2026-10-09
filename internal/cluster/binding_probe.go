@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -117,11 +118,8 @@ func (c *Client) TestServiceBinding(ctx context.Context, t Target, service, vari
 	if ref.Name != service+"-environment" && environmentSnapshotOwned(loadedSecret, t, service) != nil {
 		return unavailable("binding_reference_changed", "The runtime binding declaration changed. Redeploy the accepted revision.")
 	}
-	canonical, canonicalErr := c.kube.CoreV1().Secrets(ns).Get(ctx, service+"-environment", metav1.GetOptions{})
-	var expected []byte
-	if canonicalErr == nil && owned(canonical, t) == nil && canonical.Labels[serviceKey] == service && canonical.DeletionTimestamp == nil {
-		expected, result.SnapshotResolved = canonical.Data[variable]
-	}
+	expected, resolutionErr := c.bindingProbeExpected(ctx, t, service, variable)
+	result.SnapshotResolved = resolutionErr == nil
 	var random [32]byte
 	if _, err = rand.Read(random[:]); err != nil {
 		return unavailable("comparison_unavailable", "The runtime comparison could not start. Try again.")
@@ -184,17 +182,17 @@ func (c *Client) TestServiceBinding(ctx context.Context, t Target, service, vari
 	result.Stages, result.ObservedAt = stages, time.Now().UTC()
 	if result.SnapshotResolved && len(measured.Fingerprint) == 64 {
 		mac := hmac.New(sha256.New, []byte(request.Nonce))
-		_, _ = mac.Write(expected)
+		_, _ = mac.Write([]byte(expected.URL))
 		actual, err := hex.DecodeString(measured.Fingerprint)
 		if err == nil {
-			result.LoadedMatchesSnapshot = ptr(hmac.Equal(actual, mac.Sum(nil)) && c.bindingPodUsesRevision(ctx, t, service, selected))
+			result.LoadedMatchesSnapshot = ptr(hmac.Equal(actual, mac.Sum(nil)) && c.bindingPodUsesRevision(ctx, t, service, selected) && c.bindingProbeTrustMatches(ctx, t, service, selected, binding, expected.CA) && bindingProbeProfileMatches(svc, variable, selected, loadedSecret, expected.CA))
 		}
 	}
 	// A concurrent refresh makes this comparison stale. Keep the recorded
 	// network evidence, but do not claim that it verifies the latest snapshot.
 	if result.SnapshotResolved {
-		fresh, e := c.kube.CoreV1().Secrets(ns).Get(ctx, canonical.Name, metav1.GetOptions{})
-		if e != nil || fresh.UID != canonical.UID || fresh.ResourceVersion != canonical.ResourceVersion {
+		fresh, e := c.bindingProbeExpected(ctx, t, service, variable)
+		if e != nil || fresh.URL != expected.URL || fresh.CA != expected.CA {
 			result.LoadedMatchesSnapshot = nil
 		}
 	}
@@ -210,6 +208,65 @@ func (c *Client) TestServiceBinding(ctx context.Context, t Target, service, vari
 		result.Outcome = "passed"
 	}
 	return result, nil
+}
+
+// Resolve only the selected binding. Legacy environment Secrets may remain
+// unchanged for retained jobs and cannot describe the latest saved settings.
+func (c *Client) bindingProbeExpected(ctx context.Context, t Target, service, variable string) (DatabaseConnection, error) {
+	binding := t.Spec.Services[service].Bindings[variable]
+	selected := t
+	selected.Spec.Env, selected.Spec.Secrets = nil, nil
+	selected.Spec.Services = map[string]spec.Service{service: {Bindings: map[string]spec.Binding{variable: binding}}}
+	selected.secretValues, selected.databaseConnections = nil, nil
+	if err := c.snapshotWorkloadSecrets(ctx, &selected); err != nil {
+		return DatabaseConnection{}, err
+	}
+	if err := c.snapshotDatabaseBindings(ctx, &selected); err != nil {
+		return DatabaseConnection{}, err
+	}
+	if binding.ManagedDatabase != "" || binding.ExternalDatabase != "" {
+		return selected.databaseConnections[service][variable], nil
+	}
+	password := selected.secretValues[service][spec.BindingSecretKey(variable)]
+	return DatabaseConnection{URL: spec.BindingURL(binding, t.Spec.Services[binding.Service], password)}, nil
+}
+
+func (c *Client) bindingProbeTrustMatches(ctx context.Context, t Target, service string, pod *corev1.Pod, binding spec.Binding, expected string) bool {
+	if binding.ManagedDatabase == "" {
+		return true
+	}
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name != databaseTrustVolume || volume.ConfigMap == nil {
+			continue
+		}
+		trust, err := c.kube.CoreV1().ConfigMaps(Namespace(t.ApplicationID)).Get(ctx, volume.ConfigMap.Name, metav1.GetOptions{})
+		return err == nil && databaseTrustOwned(trust, t, service) == nil && trust.Data[binding.ManagedDatabase+".crt"] == expected
+	}
+	return expected == ""
+}
+
+func bindingProbeProfileMatches(svc spec.Service, variable string, pod *corev1.Pod, secret *corev1.Secret, expectedCA string) bool {
+	if svc.Bindings[variable].ManagedDatabase == "" || spec.DatabaseClientProfile(svc, variable) != spec.DatabaseClientInfisicalPostgresV1 {
+		return true
+	}
+	if expectedCA == "" || secret.Immutable == nil || !*secret.Immutable || string(secret.Data["DB_ROOT_CERT"]) != base64.StdEncoding.EncodeToString([]byte(expectedCA)) || len(pod.Spec.Containers) == 0 {
+		return false
+	}
+	declarations := 0
+	for _, env := range pod.Spec.Containers[0].Env {
+		if env.Name != "DB_ROOT_CERT" {
+			continue
+		}
+		if env.Value != "" || env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil {
+			return false
+		}
+		ref := env.ValueFrom.SecretKeyRef
+		if ref.Name != secret.Name || ref.Key != "DB_ROOT_CERT" || ref.Optional != nil && *ref.Optional {
+			return false
+		}
+		declarations++
+	}
+	return declarations == 1
 }
 
 // Read the owning controller after the probe finishes. A concurrent rollout,
