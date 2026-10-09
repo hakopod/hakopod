@@ -311,11 +311,12 @@ Managed Actions is an optional Pro module. See [the setup and lifecycle guide](.
 
 The installer kit carries a `deploy/database-controllers` bundle. Release
 packaging renders PostgreSQL, Redis, MySQL, MongoDB and ClickHouse controller
-sources with pinned checksums and image digests. Alpha.55 can
-render Vitess only when its installed release evidence matches the compiled
-source and image identities. Use the bundle from the same
-release as the installed server. Oracle Database remains held for a later
-release. Building that bundle requires
+sources with pinned checksums and image digests. Qualified releases also render
+Vitess and Oracle Free only when retained native evidence, exact source
+compatibility records, compiled gates and image identities all agree. MyDuck
+has no separate controller payload, but packaging applies the same retained
+runtime-evidence gate. Use the bundle from the same release as the installed
+server. Building that bundle requires
 PyYAML on a Linux build host and `HAKOPOD_REDIS_CONTROLLER_IMAGE` naming the
 separately qualified credential/TLS-safe Redis image. The builder downloads and
 checks the pinned Helm binary itself. Controller installation uses only Python,
@@ -385,11 +386,11 @@ These commands install controller infrastructure only. They do not create or
 resize databases, delete volumes, change node runtimes, enable Cloud admission,
 or establish native acceptance. `scripts/install-development-*` remain confined
 to the named development cluster and are not the shipped installation path.
-Vitess requires evidence matching the installed alpha.55 source, a
-complete passing HTTP recovery report, completed package checks and the compiled
-release gate.
-Oracle Free uses its own engine-owned workload and has no additional controller
-module.
+Vitess requires evidence from the retained qualified release, a complete passing HTTP
+recovery report, an exact compatibility review for the installed release,
+completed package checks and the compiled release gate. Oracle Free uses an
+engine-owned workload plus its scoped operator payload; its retained native
+evidence, source compatibility record, images and compiled gate must agree.
 Oracle Enterprise and Data Guard have a source implementation, but deployment
 remains disabled pending licensed native acceptance of the hardened controller
 and customer image. Public database endpoints are not included in this installer.

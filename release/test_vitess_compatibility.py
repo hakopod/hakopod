@@ -171,6 +171,7 @@ class VitessSourceCompatibilityTest(unittest.TestCase):
             "go.mod",
             "auth/runtime.go",
             "internal/cluster/database_vitess.go",
+            "internal/cluster/live_database_vitess_test.go",
             "internal/database/vitess_policy.go",
             "patches/vitess-tablet-hostname-test.go.txt",
             "Dockerfile.vitess-runtime",
@@ -185,6 +186,43 @@ class VitessSourceCompatibilityTest(unittest.TestCase):
             self.write(changed)
             with self.subTest(path=path), self.assertRaises(ValueError):
                 VITESS.validate_source_compatibility(self.root, "runtime", baseline, current)
+
+    def test_go_mod_reclassification_is_bound_to_alpha59(self):
+        review = {"reviewed_release": "v0.1.0-alpha.59"}
+        baseline = {"go.sum": DIGEST}
+        current = {"go.sum": DIGEST}
+        self.assertTrue(VITESS._alpha59_go_mod_reclassification(
+            review, baseline, current, "go.mod",
+            "cdd09b01abe6d0371b89d566f77ae1b87ebbd3f74bf5c801a6c591898162b174",
+            "a5ad64b13b23e366dccc9d560cbecb97cb6ab32ab8f7e3385171a8f89e96c010"))
+        review["reviewed_release"] = "v0.1.0-alpha.60"
+        self.assertFalse(VITESS._alpha59_go_mod_reclassification(
+            review, baseline, current, "go.mod",
+            "cdd09b01abe6d0371b89d566f77ae1b87ebbd3f74bf5c801a6c591898162b174",
+            "a5ad64b13b23e366dccc9d560cbecb97cb6ab32ab8f7e3385171a8f89e96c010"))
+
+    def test_verifier_bootstrap_is_bound_to_alpha59_and_the_native_baseline(self):
+        review = {"reviewed_release": "v0.1.0-alpha.59",
+                  "qualified_release": {"tag": "v0.1.0-alpha.58",
+                      "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+                      "native_manifest_sha256": "64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f",
+                      "http_evidence_sha256": "7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545",
+                      "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274"},
+                  "control_plane_commit": "e38c24b1c09c3d035f77128b1555c513602e9ec8"}
+        self.assertTrue(VITESS._alpha59_verifier_bootstrap(
+            review, "release/verify-vitess-runtime.py",
+            "8a0299b42411f8f13e06308393cf42a5cd087aba33b46db5402e246b7b7ab08c"))
+        for field, value in (("reviewed_release", "v0.1.0-alpha.60"),
+                             ("control_plane_commit", "f" * 40)):
+            changed = copy.deepcopy(review); changed[field] = value
+            self.assertFalse(VITESS._alpha59_verifier_bootstrap(
+                changed, "release/verify-vitess-runtime.py",
+                "8a0299b42411f8f13e06308393cf42a5cd087aba33b46db5402e246b7b7ab08c"))
+        for field, value in (("commit", "f" * 40), ("native_manifest_sha256", "f" * 64)):
+            changed = copy.deepcopy(review); changed["qualified_release"][field] = value
+            self.assertFalse(VITESS._alpha59_verifier_bootstrap(
+                changed, "release/verify-vitess-runtime.py",
+                "8a0299b42411f8f13e06308393cf42a5cd087aba33b46db5402e246b7b7ab08c"))
 
     def test_loader_rejects_unknown_fields_invalid_identity_and_weak_review_evidence(self):
         mutations = (

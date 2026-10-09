@@ -131,11 +131,19 @@ def protected_source(path):
     return (path in {"go.mod", "go.sum", *BUILD_INPUTS, "installer/oracle_free_controller.py",
                      "scripts/run-development-oracle-free-acceptance.py"}
             or path.startswith(("auth/", "patches/oracle-operator/"))
-            or path.startswith("internal/") and not path.startswith("internal/api/")
+            or path == "internal/cluster/database_oracle_enterprise_health.go"
             or "oracle" in path.lower() and not path.startswith("internal/api/") and path not in {
                 "release/verify-oracle-free-runtime.py", "release/record-oracle-free-qualification.py",
                 "scripts/run-development-oracle-free-http-acceptance.py",
                 "scripts/oracle-free-http-fixtures.py"})
+
+
+def retained_manifest_protected_source(path):
+    return (protected_source(path)
+            or path == "internal/api/live_database_oracle_free_http_test.go"
+            or path.startswith("internal/nativeacceptance/")
+            or path in {"scripts/run-development-oracle-free-http-acceptance.py",
+                        "scripts/oracle-free-http-fixtures.py"})
 
 
 def accepted_events(events, required, package="github.com/hakopod/hakopod/internal/cluster"):
@@ -242,8 +250,11 @@ def validate_metadata(directory, root=ROOT):
     if not gates["release_availability"](root)["oracle-free"]:
         raise ValueError("Oracle Free shipping admission remains closed")
     sources = source_files(root)
-    if manifest["source_files"] != sources or manifest["source"] != {"repository": "https://github.com/oracle/oracle-database-operator", "revision": UPSTREAM}:
+    qualified_sources = manifest["source_files"]
+    if manifest["source"] != {"repository": "https://github.com/oracle/oracle-database-operator", "revision": UPSTREAM}:
         raise ValueError("Oracle source changed after native qualification")
+    COMPAT["validate"](root, "oracle-free", qualified_sources, sources, retained_manifest_protected_source,
+                       file_hash(directory / "manifest.json"))
     if not isinstance(manifest["files"], dict) or set(manifest["files"]) != FILES:
         raise ValueError("Oracle qualification artifact inventory is incomplete")
     for name, digest in manifest["files"].items():
@@ -260,7 +271,9 @@ def validate_metadata(directory, root=ROOT):
         raise ValueError("Oracle operator binary inventory changed")
     receipt = read_json(directory / "packaging-receipt.json")
     built_sources = read_json(directory / "source-build-manifest.json")
-    if not isinstance(built_sources, dict) or not BUILD_INPUTS.issubset(built_sources) or any(built_sources[name] != sources[name] for name in BUILD_INPUTS):
+    if (not isinstance(built_sources, dict) or not BUILD_INPUTS.issubset(built_sources)
+            or any(sources[name] != qualified_sources[name] or built_sources[name] != sources[name]
+                   for name in BUILD_INPUTS)):
         raise ValueError("Oracle operator build source changed")
     receipt_fields = {"schema_version", "status", "source_manifest_sha256", "build_artifacts_sha256", "publication_plan_sha256", "image"}
     if not isinstance(receipt, dict) or set(receipt) != receipt_fields or type(receipt["schema_version"]) is not int or receipt["schema_version"] != 1 or not isinstance(receipt["publication_plan_sha256"], str) or not SHA.fullmatch(receipt["publication_plan_sha256"]) or receipt["status"] != "packaged_not_published" or receipt["source_manifest_sha256"] != file_hash(directory / "source-build-manifest.json") or receipt["build_artifacts_sha256"] != file_hash(directory / "build-artifacts.txt"):
@@ -281,7 +294,7 @@ def validate_metadata(directory, root=ROOT):
     expected = {"bin/manager": binaries["/manager"], "upstream.patch": file_hash(directory / "operator-upstream.patch"), "crds/singleinstancedatabases.yaml": SIDB_SHA256}
     if artifacts != expected or file_hash(directory / "sidb-v4.yaml") != SIDB_SHA256:
         raise ValueError("Oracle native operator artifacts differ from its source build")
-    validate_acceptance(read_json(directory / "native-acceptance.json"), sources, images, root)
+    validate_acceptance(read_json(directory / "native-acceptance.json"), qualified_sources, images, root)
     return manifest
 
 

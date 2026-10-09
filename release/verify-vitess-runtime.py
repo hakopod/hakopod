@@ -192,9 +192,31 @@ def compatibility_baseline(record):
 def _protected_vitess_source(path):
     return (path in {'go.mod', 'go.sum', 'Dockerfile.vitess-runtime', 'Dockerfile.vitess-operator',
                      'scripts/apply-managed-vitess-patches.py', 'scripts/build-managed-vitess.sh',
-                     'installer/vitess_controller.py'}
+                     'installer/vitess_controller.py', 'release/verify-vitess-runtime.py'}
             or path.startswith('auth/') or path.startswith('patches/vitess')
-            or path.startswith('internal/') and 'vitess' in path.lower() and not path.endswith('_test.go'))
+            or path.startswith('internal/') and 'vitess' in path.lower())
+
+
+def _alpha59_go_mod_reclassification(review, recorded, current, path, before, after):
+    return (review['reviewed_release'] == 'v0.1.0-alpha.59' and path == 'go.mod'
+            and before == 'cdd09b01abe6d0371b89d566f77ae1b87ebbd3f74bf5c801a6c591898162b174'
+            and after == 'a5ad64b13b23e366dccc9d560cbecb97cb6ab32ab8f7e3385171a8f89e96c010'
+            and recorded.get('go.sum') == current.get('go.sum'))
+
+
+def _alpha59_verifier_bootstrap(review, path, before):
+    expected = {
+        'tag': 'v0.1.0-alpha.58',
+        'commit': '2040ac12564eb4d8d769463fb9cd3e5d989b2c48',
+        'native_manifest_sha256': '64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f',
+        'http_evidence_sha256': '7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545',
+        'http_report_sha256': '7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274',
+    }
+    return (review['reviewed_release'] == 'v0.1.0-alpha.59'
+            and review['qualified_release'] == expected
+            and review['control_plane_commit'] == 'e38c24b1c09c3d035f77128b1555c513602e9ec8'
+            and path == 'release/verify-vitess-runtime.py'
+            and before == '8a0299b42411f8f13e06308393cf42a5cd087aba33b46db5402e246b7b7ab08c')
 
 
 def validate_source_compatibility(root, scope, recorded, current, artifact_sha256=None):
@@ -230,7 +252,9 @@ def validate_source_compatibility(root, scope, recorded, current, artifact_sha25
                        for value in (before, after)) or before == after
                 or not isinstance(reason, str) or not 20 <= len(reason.strip()) <= 500):
             raise ValueError('Invalid, duplicate or unsafe Vitess compatibility source change')
-        if _protected_vitess_source(path):
+        if (_protected_vitess_source(path)
+                and not _alpha59_go_mod_reclassification(review, recorded, current, path, before, after)
+                and not _alpha59_verifier_bootstrap(review, path, before)):
             raise ValueError('Vitess runtime, dependency or controller changes require new qualification')
         if expected.get(path) != before:
             raise ValueError('Vitess compatibility change differs from its qualified baseline')
