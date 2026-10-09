@@ -77,7 +77,10 @@ func (c *Client) runJob(ctx context.Context, t Target, name string, s spec.Servi
 		if err := c.prepareFiles(ctx, t, name, s); err != nil {
 			return err
 		}
-		d := deployment(t, name, s, c.options.RolloutTimeout)
+		d := deployment(t, name, s, c.options.RolloutTimeout, c.options.ReadinessProbeImage)
+		if _, err := c.pinWorkloadEnvironment(ctx, t, name, &d.Spec.Template); err != nil {
+			return err
+		}
 		if err := c.prepareAWSIdentity(ctx, t, name, s, d); err != nil {
 			return err
 		}

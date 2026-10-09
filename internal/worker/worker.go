@@ -466,7 +466,7 @@ func (w *Worker) renewCertificates(parent context.Context, a store.Application, 
 			}
 		}
 		for _, b := range a.Spec.Services[name].Bindings {
-			needsMaintenance = needsMaintenance || b.ManagedDatabase != "" || b.ExternalDatabase != ""
+			needsMaintenance = needsMaintenance || b.ManagedDatabase != "" || b.ExternalDatabase != "" || b.Password != nil
 		}
 		if needsMaintenance {
 			names = append(names, name)
@@ -500,6 +500,13 @@ func (w *Worker) renewCertificates(parent context.Context, a store.Application, 
 			RefreshExternalDatabaseEgress(context.Context, cluster.Target, func(cluster.Event), string) error
 		}); ok {
 			err = runtime.RefreshExternalDatabaseEgress(ctx, target, emit, selected)
+		}
+	}
+	if err == nil {
+		if runtime, ok := w.Cluster.(interface {
+			RefreshDatabaseBindings(context.Context, cluster.Target, func(cluster.Event), string) error
+		}); ok {
+			err = runtime.RefreshDatabaseBindings(ctx, target, emit, selected)
 		}
 	}
 	if err != nil && ctx.Err() == nil {

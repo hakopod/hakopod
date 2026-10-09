@@ -50,9 +50,15 @@ func testCertificate(t *testing.T) (tls.Certificate, string) {
 	return pair, path
 }
 
-func redisFixture(t *testing.T, pair tls.Certificate, accept bool) int {
+func redisFixture(t *testing.T, pair tls.Certificate, accept bool, plaintext ...bool) int {
 	t.Helper()
-	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12})
+	var listener net.Listener
+	var err error
+	if len(plaintext) > 0 && plaintext[0] {
+		listener, err = net.Listen("tcp", "127.0.0.1:0")
+	} else {
+		listener, err = tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +105,11 @@ func redisFixture(t *testing.T, pair tls.Certificate, accept bool) int {
 						io.WriteString(c, "-ERR invalid credentials\r\n")
 						continue
 					}
-					io.WriteString(c, "+OK\r\n")
+					if values[0] == "PING" {
+						io.WriteString(c, "+PONG\r\n")
+					} else {
+						io.WriteString(c, "+OK\r\n")
+					}
 				}
 			}(conn)
 		}
@@ -177,11 +187,52 @@ func TestRequestBoundsAndAliases(t *testing.T) {
 			t.Errorf("%s: %v", protocol, err)
 		}
 	}
-	if _, err := parseTarget("redis", "redis://user:password@database.example/0"); err == nil {
-		t.Fatal("plaintext Redis accepted")
+	value, err := parseTarget("redis", "redis://:password@database.example")
+	if err != nil || !value.plaintextOnly || value.database != "0" {
+		t.Fatal("internal Redis defaults were not preserved")
 	}
-	if validName("lowercase") || validName(strings.Repeat("A", 129)) {
+	if !validName("lowercase") || validName(strings.Repeat("A", 129)) || validName("1INVALID") {
 		t.Fatal("invalid variable accepted")
+	}
+}
+
+func TestRedisPlaintextRequiresExplicitControllerMode(t *testing.T) {
+	port := redisFixture(t, tls.Certificate{}, true, true)
+	value := fmt.Sprintf("redis://:fixture@localhost:%d", port)
+	for _, plaintext := range []bool{false, true} {
+		result := Run(context.Background(), Request{SchemaVersion: 1, Protocol: "redis", Variable: "REDIS_URL", Plaintext: plaintext, TimeoutMS: 2000}, func(string) (string, bool) { return value, true })
+		stages, valid := PublicStages(result.Stages)
+		if !valid {
+			t.Fatal("invalid public stages")
+		}
+		last := stages[len(stages)-1]
+		if plaintext {
+			if last.Code != "read_query_succeeded" || stages[3].Code != "tls_not_configured" || stages[3].Status != "skipped" {
+				t.Fatal("plaintext connection was presented as verified TLS")
+			}
+		} else if last.Code != "connection_value_invalid" {
+			t.Fatal("verified TLS request was downgraded to plaintext")
+		}
+	}
+}
+
+func TestMySQLPermissionErrorsAreSanitized(t *testing.T) {
+	for _, number := range []uint16{1142, 1143, 1227, 1370} {
+		stage, code, message := classify(&mysql.MySQLError{Number: number, Message: "private database value"})
+		if stage != "query" || code != "read_query_rejected" || strings.Contains(message, "private") {
+			t.Fatal("query permission rejection lost its safe classification")
+		}
+	}
+}
+
+func TestRedisResponseBoundsAndProtocolIdentity(t *testing.T) {
+	for _, response := range []string{"+OK\r\n", "$4\r\nPONG\r\n", "+" + strings.Repeat("x", 8192), "\r\n"} {
+		if readRESP(bufio.NewReaderSize(strings.NewReader(response), 4096), "+PONG\r\n") == nil {
+			t.Fatal("invalid or unbounded Redis response accepted")
+		}
+	}
+	if readRESP(bufio.NewReaderSize(strings.NewReader("+PONG\r\n"), 4096), "+PONG\r\n") != nil {
+		t.Fatal("valid Redis response rejected")
 	}
 }
 

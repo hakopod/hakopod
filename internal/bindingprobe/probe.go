@@ -20,6 +20,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
@@ -40,8 +41,11 @@ type Request struct {
 	Protocol      string `json:"protocol"`
 	Variable      string `json:"variable"`
 	CAFile        string `json:"ca_file"`
-	TimeoutMS     int    `json:"timeout_ms,omitempty"`
-	Nonce         string `json:"fingerprint_nonce,omitempty"`
+	// Plaintext is set only by the controller for a binding configured without
+	// TLS. TLS failures never fall back to an unencrypted connection.
+	Plaintext bool   `json:"plaintext,omitempty"`
+	TimeoutMS int    `json:"timeout_ms,omitempty"`
+	Nonce     string `json:"fingerprint_nonce,omitempty"`
 }
 
 type Stage struct {
@@ -60,12 +64,13 @@ type Result struct {
 }
 
 type target struct {
-	host     string
-	port     int
-	database string
-	user     string
-	password string
-	protocol string
+	host          string
+	port          int
+	database      string
+	user          string
+	password      string
+	protocol      string
+	plaintextOnly bool
 }
 
 func Run(parent context.Context, req Request, getenv func(string) (string, bool)) Result {
@@ -86,6 +91,12 @@ func Run(parent context.Context, req Request, getenv func(string) (string, bool)
 	}
 	t, err := parseTarget(req.Protocol, raw)
 	if err != nil {
+		return fail("configuration", "connection_value_invalid", "The loaded variable is not a supported connection value.")
+	}
+	if req.Plaintext && t.protocol != "postgres" && t.protocol != "mysql" && t.protocol != "redis" {
+		return fail("configuration", "invalid_request", "The probe request is invalid.")
+	}
+	if t.plaintextOnly && !req.Plaintext {
 		return fail("configuration", "connection_value_invalid", "The loaded variable is not a supported connection value.")
 	}
 	if req.Nonce != "" {
@@ -118,35 +129,53 @@ func Run(parent context.Context, req Request, getenv func(string) (string, bool)
 	}
 	_ = conn.Close()
 	result.Stages = append(result.Stages, Stage{Name: "network", Status: "passed", Code: "tcp_connected", Message: "The application runtime opened a TCP connection."})
-	roots, err := loadRoots(req.CAFile)
-	if err != nil {
-		return fail("certificate", "ca_unavailable", "The configured CA file is unavailable or invalid.")
+	var tlsConfig *tls.Config
+	var verified atomic.Bool
+	if !req.Plaintext {
+		roots, err := loadRoots(req.CAFile)
+		if err != nil {
+			return fail("certificate", "ca_unavailable", "The configured CA file is unavailable or invalid.")
+		}
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: t.host, RootCAs: roots}
+		tlsConfig.VerifyConnection = func(tls.ConnectionState) error {
+			verified.Store(true)
+			return nil
+		}
 	}
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: t.host, RootCAs: roots}
-	verified := false
-	tlsConfig.VerifyConnection = func(tls.ConnectionState) error {
-		verified = true
-		return nil
+	certificate := Stage{Name: "certificate", Status: "passed", Code: "tls_verified", Message: "TLS verified the server hostname and certificate chain."}
+	if req.Plaintext {
+		certificate = Stage{Name: "certificate", Status: "skipped", Code: "tls_not_configured", Message: "This binding is configured without TLS. The test used an unencrypted connection."}
 	}
-	queryErr := probe(ctx, t, tlsConfig)
+	authenticated, queryErr := probe(ctx, t, tlsConfig)
 	if queryErr != nil {
 		stage, code, message := classify(queryErr)
-		if !verified && stage != "dns" {
+		if stage == "dns" {
+			result.Stages = result.Stages[:1]
+			return fail(stage, code, message)
+		}
+		if !req.Plaintext && !verified.Load() && stage != "dns" {
 			if stage == "certificate" {
 				return fail(stage, code, message)
 			}
 			return fail("certificate", "tls_handshake_failed", "TLS could not establish a verified connection.")
 		}
-		if verified {
-			result.Stages = append(result.Stages, Stage{Name: "certificate", Status: "passed", Code: "tls_verified", Message: "TLS verified the server hostname and certificate chain."})
-			if stage == "query" && code == "read_query_rejected" {
+		if verified.Load() || req.Plaintext {
+			result.Stages = append(result.Stages, certificate)
+			if authenticated {
 				result.Stages = append(result.Stages, Stage{Name: "authentication", Status: "passed", Code: "authenticated", Message: "The server accepted the loaded credentials."})
+				if stage != "query" {
+					stage, code, message = "query", "connection_or_query_failed", "The verified connection or minimal read-only query failed. Server details were removed."
+				}
+			} else if code == "read_query_rejected" {
+				stage, code, message = "authentication", "database_access_rejected", "The requested database does not exist or the loaded account cannot access it."
+			} else if stage != "authentication" {
+				stage, code, message = "authentication", "authentication_failed", "The server did not complete authentication. Check the database and try again."
 			}
 		}
 		return fail(stage, code, message)
 	}
 	result.Stages = append(result.Stages,
-		Stage{Name: "certificate", Status: "passed", Code: "tls_verified", Message: "TLS verified the server hostname and certificate chain."},
+		certificate,
 		Stage{Name: "authentication", Status: "passed", Code: "authenticated", Message: "The server accepted the loaded credentials."},
 		Stage{Name: "query", Status: "passed", Code: "read_query_succeeded", Message: "A minimal read-only query succeeded. This result does not prove access to application tables or all required grants."},
 	)
@@ -158,7 +187,7 @@ func validName(s string) bool {
 		return false
 	}
 	for i, c := range s {
-		if !(c == '_' || c >= 'A' && c <= 'Z' || i > 0 && c >= '0' && c <= '9') {
+		if !(c == '_' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || i > 0 && c >= '0' && c <= '9') {
 			return false
 		}
 	}
@@ -174,10 +203,10 @@ func parseTarget(protocol, raw string) (target, error) {
 		return target{}, errors.New("protocol")
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" || u.User == nil || u.User.Username() == "" || len(u.Hostname()) > 253 {
+	if err != nil || u.Hostname() == "" || u.User == nil || u.User.Username() == "" && protocol != "redis" || len(u.Hostname()) > 253 {
 		return target{}, errors.New("url")
 	}
-	want := map[string][]string{"postgres": {"postgres", "postgresql"}, "mysql": {"mysql"}, "redis": {"rediss"}, "mongodb": {"mongodb"}, "clickhouse": {"https", "clickhouse"}, "oracle": {"oracle", "tcps"}}[protocol]
+	want := map[string][]string{"postgres": {"postgres", "postgresql"}, "mysql": {"mysql"}, "redis": {"redis", "rediss"}, "mongodb": {"mongodb"}, "clickhouse": {"https", "clickhouse"}, "oracle": {"oracle", "tcps"}}[protocol]
 	good := false
 	for _, scheme := range want {
 		good = good || u.Scheme == scheme
@@ -202,9 +231,12 @@ func parseTarget(protocol, raw string) (target, error) {
 		database = decoded
 	}
 	if database == "" {
-		return target{}, errors.New("database")
+		if protocol != "redis" {
+			return target{}, errors.New("database")
+		}
+		database = "0"
 	}
-	return target{host: u.Hostname(), port: port, database: database, user: u.User.Username(), password: password, protocol: protocol}, nil
+	return target{host: u.Hostname(), port: port, database: database, user: u.User.Username(), password: password, protocol: protocol, plaintextOnly: u.Scheme == "redis" || protocol == "postgres" && u.Query().Get("sslmode") == "disable"}, nil
 }
 
 func loadRoots(path string) (*x509.CertPool, error) {
@@ -227,7 +259,7 @@ func loadRoots(path string) (*x509.CertPool, error) {
 	return roots, nil
 }
 
-func probe(ctx context.Context, t target, tlsConfig *tls.Config) error {
+func probe(ctx context.Context, t target, tlsConfig *tls.Config) (bool, error) {
 	switch t.protocol {
 	case "postgres":
 		return probePostgres(ctx, t, tlsConfig)
@@ -236,46 +268,62 @@ func probe(ctx context.Context, t target, tlsConfig *tls.Config) error {
 	case "redis":
 		return probeRedis(ctx, t, tlsConfig)
 	}
-	return errors.New("unsupported")
+	return false, errors.New("unsupported")
 }
 
-func probePostgres(ctx context.Context, t target, tc *tls.Config) error {
+func probePostgres(ctx context.Context, t target, tc *tls.Config) (bool, error) {
 	dsn := (&url.URL{Scheme: "postgres", Host: net.JoinHostPort(t.host, strconv.Itoa(t.port)), Path: "/" + t.database, User: url.UserPassword(t.user, t.password)}).String()
 	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return err
+		return false, err
 	}
 	cfg.TLSConfig, cfg.Fallbacks, cfg.ConnectTimeout = tc, nil, 5*time.Second
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
-		return err
+		return false, err
 	}
-	defer conn.Close(context.Background())
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = conn.Close(closeCtx)
+	}()
 	var one int
-	return conn.QueryRow(ctx, "SELECT 1").Scan(&one)
+	return true, conn.QueryRow(ctx, "SELECT 1").Scan(&one)
 }
 
-func probeMySQL(ctx context.Context, t target, tc *tls.Config) error {
+func probeMySQL(ctx context.Context, t target, tc *tls.Config) (bool, error) {
 	cfg := mysql.NewConfig()
 	cfg.User, cfg.Passwd, cfg.Net, cfg.Addr, cfg.DBName = t.user, t.password, "tcp", net.JoinHostPort(t.host, strconv.Itoa(t.port)), t.database
 	cfg.TLS, cfg.Timeout, cfg.ReadTimeout, cfg.WriteTimeout = tc, 5*time.Second, 5*time.Second, 5*time.Second
 	cfg.Logger = log.New(io.Discard, "", 0)
 	connector, err := mysql.NewConnector(cfg)
 	if err != nil {
-		return err
+		return false, err
 	}
 	db := sql.OpenDB(connector)
 	defer db.Close()
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(0)
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
 	var one int
-	return db.QueryRowContext(ctx, "SELECT 1").Scan(&one)
+	return true, conn.QueryRowContext(ctx, "SELECT 1").Scan(&one)
 }
 
-func probeRedis(ctx context.Context, t target, tc *tls.Config) error {
-	conn, err := (&tls.Dialer{Config: tc, NetDialer: &net.Dialer{Timeout: 5 * time.Second}}).DialContext(ctx, "tcp", net.JoinHostPort(t.host, strconv.Itoa(t.port)))
+func probeRedis(ctx context.Context, t target, tc *tls.Config) (bool, error) {
+	address := net.JoinHostPort(t.host, strconv.Itoa(t.port))
+	var conn net.Conn
+	var err error
+	if tc == nil {
+		conn, err = (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", address)
+	} else {
+		conn, err = (&tls.Dialer{Config: tc, NetDialer: &net.Dialer{Timeout: 5 * time.Second}}).DialContext(ctx, "tcp", address)
+	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer conn.Close()
 	deadline, _ := ctx.Deadline()
@@ -291,21 +339,27 @@ func probeRedis(ctx context.Context, t target, tc *tls.Config) error {
 	}
 	commands = append(commands, []string{"PING"})
 	r := bufio.NewReaderSize(conn, 4096)
+	authenticated := false
 	for _, command := range commands {
 		if err = writeRESP(conn, command); err != nil {
-			return err
+			return authenticated, err
 		}
-		if err = readRESP(r); err != nil {
+		expected := "+OK\r\n"
+		if command[0] == "PING" {
+			expected = "+PONG\r\n"
+		}
+		if err = readRESP(r, expected); err != nil {
 			if _, rejected := err.(redisError); rejected {
 				if command[0] == "AUTH" {
-					return authenticationError{}
+					return false, authenticationError{}
 				}
-				return queryError{}
+				return authenticated, queryError{}
 			}
-			return err
+			return authenticated, err
 		}
+		authenticated = true
 	}
-	return nil
+	return true, nil
 }
 
 type redisError struct{}
@@ -325,15 +379,17 @@ func writeRESP(w io.Writer, values []string) error {
 	}
 	return nil
 }
-func readRESP(r *bufio.Reader) error {
-	line, e := r.ReadString('\n')
-	if e != nil || len(line) > 4096 || !strings.HasSuffix(line, "\r\n") {
+func readRESP(r *bufio.Reader, expected string) error {
+	// ReadSlice stops at the fixed reader capacity. A server that omits the
+	// newline cannot cause an unbounded allocation in the application process.
+	line, e := r.ReadSlice('\n')
+	if e != nil || len(line) < 3 || len(line) > 4096 || !strings.HasSuffix(string(line), "\r\n") {
 		return errors.New("response")
 	}
 	if line[0] == '-' {
 		return redisError{}
 	}
-	if line[0] != '+' && line[0] != ':' && line[0] != '$' {
+	if string(line) != expected {
 		return errors.New("response")
 	}
 	return nil
@@ -368,6 +424,12 @@ func classify(err error) (string, string, string) {
 		return "authentication", "authentication_rejected", "The server rejected the loaded credentials."
 	case errors.As(err, &pg) && strings.HasPrefix(pg.Code, "28"):
 		return "authentication", "authentication_rejected", "The server rejected the loaded credentials."
+	case errors.As(err, &pg) && pg.Code == "42501":
+		return "query", "read_query_rejected", "The server rejected the minimal read-only query."
+	case errors.As(err, &my) && (my.Number == 1142 || my.Number == 1143 || my.Number == 1227 || my.Number == 1370):
+		return "query", "read_query_rejected", "The server rejected the minimal read-only query."
+	case errors.As(err, &pg) && pg.Code == "3D000", errors.As(err, &my) && (my.Number == 1044 || my.Number == 1049):
+		return "authentication", "database_access_rejected", "The requested database does not exist or the loaded account cannot access it."
 	case errors.As(err, &query) || errors.As(err, &re):
 		return "query", "read_query_rejected", "The server rejected the minimal read-only query."
 	default:

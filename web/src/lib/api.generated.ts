@@ -1511,6 +1511,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/services/{service}/bindings/{variable}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test one declared database binding from its running application container. Requires deployments:read in the application scope. The fixed helper reads the loaded variable and performs a bounded TLS and read-only query check; no URL, credential, command or SQL is accepted or returned. */
+        post: operations["testServiceBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/builds": {
         parameters: {
             query?: never;
@@ -6009,6 +6026,36 @@ export interface components {
             warnings: string[];
             /** Format: date-time */
             expires_at: string;
+        };
+        BindingTestStage: {
+            name: string;
+            /** @enum {string} */
+            status: "passed" | "failed" | "unsupported" | "skipped";
+            code: string;
+            message: string;
+        };
+        BindingTestInput: {
+            expected_revision: number;
+            /** @description Optional running pod in this service. Omit to select its newest running application container. */
+            pod?: string;
+        };
+        BindingTestResult: {
+            /** @constant */
+            schema_version: 1;
+            application_id: string;
+            service: string;
+            variable: string;
+            revision: number;
+            pod?: string;
+            pod_uid?: string;
+            /** Format: date-time */
+            observed_at: string;
+            /** @enum {string} */
+            outcome: "passed" | "failed" | "unsupported" | "unavailable" | "stale";
+            snapshot_resolved: boolean;
+            /** @description Whether the helper read the last resolved workload snapshot in the current revision. Null means the comparison could not be verified. This does not inspect unsynchronized external secret-provider values. */
+            loaded_matches_snapshot: boolean | null;
+            stages: components["schemas"]["BindingTestStage"][];
         };
         BuildConfig: {
             connection_id: string;
@@ -12286,6 +12333,43 @@ export interface operations {
                     "application/json": {
                         deleted: boolean;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testServiceBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                variable: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindingTestInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BindingTestResult"];
                 };
             };
             /** @description Error */

@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"reflect"
 	"sort"
 	"time"
 )
@@ -160,6 +161,12 @@ func (c *Client) prepareWorkloadSecrets(ctx context.Context, t Target, name stri
 	}
 	if err = owned(current, t); err != nil {
 		return err
+	}
+	if current.Labels[serviceKey] != name || current.DeletionTimestamp != nil || current.Type != corev1.SecretTypeOpaque {
+		return fmt.Errorf("service environment Secret ownership changed")
+	}
+	if reflect.DeepEqual(current.Data, wanted.Data) {
+		return nil
 	}
 	wanted.ResourceVersion = current.ResourceVersion
 	if err = beforeStep(ctx, t); err != nil {

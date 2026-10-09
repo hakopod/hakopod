@@ -6579,6 +6579,81 @@
         "summary": "Delete the backup schedule."
       }
     },
+    "/applications/{id}/services/{service}/bindings/{variable}/test": {
+      "post": {
+        "operationId": "testServiceBinding",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "variable",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingTestResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindingTestInput"
+              }
+            }
+          }
+        },
+        "summary": "Test one declared database binding from its running application container. Requires deployments:write in the application scope because the test executes a helper and authenticates to the database. The fixed helper reads the container environment and performs a bounded connection and read-only query check. TLS bindings require certificate and hostname verification; explicitly plaintext bindings report TLS as not configured. No URL, credential, command or SQL is accepted or returned.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/builds": {
       "get": {
         "operationId": "listSourceBuilds",
@@ -27142,6 +27217,125 @@
           "scope",
           "warnings",
           "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "BindingTestStage": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unsupported",
+              "skipped"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "code",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "BindingTestInput": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pod": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Optional running pod in this service. Omit to select its newest running application container."
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "BindingTestResult": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "variable": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "pod": {
+            "type": "string"
+          },
+          "pod_uid": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "unsupported",
+              "unavailable",
+              "stale"
+            ]
+          },
+          "snapshot_resolved": {
+            "type": "boolean"
+          },
+          "loaded_matches_snapshot": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the helper read the last resolved workload snapshot in the current revision. Null means the comparison could not be verified. This does not inspect unsynchronized external secret-provider values."
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BindingTestStage"
+            },
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "schema_version",
+          "application_id",
+          "service",
+          "variable",
+          "revision",
+          "observed_at",
+          "outcome",
+          "snapshot_resolved",
+          "loaded_matches_snapshot",
+          "stages"
         ],
         "additionalProperties": false
       },

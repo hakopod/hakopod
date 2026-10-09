@@ -53,21 +53,40 @@ func configureReadiness(svc spec.Service, pod *corev1.PodSpec, image string) {
 		// Give the helper time to report its own bounded failure before kubelet's
 		// process deadline. This does not add a long-running container.
 		probe.TimeoutSeconds++
-		pod.Volumes = append(pod.Volumes, corev1.Volume{Name: "hakopod-readiness-probe", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr(resource.MustParse("40Mi"))}}})
-		pod.Containers[0].VolumeMounts = append(pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "hakopod-readiness-probe", MountPath: spec.ReadinessHelperDirectory, ReadOnly: true})
-		if pod.SecurityContext.FSGroup == nil {
-			pod.SecurityContext.FSGroup = pod.SecurityContext.RunAsGroup
-		}
-		pod.InitContainers = append(pod.InitContainers, corev1.Container{
-			Name: "install-readiness-probe", Image: image, ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/hakopod-probe", "install"},
-			Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("16Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("40Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("64Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("64Mi")}},
-			SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr(false), ReadOnlyRootFilesystem: ptr(true), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
-			VolumeMounts:    []corev1.VolumeMount{{Name: "hakopod-readiness-probe", MountPath: "/probe"}},
-		})
+		configureProbeHelper(pod, image)
 	}
 	pod.Containers[0].ReadinessProbe = probe
 	if pod.Containers[0].StartupProbe == nil {
 		pod.Containers[0].StartupProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(r.Port)}}, PeriodSeconds: 2, TimeoutSeconds: 2, FailureThreshold: 60}
 	}
+}
+
+// Binding checks use the same short-lived helper inside the application
+// container. The init container copies only a static binary and public CAs;
+// it receives no credentials and leaves no long-running sidecar.
+func configureBindingProbe(svc spec.Service, pod *corev1.PodSpec, image string) {
+	if len(svc.Bindings) == 0 || svc.Actions != nil || svc.Session != nil || image == "" {
+		return
+	}
+	configureProbeHelper(pod, image)
+}
+
+func configureProbeHelper(pod *corev1.PodSpec, image string) {
+	for _, container := range pod.InitContainers {
+		if container.Name == "install-readiness-probe" {
+			return
+		}
+	}
+	pod.Volumes = append(pod.Volumes, corev1.Volume{Name: "hakopod-readiness-probe", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr(resource.MustParse("40Mi"))}}})
+	pod.Containers[0].VolumeMounts = append(pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "hakopod-readiness-probe", MountPath: spec.ReadinessHelperDirectory, ReadOnly: true})
+	if pod.SecurityContext.FSGroup == nil {
+		pod.SecurityContext.FSGroup = pod.SecurityContext.RunAsGroup
+	}
+	pod.InitContainers = append(pod.InitContainers, corev1.Container{
+		Name: "install-readiness-probe", Image: image, ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/hakopod-probe", "install"},
+		Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("16Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("40Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("64Mi"), corev1.ResourceEphemeralStorage: resource.MustParse("64Mi")}},
+		SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr(false), ReadOnlyRootFilesystem: ptr(true), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
+		VolumeMounts:    []corev1.VolumeMount{{Name: "hakopod-readiness-probe", MountPath: "/probe"}},
+	})
 }
