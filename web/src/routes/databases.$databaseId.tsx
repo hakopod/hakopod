@@ -382,12 +382,20 @@ function DatabaseConnections({
       {canManage && d.spec.engine === 'postgresql' && d.status === 'ready' && (
         <div className="flex flex-wrap gap-2 px-4 py-3">
           <Button asChild variant="primary">
-            <Link to="/databases/$databaseId/provision-application" params={{ databaseId: id }} search={{ project: d.project, environment: d.environment }}>
-              Create database for application
+            <Link
+              to="/databases/$databaseId/provision-application"
+              params={{ databaseId: id }}
+              search={{ project: d.project, environment: d.environment }}
+            >
+              Create for application
             </Link>
           </Button>
           <Button asChild>
-            <Link to="/databases/$databaseId/migration-lock-recovery" params={{ databaseId: id }} search={{ project: d.project, environment: d.environment }}>
+            <Link
+              to="/databases/$databaseId/migration-lock-recovery"
+              params={{ databaseId: id }}
+              search={{ project: d.project, environment: d.environment }}
+            >
               Recover migration lock
             </Link>
           </Button>

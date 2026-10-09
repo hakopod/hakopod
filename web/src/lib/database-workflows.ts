@@ -37,12 +37,18 @@ export type MigrationRecoveryPlan = {
     application_revision: number
     profile: string
     logical_database: string
+    application_image: string
+    schema_fingerprint: string
     knex_lock_rows: number
     knex_locked_rows: number
+    startup_lock_rows: number
+    startup_locked_rows: number
+    fresh_startup_heartbeats: number
     active_migrator_sessions: number
     active_application_pods: number
     active_migration_jobs: number
     active_migration_locks: number
+    observed_at: string
   }
 }
 
