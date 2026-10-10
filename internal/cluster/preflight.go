@@ -51,6 +51,12 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 	}
 	var jobCPU, jobMemory int64
 	for _, s := range t.Spec.Services {
+		if s.Volume != nil {
+			r.StorageGiB += s.Volume.SizeGiB
+		}
+		if s.Suspended {
+			continue
+		}
 		cpu, memory := scheduledPodRequests(s, policy)
 		if s.Job != nil && s.Job.Schedule == nil && s.Job.Invocation == nil {
 			jobCPU = max(jobCPU, cpu.MilliValue())
@@ -65,9 +71,6 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 			}
 			r.CPURequestMillis += cpu.MilliValue() * int64(replicas)
 			r.MemoryRequestBytes += memory.Value() * int64(replicas)
-		}
-		if s.Volume != nil {
-			r.StorageGiB += s.Volume.SizeGiB
 		}
 	}
 	r.CPURequestMillis += jobCPU
@@ -131,6 +134,9 @@ func (c *Client) Preflight(parent context.Context, t Target) (PreflightReport, e
 		return r, nil
 	}
 	for name, s := range t.Spec.Services {
+		if s.Suspended {
+			continue
+		}
 		cpu, memory := scheduledPodRequests(s, policy)
 		fits := false
 		for _, n := range eligible {
