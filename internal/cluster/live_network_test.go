@@ -154,6 +154,7 @@ func TestLiveNamedNetworksAndHPA(t *testing.T) {
 		t.Fatal("missing HPA downscale stabilization")
 	}
 	// Stop retains the service specification but removes HPA ownership and all active pods.
+	target.Spec.Services["web"] = autoscaled
 	runningCapacity, err := c.Preflight(ctx, target)
 	if err != nil {
 		t.Fatal(err)
