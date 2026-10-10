@@ -30,6 +30,7 @@ import (
 )
 
 type Server struct {
+	explorerRuntime    *explorerRuntime
 	sessionCalls       chan struct{}
 	sessionTestRuntime sandbox.Runtime
 	databaseImports    chan struct{}
@@ -130,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerBackupRoutes(routes)
 	s.registerDatabaseRoutes(routes)
 	s.registerDatabaseQueryRoutes(routes)
+	s.registerExplorerRuntime(mux, routes)
 	routes.HandleFunc("GET /api/v1/database-explorer/connections", s.databaseExplorerConnections)
 	s.registerManagedPlatformRoutes(routes)
 	s.registerNativeProbeRoutes(routes)

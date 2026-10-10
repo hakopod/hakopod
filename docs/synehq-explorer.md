@@ -1,65 +1,75 @@
 # SyneHQ database explorer integration
 
-Status: source catalogue implemented. Explorer deployment and automatic connection import remain incomplete.
+The integration adds shared browser login, automatic source synchronization, and an **Explore databases** action for configured scopes. Kubernetes provisioning remains unqualified. Do not advertise automatic explorer installation until the runtime gate below passes.
 
-The target is one explorer per authorized scope, under `/synehq/`, for self-hosted Hakopod and Hakopod Cloud.
-The database list will show **Explore your databases** when the scoped service is ready.
-This change does not expose that action yet.
+## Configure a scope
 
-## Source catalogue
+Set `HAKOPOD_EXPLORER_TARGETS_FILE` on the engine. This versioned TOML file contains at most 64 targets. Unknown fields are rejected:
 
-`GET /api/v1/database-explorer/connections?project=demo&environment=development`
+```toml
+schema_version = 1
 
-The caller must supply one project and one environment. The API rejects missing, duplicate, and unknown query parameters.
-The caller needs `deployments:read` and `databases:query` in that scope.
-Machine credentials must name the exact project and environment.
-Application credentials cannot use this endpoint.
-CLI and machine credentials need explicit query grants. An administrator wildcard does not grant query access.
+[[targets]]
+scope = "demo/development"
+project = "demo"
+environment = "development"
+url = "http://127.0.0.1:3100/synehq"
+key_file = "/run/secrets/explorer-demo.key"
+```
 
-The response contains at most 64 records. Each record includes:
+The target URL is operator configuration. A browser cannot supply or change it. Use HTTPS for remote targets. Loopback HTTP is allowed. The private key file contains 64 lowercase hex characters and has mode 0600 or stricter. Put the same control key in the matching OOS instance. Use separate keys, metadata, volumes, and containment boundaries for each scope.
 
-- The database ID, revision, name, and engine.
-- An `eligible` or `unavailable` source state.
-- A reason for that state.
-- A `can_write` hint based on the caller's current grant.
+OOS needs `OOS_HAKOPOD_SCOPE`, `OOS_HAKOPOD_KEY_FILE`, and `OOS_HAKOPOD_AUTHORITY_URL`. The authority URL ends in `/internal/database-explorer/authorize`. Use a digest-pinned `/synehq` image that contains the managed-session adapter. Normal root images and older prefix images do not provide this protocol.
 
-An eligible source has a ready observation for its current revision, verified TLS, and the required endpoint.
-The observation must be no older than 30 seconds. A restored database must pass the existing inspection gate.
-The endpoint returns no host, port, password, connection URL, or certificate. Responses use `Cache-Control: no-store`.
+A connected Cloud node also needs `cloud_workspace` in its target and `HAKOPOD_EXPLORER_CLOUD_AUTHORITY_URL` set to the fixed Cloud origin plus `/internal/explorer-authority`. The node validates each delegated human session through that fixed URL. It intersects the member grants with its own current machine-key grants. The shared Cloud runtime uses its existing in-process scope and membership checks.
 
-Eligibility does not prove that an explorer instance exists or that Kelvo can connect.
-The execution path must check current permissions again. The `can_write` field does not approve a write.
-The catalogue reads current managed records. It does not create a second registry or copy credentials.
-Deleted records leave the catalogue. New revisions lose eligibility until their observations match.
+## User flow
 
-## Engine mapping
+1. Open Databases in an explicit project and environment.
+2. Select **Explore databases**. The action is shown only when a target is configured and the user can query databases.
+3. Hakopod synchronizes ready managed sources before it opens the explorer. It refreshes the snapshot during active requests, at most once per ten seconds.
+4. The explorer uses the existing Hakopod browser session. It does not ask for a second password.
+5. Users with management permission can add other database connections. Imported sources are changed in Hakopod.
 
-| Hakopod engine | OOS engine   | Required private endpoint |
-| -------------- | ------------ | ------------------------- |
-| `postgresql`   | `postgres`   | `read_write`              |
-| `mysql`        | `mysql`      | `read_write`              |
-| `mongodb`      | `mongodb`    | `cluster`                 |
-| `clickhouse`   | `clickhouse` | `https`                   |
-| `oracle`       | `oracle`     | `read_write`              |
+Each browser tab carries project, environment, and Cloud workspace in its URL. A workspace selection in another tab cannot change its target. The URL does not grant access. The engine checks the current human session and scope on every request and again before returning a buffered result.
 
-These mappings identify candidate sources. They do not certify full Kelvo connectivity for each managed topology.
-Redis, Vitess, and DuckDB are outside this integration. Local SQLite is an OOS feature, not a managed Hakopod database.
+## Connection and execution checks
 
-Hakopod's current external-database registry accepts retained PlanetScale connections only.
-It is not a general registry for databases that run on the same machine.
-Adding arbitrary databases requires a separate scoped registration flow with verified TLS and encrypted credentials.
+The catalogue endpoint remains `GET /api/v1/database-explorer/connections?project=demo&environment=development`. It rejects missing, duplicate, or unknown query parameters. It requires `deployments:read` and `databases:query`. It contains no endpoints or credentials. `available` means that the operator configured a target; it does not prove service health.
 
-## Cloud boundary
+The browser transport uses `POST /api/v1/database-explorer/http`. Its upstream is fixed by scope. It cannot forward internal control routes, authentication routes, redirects, caller headers, or arbitrary URLs. Bodies, results, tickets, and source snapshots have fixed size limits.
 
-The Cloud gateway requires both the member's current query grant and the connected node's query grant.
-It checks the response schema and exact project and environment before forwarding the catalogue.
-It rejects unknown fields, including accidental credential fields.
-It limits `can_write` to the member grant, node grant, and eligible source state.
+Before source sync, the engine loads the current database record and observes its runtime. A source needs a ready current revision, verified unexpired TLS, a usable private endpoint, and any required restore inspection. The engine opens credentials only for the private OOS sync call. OOS encrypts hosts and passwords with its existing keyring.
 
-The Cloud runtime must select the explorer from authenticated scope, never from a caller-supplied address.
-Each browser tab needs stable scope. A mutable workspace cookie cannot select a query target safely.
-Separate Cloud scopes need separate data volumes, encryption keys, grants, and query history.
-The session adapter must preserve the real actor and check membership on every request.
+| Hakopod engine | OOS engine   | Private endpoint |
+| -------------- | ------------ | ---------------- |
+| PostgreSQL     | `postgres`   | `read_write`     |
+| MySQL          | `mysql`      | `read_write`     |
+| MongoDB        | `mongodb`    | `cluster`        |
+| ClickHouse     | `clickhouse` | `https`          |
+| Oracle         | `oracle`     | `read_write`     |
+
+Repeated syncs preserve connection IDs. Changed credentials or endpoints change the source fingerprint. OOS increments its local revision and invalidates approvals. Deleted or unavailable sources are removed from the active snapshot. Manually added connections are preserved.
+
+Each managed session carries the real actor. Query approval stays bound to that session, connection revision, and operation. Before credential resolution, OOS calls the engine again. The engine checks session revocation, current scope, source readiness, source fingerprint, and write permission. Cloud checks current membership and node binding too. Authority errors deny execution. Browser approval for writes remains required.
+
+Cloud workspaces that require Cloud approval have read-only explorer access. OOS browser approval cannot replace a required Cloud review. Connection management is also disabled for these workspaces.
+
+## Integration verification: 10 October 2026
+
+The isolated development VM ran the updated OOS JavaScript and static files over the published AMD64 container below. This was a development image, not a new release image. It retained the normal cgroup, seccomp, non-root, and read-only filesystem controls.
+
+- A real Hakopod browser session opened OOS without another login.
+- Connection testing, saving, schema inspection, table reads, and SQL queries used native Kelvo. The SQLite fixture returned `42`.
+- A restricted actor retained read access. Connection management and AI settings were disabled with visible help.
+- Store tests covered encrypted hosts and passwords, stable imports, source rotation, removal, manual connections, actor audit, approval isolation, and revoked authority.
+- Cloud tests covered delegated actors, foreign workspaces, revoked membership, and the read-only policy for required Cloud approval.
+- The independent UI review covered desktop and mobile screens, Hakopod light and dark themes, keyboard access, and completed query results.
+- The composed Cloud dashboard preserved its URL workspace when the workspace cookie selected another workspace. This tested the UI and proxy with a development engine fixture. It did not test the full Cloud service or tenant deployment.
+
+Imported-source cards received source review only. Browser tooling did not support touch events. OOS retains its existing light theme and mobile tab scrolling behavior.
+
+The native database fixture was manually added SQLite. It does not prove automatic import or network access to a provisioned Kubernetes database. Source import has contract and store test coverage. The Kubernetes deployment gate remains open.
 
 ## Runtime probe: 10 October 2026
 
@@ -85,16 +95,8 @@ This is a failed runtime qualification. Do not enable automatic deployment from 
 Do not remove containment checks or mount writable host-wide cgroups to bypass the failure.
 The probe did not test ARM64 Kubernetes behavior, database connectivity, shared login, or tenant isolation.
 
-## Remaining implementation
+## Release gate
 
-1. Add a private OOS connection interface with source identity, revision, idempotent updates, suspension, and removal.
-2. Encrypt imported hosts and passwords with the OOS keyring. Keep provisioning secrets out of browser requests and logs.
-3. Add the Hakopod session adapter. Bind approvals to actor, session, database, connection revision, and exact operation.
-4. Implement scoped runtime delegation for K3s. Preserve cgroup limits, Landlock, seccomp, and the non-root worker.
-5. Publish and pin a `/synehq` image. Current normal GHCR tags use the root path.
-6. Connect provisioning, credential rotation, deletion, restart recovery, and bounded retries to the private interface.
-7. Add the database-list action and a scoped picker for registered databases.
-8. Test both products, both architectures, permission revocation, and cross-tenant denial before release.
+Run the full engine and OOS suites, affected Cloud checks, and dashboard builds on the isolated development VM or CI. Test encrypted imports, idempotent sync, source rotation and deletion, actor audit, session revocation, read-only grants, foreign workspace denial, and asset paths through the scoped proxy.
 
-Explorer failure must not fail a managed database operation.
-Show service failure separately once the database-list action exists.
+The containment failure above still blocks automatic Kubernetes provisioning. Do not weaken cgroups, Landlock, seccomp, or non-root execution to pass it. A configured external OOS runtime must already have private database networking and valid containment. A source or explorer failure must not fail a managed database operation.

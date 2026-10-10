@@ -31,7 +31,7 @@ func (s *Server) databaseExplorerConnections(w http.ResponseWriter, r *http.Requ
 		failure(w, err)
 		return
 	}
-	result := database.ExplorerCatalog{SchemaVersion: 1, Project: project, Environment: environment, Items: []database.ExplorerConnection{}}
+	result := database.ExplorerCatalog{Available: s.explorerTarget(project, environment) != nil, SchemaVersion: 1, Project: project, Environment: environment, Items: []database.ExplorerConnection{}}
 	now := time.Now().UTC()
 	for _, item := range items {
 		if database.ExplorerSupported(item.Spec.Engine) {
