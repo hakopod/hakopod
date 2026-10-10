@@ -236,6 +236,9 @@ func (c *Client) validatePlacement(ctx context.Context, t Target) error {
 
 // Pinned workloads compete on their selected node, not the cluster total.
 func pinnedRequests(s spec.Service, policy *WorkloadPolicy) (int64, int64) {
+	if s.Suspended {
+		return 0, 0
+	}
 	cpu, memory := scheduledPodRequests(s, policy)
 	replicas := max(s.Replicas, 1)
 	if s.Session != nil {

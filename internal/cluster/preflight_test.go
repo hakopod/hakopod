@@ -35,6 +35,31 @@ func TestPreflightAccountsForOtherWorkloadsAndJobPeak(t *testing.T) {
 	}
 }
 
+func TestPreflightAllowsStoppedServiceUpdatesButChecksResume(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), corev1.ResourceMemory: resource.MustParse("1Gi")}}}
+	c := &Client{kube: fake.NewClientset(node)}
+	target := testTarget(t)
+	target.Spec.Services = map[string]spec.Service{
+		"setup":  {Size: "small", Replicas: 1, Job: &spec.Job{TimeoutSeconds: 30}},
+		"api":    {Size: "large", Replicas: 1, Suspended: true, NodeName: "node", Volume: &spec.Volume{SizeGiB: 4}},
+		"worker": {Size: "medium", Replicas: 1, Suspended: true, NodeName: "node"},
+	}
+	report, err := c.Preflight(context.Background(), target)
+	if err != nil || report.Validate() != nil {
+		t.Fatal("stopped services blocked a configuration update", report, err)
+	}
+	if report.CPURequestMillis != 120 || report.MemoryRequestBytes != 154<<20 || report.StorageGiB != 4 {
+		t.Fatal("stopped services must retain storage without reserving compute", report)
+	}
+	api := target.Spec.Services["api"]
+	api.Suspended = false
+	target.Spec.Services["api"] = api
+	report, err = c.Preflight(context.Background(), target)
+	if err != nil || report.Validate() == nil {
+		t.Fatal("resume accepted insufficient capacity", report, err)
+	}
+}
+
 func TestSharedStorageRejectsLocalPath(t *testing.T) {
 	c := &Client{kube: fake.NewClientset(&storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "local"}, Provisioner: "rancher.io/local-path"})}
 	target := testTarget(t)

@@ -154,6 +154,11 @@ func TestLiveNamedNetworksAndHPA(t *testing.T) {
 		t.Fatal("missing HPA downscale stabilization")
 	}
 	// Stop retains the service specification but removes HPA ownership and all active pods.
+	runningCapacity, err := c.Preflight(ctx, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	webCPU, webMemory := pinnedRequests(autoscaled, nil)
 	autoscaled.Suspended = true
 	target.Spec.Services["web"] = autoscaled
 	target.Revision++
@@ -166,6 +171,13 @@ func TestLiveNamedNetworksAndHPA(t *testing.T) {
 	}
 	if _, err := c.kube.AutoscalingV2().HorizontalPodAutoscalers(ns).Get(ctx, "web", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Fatal("stopped HPA still exists", err)
+	}
+	stoppedCapacity, err := c.Preflight(ctx, target)
+	if err != nil || stoppedCapacity.Validate() != nil {
+		t.Fatal("stopped application failed capacity review", stoppedCapacity, err)
+	}
+	if runningCapacity.CPURequestMillis-stoppedCapacity.CPURequestMillis != webCPU || runningCapacity.MemoryRequestBytes-stoppedCapacity.MemoryRequestBytes != webMemory {
+		t.Fatal("stopped HPA retained compute reservations", runningCapacity, stoppedCapacity)
 	}
 	observed, err := c.Observe(ctx, target)
 	if err != nil {
