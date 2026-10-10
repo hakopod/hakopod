@@ -133,7 +133,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	if baseTimeout == 0 {
 		baseTimeout = 10 * time.Minute
 	}
-	deployTimeout := deploymentAttemptTimeout(d.Spec, baseTimeout*2/3)
+	deployTimeout := deploymentRuntimeTimeout(w.Cluster, d.Spec, baseTimeout*2/3)
 	var drainAllowance time.Duration
 	if actionsDrainCandidate(d) {
 		// Preparation only reads immutable releases and bounded slot metadata.
@@ -162,7 +162,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 		return // A bounded durable read failure remains resumable with the claim.
 	}
 	budgetSpec := deploymentRecoveryBudgetSpec(d, previousRelease)
-	recoveryTimeout := deploymentAttemptTimeout(budgetSpec, baseTimeout/2)
+	recoveryTimeout := deploymentRuntimeTimeout(w.Cluster, budgetSpec, baseTimeout/2)
 	operationTimeout := deploymentOperationTimeout(baseTimeout, deployTimeout, recoveryTimeout)
 	ctx, cancelTimeout := context.WithDeadline(parent, started.Add(operationTimeout+drainAllowance))
 	defer cancelTimeout()
@@ -337,7 +337,7 @@ func (w *Worker) recoverRelease(parent, ctx context.Context, c *store.Claim, tar
 		if fallback == 0 {
 			fallback = 5 * time.Minute
 		}
-		timeout := deploymentAttemptTimeout(target.Spec, fallback)
+		timeout := deploymentRuntimeTimeout(w.Cluster, target.Spec, fallback)
 		bounded, stop := context.WithTimeout(ctx, timeout)
 		result, err := w.Cluster.Deploy(bounded, target, emit)
 		stop()
@@ -367,6 +367,34 @@ func (w *Worker) recoverRelease(parent, ctx context.Context, c *store.Claim, tar
 		message += "; recovery " + d.RecoveryState + ": " + d.RecoveryError
 	}
 	w.finish(parent, c, "failed", message, d.Result)
+}
+
+// deploymentRuntimeTimeout reserves each service's actual bounded readiness
+// allowance, including omitted startup settings, before sequential deployment.
+// The cluster still enforces each individual service timeout.
+func deploymentRuntimeTimeout(runtime Runtime, app spec.Application, fallback time.Duration) time.Duration {
+	owner, ok := runtime.(interface{ ServiceRolloutTimeout() time.Duration })
+	if !ok || owner.ServiceRolloutTimeout() <= 0 {
+		return deploymentAttemptTimeout(app, fallback)
+	}
+	requested := 30 * time.Second
+	for _, service := range app.Services {
+		if service.Job != nil {
+			if service.Job.Schedule == nil && service.Job.Invocation == nil {
+				requested += time.Duration(service.Job.TimeoutSeconds)*time.Second + 30*time.Second
+			}
+			continue
+		}
+		if service.StartupTimeoutSeconds > 0 {
+			requested += time.Duration(service.StartupTimeoutSeconds) * time.Second
+		} else {
+			requested += owner.ServiceRolloutTimeout()
+		}
+	}
+	if len(app.Services) == 0 {
+		return fallback
+	}
+	return max(fallback, requested)
 }
 
 // deploymentAttemptTimeout expands the existing worker deadline only for

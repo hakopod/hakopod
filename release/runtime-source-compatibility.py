@@ -166,7 +166,14 @@ CHAIN_TRUST_PATHS = {
 }
 
 
+NEXT_CHAIN_BASE = {'tag': 'v0.1.0-alpha.61', 'commit': 'bc3b46803d3bba40c6438ddb27e190c628d8622a'}
+NEXT_CHAIN_PREDECESSORS = {'myduck': '085a8c279f0326940b0c8dcf135e4867d20bd6b62d60c281670730ea62fe3449', 'oracle-free': 'f5f198616153525fc6a1f30cddef2d80eb28d09d93bdfc39b577b52cddf009cd', 'vitess': '6d2881634cf4befdea15bc74d05a1c1ecc3c535472b76c467b120dc1c28ae8eb'}
+
 def chain_header(root, runtime, record):
+    next_review = record.get('reviewed_release') == 'v0.1.0-alpha.62' if isinstance(record, dict) else False
+    base = NEXT_CHAIN_BASE if next_review else CHAIN_BASE
+    anchors = NEXT_CHAIN_PREDECESSORS if next_review else CHAIN_PREDECESSORS
+    release = 'v0.1.0-alpha.62' if next_review else CHAIN_RELEASE
     scope_key = 'scopes' if runtime == 'vitess' else 'delta'
     version = 3 if runtime == 'vitess' else 2
     fields = {'schema_version', 'runtime', 'qualified_release', 'reviewed_release',
@@ -174,22 +181,22 @@ def chain_header(root, runtime, record):
     if (runtime not in CHAIN_PREDECESSORS or not isinstance(record, dict)
             or set(record) != fields or type(record['schema_version']) is not int
             or record['schema_version'] != version or record['runtime'] != runtime
-            or record['reviewed_release'] != CHAIN_RELEASE
+            or record['reviewed_release'] != release
             or not isinstance(record['control_plane_commit'], str)
             or not COMMIT.fullmatch(record['control_plane_commit'])):
         raise ValueError('Invalid chained runtime compatibility review')
-    expected = dict(CHAIN_BASE, review_sha256=CHAIN_PREDECESSORS[runtime])
+    expected = dict(base, review_sha256=anchors[runtime])
     if record['predecessor'] != expected:
         raise ValueError('Runtime compatibility predecessor identity changed')
-    path = Path(root) / 'release' / ('managed-' + runtime) / 'source-compatibility-alpha59.json'
+    path = Path(root) / 'release' / ('managed-' + runtime) / ('source-compatibility-alpha61.json' if next_review else 'source-compatibility-alpha59.json')
     if path.is_symlink() or not path.is_file() or not 1 <= path.stat().st_size <= 512 * 1024:
         raise ValueError('Published runtime predecessor review is unavailable')
     predecessor = json.loads(path.read_text(), object_pairs_hook=unique)
-    if canonical_hash(predecessor) != CHAIN_PREDECESSORS[runtime]:
+    if canonical_hash(predecessor) != anchors[runtime]:
         raise ValueError('Published runtime predecessor review changed')
     if record['qualified_release'] != predecessor['qualified_release']:
         raise ValueError('Chained review cannot replace the historical native evidence identity')
-    expected_bootstrap = dict(CHAIN_BASE, reviewed_release=CHAIN_RELEASE,
+    expected_bootstrap = dict(base, reviewed_release=release,
                               trust_anchor='authenticated-git-review',
                               trust_paths=sorted(CHAIN_TRUST_PATHS[runtime]))
     if record['bootstrap'] != expected_bootstrap:
@@ -242,6 +249,11 @@ def validate_chain(root, runtime, record, recorded, current, protected, artifact
     if artifact_sha256 is not None and record['qualified_release'][manifest_key] != artifact_sha256:
         raise ValueError('Chained compatibility review belongs to another native manifest')
     prior_delta = predecessor['scopes'][scope] if runtime == 'vitess' else predecessor['delta']
+    if record['reviewed_release'] == 'v0.1.0-alpha.62':
+        older = json.loads((Path(root) / 'release' / ('managed-' + runtime) / 'source-compatibility-alpha59.json').read_text(), object_pairs_hook=unique)
+        if canonical_hash(older) != CHAIN_PREDECESSORS[runtime]:
+            raise ValueError('Historical runtime predecessor changed')
+        recorded = apply_chain_delta(recorded, older['scopes'][scope] if runtime == 'vitess' else older['delta'])
     previous = apply_chain_delta(recorded, prior_delta)
     delta = record['scopes'][scope] if runtime == 'vitess' else record['delta']
     result = apply_chain_delta(previous, delta)

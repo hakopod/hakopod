@@ -225,6 +225,7 @@ def _alpha59_verifier_bootstrap(review, path, before):
             and before == '8a0299b42411f8f13e06308393cf42a5cd087aba33b46db5402e246b7b7ab08c')
 
 
+# Alpha.62 retains native evidence only through its exact authenticated source chain.
 def validate_source_compatibility(root, scope, recorded, current, artifact_sha256=None):
     """Reuse historical evidence only for an explicitly reviewed, exact source delta."""
     if recorded == current:

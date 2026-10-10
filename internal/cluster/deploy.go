@@ -28,6 +28,15 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
+// ServiceRolloutTimeout exposes the installation readiness allowance to the
+// durable worker's complete deployment budget; it does not change readiness.
+func (c *Client) ServiceRolloutTimeout() time.Duration {
+	if c == nil {
+		return 0
+	}
+	return c.options.RolloutTimeout
+}
+
 // Deploy is idempotent and serialized by the durable worker. It never performs
 // automatic rollback: a failed group can be partial and is returned for the
 // worker to record and recover as a separate auditable action.
