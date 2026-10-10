@@ -18,6 +18,7 @@ type ExplorerConnection struct {
 }
 
 type ExplorerCatalog struct {
+	Available     bool                 `json:"available"`
 	SchemaVersion int                  `json:"schema_version"`
 	Project       string               `json:"project"`
 	Environment   string               `json:"environment"`

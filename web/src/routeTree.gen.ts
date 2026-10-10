@@ -108,6 +108,7 @@ import { Route as SettingsGitGithubCallbackRouteImport } from './routes/settings
 import { Route as SettingsGitGithubInstalledRouteImport } from './routes/settings.git.github.installed'
 import { Route as SettingsRolesRoleEditRouteImport } from './routes/settings.roles.$role.edit'
 import { Route as SettingsSecretProvidersProviderNameEditRouteImport } from './routes/settings.secret-providers.$providerName.edit'
+import { Route as SynehqSScopeSplatRouteImport } from './routes/synehq.s.$scope.$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -648,6 +649,11 @@ const SettingsSecretProvidersProviderNameEditRoute =
     path: '/$providerName/edit',
     getParentRoute: () => SettingsSecretProvidersRoute,
   } as any)
+const SynehqSScopeSplatRoute = SynehqSScopeSplatRouteImport.update({
+  id: '/synehq/s/$scope/$',
+  path: '/synehq/s/$scope/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -749,6 +755,7 @@ export interface FileRoutesByFullPath {
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
+  '/synehq/s/$scope/$': typeof SynehqSScopeSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -850,6 +857,7 @@ export interface FileRoutesByTo {
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
+  '/synehq/s/$scope/$': typeof SynehqSScopeSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -952,6 +960,7 @@ export interface FileRoutesById {
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
+  '/synehq/s/$scope/$': typeof SynehqSScopeSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -1055,6 +1064,7 @@ export interface FileRouteTypes {
     | '/settings/git/github/installed'
     | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
+    | '/synehq/s/$scope/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -1156,6 +1166,7 @@ export interface FileRouteTypes {
     | '/settings/git/github/installed'
     | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
+    | '/synehq/s/$scope/$'
   id:
     | '__root__'
     | '/'
@@ -1257,6 +1268,7 @@ export interface FileRouteTypes {
     | '/settings/git/github/installed'
     | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
+    | '/synehq/s/$scope/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1285,6 +1297,7 @@ export interface RootRouteChildren {
   LoginSignupRoute: typeof LoginSignupRoute
   LoginVerifyRoute: typeof LoginVerifyRoute
   ProjectsProjectRoute: typeof ProjectsProjectRoute
+  SynehqSScopeSplatRoute: typeof SynehqSScopeSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1982,6 +1995,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSecretProvidersProviderNameEditRouteImport
       parentRoute: typeof SettingsSecretProvidersRoute
     }
+    '/synehq/s/$scope/$': {
+      id: '/synehq/s/$scope/$'
+      path: '/synehq/s/$scope/$'
+      fullPath: '/synehq/s/$scope/$'
+      preLoaderRoute: typeof SynehqSScopeSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -2379,6 +2399,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginSignupRoute: LoginSignupRoute,
   LoginVerifyRoute: LoginVerifyRoute,
   ProjectsProjectRoute: ProjectsProjectRoute,
+  SynehqSScopeSplatRoute: SynehqSScopeSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,3 +1,4 @@
+import { DatabaseExplorerLink } from '../components/database-explorer-link'
 import { useScope, canAccess } from '../lib/scope'
 import { useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
@@ -29,7 +30,10 @@ function Databases() {
   const scopeMatches = projectRouteScopeMatches(workspace, scope)
   const query = useDatabases(scope.project, scope.environment, scopeMatches)
   const external = useExternalDatabases(scope.project, scope.environment, scopeMatches)
-  const canManage = scopeMatches && !workspace.identity.application && canAccess(workspace.identity, scope.project, 'deployments:write')
+  const canManage =
+    scopeMatches &&
+    !workspace.identity.application &&
+    canAccess(workspace.identity, scope.project, 'deployments:write')
   const [filter, setFilter] = useState('')
   const [engine, setEngine] = useState('all')
   const filtered = (query.data?.items || []).filter(
@@ -37,9 +41,10 @@ function Databases() {
       d.spec.name.toLowerCase().includes(filter.toLowerCase()) &&
       (engine === 'all' || d.spec.engine === engine),
   )
-  const externalFiltered = (external.data?.items || []).filter((d) =>
-    d.spec.name.toLowerCase().includes(filter.toLowerCase()) &&
-    (engine === 'all' || d.spec.engine === engine),
+  const externalFiltered = (external.data?.items || []).filter(
+    (d) =>
+      d.spec.name.toLowerCase().includes(filter.toLowerCase()) &&
+      (engine === 'all' || d.spec.engine === engine),
   )
   return (
     <div className="ops-page">
@@ -65,7 +70,7 @@ function Databases() {
           )
         }
       />
-      <DatabaseResourceNavigation active="databases" scope={scope}/>
+      <DatabaseResourceNavigation active="databases" scope={scope} />
       {!scopeMatches ? (
         <Empty
           title="Workspace unavailable"
@@ -79,6 +84,7 @@ function Databases() {
       ) : (
         <>
           <div className="resource-toolbar">
+            <DatabaseExplorerLink project={scope.project} environment={scope.environment} />
             <div className="w-full sm:w-72">
               <Input
                 aria-label="Filter databases"
@@ -96,7 +102,13 @@ function Databases() {
                 ...databaseEngines.map(({ id, name }) => ({ value: id, label: name })),
               ]}
             />
-            <Button onClick={() => { void query.refetch(); void external.refetch() }} disabled={query.isFetching || external.isFetching}>
+            <Button
+              onClick={() => {
+                void query.refetch()
+                void external.refetch()
+              }}
+              disabled={query.isFetching || external.isFetching}
+            >
               <Icon name="refresh" size={14} />
               Refresh
             </Button>
@@ -165,7 +177,10 @@ function Databases() {
                       </div>
                       <div>
                         <dt>Disk / member</dt>
-                        <dd>{d.spec.storage_gib} GiB{d.spec.engine === 'mongodb' ? ' data + 1 GiB logs' : ''}</dd>
+                        <dd>
+                          {d.spec.storage_gib} GiB
+                          {d.spec.engine === 'mongodb' ? ' data + 1 GiB logs' : ''}
+                        </dd>
                       </div>
                     </dl>
                     <div className="db-catalog-member-strip">
@@ -187,7 +202,9 @@ function Databases() {
                           ? `${d.spec.shards} shards · `
                           : ''}
                         {d.spec.replicas} {d.spec.replicas === 1 ? 'replica' : 'replicas'}
-                        {shardedDatabase(d.spec.engine) && d.spec.mode === 'cluster' ? ' / shard' : ''}
+                        {shardedDatabase(d.spec.engine) && d.spec.mode === 'cluster'
+                          ? ' / shard'
+                          : ''}
                       </span>
                       <span className="ml-auto">r{d.revision}</span>
                     </div>
@@ -221,16 +238,79 @@ function Databases() {
           ) : null}
           {external.error && <ErrorState error={external.error} />}
           {external.isPending && <Loading />}
-          {externalFiltered.length > 0 && <section className="grid gap-3 pt-5" aria-labelledby="external-databases-heading">
-            <h2 id="external-databases-heading" className="text-sm font-semibold">Legacy provider connections <span className="font-normal text-muted-foreground">· {externalFiltered.length}</span></h2>
-            <div className="db-catalog">{externalFiltered.map((d) => <article key={d.id} className="db-catalog-card">
-              <div className="db-catalog-card-heading"><ServiceIcon name={d.spec.engine} size={36} /><div><h2><Link to="/databases/external/$externalDatabaseId" params={{ externalDatabaseId: d.id }} search={{ project: d.project, environment: d.environment }}>{d.spec.name}</Link></h2><p>Legacy external connection · {engineName(d.spec.engine)}</p></div><Status value={externalDatabaseHealth(d) === 'Observation stale' ? 'stale' : externalDatabaseHealth(d)} /></div>
-              <dl className="db-catalog-facts"><div><dt>Database</dt><dd>{d.spec.database}</dd></div><div><dt>Port</dt><dd>{d.spec.port}</dd></div><div><dt>Credentials</dt><dd>r{d.credential_revision}</dd></div></dl>
-              <p className="db-catalog-host">{d.spec.host}</p>
-              <div className="db-catalog-footer"><span>Inspection and removal only</span><span className="ml-auto">r{d.revision}</span></div>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"><span className="text-xs text-muted-foreground">Checked {d.observation.revision ? timestamp(d.observation.observed_at) : 'not yet'}</span><Button asChild variant="ghost" size="sm"><Link to="/databases/external/$externalDatabaseId" params={{ externalDatabaseId: d.id }} search={{ project: d.project, environment: d.environment }}>Inspect<Icon name="arrow" size={14} /></Link></Button></div>
-            </article>)}</div>
-          </section>}
+          {externalFiltered.length > 0 && (
+            <section className="grid gap-3 pt-5" aria-labelledby="external-databases-heading">
+              <h2 id="external-databases-heading" className="text-sm font-semibold">
+                Legacy provider connections{' '}
+                <span className="font-normal text-muted-foreground">
+                  · {externalFiltered.length}
+                </span>
+              </h2>
+              <div className="db-catalog">
+                {externalFiltered.map((d) => (
+                  <article key={d.id} className="db-catalog-card">
+                    <div className="db-catalog-card-heading">
+                      <ServiceIcon name={d.spec.engine} size={36} />
+                      <div>
+                        <h2>
+                          <Link
+                            to="/databases/external/$externalDatabaseId"
+                            params={{ externalDatabaseId: d.id }}
+                            search={{ project: d.project, environment: d.environment }}
+                          >
+                            {d.spec.name}
+                          </Link>
+                        </h2>
+                        <p>Legacy external connection · {engineName(d.spec.engine)}</p>
+                      </div>
+                      <Status
+                        value={
+                          externalDatabaseHealth(d) === 'Observation stale'
+                            ? 'stale'
+                            : externalDatabaseHealth(d)
+                        }
+                      />
+                    </div>
+                    <dl className="db-catalog-facts">
+                      <div>
+                        <dt>Database</dt>
+                        <dd>{d.spec.database}</dd>
+                      </div>
+                      <div>
+                        <dt>Port</dt>
+                        <dd>{d.spec.port}</dd>
+                      </div>
+                      <div>
+                        <dt>Credentials</dt>
+                        <dd>r{d.credential_revision}</dd>
+                      </div>
+                    </dl>
+                    <p className="db-catalog-host">{d.spec.host}</p>
+                    <div className="db-catalog-footer">
+                      <span>Inspection and removal only</span>
+                      <span className="ml-auto">r{d.revision}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                      <span className="text-xs text-muted-foreground">
+                        Checked{' '}
+                        {d.observation.revision ? timestamp(d.observation.observed_at) : 'not yet'}
+                      </span>
+                      <Button asChild variant="ghost" size="sm">
+                        <Link
+                          to="/databases/external/$externalDatabaseId"
+                          params={{ externalDatabaseId: d.id }}
+                          search={{ project: d.project, environment: d.environment }}
+                        >
+                          Inspect
+                          <Icon name="arrow" size={14} />
+                        </Link>
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
     </div>

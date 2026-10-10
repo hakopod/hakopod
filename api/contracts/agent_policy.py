@@ -1,6 +1,7 @@
 """Explicit agent exposure policy. This extension executes after all API feature contracts."""
 
-POLICIES = {'listDatabaseExplorerConnections': {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read','databases:query'],'scope_requirement':'project_credential','prerequisite':'','review':'none','sensitive_fields':[]},
+POLICIES = {'proxyDatabaseExplorer': {'boundary':'project','category':'human','exposure':'prerequisite','permissions':['deployments:read','databases:query'],'prerequisite':'Use the authenticated database explorer. Database writes require its browser approval.','review':'canonical','sensitive_fields':['body']},
+ 'listDatabaseExplorerConnections': {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read','databases:query'],'scope_requirement':'project_credential','prerequisite':'','review':'none','sensitive_fields':[]},
  'acceptHumanInvite': {'boundary': 'identity',
                        'category': 'human',
                        'exposure': 'prerequisite',

@@ -1771,6 +1771,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/database-explorer/http": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open the scoped database explorer with the current Hakopod session. */
+        post: operations["proxyDatabaseExplorer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/databases/{id}/application-provisioning-plan": {
         parameters: {
             query?: never;
@@ -6564,11 +6581,24 @@ export interface components {
             can_write: boolean;
         };
         DatabaseExplorerCatalog: {
+            available?: boolean;
             /** @constant */
             schema_version: 1;
             project: string;
             environment: string;
             items: components["schemas"]["DatabaseExplorerConnection"][];
+        };
+        DatabaseExplorerHTTP: {
+            project: string;
+            environment: string;
+            method: string;
+            path: string;
+            body: string;
+        };
+        DatabaseExplorerHTTPResponse: {
+            status: number;
+            contentType: string;
+            body: string;
         };
         DatabaseApplicationProvisioningPlanInput: {
             application_id: string;
@@ -13560,6 +13590,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatabaseExplorerCatalog"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    proxyDatabaseExplorer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseExplorerHTTP"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseExplorerHTTPResponse"];
                 };
             };
             /** @description Error */

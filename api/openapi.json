@@ -7680,6 +7680,59 @@
         "summary": "List supported databases and their current explorer eligibility in one project and environment."
       }
     },
+    "/database-explorer/http": {
+      "post": {
+        "operationId": "proxyDatabaseExplorer",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseExplorerHTTPResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseExplorerHTTP"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "deployments:read",
+            "databases:query"
+          ],
+          "prerequisite": "Use the authenticated database explorer. Database writes require its browser approval.",
+          "review": "canonical",
+          "sensitive_fields": [
+            "body"
+          ]
+        },
+        "summary": "Open the scoped database explorer with the current Hakopod session."
+      }
+    },
     "/databases/{id}/application-provisioning-plan": {
       "post": {
         "operationId": "reviewDatabaseApplicationProvisioning",
@@ -29211,6 +29264,9 @@
       "DatabaseExplorerCatalog": {
         "type": "object",
         "properties": {
+          "available": {
+            "type": "boolean"
+          },
           "schema_version": {
             "type": "integer",
             "const": 1
@@ -29233,6 +29289,54 @@
           "project",
           "environment",
           "items"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseExplorerHTTP": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "method",
+          "path",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseExplorerHTTPResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "contentType",
+          "body"
         ],
         "additionalProperties": false
       },

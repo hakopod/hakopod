@@ -344,5 +344,6 @@
   "verifyRegistration": "Verify the account registration token.",
   "verifySessionMFA": "Verify additional authentication for the current session.",
   "volumeResizeAction": "Request a volume resize retry or cancellation, or retention or deletion of its original volume.",
-  "writeHostTerminal": "Send input or a resize request to the host terminal session."
+  "writeHostTerminal": "Send input or a resize request to the host terminal session.",
+  "proxyDatabaseExplorer": "Open the scoped database explorer with the current Hakopod session."
 }

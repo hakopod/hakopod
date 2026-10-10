@@ -13,3 +13,11 @@ export function editionRequestError(_request: Request, _path: string): Response 
 export function editionResponseHeaders(_request: Request): Record<string, string> {
   return {}
 }
+
+export function explorerEditionHeaders(
+  _request: Request,
+  workspace: string,
+): Record<string, string> {
+  if (workspace) throw new Error('This installation has no Cloud workspace.')
+  return {}
+}

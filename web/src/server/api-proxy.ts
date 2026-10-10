@@ -16,7 +16,7 @@ import {
 } from './session.ts'
 
 export const allowed = [
-  /^database-explorer\/connections$/,
+  /^database-explorer\/(?:connections|http)$/,
   /^managed-platforms(?:\/(?:catalog|reviews|operations|[a-f0-9]{32}(?:\/(?:operations|recovery-operations|trust))?))?$/,
   /^managed-platform-operations\/[a-f0-9]{32}$/,
   /^managed-platform-recovery\/(?:reviews|operations)$/,
