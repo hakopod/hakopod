@@ -1,28 +1,32 @@
 {
   "bootstrap": {
     "commit": "869cb4186566199d8611c4ffb30212d42d0daa1d",
-    "reviewed_release": "v0.1.0-alpha.60",
+    "reviewed_release": "v0.1.0-alpha.61",
     "tag": "v0.1.0-alpha.59",
     "trust_anchor": "authenticated-git-review",
-    "trust_paths": [
-      "release/runtime-source-compatibility.py"
-    ]
+    "trust_paths": ["release/runtime-source-compatibility.py"]
   },
-  "control_plane_commit": "fa80661e0016348a05e386fccdeda24045c3e9f6",
+  "control_plane_commit": "7667ffb89f3649488c33827be81b29fb0b3c1baa",
   "delta": {
     "baseline_sha256": "e54c99df30fb963878dfbc8c7b809254ab7b973b15e28f6bf43e6b88fe0dac2f",
     "changes": [
       {
-        "after": "42bfc96d9840be3a5ae3379462114bf4bb01cbc33bf2c2c95364f831f9014fcb",
+        "after": "2a6ab6e91588580f4cc680e39626e7e52be46e8f96fd916f3afb2e545c958a8a",
         "before": "2fbea2bfe981060245dd22e6190d96e5e7a48ecef5a4944f3ee085066c6f0788",
         "path": "api/contracts/agent_policy.py",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
       },
       {
         "after": "f72b51bd8780212799a3a5d802041d2c920a382f11f8006c9cbb3348c133e45c",
         "before": "a34f4c06bc455c8ae8a4adf5d2341eb6a4a6f913b2a6f56a8c592bfbdf3d0de9",
         "path": "api/contracts/binding_tests.py",
         "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+      },
+      {
+        "after": "dcec81c1c850e62ea8c6d18e191a35b0bc7d913c063b62b10d339c042d5b69d2",
+        "before": null,
+        "path": "api/contracts/database_explorer.py",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
       },
       {
         "after": "92c26f9af9a7067036317b4b771b2633f07c868172915419c9c703b98e0e2ed2",
@@ -55,22 +59,22 @@
         "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
       },
       {
-        "after": "bd0f9455e107a41d0454dc25ff5afd91724ab12bc222dde07927637fb3d68488",
+        "after": "c1da2eae12bd41fbd806639479ac17a496e7333f35ca6d3b93dfd5cce2e29814",
         "before": "0f5d1ab0947d43607ce1eac204aac5797a4aa5bb94dd14f464906f4a3ff39c0a",
         "path": "api/openapi.json",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
       },
       {
-        "after": "7eaf64a5eb9236c4d9e154f6c4480d2b0730fd623b5daddcd0212bf0dd951040",
+        "after": "8cf30af1bf3632549da1657799e3b13a27de5dcc20c0804c58119b8984af4f58",
         "before": "88544830135a50e18199ff8f6045c8aab89335ea7f7866aa5ca9a05225e36fe7",
         "path": "api/operation-summaries.json",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
       },
       {
-        "after": "c281ad2db7c55799f65f8e5ec0e9afe55fb7e3a4e65288a20ee06f2b78d5fbf2",
+        "after": "8ec4633fb3e9ca1893db72aabacc6e15c9b3012944d4c2b8617dfba6cd6ad4db",
         "before": "46b4b35cfd70f4682d35ff780df4a91bcb3e14223bd618e8d3c27b0ca5779d0a",
         "path": "internal/api/api.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
       },
       {
         "after": "5941da803c8bddc6c27da723d3ceab77e60c544004177a44a3f74dd1929970c6",
@@ -113,6 +117,42 @@
         "before": "6a1a5523ed070118cc88bfc26a546ad24981fbaa91db8e06963f6ff1c74a6ed1",
         "path": "internal/api/binding_tests.go",
         "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+      },
+      {
+        "after": "77e14be848511d8168a7b35d313762c72515144690db6301a0acd70d9412aa43",
+        "before": null,
+        "path": "internal/api/database_explorer.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
+        "after": "212ea2921a057858fb91b62523c5ab90f8ecbd3596d852d871f34a05d19eb15d",
+        "before": null,
+        "path": "internal/api/database_explorer_cloud.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
+        "after": "1477c95aa2aef59c42ee0ccaf26542349a98359650e865080226ff7f10bc1a03",
+        "before": null,
+        "path": "internal/api/database_explorer_integration_test.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
+        "after": "2f2bc461226d79eca66aa5f9227fea32f84a1955ebc75b499fc8927ce9c557a1",
+        "before": null,
+        "path": "internal/api/database_explorer_live_test.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
+        "after": "ede9a471c0f33f966a22767ba0882f2070e83c519cb333b4578cc92245c441c0",
+        "before": null,
+        "path": "internal/api/database_explorer_runtime.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
+        "after": "a307c790a5c8cdb2d1204e0b83cf9287e1b47e7abaa038ba5eaeccca18b4e3c3",
+        "before": null,
+        "path": "internal/api/database_explorer_runtime_test.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
       },
       {
         "after": "8b29b6d50c21d0c922e873dba5a85c75b74e262246e3800176bfc18ff4e24ee2",
@@ -289,6 +329,18 @@
         "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
       },
       {
+        "after": "91aca1a8fa27736696e0e01de7ac769546c473a25b9d58d3b7573e2bdb9304fa",
+        "before": null,
+        "path": "internal/database/explorer.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
+        "after": "bb9d2a08e9ad211706115ac2f75e6e8095a776471773271de647edac23c55a10",
+        "before": null,
+        "path": "internal/database/explorer_test.go",
+        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
         "after": "dc63846febc0863757b6d24fe261ae776609e1a989db9d12c010dd2e80be8312",
         "before": null,
         "path": "internal/database/migration_lock_recovery.go",
@@ -329,6 +381,18 @@
         "before": "33aeb4370616bc46db5680285d91ec55f8f2316238b5f99c4ea74e6b7d758d0c",
         "path": "internal/platformbackup/model.go",
         "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+      },
+      {
+        "after": "a2eb18546498f4ab37a2eee4cd61e7a1c1a632a2e7d47f584d9fa557912e2faa",
+        "before": "e9d18571fd18e29ee7ee242d5fd90f9bde55392781f6c1ddf5222e2ec42f7634",
+        "path": "internal/spec/spec.go",
+        "reason": "Include service suspension in deployment plans and regression coverage. Native database runtime and image inputs are unchanged."
+      },
+      {
+        "after": "7c70d8f9ebc703683c64b2fac274de7b0355a5cd784fb9dc247a033d5c958950",
+        "before": null,
+        "path": "internal/spec/suspension_diff_test.go",
+        "reason": "Include service suspension in deployment plans and regression coverage. Native database runtime and image inputs are unchanged."
       },
       {
         "after": "89440a689de64f2cfb82fd11e4b2d3a38d461674ea44e071a8c28972070c2ae3",
@@ -523,13 +587,13 @@
         "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
       },
       {
-        "after": "d82d6eaf4653622b918a8936951445720d1541a111fa1b051021fd5090d881ad",
+        "after": "670bec9f7c97efa529790e22be08c8d6cfd8ed2cfe430bfa0b0db5646e4a2fc7",
         "before": "73c63ddad1e032dce2547ea328e5029660c4a2fad4c8e1c03e06c65530647fc6",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Alpha.60 changes the fixed compatibility trust bootstrap; native runtime and artifact inputs remain protected."
+        "reason": "Select the alpha.61 compatibility review. Retain the exact predecessor, protected paths, and historical native evidence."
       }
     ],
-    "current_sha256": "50cea0a0f531b881d08cb3c169748b8ecce20ff0ede9b90e68f10164e5deb859"
+    "current_sha256": "91e42107503f6f77eb451ce88ec778868db842bb68f251ce6e680edd34ec1af4"
   },
   "predecessor": {
     "commit": "869cb4186566199d8611c4ffb30212d42d0daa1d",
@@ -543,25 +607,15 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestDatabaseResizeProgressUsesObservedTopology",
-      "TestDatabaseOperationProgressPersistsAndReplacesCurrentStage",
-      "TestDatabaseOperationFailureDoesNotCompletePendingStage",
-      "TestResumeDeploymentSelectsFailedAndDependentsAtSameRevision",
-      "TestResumeDeploymentRefusesFailedMigrationJob",
-      "TestBindingEvidencePersistsLatestAndEnforcesScope",
-      "TestApplicationProvisioningReplayReauthorizesCurrentKey",
-      "TestMigrationRecoveryReplayReauthorizesCurrentKey",
-      "TestProvisionedBindingAndOperationOutcomeCommitAtomically",
-      "TestProvisionedWorkloadSecretRejectsRacedWriterAndPermitsExactReplay",
-      "TestApplicationProvisioningSecretWriteFailureSeparatesConflictFromRetry",
-      "TestBackupRecoverySetUsesAuthorizedStoredCapturePoints",
-      "TestServerCleanupResumeAndObserveReceipts",
-      "TestCleanupReceiptValidationAndAuthorization",
-      "TestNativeNeonCancellationReceiptReadsCompletedCleanup"
+      "TestExplorerPublicPaths",
+      "TestExplorerFingerprintTracksCredentialsNotObservationTime",
+      "TestExplorerLiveAuthorityRejectsRevocationAndWrites",
+      "TestExplorerCloudIdentityAndScopeAreVerified",
+      "TestDatabaseExplorerCatalogScopeAndCurrentGrants"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/37993024646"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/38055302130"
   },
-  "reviewed_release": "v0.1.0-alpha.60",
+  "reviewed_release": "v0.1.0-alpha.61",
   "runtime": "myduck",
   "schema_version": 2
 }
