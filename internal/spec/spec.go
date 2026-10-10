@@ -550,6 +550,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "size", a.Size, b.Size, false)
 		add(name, "resources", a.Resources, b.Resources, false)
 		add(name, "replicas", a.Replicas, b.Replicas, false)
+		add(name, "suspended", a.Suspended, b.Suspended, false)
 		add(name, "healthcheck", a.Healthcheck, b.Healthcheck, false)
 		add(name, "startup_timeout_seconds", a.StartupTimeoutSeconds, b.StartupTimeoutSeconds, false)
 		add(name, "readiness", a.Readiness, b.Readiness, false)
