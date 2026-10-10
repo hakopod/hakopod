@@ -157,7 +157,7 @@ def validate(root, runtime, recorded, current, protected, artifact_sha256):
 # The next review extends this published review, not the old native test claim.
 # Its hash anchors the exact historical exceptions accepted in alpha.59.
 CHAIN_BASE = {'tag': 'v0.1.0-alpha.59', 'commit': '869cb4186566199d8611c4ffb30212d42d0daa1d'}
-CHAIN_RELEASE = 'v0.1.0-alpha.60'
+CHAIN_RELEASE = 'v0.1.0-alpha.61'
 CHAIN_PREDECESSORS = {'myduck': '45170d7d57580267df5515e373eb7debf0879bac6e53a4bbeef9abb6826390f0', 'oracle-free': 'b59a0847286257ae0870b2a863a5f557860c9f204b1b9323eb55fbf0cffdec08', 'vitess': '6ccc96b680e076acd49f9f0d1d7192018d453ec5baa4baa80358f9946ffb7f3b'}
 CHAIN_TRUST_PATHS = {
     'myduck': {'release/runtime-source-compatibility.py'},
