@@ -29,7 +29,7 @@
       "TestUnhealthyServiceStillExpiresItsOwnReadinessWindow",
       "TestNilRuntimeHasNoInstallationReadinessBudget"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/38063974406"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/38069631268"
   },
   "reviewed_release": "v0.1.0-alpha.62",
   "runtime": "vitess",
