@@ -31525,6 +31525,24 @@
         ],
         "additionalProperties": false
       },
+      "DatabasePostgresConfig": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          },
+          "username": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,62}$"
+          }
+        },
+        "required": [
+          "database",
+          "username"
+        ],
+        "additionalProperties": false
+      },
       "DatabasePlacement": {
         "type": "object",
         "properties": {
@@ -31826,6 +31844,9 @@
           },
           "pooling": {
             "$ref": "#/components/schemas/DatabasePooling"
+          },
+          "postgres": {
+            "$ref": "#/components/schemas/DatabasePostgresConfig"
           },
           "oracle": {
             "$ref": "#/components/schemas/DatabaseOracleConfig"

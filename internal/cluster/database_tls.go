@@ -113,9 +113,9 @@ cat > "$work/ca.crt"
 export PGSSLMODE=verify-full PGSSLROOTCERT="$work/ca.crt"
 minimum=$(psql -XAtw -U postgres -d postgres -v ON_ERROR_STOP=1 -c "SHOW ssl_min_protocol_version")
 [ "$minimum" = 'TLSv1.2' ]
-result=$(psql -XAtw -h "$1" -p "$2" -U app -d app -v ON_ERROR_STOP=1 -c "SELECT ssl::text || '|' || version || '|' || pg_is_in_recovery() FROM pg_stat_ssl WHERE pid=pg_backend_pid()")
+result=$(psql -XAtw -h "$1" -p "$2" -U "$4" -d "$5" -v ON_ERROR_STOP=1 -c "SELECT ssl::text || '|' || version || '|' || pg_is_in_recovery() FROM pg_stat_ssl WHERE pid=pg_backend_pid()")
 case "$3:$result" in 'read_write:true|TLSv1.2|false'|'read_write:true|TLSv1.3|false'|'pooled_read_write:true|TLSv1.2|false'|'pooled_read_write:true|TLSv1.3|false'|'read_only:true|TLSv1.2|true'|'read_only:true|TLSv1.3|true'|'pooled_read_only:true|TLSv1.2|true'|'pooled_read_only:true|TLSv1.3|true') ;; *) exit 1;; esac
-if PGSSLMODE=disable psql -XAtw -h "$1" -p "$2" -U app -d app -c 'SELECT 1' > /dev/null 2> "$work/plaintext-error"; then exit 1; fi
+if PGSSLMODE=disable psql -XAtw -h "$1" -p "$2" -U "$4" -d "$5" -c 'SELECT 1' > /dev/null 2> "$work/plaintext-error"; then exit 1; fi
 if [ "$3" = 'pooled_read_write' ] || [ "$3" = 'pooled_read_only' ]; then
   grep -E 'SSL required|TLS required|no pg_hba.conf entry|pg_hba.conf rejects connection' "$work/plaintext-error" >/dev/null
 else
@@ -225,7 +225,7 @@ func (c *Client) observeDatabaseTLS(ctx context.Context, d database.Resource, o 
 	for _, endpoint := range o.Endpoints {
 		output := &databaseBoundedWriter{limit: 32 << 10}
 		input := bytes.Join([][]byte{secret.Data["password"], []byte(trust.CertificatePEM)}, []byte{'\n'})
-		if err = c.DatabaseExec(step, d, o.Members[0], []string{"sh", "-c", postgresTLSProbe, "verify-database-tls", endpoint.Host, strconv.Itoa(endpoint.Port), endpoint.Purpose}, bytes.NewReader(input), output); err != nil {
+		if err = c.DatabaseExec(step, d, o.Members[0], []string{"sh", "-c", postgresTLSProbe, "verify-database-tls", endpoint.Host, strconv.Itoa(endpoint.Port), endpoint.Purpose, d.Spec.CredentialUsername(), d.Spec.LogicalDatabase()}, bytes.NewReader(input), output); err != nil {
 			status.Message = "The endpoint did not pass verified TLS and plaintext rejection checks."
 			return err
 		}

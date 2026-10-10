@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hakopod/hakopod/internal/database"
+	"github.com/jackc/pgx/v5"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -33,7 +34,7 @@ func (c *Client) DumpDatabase(ctx context.Context, d database.Resource, observed
 	if d.Spec.Engine == "postgresql" {
 		for _, m := range observed.Members {
 			if m.Name == observed.Primary {
-				return c.DatabaseExec(ctx, d, m, []string{"pg_dump", "--username=postgres", "--dbname=app", "--format=custom", "--compress=0", "--no-owner", "--no-acl"}, nil, out)
+				return c.DatabaseExec(ctx, d, m, []string{"pg_dump", "--username=postgres", "--dbname=" + d.Spec.LogicalDatabase(), "--format=custom", "--compress=0", "--no-owner", "--no-acl"}, nil, out)
 			}
 		}
 		return fmt.Errorf("PostgreSQL primary is unavailable")
@@ -110,7 +111,7 @@ func (c *Client) DatabaseEmpty(ctx context.Context, d database.Resource, o datab
 			if m.Name == o.Primary {
 				out := &databaseBoundedWriter{limit: 4096}
 				query := `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','v','m','S','f')`
-				if err := c.DatabaseExec(ctx, d, m, []string{"psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "app", "-c", query}, nil, out); err != nil {
+				if err := c.DatabaseExec(ctx, d, m, []string{"psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", d.Spec.LogicalDatabase(), "-c", query}, nil, out); err != nil {
 					return err
 				}
 				if strings.TrimSpace(out.String()) != "0" {
@@ -147,7 +148,10 @@ func (c *Client) RestorePostgresDatabase(ctx context.Context, d database.Resourc
 			if err := c.databaseNetworkPolicy(ctx, d, func() error { return nil }); err != nil {
 				return err
 			}
-			guard := `REVOKE CONNECT ON DATABASE app FROM PUBLIC; GRANT CONNECT ON DATABASE app TO app; SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='app' AND pid<>pg_backend_pid();`
+			name := pgx.Identifier{d.Spec.LogicalDatabase()}.Sanitize()
+			owner := pgx.Identifier{d.Spec.CredentialUsername()}.Sanitize()
+			literal := "'" + strings.ReplaceAll(d.Spec.LogicalDatabase(), "'", "''") + "'"
+			guard := fmt.Sprintf(`REVOKE CONNECT ON DATABASE %s FROM PUBLIC; GRANT CONNECT ON DATABASE %s TO %s; SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=%s AND pid<>pg_backend_pid();`, name, name, owner, literal)
 			if err := c.DatabaseExec(ctx, d, m, []string{"psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", guard}, nil, io.Discard); err != nil {
 				return err
 			}
@@ -158,7 +162,7 @@ func (c *Client) RestorePostgresDatabase(ctx context.Context, d database.Resourc
 			if err != nil || secret.Labels[databaseOwner] != d.ID {
 				return fmt.Errorf("recovery credentials are unavailable")
 			}
-			command := []string{"sh", "-c", `set -eu; IFS= read -r PGPASSWORD; export PGPASSWORD; exec pg_restore --host=127.0.0.1 --username=app --dbname=app --no-password --exit-on-error --single-transaction --no-owner --no-acl`}
+			command := []string{"sh", "-c", `set -eu; IFS= read -r PGPASSWORD; export PGPASSWORD; exec pg_restore --host=127.0.0.1 --username="$1" --dbname="$2" --no-password --exit-on-error --single-transaction --no-owner --no-acl`, "restore", d.Spec.CredentialUsername(), d.Spec.LogicalDatabase()}
 			if d.Spec.TLSRequired() {
 				trust, err := c.DatabaseTrust(ctx, d)
 				if err != nil {
@@ -180,7 +184,7 @@ IFS= read -r PGPASSWORD; export PGPASSWORD
 umask 077; work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 printf '%s' "$2" > "$work/ca.crt"
 export PGHOST="$1" PGSSLMODE=verify-full PGSSLROOTCERT="$work/ca.crt" PGCONNECT_TIMEOUT=5
-pg_restore --username=app --dbname=app --no-password --exit-on-error --single-transaction --no-owner --no-acl`, "restore-with-verified-tls", host, trust.CertificatePEM}
+pg_restore --username="$3" --dbname="$4" --no-password --exit-on-error --single-transaction --no-owner --no-acl`, "restore-with-verified-tls", host, trust.CertificatePEM, d.Spec.CredentialUsername(), d.Spec.LogicalDatabase()}
 			}
 			stream := io.MultiReader(bytes.NewReader(append(append([]byte(nil), secret.Data["password"]...), '\n')), input)
 			if err := c.DatabaseExec(ctx, d, m, command, stream, io.Discard); err != nil {

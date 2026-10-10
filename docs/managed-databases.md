@@ -49,6 +49,21 @@ hakopod database list --project demo --environment production
 hakopod database show DATABASE_ID
 ```
 
+For a PostgreSQL migration, set the logical database and owner at creation:
+
+```toml
+[postgres]
+database = "feesbook"
+username = "superuserfox"
+```
+
+These names cannot change after creation. Omit this block to use `app` for both.
+Names must start with a lowercase letter and use up to 63 lowercase letters,
+digits or underscores. PostgreSQL system names are not allowed. The owner has
+no superuser privileges. Hakopod generates the password; do not put a password
+in the TOML file. Credentials, application bindings, queries, backups, restores
+and explorer connections use the configured names.
+
 PostgreSQL supports major versions 17 and 18, either standalone or with one to six replicas. Redis 8 supports standalone operation or three to sixteen shards with one or two replicas per shard. CPU, memory and storage apply to each member. A database has at most 48 configured members; an environment has at most 64 databases. Images are pinned by digest.
 
 PostgreSQL exposes private read/write and, when replicas exist, read-only endpoints. Redis Cluster exposes private cluster endpoints and requires a cluster-aware client. Observations come from controller and database health checks; configured member counts are not reported as running members.

@@ -255,7 +255,7 @@ func (s *Server) databaseCredentials(w http.ResponseWriter, r *http.Request) {
 }
 
 func databaseCredentialDefaults(d database.Resource) (string, string) {
-	username, name := "app", "app"
+	username, name := d.Spec.CredentialUsername(), d.Spec.LogicalDatabase()
 	if d.Spec.Engine == "duckdb" {
 		username = "root"
 	}

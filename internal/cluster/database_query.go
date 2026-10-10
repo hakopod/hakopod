@@ -153,6 +153,8 @@ func (c *Client) QueryDatabase(ctx context.Context, d database.Resource, q datab
 	if err != nil {
 		return empty, queryUnavailable()
 	}
+	config.User = d.Spec.CredentialUsername()
+	config.Database = d.Spec.LogicalDatabase()
 	config.Password = string(secret.Data["password"])
 	config.TLSConfig = identity
 	config.Fallbacks = nil
@@ -176,7 +178,7 @@ func (c *Client) QueryDatabase(ctx context.Context, d database.Resource, q datab
 	defer closeQueryConnection(conn)
 	// Reject elevated app grants. The query connection never uses a root role.
 	var unsafe bool
-	err = conn.QueryRow(ctx, `SELECT current_user <> 'app' OR pg_is_in_recovery() OR EXISTS(SELECT 1 FROM pg_roles WHERE pg_has_role(current_user,oid,'MEMBER') AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls OR rolname IN ('pg_read_server_files','pg_write_server_files','pg_execute_server_program')))`).Scan(&unsafe)
+	err = conn.QueryRow(ctx, `SELECT current_user <> $1 OR pg_is_in_recovery() OR EXISTS(SELECT 1 FROM pg_roles WHERE pg_has_role(current_user,oid,'MEMBER') AND (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls OR rolname IN ('pg_read_server_files','pg_write_server_files','pg_execute_server_program')))`, d.Spec.CredentialUsername()).Scan(&unsafe)
 	if err != nil || unsafe {
 		return empty, queryUnavailable()
 	}
@@ -205,7 +207,7 @@ func queryUnavailable() *database.QueryError {
 	return &database.QueryError{Code: "database_query_unavailable", Outcome: "not_started"}
 }
 func postgresQueryCredentialOwned(s *corev1.Secret, d database.Resource, ns *corev1.Namespace) bool {
-	if s == nil || ns == nil || ns.UID == "" || ns.Name != DatabaseNamespace(d.ID) || ns.DeletionTimestamp != nil || s.Namespace != ns.Name || s.Name != "database-credentials" || s.DeletionTimestamp != nil || s.Type != corev1.SecretTypeBasicAuth || s.Immutable == nil || !*s.Immutable || len(s.Data) != 2 || string(s.Data["username"]) != "app" || len(s.Data["password"]) != 64 {
+	if s == nil || ns == nil || ns.UID == "" || ns.Name != DatabaseNamespace(d.ID) || ns.DeletionTimestamp != nil || s.Namespace != ns.Name || s.Name != "database-credentials" || s.DeletionTimestamp != nil || s.Type != corev1.SecretTypeBasicAuth || s.Immutable == nil || !*s.Immutable || len(s.Data) != 2 || string(s.Data["username"]) != d.Spec.CredentialUsername() || len(s.Data["password"]) != 64 {
 		return false
 	}
 	for k, v := range databaseLabels(d) {

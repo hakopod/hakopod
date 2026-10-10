@@ -104,10 +104,10 @@ umask 077
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cat > "$work/ca.crt"
-export PGSSLMODE=verify-full PGSSLROOTCERT="$work/ca.crt" PGHOST="$1" PGHOSTADDR="$2" PGPORT=5432 PGUSER=app PGDATABASE=app
+export PGSSLMODE=verify-full PGSSLROOTCERT="$work/ca.crt" PGHOST="$1" PGHOSTADDR="$2" PGPORT=5432 PGUSER="$4" PGDATABASE="$5"
 result=$(psql -XAtw -v ON_ERROR_STOP=1 -c "SELECT ssl::text || '|' || version || '|' || pg_is_in_recovery() FROM pg_stat_ssl WHERE pid=pg_backend_pid()")
 case "$3:$result" in 'read_write:true|TLSv1.2|false'|'read_write:true|TLSv1.3|false'|'pooled_read_write:true|TLSv1.2|false'|'pooled_read_write:true|TLSv1.3|false'|'read_only:true|TLSv1.2|true'|'read_only:true|TLSv1.3|true'|'pooled_read_only:true|TLSv1.2|true'|'pooled_read_only:true|TLSv1.3|true') ;; *) exit 1;; esac
-if PGSSLMODE=disable psql -XAtw -h "$2" -p 5432 -U app -d app -c 'SELECT 1' >/dev/null 2> "$work/plaintext-error"; then exit 1; fi
+if PGSSLMODE=disable psql -XAtw -h "$2" -p 5432 -U "$4" -d "$5" -c 'SELECT 1' >/dev/null 2> "$work/plaintext-error"; then exit 1; fi
 openssl s_client -starttls postgres -connect "$2:5432" -servername "$1" -verify_hostname "$1" -verify_return_error -CAfile "$work/ca.crt" < /dev/null >/dev/null 2>&1
 `
 
@@ -184,7 +184,7 @@ func (c *Client) VerifyDatabasePublicEndpointBackend(ctx context.Context, d data
 	}
 	input := bytes.Join([][]byte{secret.Data["password"], []byte(trust.CertificatePEM)}, []byte{'\n'})
 	output := &databaseBoundedWriter{limit: 1024}
-	if err = c.DatabaseExec(ctx, d, d.Observation.Members[0], []string{"sh", "-c", postgresPublicEndpointTLSProbe, "verify-public-database-tls", endpoint.Allocation.Host, address, endpoint.Spec.Purpose}, bytes.NewReader(input), output); err != nil {
+	if err = c.DatabaseExec(ctx, d, d.Observation.Members[0], []string{"sh", "-c", postgresPublicEndpointTLSProbe, "verify-public-database-tls", endpoint.Allocation.Host, address, endpoint.Spec.Purpose, d.Spec.CredentialUsername(), d.Spec.LogicalDatabase()}, bytes.NewReader(input), output); err != nil {
 		return fmt.Errorf("database public endpoint did not pass native TLS, hostname and plaintext-refusal checks")
 	}
 	return nil
