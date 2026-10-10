@@ -234,7 +234,7 @@ func DatabaseObject(d database.Resource) (*unstructured.Unstructured, error) {
 	resources := map[string]any{"requests": map[string]any{"cpu": d.Spec.CPU, "memory": d.Spec.Memory}, "limits": map[string]any{"cpu": d.Spec.CPU, "memory": d.Spec.Memory}}
 	var spec map[string]any
 	if d.Spec.Engine == "postgresql" {
-		spec = map[string]any{"instances": int64(d.Spec.Members()), "imageName": image, "enableSuperuserAccess": false, "resources": resources, "storage": map[string]any{"size": fmt.Sprintf("%dGi", d.Spec.StorageGiB)}, "bootstrap": map[string]any{"initdb": map[string]any{"database": "app", "owner": "app", "secret": map[string]any{"name": "database-credentials"}}}}
+		spec = map[string]any{"instances": int64(d.Spec.Members()), "imageName": image, "enableSuperuserAccess": false, "resources": resources, "storage": map[string]any{"size": fmt.Sprintf("%dGi", d.Spec.StorageGiB)}, "bootstrap": map[string]any{"initdb": map[string]any{"database": d.Spec.LogicalDatabase(), "owner": d.Spec.CredentialUsername(), "secret": map[string]any{"name": "database-credentials"}}}}
 		if d.Spec.TLSRequired() {
 			spec["postgresql"] = map[string]any{"parameters": map[string]any{"ssl_min_protocol_version": "TLSv1.2"}, "pg_hba": []any{"hostnossl all all all reject", "hostssl all all all scram-sha-256"}}
 		}
@@ -347,7 +347,7 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 			}
 			metadata = databaseIdentityMeta(d, existing.UID, "database-credentials")
 		}
-		secret, err = c.kube.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metadata, Type: corev1.SecretTypeBasicAuth, Immutable: ptr(true), Data: map[string][]byte{"username": []byte("app"), "password": password}}, metav1.CreateOptions{})
+		secret, err = c.kube.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metadata, Type: corev1.SecretTypeBasicAuth, Immutable: ptr(true), Data: map[string][]byte{"username": []byte(d.Spec.CredentialUsername()), "password": password}}, metav1.CreateOptions{})
 	}
 	if err != nil {
 		return fmt.Errorf("database credentials could not be reconciled")
@@ -355,7 +355,7 @@ func (c *Client) ApplyDatabase(ctx context.Context, d database.Resource, passwor
 	if secret.Labels[databaseOwner] != d.ID || secret.Labels[managedBy] != "hakopod" {
 		return fmt.Errorf("database credentials are not owned by this resource")
 	}
-	if subtle.ConstantTimeCompare(secret.Data["password"], password) != 1 || string(secret.Data["username"]) != "app" {
+	if subtle.ConstantTimeCompare(secret.Data["password"], password) != 1 || string(secret.Data["username"]) != d.Spec.CredentialUsername() {
 		return fmt.Errorf("database credential identity changed")
 	}
 	if d.Spec.Engine == "duckdb" {

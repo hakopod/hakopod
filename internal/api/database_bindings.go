@@ -143,7 +143,7 @@ func (s *Server) ConfigureDatabaseBindings() {
 // managedDatabaseURL never persists its result. The worker replaces referenced
 // passwords from its application-scoped secret snapshot before creating a Secret.
 func managedDatabaseURL(d database.Resource, b spec.Binding, endpoint database.Endpoint, password []byte) string {
-	user, db := "app", "app"
+	user, db := d.Spec.CredentialUsername(), d.Spec.LogicalDatabase()
 	if d.Spec.Engine == "duckdb" {
 		if b.Protocol == "postgres" {
 			user = "postgres"

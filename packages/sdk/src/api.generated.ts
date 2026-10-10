@@ -7156,6 +7156,10 @@ export interface components {
             port: number;
             domain?: string;
         };
+        DatabasePostgresConfig: {
+            database: string;
+            username: string;
+        };
         DatabasePlacement: {
             /** @enum {string} */
             spread?: "" | "nodes" | "zones";
@@ -7242,6 +7246,7 @@ export interface components {
             placement?: components["schemas"]["DatabasePlacement"];
             tls?: components["schemas"]["DatabaseTLSConfig"];
             pooling?: components["schemas"]["DatabasePooling"];
+            postgres?: components["schemas"]["DatabasePostgresConfig"];
             oracle?: components["schemas"]["DatabaseOracleConfig"];
             clickhouse?: components["schemas"]["DatabaseClickHouseConfig"];
             vitess?: components["schemas"]["DatabaseVitessConfig"];

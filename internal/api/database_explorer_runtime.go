@@ -201,7 +201,7 @@ func (s *Server) explorerSources(ctx context.Context, p store.Principal, t *expl
 		}
 		for _, endpoint := range d.Observation.Endpoints {
 			if endpoint.Purpose == purpose {
-				user, db := "app", "app"
+				user, db := d.Spec.CredentialUsername(), d.Spec.LogicalDatabase()
 				if d.Spec.Engine == "oracle" {
 					user, db = "APP", "FREEPDB1"
 					if d.Spec.Oracle != nil && d.Spec.Oracle.Edition == "enterprise" {

@@ -36,6 +36,7 @@ type Spec struct {
 	Placement     Placement         `json:"placement,omitempty" toml:"placement"`
 	TLS           *TLSConfig        `json:"tls,omitempty" toml:"tls"`
 	Pooling       *Pooling          `json:"pooling,omitempty" toml:"pooling"`
+	Postgres      *PostgresConfig   `json:"postgres,omitempty" toml:"postgres"`
 	ClickHouse    *ClickHouseConfig `json:"clickhouse,omitempty" toml:"clickhouse"`
 	Oracle        *OracleConfig     `json:"oracle,omitempty" toml:"oracle"`
 	Vitess        *VitessConfig     `json:"vitess,omitempty" toml:"vitess"`
@@ -49,6 +50,9 @@ type Placement struct {
 }
 
 func (s Spec) Validate() error {
+	if err := s.validatePostgres(); err != nil {
+		return err
+	}
 	if s.SchemaVersion != 1 {
 		return fmt.Errorf("schema_version must be 1")
 	}
@@ -381,6 +385,9 @@ func PlanResize(db Resource, next Spec, evidence *BackupEvidence, now time.Time)
 	}
 	if !reflect.DeepEqual(db.Spec.Pooling, next.Pooling) {
 		return p, fmt.Errorf("pooling configuration is immutable; create a separate database to change its connection policy")
+	}
+	if db.Spec.CredentialUsername() != next.CredentialUsername() || db.Spec.LogicalDatabase() != next.LogicalDatabase() {
+		return p, fmt.Errorf("database name and login are immutable; restore into a separate database to change them")
 	}
 	if !reflect.DeepEqual(db.Spec.Oracle, next.Oracle) {
 		return p, fmt.Errorf("Oracle edition, image and entitlement are immutable; use a separate database for migration")

@@ -25,6 +25,16 @@ func TestPostgresQueryCredentialScope(t *testing.T) {
 	if !postgresQueryCredentialOwned(secret, d, ns) {
 		t.Fatal("valid app credentials rejected")
 	}
+	named := d
+	named.Spec = database.Spec{Engine: "postgresql", Postgres: &database.PostgresConfig{Database: "feesbook", Username: "superuserfox"}}
+	if postgresQueryCredentialOwned(secret, named, ns) {
+		t.Fatal("default login accepted for a different configured owner")
+	}
+	namedSecret := secret.DeepCopy()
+	namedSecret.Data["username"] = []byte("superuserfox")
+	if !postgresQueryCredentialOwned(namedSecret, named, ns) {
+		t.Fatal("configured owner rejected")
+	}
 	for _, mutation := range []func(*corev1.Secret){
 		func(s *corev1.Secret) { s.Data["username"] = []byte("postgres") },
 		func(s *corev1.Secret) { s.Labels["hakopod.io/project"] = "foreign" },

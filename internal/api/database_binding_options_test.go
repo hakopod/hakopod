@@ -94,6 +94,15 @@ func TestDatabaseCredentialDefaults(t *testing.T) {
 	}
 }
 
+func TestNamedPostgresCredentialsAndBindingAgree(t *testing.T) {
+	d := database.Resource{Spec: database.Spec{Engine: "postgresql", TLS: &database.TLSConfig{Mode: "required"}, Postgres: &database.PostgresConfig{Database: "feesbook", Username: "superuserfox"}}}
+	user, name := databaseCredentialDefaults(d)
+	u, err := url.Parse(managedDatabaseURL(d, spec.Binding{Protocol: "postgres", Endpoint: "read_write"}, database.Endpoint{Host: "database.internal", Port: 5432}, []byte("fixture-password")))
+	if err != nil || user != "superuserfox" || name != "feesbook" || u.User.Username() != user || u.Path != "/"+name || u.Query().Get("sslmode") != "verify-full" {
+		t.Fatal("the credentials view and application binding disagree with the configured PostgreSQL identity")
+	}
+}
+
 func TestMyDuckURLsKeepProtocolSpecificTLS(t *testing.T) {
 	d := database.Resource{ID: strings.Repeat("a", 32), Spec: database.Spec{Engine: "duckdb", TLS: &database.TLSConfig{Mode: "required"}}}
 	for _, tc := range []struct {
