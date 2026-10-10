@@ -1,604 +1,54 @@
 {
   "bootstrap": {
-    "commit": "869cb4186566199d8611c4ffb30212d42d0daa1d",
-    "reviewed_release": "v0.1.0-alpha.61",
-    "tag": "v0.1.0-alpha.59",
+    "commit": "bc3b46803d3bba40c6438ddb27e190c628d8622a",
+    "reviewed_release": "v0.1.0-alpha.62",
+    "tag": "v0.1.0-alpha.61",
     "trust_anchor": "authenticated-git-review",
-    "trust_paths": ["release/runtime-source-compatibility.py"]
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
   },
-  "control_plane_commit": "7667ffb89f3649488c33827be81b29fb0b3c1baa",
+  "control_plane_commit": "d4bfae6b3782a136398398f5f0af59526dc2706b",
   "delta": {
-    "baseline_sha256": "91118228b34e34767b03fada3e2f1f7b22be6f09a4fd8e5c840922949f45d723",
+    "baseline_sha256": "cd67be36487d795d4297881a6868cc6cbeef0979fa04ca8f46b99ac95d770c11",
     "changes": [
       {
-        "after": "2a6ab6e91588580f4cc680e39626e7e52be46e8f96fd916f3afb2e545c958a8a",
-        "before": "2fbea2bfe981060245dd22e6190d96e5e7a48ecef5a4944f3ee085066c6f0788",
-        "path": "api/contracts/agent_policy.py",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "f72b51bd8780212799a3a5d802041d2c920a382f11f8006c9cbb3348c133e45c",
-        "before": "a34f4c06bc455c8ae8a4adf5d2341eb6a4a6f913b2a6f56a8c592bfbdf3d0de9",
-        "path": "api/contracts/binding_tests.py",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "dcec81c1c850e62ea8c6d18e191a35b0bc7d913c063b62b10d339c042d5b69d2",
-        "before": null,
-        "path": "api/contracts/database_explorer.py",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "92c26f9af9a7067036317b4b771b2633f07c868172915419c9c703b98e0e2ed2",
-        "before": null,
-        "path": "api/contracts/database_workflows.py",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "1905e79ed838b0a7890bccfa4908945bf0b04d20e92971f832421e3708fb0293",
-        "before": null,
-        "path": "api/contracts/deployment_resume.py",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "b09ade4c7e23ed39050a79050a2dfd6ea024ab9e46e4172ac14b7fbd73fdfc7e",
-        "before": "cb80c112e3b95a2ba0af20828cfc80887dca9b5cf02d08dc0577e5298e2e4d39",
-        "path": "api/contracts/managed_databases.py",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "24ca72be6c2f68bbceab0a90911f302e82e560859f5e06b3f44626fc37619812",
-        "before": null,
-        "path": "api/contracts/zz_recovery_workflows.py",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "339b04cfba7b398f37c13e632ad3929891ab64cc62cd8499ad068e8895470caa",
-        "before": null,
-        "path": "api/database_workflows.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "c1da2eae12bd41fbd806639479ac17a496e7333f35ca6d3b93dfd5cce2e29814",
-        "before": "0f5d1ab0947d43607ce1eac204aac5797a4aa5bb94dd14f464906f4a3ff39c0a",
-        "path": "api/openapi.json",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "8cf30af1bf3632549da1657799e3b13a27de5dcc20c0804c58119b8984af4f58",
-        "before": "88544830135a50e18199ff8f6045c8aab89335ea7f7866aa5ca9a05225e36fe7",
-        "path": "api/operation-summaries.json",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "8ec4633fb3e9ca1893db72aabacc6e15c9b3012944d4c2b8617dfba6cd6ad4db",
-        "before": "46b4b35cfd70f4682d35ff780df4a91bcb3e14223bd618e8d3c27b0ca5779d0a",
-        "path": "internal/api/api.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "5941da803c8bddc6c27da723d3ceab77e60c544004177a44a3f74dd1929970c6",
-        "before": "c905d2618b067d93d8d717e07a83095f033160f673ef2c1bcbeee5f67cd01275",
-        "path": "internal/api/backup_integration_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "cab559e07993dfd1750dba87ca538537ade79e6349c10244804a1d1b3d5fedec",
-        "before": "5330f9d23a3b01a1e5c709e4183ad3815c6c281f4c640e496d9a6bf51385feb3",
-        "path": "internal/api/backup_live_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "47c37e56d790972521fbf6b927a23fcc106a8623258a87ca818e50c7079bde5b",
-        "before": "5c08e898f995c0969866dbb451728bd0343888aa9762691f96a5eb563a5e805e",
-        "path": "internal/api/backup_runtime.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "a3221a5ef618b3fa08b05bcf7e2ae5484af8cbe77b0c1a8a9186e7d90a296662",
-        "before": "f414cc47a1d447a97dda402cda3ff168a7ab112ef6ea6348819c48e2778383db",
-        "path": "internal/api/backups.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "1c31dcb56e6b0e1bd522cfecb729ca8983e0ed0ccf75f99afcd3fda3ab143893",
-        "before": null,
-        "path": "internal/api/binding_inspection.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "62f5d0a349553f37f8b9f8ad68d9349d5953293f6bf3fa327c456819a1c471d5",
-        "before": null,
-        "path": "internal/api/binding_inspection_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "bb5e8ab173fdac6d98970f8586bff30e091c1d3f58358515a5fba2ca5fea6674",
-        "before": "6a1a5523ed070118cc88bfc26a546ad24981fbaa91db8e06963f6ff1c74a6ed1",
-        "path": "internal/api/binding_tests.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "77e14be848511d8168a7b35d313762c72515144690db6301a0acd70d9412aa43",
-        "before": null,
-        "path": "internal/api/database_explorer.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "212ea2921a057858fb91b62523c5ab90f8ecbd3596d852d871f34a05d19eb15d",
-        "before": null,
-        "path": "internal/api/database_explorer_cloud.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "1477c95aa2aef59c42ee0ccaf26542349a98359650e865080226ff7f10bc1a03",
-        "before": null,
-        "path": "internal/api/database_explorer_integration_test.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "2f2bc461226d79eca66aa5f9227fea32f84a1955ebc75b499fc8927ce9c557a1",
-        "before": null,
-        "path": "internal/api/database_explorer_live_test.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "ede9a471c0f33f966a22767ba0882f2070e83c519cb333b4578cc92245c441c0",
-        "before": null,
-        "path": "internal/api/database_explorer_runtime.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "a307c790a5c8cdb2d1204e0b83cf9287e1b47e7abaa038ba5eaeccca18b4e3c3",
-        "before": null,
-        "path": "internal/api/database_explorer_runtime_test.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "8b29b6d50c21d0c922e873dba5a85c75b74e262246e3800176bfc18ff4e24ee2",
-        "before": null,
-        "path": "internal/api/database_private_access.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "7540cf1f3bf682fbe4a94896f927b617193ba5bcd119aea3be7e06c72c2723bc",
-        "before": "4e9ccf7420fa305dc389a0c860976c0274270ecac04bec7c65c4f9b129fb6083",
-        "path": "internal/api/database_recovery.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "064a19dbaff4e8d779621d9285a78c9a5c8ac843d1a4e1f6bd41bfe72baa7a39",
-        "before": null,
-        "path": "internal/api/database_resize_progress_test.go",
-        "reason": "Alpha.60 records resize progress from existing controller observations without changing a native runtime or image."
-      },
-      {
-        "after": "0dcb5a141e94b3429a576aea649bd5735eb3c31da607303f27b81e1831f47f92",
-        "before": null,
-        "path": "internal/api/database_workflows.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "f164fe3d76031eff34198e7377ce2048b4f420d9169be79cda4f9bc872a59eeb",
-        "before": null,
-        "path": "internal/api/database_workflows_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "f0227cbdd95b258a45317bbce9fefd9fd43f3519881fb3df8b93e7e49f9fb5ac",
-        "before": "89d480459674cf53ff9c460a5eddd718ce68cc266206939c95dbf97ad3f87012",
-        "path": "internal/api/databases.go",
-        "reason": "Alpha.60 records resize progress from existing controller observations without changing a native runtime or image."
-      },
-      {
-        "after": "1c5eb088e1660fdc8d64f4cb74647a18013cb70d89a855e0216443a48e7fa38e",
-        "before": null,
-        "path": "internal/api/deployment_resume.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "ba89aebd681f9c9e7abce87c9a0b0edac170548a677651579b2f08aa2d211ff8",
-        "before": "1f2304a677c288b2d180f7b7cb46347038b87c2c50a517d1efd231a617214d68",
-        "path": "internal/api/installation.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "c50e5a7f55a7e21fd16b6f4e9e459d76a917580749eaa20207d9f76332bfe65e",
-        "before": null,
-        "path": "internal/api/server_cleanup.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "e389e1d9940715ac20eda7fb17411674a2c940ada53ec4d046cd191a1f29f9a7",
-        "before": null,
-        "path": "internal/api/server_cleanup_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "b80e36019b9982ed8fbe12f650fef04d1d5c965ac94aa908bc0dabad7ec51a72",
-        "before": null,
-        "path": "internal/backup/compatibility_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "b3fdeaf26585760f09325f66acf87453cc3c1dd86740353fbd264d939e11f1ea",
-        "before": "e551b61aa43dffaf3063b993538e3374b5823cb7cae9db4890442de518d0a473",
-        "path": "internal/backup/model.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "dc78ac5cc6682e5632123bee3e9769c141690d2f4626896ae2e472bb52c42661",
-        "before": "410042f504092fef429c02b71b5aa7b2ceba02b79a967bbc49650ee25a104e74",
-        "path": "internal/backup/service.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "637f64c3a58806af2cad4e064a60601ff9723524c9ebee2fe3bd4cb1d26ec746",
-        "before": null,
-        "path": "internal/bindingprobe/inspection.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "e874ab2a36f4b51958884e2c2710a30b380ba0757c719901505cbea37397472d",
-        "before": null,
-        "path": "internal/cluster/binding_inspection.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "6aa5f791542ee73d4d96c49149944c60534fdd70cf8571923e25014351a9ee42",
-        "before": "2f6acec2eeda5a433bc6031e8046d5bd7afef775ae55c61cdb8dbcaf77ccdd02",
-        "path": "internal/cluster/binding_probe.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "277957ffa306001f1f0bc6e6f8ffd4c46864c5ada4feaee6ec1b97cbc5c6ee6a",
-        "before": null,
-        "path": "internal/cluster/database_application_provisioning.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "e93319e6c4df571bd228ba2e14bc6dddd3acd292010337253ed3dad72d8b44e0",
-        "before": null,
-        "path": "internal/cluster/database_application_provisioning_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "e014ae446b0177756bf9fd7d1d3f68b51a548b6459e05765dc8aa282e174731d",
-        "before": null,
-        "path": "internal/cluster/database_migration_lock_recovery.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "6f84c582db873ec43ba94913aded59cb6bd3be24917e5cf6231a2f7d6a3de3de",
-        "before": "f42c44b938a698b63d88c1b5264bc0a8b2673269a5892dab76f4d87c5cd46a30",
+        "after": "b2bc8a196382073ab65aa14f56ad680048443084a9e8f9c76c9a96b972c762be",
+        "before": "6f84c582db873ec43ba94913aded59cb6bd3be24917e5cf6231a2f7d6a3de3de",
         "path": "internal/cluster/deploy.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
       },
       {
-        "after": "c6a1e68060f63b834bf5a3e6947fba20248ab1a77c1de8c7cea46a97fc6fdb23",
+        "after": "ec2a3e1073c5a828f8ee38e6335bdd98be0a76023d30e931720cec742e5993af",
         "before": null,
-        "path": "internal/cluster/deployment_scheduler_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "path": "internal/cluster/rollout_deadline_test.go",
+        "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
       },
       {
-        "after": "75d15ba8050a56cf6565f0e61745cea415bb33a1928bc37ab265b66f808c3261",
-        "before": "b7b6128eef62163ca4cca8bdfb36cb3786b60e0effdf82d06bf6673a56509f1f",
-        "path": "internal/cluster/live_binding_probe_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "after": "0b78fef17553221fcb592d328e2ef9dec9a11dedb19c2f0fd6b9b0c61c087e35",
+        "before": "a022dbba7b7dfb80202e7096102c04feead2c1d6ff800edee42becf5df83563e",
+        "path": "internal/worker/startup_budget_test.go",
+        "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
       },
       {
-        "after": "24a2a85a749ea5006e620914ee892ff5eb3dbd79fbaf299c28dfcc4d1b9adf6a",
-        "before": null,
-        "path": "internal/cluster/live_database_application_workflows_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "d780204827ed66641d33ffc7179b57f7fe75b25c50ef78e789a235384bc5dce6",
-        "before": null,
-        "path": "internal/cluster/live_deployment_resume_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "6f56a5c390a401bd36a48720115985b244af8220d6545fd585b94bc1f223f829",
-        "before": null,
-        "path": "internal/cluster/live_provisioned_workload_secret_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "5bfe5148cb15b61f2ce3ec15cdd99b053687d41afd37d284954a15ea237f385a",
-        "before": "4d1f4166e91e5678f2861647faba442b763a3020f76f8773a3283567b7d902b7",
-        "path": "internal/cluster/types.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "239acd648fe703938143821cb500bac3d22e1ef75629e280610d52caa20792fa",
-        "before": "f17264e5476621fabb25dd4a4a6de62fd8fe8d0667469f09ae820c807e8e8ac0",
-        "path": "internal/cluster/workload_secrets.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "d62d910cdcf922066f28c77aeaae02e6242c2e6787765e782f8b572899ae18ab",
-        "before": "8a2a0a7e4cad6992a3a36342429030e015ecc95358da7de796d582023e6ef50b",
-        "path": "internal/cluster/workloads_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "bec65f985f0028992aaf0bf69a73684ec554a05e3e818c42a02eabbdabcbbf45",
-        "before": null,
-        "path": "internal/database/application_provisioning.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "91aca1a8fa27736696e0e01de7ac769546c473a25b9d58d3b7573e2bdb9304fa",
-        "before": null,
-        "path": "internal/database/explorer.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "bb9d2a08e9ad211706115ac2f75e6e8095a776471773271de647edac23c55a10",
-        "before": null,
-        "path": "internal/database/explorer_test.go",
-        "reason": "Add scoped explorer routing, source eligibility, live session authority, and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "dc63846febc0863757b6d24fe261ae776609e1a989db9d12c010dd2e80be8312",
-        "before": null,
-        "path": "internal/database/migration_lock_recovery.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "a699b4e9e6bd1faa7241dff3f6927b1703b93d760ade64edbe6743f241c7fadb",
-        "before": null,
-        "path": "internal/database/migration_lock_recovery_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "1f4368183f3669960bc906b53b6049a751217d663a6c9b106be88388935ada4d",
-        "before": "4d958f9fdd46bf71d6992d61d2f079bb0ea61048663d32167d24e6ceb995938e",
-        "path": "internal/database/model.go",
-        "reason": "Alpha.60 records resize progress from existing controller observations without changing a native runtime or image."
-      },
-      {
-        "after": "53dfe232ac51cf5a0169ba06ac66681350f5d76534f6e0e251077893c2ab505d",
-        "before": null,
-        "path": "internal/database/private_access.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "209635ffce40400f3872fff0c7912e5e99128606a80a43b0bc305e7a9b3e732a",
-        "before": null,
-        "path": "internal/database/private_access_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "76f09ed985edfb33ca9ed3b52a01d689ebdd669a8f06f792cf77e9d5934d32c3",
-        "before": null,
-        "path": "internal/platformbackup/compatibility_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "8b4f47aa5e8170166ce37b0d50ba9a42c2c7c959a15d9902115ef9828b7597fa",
-        "before": "33aeb4370616bc46db5680285d91ec55f8f2316238b5f99c4ea74e6b7d758d0c",
-        "path": "internal/platformbackup/model.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "a2eb18546498f4ab37a2eee4cd61e7a1c1a632a2e7d47f584d9fa557912e2faa",
-        "before": "e9d18571fd18e29ee7ee242d5fd90f9bde55392781f6c1ddf5222e2ec42f7634",
-        "path": "internal/spec/spec.go",
-        "reason": "Include service suspension in deployment plans and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "7c70d8f9ebc703683c64b2fac274de7b0355a5cd784fb9dc247a033d5c958950",
-        "before": null,
-        "path": "internal/spec/suspension_diff_test.go",
-        "reason": "Include service suspension in deployment plans and regression coverage. Native database runtime and image inputs are unchanged."
-      },
-      {
-        "after": "89440a689de64f2cfb82fd11e4b2d3a38d461674ea44e071a8c28972070c2ae3",
-        "before": null,
-        "path": "internal/store/090_database_operation_progress.sql",
-        "reason": "Alpha.60 records resize progress from existing controller observations without changing a native runtime or image."
-      },
-      {
-        "after": "00a74ede14e4be8f89c586c8ca2509bc58253e213854e0e34a01894f203ae69b",
-        "before": null,
-        "path": "internal/store/091_deployment_resume.sql",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "428babdad3c220c5a8cb7a7d658142e351e17f3666fe9bc6b811dd7e9094eb98",
-        "before": null,
-        "path": "internal/store/092_database_application_provisioning.sql",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "7fa655450139d0cad77e97e6824b564b9716a0561ab6e08916dcb461920ea660",
-        "before": null,
-        "path": "internal/store/093_database_migration_lock_recovery.sql",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "2b6242b51251671510cc7695a75ceacc59b6014bf2323f9165ba25aaaf349bc6",
-        "before": null,
-        "path": "internal/store/094_server_cleanup.sql",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "b63bdf895d1a5d86c3b558a5280c38c58a710dd22f7bd1debe48bbf99144cc3d",
-        "before": null,
-        "path": "internal/store/095_restore_compatibility.sql",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "5210807247a195ad5fe391abdf6634658526372fa78f3a6aa2417d6086b3ef73",
-        "before": null,
-        "path": "internal/store/096_binding_test_evidence.sql",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "def2f4ec452cdf6fd5e233863ee861c5855389f68bc378259b7bb08f64897212",
-        "before": null,
-        "path": "internal/store/backup_compatibility.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "0ac6b61f629a8aeaffb8f896a1a186669fe721dad2f5ffdad41bf93b23b00461",
-        "before": null,
-        "path": "internal/store/backup_compatibility_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "1d49aab5018fbc19fce9aa816904fe8d9950fa6cd156c05a2520c61599cb14ca",
-        "before": "1fdbde37a64d21048d842a2ac9b001337b35943185e66360a2bbeb1a48b92a97",
-        "path": "internal/store/backup_maintenance_integration_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "50afca3d9c3fbf13e1d9f75521144cdb6606e6998e1ecbe44dd277d39034e282",
-        "before": "80efc2aacbe497bf3ce3415b9b9648a86df151b15f7017da83589459af0ea75e",
-        "path": "internal/store/backup_worker.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "3f7a1a63e1c12e8fec6d0f19263c676d54c4c70f65c47ab9b3f7a13c50f25466",
-        "before": "fb845af74e6f1c49ce6e13dba57cf4d03cb87b9891dd47b98bc6675518786b87",
-        "path": "internal/store/backups.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "256183ef5d09c88613f4dd415fc0415955c4c1f530bc11d72c2ce2b0c9fbf553",
-        "before": null,
-        "path": "internal/store/binding_inspection.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "a3df10dca193e96308b6398917a62506d87428f4fa43f8582bb32c09c74dd460",
-        "before": null,
-        "path": "internal/store/binding_inspection_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "3e27deb73fdcd32292c9f4a4512c9aa462e2022e3ee73a64fd51c20d18cc1e6e",
-        "before": null,
-        "path": "internal/store/database_application_provisioning.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "b4e794784663bdbe1d1c8f1e96cbd4170c6fe1e46967bc5b0bf21979557168cf",
-        "before": null,
-        "path": "internal/store/database_application_provisioning_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "6e9cc2d7d59c45fa9aee6e19ab1f3a6fb2a867187fda43861c54bc7fdbc22a60",
-        "before": "1b2adf9ccf43f41da34dff9f4bd97aa4b35e84908af52cde79b7301a884fcf3d",
-        "path": "internal/store/database_connections.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "a7342769157f7e4c52fe3944ecada52f8e41391a912ce697c80a9bd0caf5c2cf",
-        "before": null,
-        "path": "internal/store/database_migration_lock_recovery.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "a47628a3b26e4cad903721fac8d4f32d53d17547051fd729c62aa160eeb68802",
-        "before": null,
-        "path": "internal/store/database_operation_progress_test.go",
-        "reason": "Alpha.60 records resize progress from existing controller observations without changing a native runtime or image."
-      },
-      {
-        "after": "d7a0b5b8a37ae87a937615ecde83b16ae41ad8768664300926aeb919680f3b00",
-        "before": "1d2d9a8971c9775d2b7c8f57d9a0d93547ebda0b98c3eb982cbbbbdda5e75a1c",
-        "path": "internal/store/database_restore_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "1a9d8553a8bf212c4584b83d8e83bd4d6447e05db78d17edeef86ddb5c449755",
-        "before": null,
-        "path": "internal/store/deployment_resume.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "17aa2a742f0362be109bd741cec0640d0f648fb17ffdd7a2248fbd7f51b8eb13",
-        "before": null,
-        "path": "internal/store/deployment_resume_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "0d1b36d5bf01a0e522bc26716f75e98398b2182f4cd9175123f0234ab4071b52",
-        "before": "b82af5ae2076d9092500a91d99457a2c6fe60dc764a51e8fea6aec5b4bfdf51b",
-        "path": "internal/store/managed_databases.go",
-        "reason": "Alpha.60 records resize progress from existing controller observations without changing a native runtime or image."
-      },
-      {
-        "after": "48613d81bda9fff40e03e634b546e4bc1aa3bc23487a4dca7df4de4b4155b538",
-        "before": "e86d776c70dfc233647061cc18ff708591ca72a43c13a5c837e3d685775f917e",
-        "path": "internal/store/managed_platform_neon_controller_recovery_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "3021640b5fb1f8178db30b2936a54c6b1bbe5295ce5f0e690fea1cc64b6d839e",
-        "before": "cc4797ae87202693db9b4648d97b55b90387b758b7ee11304302f9a930942ff0",
-        "path": "internal/store/operations.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "1e6d724a6590cb650fe63120efe60fe15106002c1162e5dc3c86e15459e4d804",
-        "before": "e7953282871e29498747c6ffe221af34ba07b10fa6c6c6b46872e9114c8d10cb",
-        "path": "internal/store/platform_recovery.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "e540e3d425338207d4e3fea5fa2ec5675edf2072878eddeabadfd22e7d8684f4",
-        "before": "023fd1590d0540806837bde414b7b0ee0337ce479f5cdec39a3ce67c07674d6b",
-        "path": "internal/store/platform_recovery_native_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "26ff06c88c206e9250621202dd5aa3452a457036c67d0808e9a5f2ce76468915",
-        "before": "08230704f7fd64c15a877abced900bdff14321c786779c117f8295670b271298",
-        "path": "internal/store/platform_recovery_neon_resources_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "28b73b47cf43155152d649528bbafcca96611ae4b0fa3991e54aefe395709c62",
-        "before": "e9bfb3c04e8d2b78c197d06ed4a0ee37374ceec2db44c17a5eddde0eb392e658",
-        "path": "internal/store/platform_recovery_target_state_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "bc8d63a11be3555fe9b96796a532544dfe6121bcc25e40216a5774891feee56b",
-        "before": "5e28451d00200659d1018a7765e039fcb148e15647932a5f59a7e73c0cb98b08",
-        "path": "internal/store/platform_recovery_test.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "103505c436c066c6bcad5f6142c9fd8c2ffb20a5fea136d07c85e08777a27973",
-        "before": "ce01bee0072ade22a4e821ab6c0cb2607118bc3dd123bc09f596975d3a9d6a7a",
-        "path": "internal/store/store.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
-      },
-      {
-        "after": "eefa9b3f2935ac405855b9592626feb1e418962054470afedf32927125f50f51",
-        "before": "00e8ce1432f6bfd79030feb79396a7e515700ae38e8612eb94cf76962c05bb55",
+        "after": "9d5adb978dcb249dda3d52c7429c3eae1f1fa4eac637c3f90b161f1a1ba656fb",
+        "before": "eefa9b3f2935ac405855b9592626feb1e418962054470afedf32927125f50f51",
         "path": "internal/worker/worker.go",
-        "reason": "Alpha.60 changes reviewed control-plane behavior outside protected runtime, image, dependency and native harness inputs."
+        "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
       },
       {
-        "after": "670bec9f7c97efa529790e22be08c8d6cfd8ed2cfe430bfa0b0db5646e4a2fc7",
-        "before": "73c63ddad1e032dce2547ea328e5029660c4a2fad4c8e1c03e06c65530647fc6",
+        "after": "1459f6782f0af78306e8b48eb9385f6d6fdbd662d062bc9dce10692bf3aa0011",
+        "before": "670bec9f7c97efa529790e22be08c8d6cfd8ed2cfe430bfa0b0db5646e4a2fc7",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Select the alpha.61 compatibility review. Retain the exact predecessor, protected paths, and historical native evidence."
+        "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
       }
     ],
-    "current_sha256": "cd67be36487d795d4297881a6868cc6cbeef0979fa04ca8f46b99ac95d770c11"
+    "current_sha256": "a4448d98629833c01a660993e97fc0bf70f4087fac30209a3a30acea64bb1387"
   },
   "predecessor": {
-    "commit": "869cb4186566199d8611c4ffb30212d42d0daa1d",
-    "review_sha256": "b59a0847286257ae0870b2a863a5f557860c9f204b1b9323eb55fbf0cffdec08",
-    "tag": "v0.1.0-alpha.59"
+    "commit": "bc3b46803d3bba40c6438ddb27e190c628d8622a",
+    "review_sha256": "f5f198616153525fc6a1f30cddef2d80eb28d09d93bdfc39b577b52cddf009cd",
+    "tag": "v0.1.0-alpha.61"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -607,15 +57,14 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestExplorerPublicPaths",
-      "TestExplorerFingerprintTracksCredentialsNotObservationTime",
-      "TestExplorerLiveAuthorityRejectsRevocationAndWrites",
-      "TestExplorerCloudIdentityAndScopeAreVerified",
-      "TestDatabaseExplorerCatalogScopeAndCurrentGrants"
+      "TestDeploymentRuntimeBudgetIncludesSlowSetupAndLateBeat",
+      "TestSlowSetupLeavesLateHealthyBeatItsOwnWindow",
+      "TestUnhealthyServiceStillExpiresItsOwnReadinessWindow",
+      "TestNilRuntimeHasNoInstallationReadinessBudget"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/38055302130"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/38063974406"
   },
-  "reviewed_release": "v0.1.0-alpha.61",
+  "reviewed_release": "v0.1.0-alpha.62",
   "runtime": "oracle-free",
   "schema_version": 2
 }
