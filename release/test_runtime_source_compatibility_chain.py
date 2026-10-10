@@ -38,6 +38,59 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
                 reconstructed = CHAIN["apply_chain_delta"](recorded, delta)
                 self.assertEqual(CHAIN["canonical_hash"](reconstructed), delta["current_sha256"])
 
+    def test_alpha62_preserves_exact_anchors_and_rejects_tampering(self):
+        for runtime, anchor in CHAIN["NEXT_CHAIN_PREDECESSORS"].items():
+            with self.subTest(runtime=runtime):
+                temporary = tempfile.TemporaryDirectory()
+                self.addCleanup(temporary.cleanup)
+                root = Path(temporary.name)
+                directory = root / "release" / ("managed-" + runtime)
+                shutil.copytree(HERE / ("managed-" + runtime), directory)
+                predecessor_path = directory / "source-compatibility-alpha61.json"
+                predecessor = json.loads(predecessor_path.read_text())
+                self.assertEqual(CHAIN["canonical_hash"](predecessor), anchor)
+                record = json.loads((directory / "source-compatibility.json").read_text())
+                manifest = json.loads((directory / "manifest.json").read_text())
+                recorded = manifest["source_files"]
+                older = json.loads((directory / "source-compatibility-alpha59.json").read_text())
+                def delta(review):
+                    return review["scopes"]["runtime"] if runtime == "vitess" else review["delta"]
+                previous = CHAIN["apply_chain_delta"](recorded, delta(older))
+                previous = CHAIN["apply_chain_delta"](previous, delta(predecessor))
+                current = CHAIN["apply_chain_delta"](previous, delta(record))
+                manifest_key = "native_manifest_sha256" if runtime == "vitess" else "manifest_sha256"
+                artifact = record["qualified_release"][manifest_key]
+                def validate(review, inventory=current, artifact_hash=artifact):
+                    return CHAIN["validate_chain"](
+                        root, runtime, review, recorded, inventory,
+                        lambda path: path.startswith("internal/runtime/"), artifact_hash)
+                self.assertTrue(validate(record))
+                changed = copy.deepcopy(record)
+                changed["predecessor"]["review_sha256"] = A
+                with self.assertRaisesRegex(ValueError, "predecessor identity"):
+                    validate(changed)
+                changed = copy.deepcopy(record)
+                changed["qualified_release"][manifest_key] = B
+                with self.assertRaisesRegex(ValueError, "historical native evidence identity"):
+                    validate(changed)
+                with self.assertRaisesRegex(ValueError, "another native manifest"):
+                    validate(record, artifact_hash=B)
+                with self.assertRaisesRegex(ValueError, "outside the chained review"):
+                    validate(record, dict(current, **{"internal/api/unreviewed.go": A}))
+                changed = copy.deepcopy(record)
+                protected_current = dict(previous, **{"internal/runtime/controller.go": C})
+                protected_delta = self.delta(previous, protected_current, "internal/runtime/controller.go")
+                if runtime == "vitess":
+                    changed["scopes"]["runtime"] = protected_delta
+                else:
+                    changed["delta"] = protected_delta
+                with self.assertRaisesRegex(ValueError, "require new qualification"):
+                    validate(changed, protected_current)
+                predecessor["control_plane_commit"] = "5" * 40
+                predecessor_path.write_text(json.dumps(predecessor))
+                with self.assertRaisesRegex(ValueError, "predecessor review changed"):
+                    validate(record)
+
     def synthetic(self, runtime="myduck"):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
