@@ -130,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerBackupRoutes(routes)
 	s.registerDatabaseRoutes(routes)
 	s.registerDatabaseQueryRoutes(routes)
+	routes.HandleFunc("GET /api/v1/database-explorer/connections", s.databaseExplorerConnections)
 	s.registerManagedPlatformRoutes(routes)
 	s.registerNativeProbeRoutes(routes)
 	s.registerExternalDatabaseRoutes(routes)

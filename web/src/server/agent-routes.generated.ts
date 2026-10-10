@@ -491,6 +491,13 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "listDatabaseExplorerConnections",
+    "method": "GET",
+    "path": "/database-explorer/connections",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "reviewDatabaseApplicationProvisioning",
     "method": "POST",
     "path": "/databases/{id}/application-provisioning-plan",
