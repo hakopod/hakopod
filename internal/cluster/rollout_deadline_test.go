@@ -29,3 +29,10 @@ func TestUnhealthyServiceStillExpiresItsOwnReadinessWindow(t *testing.T) {
 		t.Fatal("unhealthy timeout consumed aggregate parent")
 	}
 }
+
+func TestNilRuntimeHasNoInstallationReadinessBudget(t *testing.T) {
+	var client *Client
+	if client.ServiceRolloutTimeout() != 0 {
+		t.Fatal("nil runtime invented a readiness allowance")
+	}
+}
