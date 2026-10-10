@@ -7621,6 +7621,65 @@
         "summary": "Convert a Docker Compose configuration to a Hakopod specification."
       }
     },
+    "/database-explorer/connections": {
+      "get": {
+        "operationId": "listDatabaseExplorerConnections",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseExplorerCatalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read",
+            "databases:query"
+          ],
+          "scope_requirement": "project_credential",
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "List supported databases and their current explorer eligibility in one project and environment."
+      }
+    },
     "/databases/{id}/application-provisioning-plan": {
       "post": {
         "operationId": "reviewDatabaseApplicationProvisioning",
@@ -29099,6 +29158,81 @@
           "warnings",
           "application_id",
           "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseExplorerConnection": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "postgresql",
+              "mysql",
+              "mongodb",
+              "clickhouse",
+              "oracle"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "eligible",
+              "unavailable"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "can_write": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "database_id",
+          "revision",
+          "name",
+          "engine",
+          "state",
+          "reason",
+          "can_write"
+        ],
+        "additionalProperties": false
+      },
+      "DatabaseExplorerCatalog": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseExplorerConnection"
+            }
+          }
+        },
+        "required": [
+          "schema_version",
+          "project",
+          "environment",
+          "items"
         ],
         "additionalProperties": false
       },

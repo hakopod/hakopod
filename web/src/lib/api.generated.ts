@@ -1754,6 +1754,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/database-explorer/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List supported databases and their current explorer eligibility in one project and environment. */
+        get: operations["listDatabaseExplorerConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/databases/{id}/application-provisioning-plan": {
         parameters: {
             query?: never;
@@ -6534,6 +6551,24 @@ export interface components {
             warnings: string[];
             application_id: string;
             expected_revision: number;
+        };
+        DatabaseExplorerConnection: {
+            database_id: string;
+            revision: number;
+            name: string;
+            /** @enum {string} */
+            engine: "postgresql" | "mysql" | "mongodb" | "clickhouse" | "oracle";
+            /** @enum {string} */
+            state: "eligible" | "unavailable";
+            reason: string;
+            can_write: boolean;
+        };
+        DatabaseExplorerCatalog: {
+            /** @constant */
+            schema_version: 1;
+            project: string;
+            environment: string;
+            items: components["schemas"]["DatabaseExplorerConnection"][];
         };
         DatabaseApplicationProvisioningPlanInput: {
             application_id: string;
@@ -13493,6 +13528,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComposeImport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listDatabaseExplorerConnections: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseExplorerCatalog"];
                 };
             };
             /** @description Error */

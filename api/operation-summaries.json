@@ -184,6 +184,7 @@
   "listBackups": "List backup jobs.",
   "listCustomRoles": "List custom roles.",
   "listDatabaseConnections": "List application bindings to the managed database.",
+  "listDatabaseExplorerConnections": "List supported databases and their current explorer eligibility in one project and environment.",
   "listDatabaseOperations": "List database operations.",
   "listDatabasePlacementNodes": "List candidate nodes for managed database placement.",
   "listDatabasePublicEndpoints": "List public endpoints for the managed database.",

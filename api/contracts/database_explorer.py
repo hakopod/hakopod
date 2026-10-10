@@ -1,0 +1,3 @@
+schemas['DatabaseExplorerConnection'] = obj({'database_id':S,'revision':I,'name':S,'engine':{'type':'string','enum':['postgresql','mysql','mongodb','clickhouse','oracle']},'state':{'type':'string','enum':['eligible','unavailable']},'reason':S,'can_write':B},['database_id','revision','name','engine','state','reason','can_write'])
+schemas['DatabaseExplorerCatalog'] = obj({'schema_version':{'type':'integer','const':1},'project':S,'environment':S,'items':array(ref('DatabaseExplorerConnection'))},['schema_version','project','environment','items'])
+route('/database-explorer/connections','get','listDatabaseExplorerConnections',ref('DatabaseExplorerCatalog'),scope=True)

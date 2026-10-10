@@ -1,6 +1,7 @@
 """Explicit agent exposure policy. This extension executes after all API feature contracts."""
 
-POLICIES = {'acceptHumanInvite': {'boundary': 'identity',
+POLICIES = {'listDatabaseExplorerConnections': {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read','databases:query'],'scope_requirement':'project_credential','prerequisite':'','review':'none','sensitive_fields':[]},
+ 'acceptHumanInvite': {'boundary': 'identity',
                        'category': 'human',
                        'exposure': 'prerequisite',
                        'permissions': [],
