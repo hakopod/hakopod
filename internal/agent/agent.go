@@ -149,7 +149,25 @@ func decodeAgent(raw json.RawMessage, out any) error {
 	}
 	return nil
 }
+// Tools returns the tool list with every input schema normalised, so a nil
+// required list or properties map is never sent to clients as JSON null.
 func (s *Server) Tools() []any {
+	tools := s.buildTools()
+	for _, tool := range tools {
+		if entry, ok := tool.(map[string]any); ok {
+			if schema, ok := entry["inputSchema"].(map[string]any); ok {
+				if required, ok := schema["required"].([]string); ok && required == nil {
+					schema["required"] = []string{}
+				}
+				if properties, ok := schema["properties"].(map[string]any); ok && properties == nil {
+					schema["properties"] = map[string]any{}
+				}
+			}
+		}
+	}
+	return tools
+}
+func (s *Server) buildTools() []any {
 	if s.options.HostOnly {
 		return s.terminalTools()
 	}
