@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/netip"
 	"os"
@@ -29,7 +30,7 @@ func TestPrivateEgressScopeAndCloud(t *testing.T) {
 	target := withPrivateRef(testTarget(t))
 	b := privateBindingFixture(target)
 	c := &Client{options: Options{PrivateEgressBindings: []PrivateEgressBinding{b}}}
-	if _, err := c.resolvePrivateEgress(target); err != nil {
+	if _, err := c.resolvePrivateEgress(context.Background(), target, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, field := range []string{"name", "project", "environment", "application", "service", "missing"} {
@@ -50,7 +51,7 @@ func TestPrivateEgressScopeAndCloud(t *testing.T) {
 		if field == "missing" {
 			c.options.PrivateEgressBindings = nil
 		}
-		if _, err := c.resolvePrivateEgress(target); err == nil {
+		if _, err := c.resolvePrivateEgress(context.Background(), target, false); err == nil {
 			t.Fatalf("scope bypass: %s", field)
 		}
 		// Delivery must reject before reading Kubernetes or accepting work.
@@ -60,7 +61,7 @@ func TestPrivateEgressScopeAndCloud(t *testing.T) {
 	}
 	c.options.PrivateEgressBindings = []PrivateEgressBinding{b}
 	c.options.DeploymentMode = DeploymentManagedCloud
-	if _, err := c.resolvePrivateEgress(target); !errors.Is(err, ErrCloudLimit) {
+	if _, err := c.resolvePrivateEgress(context.Background(), target, false); !errors.Is(err, ErrCloudLimit) {
 		t.Fatal("Cloud grant accepted", err)
 	}
 	if err := c.ValidateCloudSpec(target.Spec); !errors.Is(err, ErrCloudLimit) {
@@ -70,7 +71,7 @@ func TestPrivateEgressScopeAndCloud(t *testing.T) {
 	c.options.WorkloadPolicy = func(context.Context, string, string, spec.Application) (WorkloadPolicy, error) {
 		return WorkloadPolicy{}, nil
 	}
-	if _, err := c.resolvePrivateEgress(target); !errors.Is(err, ErrCloudLimit) {
+	if _, err := c.resolvePrivateEgress(context.Background(), target, false); !errors.Is(err, ErrCloudLimit) {
 		t.Fatal("embedded pool grant accepted", err)
 	}
 }
@@ -80,7 +81,7 @@ func TestPrivateEgressPolicyAndRemoval(t *testing.T) {
 	target.Spec.Networks["default"] = spec.Network{Internal: true}
 	c := &Client{kube: fake.NewClientset(), options: Options{PrivateEgressBindings: []PrivateEgressBinding{privateBindingFixture(target)}}}
 	var err error
-	target.privateEgress, err = c.resolvePrivateEgress(target)
+	target.privateEgress, err = c.resolvePrivateEgress(context.Background(), target, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +109,7 @@ func TestPrivateEgressPolicyAndRemoval(t *testing.T) {
 	svc := target.Spec.Services["api"]
 	svc.PrivateEgress = nil
 	target.Spec.Services["api"] = svc
-	target.privateEgress, err = c.resolvePrivateEgress(target)
+	target.privateEgress, err = c.resolvePrivateEgress(context.Background(), target, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,5 +237,36 @@ func TestPrivateEgressWarnings(t *testing.T) {
 	}
 	if got := (&Client{options: Options{DeploymentMode: DeploymentManagedCloud}}).PrivateEgressWarnings(context.Background(), target.Project, target.Environment, target.Spec); got != nil {
 		t.Fatalf("cloud warned: %q", got)
+	}
+}
+
+func TestPrivateEgressDatabaseSourceWithoutRestart(t *testing.T) {
+	ctx := context.Background()
+	target := withPrivateRef(testTarget(t))
+	stored := []json.RawMessage{}
+	c := &Client{options: Options{PrivateEgressSource: func(context.Context) ([]json.RawMessage, error) { return stored, nil }}}
+	if _, err := c.resolvePrivateEgress(ctx, target, false); err == nil {
+		t.Fatal("unapproved destination resolved")
+	}
+	raw, _ := json.Marshal(privateBindingFixture(target))
+	stored = []json.RawMessage{raw}
+	got, err := c.resolvePrivateEgress(ctx, target, false)
+	if err != nil || len(got["api"]) != 1 {
+		t.Fatalf("database binding not picked up: %v %v", got, err)
+	}
+	stored = nil
+	if got, err = c.resolvePrivateEgress(ctx, target, true); err != nil || len(got["api"]) != 0 {
+		t.Fatalf("revoked binding not dropped on refresh: %v %v", got, err)
+	}
+	c.options.PrivateEgressBindings = []PrivateEgressBinding{privateBindingFixture(target)}
+	stored = []json.RawMessage{raw}
+	if _, err = c.resolvePrivateEgress(ctx, target, false); err == nil {
+		t.Fatal("file and database name collision accepted")
+	}
+	if err = c.ValidatePrivateEgressCandidate(nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = DecodePrivateEgressBindings([]json.RawMessage{json.RawMessage(`{"name":"x","extra":1}`)}); err == nil {
+		t.Fatal("unknown stored field accepted")
 	}
 }

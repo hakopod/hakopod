@@ -113,6 +113,7 @@ func externalDatabaseEgressRules(t Target, name string) []networkingv1.NetworkPo
 // RefreshExternalDatabaseEgress handles provider DNS changes under the existing
 // durable application maintenance claim. Failed verification preserves the last
 // policy. It does not change application credentials or accept new revisions.
+// It also drops private egress rules whose administrator binding was deleted.
 func (c *Client) RefreshExternalDatabaseEgress(ctx context.Context, t Target, emit func(Event), name string) error {
 	svc, exists := t.Spec.Services[name]
 	if !exists {
@@ -121,6 +122,9 @@ func (c *Client) RefreshExternalDatabaseEgress(ctx context.Context, t Target, em
 	bound := false
 	for _, b := range svc.Bindings {
 		bound = bound || b.ExternalDatabase != ""
+	}
+	if len(svc.PrivateEgress) > 0 {
+		bound = true
 	}
 	if !bound {
 		return nil
@@ -138,7 +142,7 @@ func (c *Client) RefreshExternalDatabaseEgress(ctx context.Context, t Target, em
 		return err
 	}
 	t.databaseConnections = selected.databaseConnections
-	if t.privateEgress, err = c.resolvePrivateEgress(t); err != nil {
+	if t.privateEgress, err = c.resolvePrivateEgress(ctx, t, true); err != nil {
 		return err
 	}
 	if t.containerDaemon, err = c.resolveContainerDaemons(t); err != nil {
@@ -170,7 +174,7 @@ func (c *Client) RefreshExternalDatabaseEgress(ctx context.Context, t Target, em
 			return err
 		}
 		if emit != nil {
-			emit(Event{Type: "policy", Message: "External database destinations refreshed after verified TLS and query checks", Service: name})
+			emit(Event{Type: "policy", Message: "Egress destinations refreshed", Service: name})
 		}
 		return nil
 	}

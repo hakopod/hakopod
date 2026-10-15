@@ -32,7 +32,32 @@ explicit port are not detected.
 
 ## Approve a destination
 
-The installation administrator creates `/etc/hakopod/private-egress.toml`.
+Private egress stays closed by default. Only an installation administrator
+approves a destination, either through the admin API (recommended, no SSH or
+restart) or the legacy read-only file.
+
+### Admin API
+
+```sh
+curl -X PUT "$HAKOPOD_URL/api/v1/admin/private-egress-bindings/orders-db" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"project":"shop","environment":"production","application":"orders",
+       "services":["api","setup","worker"],"cidrs":["10.20.30.0/24","10.20.31.0/24"],
+       "ports":[5432],"expected_revision":0}'
+```
+
+`expected_revision` is `0` to create and the current `revision` to update or
+delete (`DELETE` takes `{"expected_revision": N}`); a stale value returns 409.
+`GET /api/v1/admin/private-egress-bindings` lists database bindings and, under
+`managed_by_file`, the file bindings. Every write is audited and validated
+together with the file bindings, so limits and rules below cover both sources
+and a name defined in both is rejected. Changes apply to the next plan, accept
+and reconcile without restarting `hakopod-api`.
+
+### Legacy file
+
+The file remains supported as a read-only source. The administrator creates
+`/etc/hakopod/private-egress.toml`.
 Use actual database subnet CIDRs, not the whole VPC. The following addresses
 are examples; they must be replaced. Multiple database subnets can cover the
 provider's failover addresses. Hakopod does not resolve or refresh CIDRs from DNS.
@@ -102,7 +127,12 @@ or moving a service/application requires matching administrator authorization.
 ## Change or remove access
 
 Remove a service's reference and successfully deploy to remove the grant from
-its managed policy. Then remove the unused administrator binding. File changes
+its managed policy. Then remove the unused administrator binding.
+
+Deleting a binding through the admin API revokes it without a restart: new
+plans that reference it fail at once, and background service maintenance
+rewrites the owned NetworkPolicy of referencing services to drop the rule
+(it cycles through applications, so allow a few minutes). File changes still
 require an API restart and a deployment to reconcile existing policies; a restart
 alone does **not** revoke running pods' rules. For emergency revocation, the
 administrator must also change the existing policy or external firewall.

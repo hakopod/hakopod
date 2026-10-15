@@ -145,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerInstallationRoutes(routes)
 	s.registerWorkloadSecretRoutes(routes)
 	s.registerSecretProviderRoutes(routes)
+	s.registerPrivateEgressRoutes(routes)
 	s.registerDNSProviderRoutes(routes)
 	s.registerTemplateRoutes(routes)
 	s.registerProxyRoutes(routes)

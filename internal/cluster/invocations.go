@@ -141,7 +141,7 @@ func (c *Client) StartInvocation(ctx context.Context, r invocation.Record, input
 		return result, err
 	}
 	t.Spec = full
-	t.privateEgress, err = c.resolvePrivateEgress(t)
+	t.privateEgress, err = c.resolvePrivateEgress(ctx, t, false)
 	if err != nil {
 		return result, err
 	}

@@ -557,6 +557,9 @@ func (w *Worker) renewCertificates(parent context.Context, a store.Application, 
 		for _, b := range a.Spec.Services[name].Bindings {
 			needsMaintenance = needsMaintenance || b.ManagedDatabase != "" || b.ExternalDatabase != "" || b.Password != nil
 		}
+		if len(a.Spec.Services[name].PrivateEgress) > 0 {
+			needsMaintenance = true
+		}
 		if needsMaintenance {
 			names = append(names, name)
 		}

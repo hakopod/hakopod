@@ -6,6 +6,7 @@ package cluster
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -64,6 +65,8 @@ type Options struct {
 	DedicatedPublicTCPNode string
 	AWSIdentityBindings    []AWSIdentityBinding
 	PrivateEgressBindings  []PrivateEgressBinding
+	// PrivateEgressSource returns administrator-managed database bindings (JSON).
+	PrivateEgressSource func(context.Context) ([]json.RawMessage, error)
 	// ContainerDaemonBindings are installation-owned grants to a container
 	// daemon reached over the network with mutual TLS.
 	ContainerDaemonBindings []ContainerDaemonBinding
