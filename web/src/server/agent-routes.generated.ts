@@ -1156,6 +1156,48 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "listPrivateEgressBindings",
+    "method": "GET",
+    "path": "/admin/private-egress-bindings",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "getPrivateEgressBinding",
+    "method": "GET",
+    "path": "/admin/private-egress-bindings/{name}",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "putPrivateEgressBinding",
+    "method": "PUT",
+    "path": "/admin/private-egress-bindings/{name}",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "deletePrivateEgressBinding",
+    "method": "DELETE",
+    "path": "/admin/private-egress-bindings/{name}",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "discoverPrivateEgress",
+    "method": "POST",
+    "path": "/admin/private-egress-bindings/discover",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "listScopedPrivateEgressBindings",
+    "method": "GET",
+    "path": "/private-egress-bindings",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "listCustomRoles",
     "method": "GET",
     "path": "/roles",

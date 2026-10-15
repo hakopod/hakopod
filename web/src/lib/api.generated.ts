@@ -3543,6 +3543,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/private-egress-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List database and file private egress bindings (administrator only) */
+        get: operations["listPrivateEgressBindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/private-egress-bindings/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one database private egress binding (administrator only) */
+        get: operations["getPrivateEgressBinding"];
+        /** Create or update a private egress binding (administrator only) */
+        put: operations["putPrivateEgressBinding"];
+        post?: never;
+        /** Revoke a private egress binding (administrator only) */
+        delete: operations["deletePrivateEgressBinding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/private-egress-bindings/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose RDS subnet CIDRs and ports from the installation AWS identity (administrator only) */
+        post: operations["discoverPrivateEgress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/private-egress-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List approved private egress destinations for a project and environment */
+        get: operations["listScopedPrivateEgressBindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -8388,6 +8458,55 @@ export interface components {
             next_cursor: string;
             truncated: boolean;
             done: boolean;
+        };
+        PrivateEgressBinding: {
+            name: string;
+            project: string;
+            environment: string;
+            application: string;
+            services: string[];
+            cidrs: string[];
+            ports: number[];
+        };
+        PrivateEgressBindingRecord: {
+            name: string;
+            /** Format: int64 */
+            revision: number;
+            config: components["schemas"]["PrivateEgressBinding"];
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PrivateEgressBindingInput: {
+            name?: string;
+            project: string;
+            environment: string;
+            application: string;
+            services: string[];
+            cidrs: string[];
+            ports: number[];
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        ScopedPrivateEgressBinding: {
+            name: string;
+            project: string;
+            environment: string;
+            application: string;
+            services: string[];
+            cidrs: string[];
+            ports: number[];
+            /** @enum {string} */
+            managed_by: "file" | "database";
+        };
+        PrivateEgressProposal: {
+            source: string;
+            engine: string;
+            port: number;
+            cidrs: string[];
+            excluded_cidrs: string[];
         };
         CustomRole: {
             id: string;
@@ -17853,6 +17972,192 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listPrivateEgressBindings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PrivateEgressBindingRecord"][];
+                        managed_by_file: components["schemas"]["PrivateEgressBinding"][];
+                    };
+                };
+            };
+        };
+    };
+    getPrivateEgressBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrivateEgressBindingRecord"];
+                };
+            };
+        };
+    };
+    putPrivateEgressBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrivateEgressBindingInput"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrivateEgressBindingRecord"];
+                };
+            };
+            /** @description Successful response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrivateEgressBindingRecord"];
+                };
+            };
+            /** @description Revision conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deletePrivateEgressBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted: boolean;
+                    };
+                };
+            };
+            /** @description Revision conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discoverPrivateEgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    region?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        proposals: components["schemas"]["PrivateEgressProposal"][];
+                    };
+                };
+            };
+            /** @description No AWS identity or discovery failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listScopedPrivateEgressBindings: {
+        parameters: {
+            query?: {
+                project?: string;
+                environment?: string;
+                application?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ScopedPrivateEgressBinding"][];
+                    };
                 };
             };
         };

@@ -54,6 +54,24 @@ together with the file bindings, so limits and rules below cover both sources
 and a name defined in both is rejected. Changes apply to the next plan, accept
 and reconcile without restarting `hakopod-api`.
 
+In the dashboard, administrators use **Settings > Private destinations**. Users
+with deployment read access can list the bindings for their own project and
+environment with `GET /api/v1/private-egress-bindings?project=…&environment=…`
+(each item shows `managed_by`: `file` or `database`), so a plan warning can name
+a real binding.
+
+#### Discover RDS subnets (optional)
+
+**Discover from AWS** (`POST /api/v1/admin/private-egress-bindings/discover`,
+body `{"region": "us-east-1"}`) uses the API process's default AWS identity
+(environment, instance profile or shared config) and needs only
+`rds:DescribeDBInstances` and `ec2:DescribeSubnets`. It proposes, per Aurora
+cluster or RDS instance, the DB subnet group CIDRs and the endpoint port.
+Subnets containing any cluster node address, and ranges that fail validation,
+are listed as excluded. Discovery only pre-fills the form; an administrator
+still saves the binding. It does not refresh: a failover into a subnet outside
+the saved CIDRs needs an explicit update.
+
 ### Legacy file
 
 The file remains supported as a read-only source. The administrator creates

@@ -64,6 +64,23 @@ func TestPrivateEgressBindingAdminAPI(t *testing.T) {
 	if code, body := request("GET", "/orders-db", raw, nil); code != 200 || !strings.Contains(body, "172.31.0.0/20") {
 		t.Fatalf("get: %d %s", code, body)
 	}
+	scoped := func(query string) (int, string) {
+		req, _ := http.NewRequest("GET", server.URL+"/api/v1/private-egress-bindings?"+query, nil)
+		req.Header.Set("Authorization", "Bearer "+reader)
+		res, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		data, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(data)
+	}
+	if code, body := scoped("project=demo&environment=development"); code != 200 || !strings.Contains(body, `"managed_by":"database"`) || !strings.Contains(body, "orders-db") {
+		t.Fatalf("scoped read: %d %s", code, body)
+	}
+	if code, _ := scoped("project=other&environment=development"); code != 403 {
+		t.Fatalf("cross-project read status: %d", code)
+	}
 	if code, _ := request("DELETE", "/orders-db", raw, map[string]any{"expected_revision": 0}); code != 409 {
 		t.Fatalf("stale delete status: %d", code)
 	}

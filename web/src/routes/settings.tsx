@@ -56,6 +56,11 @@ const SecretProviders = lazy(() =>
     default: module.SecretProviders,
   })),
 )
+const PrivateDestinations = lazy(() =>
+  import('../components/private-destinations').then((module) => ({
+    default: module.PrivateDestinations,
+  })),
+)
 const DNSProviders = lazy(() =>
   import('./settings.dns-providers').then((module) => ({
     default: module.DNSProviders,
@@ -131,6 +136,11 @@ function Administration() {
             group: 'Installation',
           },
           {
+            id: 'private-destinations',
+            label: 'Private destinations',
+            group: 'Installation',
+          },
+          {
             id: 'dns-providers',
             label: 'DNS providers',
             group: 'Installation',
@@ -183,6 +193,7 @@ function Administration() {
             <>
               {tab === 'users' && <InstallationUsers />}
               {tab === 'secret-providers' && <SecretProviders />}
+              {tab === 'private-destinations' && <PrivateDestinations />}
               {tab === 'dns-providers' && <DNSProviders />}
               {tab === 'audit' && <AuditLog />}
               {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
