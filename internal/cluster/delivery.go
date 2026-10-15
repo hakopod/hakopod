@@ -43,7 +43,7 @@ func (c *Client) validateDeliveryPolicy(ctx context.Context, t Target) error {
 	if _, err := c.serverlessGatewaySources(ctx, t); err != nil {
 		return err
 	}
-	if _, err := c.resolvePrivateEgress(t); err != nil {
+	if _, err := c.resolvePrivateEgress(ctx, t, false); err != nil {
 		return err
 	}
 	if err := c.validateWorkloadPolicy(ctx, t); err != nil {

@@ -3,6 +3,7 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -113,20 +114,76 @@ func ReadPrivateEgressBindingsFile(path string) ([]PrivateEgressBinding, error) 
 	return config.Bindings, nil
 }
 
+// PrivateEgressBindings returns the file (legacy, read-only) bindings plus the
+// database bindings, validated together. A name in both is an error.
+func (c *Client) PrivateEgressBindings(ctx context.Context) (file, db []PrivateEgressBinding, err error) {
+	file = c.options.PrivateEgressBindings
+	if c.options.PrivateEgressSource != nil {
+		raw, err := c.options.PrivateEgressSource(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if db, err = DecodePrivateEgressBindings(raw); err != nil {
+			return nil, nil, err
+		}
+	}
+	if err = c.ValidatePrivateEgressCandidate(db); err != nil {
+		return nil, nil, err
+	}
+	return file, db, nil
+}
+
+// ValidatePrivateEgressCandidate checks a complete database set against the file set.
+func (c *Client) ValidatePrivateEgressCandidate(db []PrivateEgressBinding) error {
+	if len(db) > 0 && (c.CloudMode() || c.options.WorkloadPolicy != nil) {
+		return fmt.Errorf("%w: private egress bindings require a self-hosted installation", ErrCloudLimit)
+	}
+	return ValidatePrivateEgressBindings(append(append([]PrivateEgressBinding(nil), c.options.PrivateEgressBindings...), db...))
+}
+
+func DecodePrivateEgressBindings(raw []json.RawMessage) ([]PrivateEgressBinding, error) {
+	result := make([]PrivateEgressBinding, 0, len(raw))
+	for _, item := range raw {
+		var b PrivateEgressBinding
+		decoder := json.NewDecoder(bytes.NewReader(item))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&b); err != nil {
+			return nil, fmt.Errorf("private egress: stored binding is not valid")
+		}
+		result = append(result, b)
+	}
+	return result, nil
+}
+
 // Resolve again during reconciliation; a previously accepted revision is not
 // authority to request an unconfigured destination after an operator change.
-func (c *Client) resolvePrivateEgress(t Target) (map[string][]PrivateEgressBinding, error) {
+// With revoked set (policy refresh), missing bindings are dropped instead of
+// failing, so deleting a binding removes its rule from running services.
+func (c *Client) resolvePrivateEgress(ctx context.Context, t Target, revoked bool) (map[string][]PrivateEgressBinding, error) {
 	result := map[string][]PrivateEgressBinding{}
-	if err := ValidatePrivateEgressBindings(c.options.PrivateEgressBindings); err != nil {
-		return nil, err
-	}
+	referenced := false
 	for _, name := range spec.Names(t.Spec) {
-		for _, ref := range t.Spec.Services[name].PrivateEgress {
-			if c.CloudMode() || c.options.WorkloadPolicy != nil {
+		referenced = referenced || len(t.Spec.Services[name].PrivateEgress) > 0
+	}
+	if !referenced {
+		return result, ValidatePrivateEgressBindings(c.options.PrivateEgressBindings)
+	}
+	if c.CloudMode() || c.options.WorkloadPolicy != nil {
+		for _, name := range spec.Names(t.Spec) {
+			if len(t.Spec.Services[name].PrivateEgress) > 0 {
 				return nil, fmt.Errorf("%w: %s.private_egress is available only on self-hosted installations", ErrCloudLimit, name)
 			}
+		}
+	}
+	file, db, err := c.PrivateEgressBindings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bindings := append(append([]PrivateEgressBinding(nil), file...), db...)
+	for _, name := range spec.Names(t.Spec) {
+		for _, ref := range t.Spec.Services[name].PrivateEgress {
 			found := false
-			for _, b := range c.options.PrivateEgressBindings {
+			for _, b := range bindings {
 				if b.Name != ref || b.Project != t.Project || b.Environment != t.Environment || b.Application != t.Spec.Name {
 					continue
 				}
@@ -138,7 +195,7 @@ func (c *Client) resolvePrivateEgress(t Target) (map[string][]PrivateEgressBindi
 					}
 				}
 			}
-			if !found {
+			if !found && !revoked {
 				return nil, fmt.Errorf("%s.private_egress: destination %s is not approved for this project, environment, application and service; ask the installation administrator", name, ref)
 			}
 		}
@@ -177,7 +234,11 @@ func (c *Client) PrivateEgressWarnings(ctx context.Context, project, environment
 		addrs, _ := net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
 		return addrs
 	}
-	return privateEgressWarnings(c.options.PrivateEgressBindings, project, environment, app, lookup)
+	file, db, err := c.PrivateEgressBindings(ctx)
+	if err != nil {
+		return nil
+	}
+	return privateEgressWarnings(append(file, db...), project, environment, app, lookup)
 }
 
 func privateEgressWarnings(bindings []PrivateEgressBinding, project, environment string, app spec.Application, lookup func(string) []netip.Addr) []string {
