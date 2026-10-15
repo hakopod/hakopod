@@ -13,6 +13,23 @@ loopback and metadata ranges. An RDS endpoint resolving to a private address is
 therefore not automatically reachable. A TCP refusal or timeout alone does not
 identify the failing layer: also check routes, security groups and the listener.
 
+## Plan warning
+
+`hakopod plan` (and the dashboard review) warns when a service's plain `env`
+value contains a `host:port` that is, or resolves to, a private IPv4 address
+not covered by a `private_egress` binding the service references. Example:
+
+```text
+payments: DATABASE_URL points at private address 172.31.33.237:5432, which
+network policy blocks by default. Ask the installation administrator for a
+private egress binding ...
+```
+
+The warning does not block the plan and does not grant access. Values held in
+secrets are not inspected, so a `DATABASE_URL` stored as a secret produces no
+warning; a connection refusal from a pod is then the signal. URLs without an
+explicit port are not detected.
+
 ## Approve a destination
 
 The installation administrator creates `/etc/hakopod/private-egress.toml`.

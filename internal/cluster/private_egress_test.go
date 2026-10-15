@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -197,5 +198,43 @@ ports = [5432]
 	}
 	if _, err := ReadPrivateEgressBindingsFile(filepath.Dir(path)); err == nil {
 		t.Fatal("directory accepted")
+	}
+}
+
+func TestPrivateEgressWarnings(t *testing.T) {
+	target := testTarget(t)
+	api := target.Spec.Services["api"]
+	api.Env = map[string]string{
+		"DATABASE_URL": "postgres://u:p@172.31.33.237:5432/app?sslmode=verify-full",
+		"CACHE":        "redis.internal.example:6379",
+		"PUBLIC":       "https://api.example.com:443",
+		"PEER":         "worker:8080",
+	}
+	target.Spec.Services["api"] = api
+	lookup := func(host string) []netip.Addr {
+		switch host {
+		case "redis.internal.example":
+			return []netip.Addr{netip.MustParseAddr("10.20.40.7")}
+		case "api.example.com":
+			return []netip.Addr{netip.MustParseAddr("93.184.216.34")}
+		}
+		return nil
+	}
+	got := privateEgressWarnings(nil, target.Project, target.Environment, target.Spec, lookup)
+	if len(got) != 2 || !strings.Contains(got[0], "CACHE points at private address 10.20.40.7:6379 (redis.internal.example)") || !strings.Contains(got[1], "DATABASE_URL points at private address 172.31.33.237:5432") || !strings.Contains(got[1], `private_egress = ["<binding-name>"] to [services.api]`) {
+		t.Fatalf("warnings = %q", got)
+	}
+	b := PrivateEgressBinding{Name: "orders-db", Project: target.Project, Environment: target.Environment, Application: target.Spec.Name, Services: []string{"api"}, CIDRs: []string{"172.31.32.0/20"}, Ports: []int32{5432}}
+	// A binding that exists but is not referenced still warns.
+	if got := privateEgressWarnings([]PrivateEgressBinding{b}, target.Project, target.Environment, target.Spec, lookup); len(got) != 2 {
+		t.Fatalf("unreferenced binding: %q", got)
+	}
+	api.PrivateEgress = []string{"orders-db"}
+	target.Spec.Services["api"] = api
+	if got := privateEgressWarnings([]PrivateEgressBinding{b}, target.Project, target.Environment, target.Spec, lookup); len(got) != 1 || !strings.Contains(got[0], "CACHE") {
+		t.Fatalf("covered destination still warned: %q", got)
+	}
+	if got := (&Client{options: Options{DeploymentMode: DeploymentManagedCloud}}).PrivateEgressWarnings(context.Background(), target.Project, target.Environment, target.Spec); got != nil {
+		t.Fatalf("cloud warned: %q", got)
 	}
 }

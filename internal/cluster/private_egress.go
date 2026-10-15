@@ -2,10 +2,18 @@ package cluster
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/netip"
 	"os"
+	"regexp"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/pelletier/go-toml/v2"
@@ -151,4 +159,88 @@ func privateEgressRules(bindings []PrivateEgressBinding) []networkingv1.NetworkP
 		rules = append(rules, rule)
 	}
 	return rules
+}
+
+var privateHostPort = regexp.MustCompile(`(?:@|//|^|[\s=,;])\[?([A-Za-z0-9][A-Za-z0-9.-]*)\]?:([0-9]{1,5})\b`)
+
+// PrivateEgressWarnings flags plain env values that point at a private
+// host:port the service has no approved private_egress binding for. It is
+// advisory: default-deny still blocks the connection either way.
+// ponytail: env values only; secret values are not readable at plan time.
+func (c *Client) PrivateEgressWarnings(ctx context.Context, project, environment string, app spec.Application) []string {
+	if c == nil || c.CloudMode() || c.options.WorkloadPolicy != nil {
+		return nil
+	}
+	lookup := func(host string) []netip.Addr {
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		addrs, _ := net.DefaultResolver.LookupNetIP(ctx, "ip4", host)
+		return addrs
+	}
+	return privateEgressWarnings(c.options.PrivateEgressBindings, project, environment, app, lookup)
+}
+
+func privateEgressWarnings(bindings []PrivateEgressBinding, project, environment string, app spec.Application, lookup func(string) []netip.Addr) []string {
+	var warnings []string
+	resolved := map[string][]netip.Addr{}
+	for _, name := range spec.Names(app) {
+		svc := app.Services[name]
+		reported := map[string]bool{}
+		keys := make([]string, 0, len(svc.Env))
+		for key := range svc.Env {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			for _, m := range privateHostPort.FindAllStringSubmatch(svc.Env[key], 8) {
+				host, port := m[1], m[2]
+				p, err := strconv.Atoi(port)
+				if err != nil || p < 1 || p > 65535 {
+					continue
+				}
+				addrs, ok := resolved[host]
+				if !ok {
+					if a, err := netip.ParseAddr(host); err == nil {
+						addrs = []netip.Addr{a}
+					} else if strings.Contains(host, ".") && !strings.HasSuffix(host, ".svc.cluster.local") {
+						addrs = lookup(host)
+					}
+					resolved[host] = addrs
+				}
+				for _, addr := range addrs {
+					addr = addr.Unmap()
+					if !addr.Is4() || !addr.IsPrivate() || privateEgressCovered(bindings, project, environment, app.Name, name, svc.PrivateEgress, addr, int32(p)) {
+						continue
+					}
+					dest := net.JoinHostPort(addr.String(), port)
+					if reported[dest] {
+						continue
+					}
+					reported[dest] = true
+					via := ""
+					if host != addr.String() {
+						via = " (" + host + ")"
+					}
+					warnings = append(warnings, fmt.Sprintf("%s: %s points at private address %s%s, which network policy blocks by default. Ask the installation administrator for a private egress binding covering that subnet and port %s for project %s, environment %s, application %s and service %s, then add private_egress = [\"<binding-name>\"] to [services.%s]. See docs/private-database-access.md.", name, key, dest, via, port, project, environment, app.Name, name, name))
+				}
+			}
+		}
+	}
+	return warnings
+}
+
+func privateEgressCovered(bindings []PrivateEgressBinding, project, environment, application, service string, refs []string, addr netip.Addr, port int32) bool {
+	for _, ref := range refs {
+		for _, b := range bindings {
+			if b.Name != ref || b.Project != project || b.Environment != environment || b.Application != application || !slices.Contains(b.Services, service) || !slices.Contains(b.Ports, port) {
+				continue
+			}
+			for _, cidr := range b.CIDRs {
+				if p, err := netip.ParsePrefix(cidr); err == nil && p.Contains(addr) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

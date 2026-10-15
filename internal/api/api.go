@@ -752,7 +752,7 @@ func (s *Server) plan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	warnings := deliveryWarnings(r, next)
+	warnings := append(deliveryWarnings(r, next), s.Cluster.PrivateEgressWarnings(r.Context(), in.Project, in.Environment, next)...)
 	if warnings == nil {
 		warnings = []string{}
 	}
