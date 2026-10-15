@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 
 	"github.com/hakopod/hakopod/internal/cluster"
 )
@@ -13,6 +14,69 @@ func (s *Server) registerPrivateEgressRoutes(routes *http.ServeMux) {
 	routes.HandleFunc("GET /api/v1/admin/private-egress-bindings/{name}", s.getPrivateEgressBinding)
 	routes.HandleFunc("PUT /api/v1/admin/private-egress-bindings/{name}", s.putPrivateEgressBinding)
 	routes.HandleFunc("DELETE /api/v1/admin/private-egress-bindings/{name}", s.deletePrivateEgressBinding)
+	routes.HandleFunc("POST /api/v1/admin/private-egress-bindings/discover", s.discoverPrivateEgress)
+	routes.HandleFunc("GET /api/v1/private-egress-bindings", s.scopedPrivateEgressBindings)
+}
+
+// scopedPrivateEgressBindings lets deployment readers see which approved
+// destinations exist for their project and environment, so a plan can name one.
+func (s *Server) scopedPrivateEgressBindings(w http.ResponseWriter, r *http.Request) {
+	p, e := scope(r)
+	application := r.URL.Query().Get("application")
+	if !validScope(p, e) || !who(r).Allows("deployments:read", p, e, application) {
+		problem(w, 403, "forbidden", "select an accessible project and environment")
+		return
+	}
+	file, db := []cluster.PrivateEgressBinding{}, []cluster.PrivateEgressBinding{}
+	var err error
+	if s.Cluster != nil {
+		file, db, err = s.Cluster.PrivateEgressBindings(r.Context())
+	} else {
+		var raw []json.RawMessage
+		if raw, err = s.Store.PrivateEgressBindingConfigs(r.Context()); err == nil {
+			db, err = cluster.DecodePrivateEgressBindings(raw)
+		}
+	}
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	type item struct {
+		cluster.PrivateEgressBinding
+		ManagedBy string `json:"managed_by"`
+	}
+	items := []item{}
+	for source, bindings := range map[string][]cluster.PrivateEgressBinding{"file": file, "database": db} {
+		for _, b := range bindings {
+			if b.Project == p && b.Environment == e && (application == "" || b.Application == application) {
+				items = append(items, item{b, source})
+			}
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	write(w, 200, map[string]any{"items": items})
+}
+
+func (s *Server) discoverPrivateEgress(w http.ResponseWriter, r *http.Request) {
+	if !admin(w, r) {
+		return
+	}
+	var input struct {
+		Region string `json:"region"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if s.Cluster == nil {
+		problem(w, 503, "unavailable", "Kubernetes is not configured")
+		return
+	}
+	proposals, err := s.Cluster.DiscoverPrivateEgress(r.Context(), input.Region)
+	if err != nil {
+		problem(w, 422, "private_egress_discovery_failed", err.Error())
+		return
+	}
+	write(w, 200, map[string]any{"proposals": proposals})
 }
 
 type privateEgressInput struct{ error }

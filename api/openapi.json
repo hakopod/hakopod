@@ -15533,6 +15533,398 @@
         "summary": "Read retained application terminal output from the supplied cursor."
       }
     },
+    "/admin/private-egress-bindings": {
+      "get": {
+        "operationId": "listPrivateEgressBindings",
+        "summary": "List database and file private egress bindings (administrator only)",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PrivateEgressBindingRecord"
+                      }
+                    },
+                    "managed_by_file": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PrivateEgressBinding"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "managed_by_file"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": [
+            "credentials",
+            "password",
+            "token",
+            "api_key",
+            "private_key",
+            "client_secret",
+            "secret"
+          ]
+        }
+      }
+    },
+    "/admin/private-egress-bindings/{name}": {
+      "get": {
+        "operationId": "getPrivateEgressBinding",
+        "summary": "Read one database private egress binding (administrator only)",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateEgressBindingRecord"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": [
+            "credentials",
+            "password",
+            "token",
+            "api_key",
+            "private_key",
+            "client_secret",
+            "secret"
+          ]
+        }
+      },
+      "put": {
+        "operationId": "putPrivateEgressBinding",
+        "summary": "Create or update a private egress binding (administrator only)",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrivateEgressBindingInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateEgressBindingRecord"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateEgressBindingRecord"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict"
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": [
+            "credentials",
+            "password",
+            "token",
+            "api_key",
+            "private_key",
+            "client_secret",
+            "secret"
+          ]
+        }
+      },
+      "delete": {
+        "operationId": "deletePrivateEgressBinding",
+        "summary": "Revoke a private egress binding (administrator only)",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict"
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": [
+            "credentials",
+            "password",
+            "token",
+            "api_key",
+            "private_key",
+            "client_secret",
+            "secret"
+          ]
+        }
+      }
+    },
+    "/admin/private-egress-bindings/discover": {
+      "post": {
+        "operationId": "discoverPrivateEgress",
+        "summary": "Propose RDS subnet CIDRs and ports from the installation AWS identity (administrator only)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "region": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "proposals": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PrivateEgressProposal"
+                      }
+                    }
+                  },
+                  "required": [
+                    "proposals"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No AWS identity or discovery failed"
+          }
+        },
+        "parameters": [],
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": [
+            "credentials",
+            "password",
+            "token",
+            "api_key",
+            "private_key",
+            "client_secret",
+            "secret"
+          ]
+        }
+      }
+    },
+    "/private-egress-bindings": {
+      "get": {
+        "operationId": "listScopedPrivateEgressBindings",
+        "summary": "List approved private egress destinations for a project and environment",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ScopedPrivateEgressBinding"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "review": "none",
+          "prerequisite": "",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/roles": {
       "get": {
         "operationId": "listCustomRoles",
@@ -36274,6 +36666,223 @@
           "next_cursor",
           "truncated",
           "done"
+        ],
+        "additionalProperties": false
+      },
+      "PrivateEgressBinding": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "project",
+          "environment",
+          "application",
+          "services",
+          "cidrs",
+          "ports"
+        ],
+        "additionalProperties": false
+      },
+      "PrivateEgressBindingRecord": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "config": {
+            "$ref": "#/components/schemas/PrivateEgressBinding"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "revision",
+          "config",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "PrivateEgressBindingInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "application",
+          "services",
+          "cidrs",
+          "ports",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "ScopedPrivateEgressBinding": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "managed_by": {
+            "type": "string",
+            "enum": [
+              "file",
+              "database"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "project",
+          "environment",
+          "application",
+          "services",
+          "cidrs",
+          "ports",
+          "managed_by"
+        ],
+        "additionalProperties": false
+      },
+      "PrivateEgressProposal": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "engine",
+          "port",
+          "cidrs",
+          "excluded_cidrs"
         ],
         "additionalProperties": false
       },

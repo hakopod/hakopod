@@ -104,6 +104,8 @@ export const allowed = [
   /^secrets(?:\/[A-Za-z0-9_-]+)?$/,
   /^deployment-secret-requirements$/,
   /^secret-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
+  /^admin\/private-egress-bindings(?:\/[a-z][a-z0-9-]{0,39})?$/,
+  /^private-egress-bindings$/,
   /^dns-providers(?:\/[a-z][a-z0-9-]{0,39})?$/,
 ]
 
