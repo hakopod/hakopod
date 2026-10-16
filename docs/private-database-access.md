@@ -60,6 +60,19 @@ environment with `GET /api/v1/private-egress-bindings?project=â€¦&environment=â€
 (each item shows `managed_by`: `file` or `database`), so a plan warning can name
 a real binding.
 
+#### Discover RDS subnets (optional)
+
+**Discover from AWS** (`POST /api/v1/admin/private-egress-bindings/discover`,
+body `{"region": "us-east-1"}`) uses the API process's AWS identity
+(environment keys, the projected `hakopod-aws-identity` web identity, or the EC2
+instance role over IMDSv2; shared config files are not read) and needs only
+`rds:DescribeDBInstances` and `ec2:DescribeSubnets`. It proposes, per Aurora
+cluster or RDS instance, the DB subnet group CIDRs and the endpoint port.
+Subnets containing any cluster node address, and ranges that fail validation,
+are listed as excluded. Discovery only pre-fills the form; an administrator
+still saves the binding. It does not refresh: a failover into a subnet outside
+the saved CIDRs needs an explicit update.
+
 ### Legacy file
 
 The file remains supported as a read-only source. The administrator creates

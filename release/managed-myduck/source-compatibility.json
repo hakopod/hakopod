@@ -13,7 +13,7 @@
     "baseline_sha256": "91e42107503f6f77eb451ce88ec778868db842bb68f251ce6e680edd34ec1af4",
     "changes": [
       {
-        "after": "b87cdd3cf28e201f428aa93f44fd370450f07c7eea6445ce8b63c38692a7c7c9",
+        "after": "b5285185ab399c1a7db554b5db989944e440a5dddca8380e0a6242b6c618f916",
         "before": "2a6ab6e91588580f4cc680e39626e7e52be46e8f96fd916f3afb2e545c958a8a",
         "path": "api/contracts/agent_policy.py",
         "reason": "Reviewed control-plane change (feat: private destinations dashboard, scoped read and RDS discovery); not a runtime binary, image, dependency, authorization or native harness input."
@@ -25,13 +25,13 @@
         "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "ff0989759140261e9add04dcbe8a8c08113a34d0cf09a48759c5794cbca52ee6",
+        "after": "05020bf2b6ba80a751a665ec2f06ddce35405fec796336cddb413b07bc441453",
         "before": null,
         "path": "api/contracts/private_egress_bindings.py",
         "reason": "Reviewed control-plane change (feat: private destinations dashboard, scoped read and RDS discovery); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "eee4d8bba2e118af120e323f7b47138fd17d31825bf10386d908cc5a39f600db",
+        "after": "ba9029f6b7fdde6eeb4ca5a4f6f46a822f6897fff57e352ae5567b7aab798188",
         "before": "c1da2eae12bd41fbd806639479ac17a496e7333f35ca6d3b93dfd5cce2e29814",
         "path": "api/openapi.json",
         "reason": "Reviewed control-plane change (feat: private destinations dashboard, scoped read and RDS discovery; Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
@@ -91,7 +91,7 @@
         "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "13e0337f2ee4d5976db2a3373f6c1e459131a139d80ff112198e0b305be4a7b0",
+        "after": "074b2e8c73cdb1c25b28516be8da68d40baeb6614096164abe35ebf41fa96b32",
         "before": null,
         "path": "internal/api/private_egress_bindings.go",
         "reason": "Reviewed control-plane change (feat: private destinations dashboard, scoped read and RDS discovery; feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
@@ -197,6 +197,18 @@
         "before": "4411475b181ce107bc515bdfb505edae18b802c843ff4c12a1885a8e5b53e1ae",
         "path": "internal/cluster/private_egress.go",
         "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings; plan: warn when env points at unapproved private destination); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "5323e7d5b1cc2df5c7a046798a6dc29fe216704d7970bc8f5c1986826ec2d1ce",
+        "before": null,
+        "path": "internal/cluster/private_egress_discovery.go",
+        "reason": "Reviewed RDS private egress discovery reimplemented over stdlib net/http with the existing aws-sdk-go-v2 core SigV4 signer; go.mod/go.sum unchanged; not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "370ea3c7a1d6947383d55297d30faec54fc3b1771914879ab2630c820aebc37e",
+        "before": null,
+        "path": "internal/cluster/private_egress_discovery_test.go",
+        "reason": "Reviewed RDS private egress discovery reimplemented over stdlib net/http with the existing aws-sdk-go-v2 core SigV4 signer; go.mod/go.sum unchanged; not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
         "after": "c4be3302a5b1092e3206cb0ddd6e30fdef964eef371b917288e423c6d46d55f6",
@@ -307,7 +319,7 @@
         "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "1ff91c4e4420c4658448e6ccf0313c21209609b14a5325a43f84142ddc002e0a"
+    "current_sha256": "9019489e8ffa4e2c8132ced763a011255206587c0d3a1020d56bb0be0f62d937"
   },
   "predecessor": {
     "commit": "bc3b46803d3bba40c6438ddb27e190c628d8622a",
