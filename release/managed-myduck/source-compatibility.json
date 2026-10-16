@@ -263,9 +263,51 @@
         "before": "670bec9f7c97efa529790e22be08c8d6cfd8ed2cfe430bfa0b0db5646e4a2fc7",
         "path": "release/runtime-source-compatibility.py",
         "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
+      },
+      {
+        "after": "e25c2db0e96bf098c23147c11596ec7c5ed175b4403c27392e873bd0f47857de",
+        "before": "1d9b681094d841aa4038d14d352dfe65e220bacf8d0682f9e0ccb6fe21b328d3",
+        "path": "templates/README.md",
+        "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4eb4d6b31232a30786cab6b0e6c6363323f19fb3c53b85e5b817377644a551a4",
+        "before": null,
+        "path": "templates/blueprints/synehq-oos/README.md",
+        "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "88bc4cdfceb2c13e7ee65964751bfdd15b01ebe23a2d8463056cf0c7376df4da",
+        "before": null,
+        "path": "templates/blueprints/synehq-oos/candidate.toml",
+        "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "0a2f01b258015b0d83f085b494ee97ebb68d72bb8c6413cbc53747affa9d1554",
+        "before": null,
+        "path": "templates/blueprints/synehq-oos/logo.png",
+        "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "3ceb07d9c03537638aa9f8fdeccd0eb3640d4fc48784a01e313ac07af165a228",
+        "before": null,
+        "path": "templates/blueprints/synehq-oos/migration.json",
+        "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "e44c1509c5b2ecb7ac3cd249a4c70d21187c56033c829b1211e1eb1bef8529be",
+        "before": "ad971752860ede9fffc183dac0d6df112efd2ecfb7bd72f03f2ca1d10d8fde25",
+        "path": "templates/catalog.json",
+        "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "8c69c904c3ab23ddebdeb1a599756e6ec7e33c1f224e378541228fb4a6899f04",
+        "before": "11a564088275f0d775665126ec36994756d509bc48c4735c099e452b49decff7",
+        "path": "templates/images.lock.json",
+        "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "35c14e8ec0ac33b581e4f3df74e00982050f1852d95ce60d47d7d2d8f77448dd"
+    "current_sha256": "1ff91c4e4420c4658448e6ccf0313c21209609b14a5325a43f84142ddc002e0a"
   },
   "predecessor": {
     "commit": "bc3b46803d3bba40c6438ddb27e190c628d8622a",
