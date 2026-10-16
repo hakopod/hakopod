@@ -9,7 +9,7 @@
       "release/verify-vitess-runtime.py"
     ]
   },
-  "control_plane_commit": "d4bfae6b3782a136398398f5f0af59526dc2706b",
+  "control_plane_commit": "1b0925c6d15b65b39c2827456e1836478e3aac87",
   "predecessor": {
     "commit": "bc3b46803d3bba40c6438ddb27e190c628d8622a",
     "review_sha256": "6d2881634cf4befdea15bc74d05a1c1ecc3c535472b76c467b120dc1c28ae8eb",
@@ -27,9 +27,13 @@
       "TestDeploymentRuntimeBudgetIncludesSlowSetupAndLateBeat",
       "TestSlowSetupLeavesLateHealthyBeatItsOwnWindow",
       "TestUnhealthyServiceStillExpiresItsOwnReadinessWindow",
-      "TestNilRuntimeHasNoInstallationReadinessBudget"
+      "TestNilRuntimeHasNoInstallationReadinessBudget",
+      "TestDiscoverPrivateEgressExcludesNodeSubnets",
+      "TestAWSIdentityWebIdentityAndIMDS",
+      "TestPrivateEgressBindingAdminAPI",
+      "TestPrivateEgressDatabaseSourceWithoutRestart"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/38069631268"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/38842174455"
   },
   "reviewed_release": "v0.1.0-alpha.62",
   "runtime": "vitess",

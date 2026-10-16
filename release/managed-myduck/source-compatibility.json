@@ -8,7 +8,7 @@
       "release/runtime-source-compatibility.py"
     ]
   },
-  "control_plane_commit": "d4bfae6b3782a136398398f5f0af59526dc2706b",
+  "control_plane_commit": "1b0925c6d15b65b39c2827456e1836478e3aac87",
   "delta": {
     "baseline_sha256": "91e42107503f6f77eb451ce88ec778868db842bb68f251ce6e680edd34ec1af4",
     "changes": [
@@ -336,9 +336,13 @@
       "TestDeploymentRuntimeBudgetIncludesSlowSetupAndLateBeat",
       "TestSlowSetupLeavesLateHealthyBeatItsOwnWindow",
       "TestUnhealthyServiceStillExpiresItsOwnReadinessWindow",
-      "TestNilRuntimeHasNoInstallationReadinessBudget"
+      "TestNilRuntimeHasNoInstallationReadinessBudget",
+      "TestDiscoverPrivateEgressExcludesNodeSubnets",
+      "TestAWSIdentityWebIdentityAndIMDS",
+      "TestPrivateEgressBindingAdminAPI",
+      "TestPrivateEgressDatabaseSourceWithoutRestart"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/38069631268"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/38842174455"
   },
   "reviewed_release": "v0.1.0-alpha.62",
   "runtime": "myduck",
