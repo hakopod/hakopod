@@ -2666,7 +2666,7 @@ for operation in ['reviewDatabaseApplicationProvisioning','provisionDatabaseAppl
     POLICIES[operation]={'boundary':'project','category':'read' if read else 'write','exposure':'generic','permissions':['deployments:read' if read else 'deployments:write'],'review':'none' if read or plan else 'canonical','prerequisite':'','sensitive_fields':[]}
 
 ADMIN_SENSITIVE = ['credentials','password','token','api_key','private_key','client_secret','secret']
-for operation in ['listPrivateEgressBindings','getPrivateEgressBinding','putPrivateEgressBinding','deletePrivateEgressBinding','discoverPrivateEgress']:
+for operation in ['listPrivateEgressBindings','getPrivateEgressBinding','putPrivateEgressBinding','deletePrivateEgressBinding']:
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith(('list','get')) else 'canonical','sensitive_fields':ADMIN_SENSITIVE}
 POLICIES['listScopedPrivateEgressBindings'] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'review':'none','prerequisite':'','sensitive_fields':[]}
 

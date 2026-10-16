@@ -14,7 +14,6 @@ func (s *Server) registerPrivateEgressRoutes(routes *http.ServeMux) {
 	routes.HandleFunc("GET /api/v1/admin/private-egress-bindings/{name}", s.getPrivateEgressBinding)
 	routes.HandleFunc("PUT /api/v1/admin/private-egress-bindings/{name}", s.putPrivateEgressBinding)
 	routes.HandleFunc("DELETE /api/v1/admin/private-egress-bindings/{name}", s.deletePrivateEgressBinding)
-	routes.HandleFunc("POST /api/v1/admin/private-egress-bindings/discover", s.discoverPrivateEgress)
 	routes.HandleFunc("GET /api/v1/private-egress-bindings", s.scopedPrivateEgressBindings)
 }
 
@@ -55,28 +54,6 @@ func (s *Server) scopedPrivateEgressBindings(w http.ResponseWriter, r *http.Requ
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	write(w, 200, map[string]any{"items": items})
-}
-
-func (s *Server) discoverPrivateEgress(w http.ResponseWriter, r *http.Request) {
-	if !admin(w, r) {
-		return
-	}
-	var input struct {
-		Region string `json:"region"`
-	}
-	if !decode(w, r, &input) {
-		return
-	}
-	if s.Cluster == nil {
-		problem(w, 503, "unavailable", "Kubernetes is not configured")
-		return
-	}
-	proposals, err := s.Cluster.DiscoverPrivateEgress(r.Context(), input.Region)
-	if err != nil {
-		problem(w, 422, "private_egress_discovery_failed", err.Error())
-		return
-	}
-	write(w, 200, map[string]any{"proposals": proposals})
 }
 
 type privateEgressInput struct{ error }
