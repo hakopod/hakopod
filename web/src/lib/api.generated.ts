@@ -3579,23 +3579,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/private-egress-bindings/discover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Propose RDS subnet CIDRs and ports from the installation AWS identity (administrator only) */
-        post: operations["discoverPrivateEgress"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/private-egress-bindings": {
         parameters: {
             query?: never;
@@ -8500,13 +8483,6 @@ export interface components {
             ports: number[];
             /** @enum {string} */
             managed_by: "file" | "database";
-        };
-        PrivateEgressProposal: {
-            source: string;
-            engine: string;
-            port: number;
-            cidrs: string[];
-            excluded_cidrs: string[];
         };
         CustomRole: {
             id: string;
@@ -18094,41 +18070,6 @@ export interface operations {
             };
             /** @description Revision conflict */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    discoverPrivateEgress: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    region?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        proposals: components["schemas"]["PrivateEgressProposal"][];
-                    };
-                };
-            };
-            /** @description No AWS identity or discovery failed */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };

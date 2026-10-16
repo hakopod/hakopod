@@ -15787,77 +15787,6 @@
         }
       }
     },
-    "/admin/private-egress-bindings/discover": {
-      "post": {
-        "operationId": "discoverPrivateEgress",
-        "summary": "Propose RDS subnet CIDRs and ports from the installation AWS identity (administrator only)",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "region": {
-                    "type": "string"
-                  }
-                },
-                "required": [],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "proposals": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PrivateEgressProposal"
-                      }
-                    }
-                  },
-                  "required": [
-                    "proposals"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "No AWS identity or discovery failed"
-          }
-        },
-        "parameters": [],
-        "x-hakopod-agent": {
-          "boundary": "installation",
-          "category": "admin",
-          "exposure": "installation",
-          "permissions": [
-            "admin",
-            "agent:admin"
-          ],
-          "prerequisite": "",
-          "review": "canonical",
-          "sensitive_fields": [
-            "credentials",
-            "password",
-            "token",
-            "api_key",
-            "private_key",
-            "client_secret",
-            "secret"
-          ]
-        }
-      }
-    },
     "/private-egress-bindings": {
       "get": {
         "operationId": "listScopedPrivateEgressBindings",
@@ -36849,40 +36778,6 @@
           "cidrs",
           "ports",
           "managed_by"
-        ],
-        "additionalProperties": false
-      },
-      "PrivateEgressProposal": {
-        "type": "object",
-        "properties": {
-          "source": {
-            "type": "string"
-          },
-          "engine": {
-            "type": "string"
-          },
-          "port": {
-            "type": "integer"
-          },
-          "cidrs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "excluded_cidrs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "source",
-          "engine",
-          "port",
-          "cidrs",
-          "excluded_cidrs"
         ],
         "additionalProperties": false
       },
