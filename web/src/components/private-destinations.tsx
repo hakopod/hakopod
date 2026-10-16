@@ -7,9 +7,10 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
-import { Empty, ErrorState, HeadingHelp, Loading, RequestError } from './shared'
+import { Empty, ErrorState, HeadingHelp, Loading, Note, RequestError } from './shared'
 
 type Binding = components['schemas']['PrivateEgressBinding']
+type Proposal = components['schemas']['PrivateEgressProposal']
 type Draft = Record<
   'name' | 'project' | 'environment' | 'application' | 'services' | 'cidrs' | 'ports',
   string
@@ -45,6 +46,8 @@ export function PrivateDestinations() {
   })
   const [draft, setDraft] = useState<Draft | null>(null)
   const [removing, setRemoving] = useState<{ name: string; revision: number } | null>(null)
+  const [proposals, setProposals] = useState<Proposal[] | null>(null)
+  const [region, setRegion] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const refresh = () => void cache.invalidateQueries({ queryKey: ['private-egress-bindings'] })
@@ -84,6 +87,14 @@ export function PrivateDestinations() {
           </HeadingHelp>
         </div>
         <div className="flex gap-2">
+          <Button
+            onClick={() => {
+              setProposals([])
+              setError('')
+            }}
+          >
+            Discover from AWS
+          </Button>
           <Button
             variant="primary"
             onClick={() => {
@@ -246,6 +257,77 @@ export function PrivateDestinations() {
           >
             <Icon name="trash" size={15} />
             {busy ? 'Revoking…' : 'Revoke'}
+          </Button>
+        </div>
+      </Dialog>
+      <Dialog
+        open={proposals !== null}
+        onOpenChange={(open) => !busy && !open && setProposals(null)}
+        title="Discover RDS destinations"
+        description="Uses the API's AWS identity (rds:DescribeDBInstances, ec2:DescribeSubnets). Subnets holding a cluster node are excluded. Nothing is saved until you review the form."
+      >
+        <div className="dialog-body field-stack">
+          <label>
+            Region (optional)
+            <Input
+              value={region}
+              placeholder="us-east-1"
+              onChange={(event) => setRegion(event.target.value)}
+            />
+          </label>
+          {proposals?.map((p) => (
+            <div key={p.source} className="flex items-start justify-between gap-3">
+              <div className="grid min-w-0 gap-1 text-sm">
+                <strong className="break-all">{p.source}</strong>
+                <span>
+                  {p.engine} · TCP {p.port} · {p.cidrs.join(', ') || 'no usable subnets'}
+                </span>
+                {p.excluded_cidrs.length > 0 && (
+                  <span className="muted-text">Excluded: {p.excluded_cidrs.join(', ')}</span>
+                )}
+              </div>
+              <Button
+                size="sm"
+                disabled={p.cidrs.length === 0}
+                onClick={() => {
+                  setProposals(null)
+                  setDraft({
+                    ...blank,
+                    name: p.source.split(':')[1]?.slice(0, 40) || '',
+                    cidrs: p.cidrs.join(', '),
+                    ports: String(p.port),
+                  })
+                }}
+              >
+                Use
+              </Button>
+            </div>
+          ))}
+          {proposals?.length === 0 && !busy && (
+            <Note>Run discovery to list RDS clusters and instances.</Note>
+          )}
+          {error && <RequestError error={error} />}
+        </div>
+        <div className="dialog-footer">
+          <Button type="button" disabled={busy} onClick={() => setProposals(null)}>
+            Close
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                async () => {
+                  const result = await unwrap(
+                    client.POST('/admin/private-egress-bindings/discover', { body: { region } }),
+                  )
+                  setProposals(result.proposals)
+                },
+                () => undefined,
+              )
+            }
+          >
+            {busy ? 'Discovering…' : 'Discover'}
           </Button>
         </div>
       </Dialog>

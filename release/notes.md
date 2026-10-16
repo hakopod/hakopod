@@ -1,6 +1,7 @@
 Hakopod 0.1.0-alpha.62 makes private database access, such as Amazon RDS in the same VPC, approvable without SSH.
 
 - Approve **Private destinations** from Settings. Bindings live in the database, and changes apply without restarting the API.
+- Discover RDS clusters through the installation's AWS identity. Subnets that contain cluster nodes are excluded.
 - Warn in `hakopod plan` when a service environment value points at a private address with no `private_egress` approval.
 - `HAKOPOD_PRIVATE_EGRESS_FILE` remains supported as a read-only source.
 - Support named PostgreSQL databases and owner logins.

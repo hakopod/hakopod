@@ -1184,6 +1184,13 @@ export const agentRoutes = [
     "boundary": "installation"
   },
   {
+    "id": "discoverPrivateEgress",
+    "method": "POST",
+    "path": "/admin/private-egress-bindings/discover",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "listScopedPrivateEgressBindings",
     "method": "GET",
     "path": "/private-egress-bindings",

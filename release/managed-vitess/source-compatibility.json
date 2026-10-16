@@ -98,7 +98,7 @@
           "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "13e0337f2ee4d5976db2a3373f6c1e459131a139d80ff112198e0b305be4a7b0",
+          "after": "074b2e8c73cdb1c25b28516be8da68d40baeb6614096164abe35ebf41fa96b32",
           "before": null,
           "path": "internal/api/private_egress_bindings.go",
           "reason": "Reviewed control-plane change (feat: private destinations dashboard, scoped read and RDS discovery; feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
@@ -204,6 +204,18 @@
           "before": "4411475b181ce107bc515bdfb505edae18b802c843ff4c12a1885a8e5b53e1ae",
           "path": "internal/cluster/private_egress.go",
           "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings; plan: warn when env points at unapproved private destination); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "5323e7d5b1cc2df5c7a046798a6dc29fe216704d7970bc8f5c1986826ec2d1ce",
+          "before": null,
+          "path": "internal/cluster/private_egress_discovery.go",
+          "reason": "Reviewed RDS private egress discovery reimplemented over stdlib net/http with the existing aws-sdk-go-v2 core SigV4 signer; go.mod/go.sum unchanged; not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "370ea3c7a1d6947383d55297d30faec54fc3b1771914879ab2630c820aebc37e",
+          "before": null,
+          "path": "internal/cluster/private_egress_discovery_test.go",
+          "reason": "Reviewed RDS private egress discovery reimplemented over stdlib net/http with the existing aws-sdk-go-v2 core SigV4 signer; go.mod/go.sum unchanged; not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
           "after": "c4be3302a5b1092e3206cb0ddd6e30fdef964eef371b917288e423c6d46d55f6",
@@ -320,7 +332,7 @@
           "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
         }
       ],
-      "current_sha256": "dca7d8fcbd83ba12270ba7961f8c69aaa37fe78be7bf2bf08f564b3d159523b9"
+      "current_sha256": "7b67a23b5f5240d76ff265a1ed02ce1af34d20f1e3cf1ce9481c7f3d6c2fc82a"
     }
   }
 }

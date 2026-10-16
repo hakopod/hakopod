@@ -16,6 +16,8 @@ schemas['PrivateEgressBindingInput'] = obj({**BINDING, 'expected_revision': {**I
                                            ['project', 'environment', 'application', 'services', 'cidrs', 'ports', 'expected_revision'])
 schemas['ScopedPrivateEgressBinding'] = obj({**BINDING, 'managed_by': {'type': 'string', 'enum': ['file', 'database']}},
                                             ['name', 'project', 'environment', 'application', 'services', 'cidrs', 'ports', 'managed_by'])
+schemas['PrivateEgressProposal'] = obj({'source': S, 'engine': S, 'port': I, 'cidrs': array(S), 'excluded_cidrs': array(S)},
+                                       ['source', 'engine', 'port', 'cidrs', 'excluded_cidrs'])
 
 NAME_PARAM = [{'name': 'name', 'in': 'path', 'required': True, 'schema': S}]
 def ok(schema): return {'description': 'Successful response', 'content': {'application/json': {'schema': schema}}}
@@ -37,6 +39,12 @@ paths['/admin/private-egress-bindings/{name}'] = {
                'parameters': NAME_PARAM,
                'requestBody': {'required': True, 'content': {'application/json': {'schema': obj({'expected_revision': {**I64, 'minimum': 1}}, ['expected_revision'])}}},
                'responses': {'200': ok(obj({'deleted': B}, ['deleted'])), '409': {'description': 'Revision conflict'}}}}
+paths['/admin/private-egress-bindings/discover'] = {'post': {
+    'operationId': 'discoverPrivateEgress',
+    'summary': 'Propose RDS subnet CIDRs and ports from the installation AWS identity (administrator only)',
+    'requestBody': {'required': True, 'content': {'application/json': {'schema': obj({'region': S})}}},
+    'responses': {'200': ok(obj({'proposals': array(ref('PrivateEgressProposal'))}, ['proposals'])),
+                  '422': {'description': 'No AWS identity or discovery failed'}}}}
 paths['/private-egress-bindings'] = {'get': {
     'operationId': 'listScopedPrivateEgressBindings',
     'summary': 'List approved private egress destinations for a project and environment',
