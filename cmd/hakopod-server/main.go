@@ -152,6 +152,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	nodeProfiles, err := cluster.ReadNodeProfileBindingsFile(os.Getenv("HAKOPOD_NODE_PROFILES_FILE"))
+	if err != nil {
+		return err
+	}
 	managedActions, err := cluster.ReadManagedActionsFile(os.Getenv("HAKOPOD_MANAGED_ACTIONS_FILE"))
 	if err != nil {
 		return err
@@ -171,6 +175,7 @@ func run() error {
 	}
 	kubeOptions := cluster.Options{ManagedClusterNodes: managedClusterNodes, ClickHouseSandbox: os.Getenv("HAKOPOD_CLICKHOUSE_SANDBOX") == "true", ServerlessAddress: os.Getenv("HAKOPOD_SERVERLESS_ADDRESS"), ApprovedDomains: db.ApprovedDomains, ReadinessProbeImage: os.Getenv("HAKOPOD_READINESS_PROBE_IMAGE"), DeploymentMode: deploymentMode, PublicTCPPorts: publicTCPPorts, DatabasePublicAddress: os.Getenv("HAKOPOD_DATABASE_PUBLIC_ADDRESS"), DatabasePublicDomain: os.Getenv("HAKOPOD_DATABASE_PUBLIC_DOMAIN"), DatabasePublicPorts: databasePublicPorts, DedicatedPublicTCPNode: os.Getenv("HAKOPOD_DEDICATED_TCP_NODE"), AWSIdentityBindings: awsIdentities, PrivateEgressBindings: privateEgress, PrivateEgressSource: db.PrivateEgressBindingConfigs, ContainerDaemonBindings: containerDaemons, ManagedActions: managedActions, AppDomain: domain, IngressClass: ingress, RolloutTimeout: rollout, PublicPort: port, PublicHTTPSPort: httpsPort, TLSIssuer: os.Getenv("HAKOPOD_TLS_ISSUER"), RegistrySecretName: db.RegistrySecretName, RegistryCredentialNames: db.RegistryCredentialNames, VirtualNetworks: db.ResolveVirtualNetworks, SupervisorURL: os.Getenv("HAKOPOD_K3S_SUPERVISOR_URL"), ProxyNamespace: env("HAKOPOD_HAPROXY_NAMESPACE", "haproxy-controller"), ProxyConfigMap: env("HAKOPOD_HAPROXY_CONFIGMAP", "hakopod-ingress-kubernetes-ingress"), ProxyRelease: env("HAKOPOD_HAPROXY_RELEASE", "hakopod-ingress")}
 	kubeOptions.RuntimeProfileBindings = runtimeProfiles
+	kubeOptions.NodeProfileBindings = nodeProfiles
 	kubeOptions.SessionGuardImage = os.Getenv("HAKOPOD_SESSION_GUARD_IMAGE")
 	var kube *cluster.Client
 	if verified := nativeacceptance.KubernetesConfig(); verified != nil {

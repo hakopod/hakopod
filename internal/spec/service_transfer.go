@@ -108,6 +108,9 @@ func MoveService(source, destination Application, name, targetName string) (Appl
 	}
 	// A container daemon grant names an exact application and service, so it
 	// cannot follow the service to another one.
+	if svc.NodeProfile != "" {
+		return Application{}, Application{}, fmt.Errorf("the node profile belongs to the source application. Obtain a destination grant before creating the destination service")
+	}
 	if svc.RuntimeProfile != "" {
 		return Application{}, Application{}, fmt.Errorf("the runtime profile belongs to the source application. Obtain a destination grant before creating the destination service")
 	}

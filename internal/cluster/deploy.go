@@ -443,6 +443,11 @@ func (c *Client) bootstrap(ctx context.Context, t Target) error {
 			labels["hakopod.io/workload-kind"] = "actions"
 			break
 		}
+		// An approved node profile may run a privileged container; keep it in an
+		// application of its own, because the namespace relaxes for every service.
+		if svc.NodeProfile != "" {
+			labels["pod-security.kubernetes.io/enforce"] = "privileged"
+		}
 	}
 	if apierrors.IsNotFound(err) {
 		_, err = api.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns, Labels: labels}}, metav1.CreateOptions{})
@@ -619,6 +624,9 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 		return 0, err
 	}
 	if err := c.prepareRuntimeProfile(ctx, t, name, svc, wanted); err != nil {
+		return 0, err
+	}
+	if err := c.prepareNodeProfile(t, name, svc, wanted); err != nil {
 		return 0, err
 	}
 	if err := c.prepareRegistryCredential(ctx, t, name, svc, wanted); err != nil {

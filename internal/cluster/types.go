@@ -70,6 +70,8 @@ type Options struct {
 	// ContainerDaemonBindings are installation-owned grants to a container
 	// daemon reached over the network with mutual TLS.
 	ContainerDaemonBindings []ContainerDaemonBinding
+	// NodeProfileBindings grant exact services a relaxed pod security profile on one pinned node.
+	NodeProfileBindings []NodeProfileBinding
 	// RuntimeProfileBindings grant exact services access to installed runtimes.
 	RuntimeProfileBindings []RuntimeProfileBinding
 	// SessionGuardImage is an operator-owned digest image containing /hakopod-session-guard.
@@ -292,6 +294,10 @@ func newClient(kubeconfig string, verified *rest.Config, options Options) (*Clie
 		return nil, err
 	}
 	options.RuntimeProfileBindings = append([]RuntimeProfileBinding(nil), options.RuntimeProfileBindings...)
+	if err := validateNodeProfileInstallation(options); err != nil {
+		return nil, err
+	}
+	options.NodeProfileBindings = append([]NodeProfileBinding(nil), options.NodeProfileBindings...)
 	if err := ValidateManagedActionsInstallation(options.ManagedActions); err != nil {
 		return nil, err
 	}

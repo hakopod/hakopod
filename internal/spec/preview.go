@@ -30,6 +30,9 @@ func ValidatePreview(a Application) error {
 		}
 		// A preview is a separate scope, so it cannot inherit a grant that names
 		// the original application and service.
+		if s.NodeProfile != "" {
+			return fmt.Errorf("previews cannot inherit a node profile grant from the original application")
+		}
 		if s.RuntimeProfile != "" {
 			return fmt.Errorf("previews cannot inherit a runtime profile grant from the original application")
 		}

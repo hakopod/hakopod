@@ -86,6 +86,9 @@ type operatorConfig struct {
 	RuntimeProfiles struct {
 		File *string `toml:"file"`
 	} `toml:"runtime_profiles"`
+	NodeProfiles struct {
+		File *string `toml:"file"`
+	} `toml:"node_profiles"`
 	SandboxSessions struct {
 		GuardImage *string `toml:"guard_image"`
 	} `toml:"sandbox_sessions"`
@@ -240,6 +243,7 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 		{"aws.identities_file", "HAKOPOD_AWS_IDENTITIES_FILE", c.AWS.IdentitiesFile, true, true, false},
 		{"container_daemons.file", "HAKOPOD_CONTAINER_DAEMONS_FILE", c.ContainerDaemons.File, true, true, false},
 		{"runtime_profiles.file", "HAKOPOD_RUNTIME_PROFILES_FILE", c.RuntimeProfiles.File, true, true, false},
+		{"node_profiles.file", "HAKOPOD_NODE_PROFILES_FILE", c.NodeProfiles.File, true, true, false},
 		{"sandbox_sessions.guard_image", "HAKOPOD_SESSION_GUARD_IMAGE", c.SandboxSessions.GuardImage, false, false, false},
 		{"managed_actions.file", "HAKOPOD_MANAGED_ACTIONS_FILE", c.ManagedActions.File, true, true, false},
 		{"backups.pg_dump_path", "HAKOPOD_PG_DUMP_PATH", c.Backups.PGDumpPath, false, false, false},
@@ -328,6 +332,9 @@ func operatorSettings(data []byte, base string, lookup func(string) (string, boo
 	}
 	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_RUNTIME_PROFILES_FILE") != "" {
 		return nil, fmt.Errorf("runtime profile bindings require a self-hosted installation")
+	}
+	if mode == cluster.DeploymentManagedCloud && get("HAKOPOD_NODE_PROFILES_FILE") != "" {
+		return nil, fmt.Errorf("node profile bindings require a self-hosted installation")
 	}
 	if _, err := authConfigFrom(get); err != nil {
 		return nil, err

@@ -5421,6 +5421,8 @@ export interface components {
             container_daemon?: string;
             /** @description Self-hosted: approved runtime alias for this exact service scope. Empty uses the installation's normal runtime policy. */
             runtime_profile?: string;
+            /** @description Self-hosted: operator-approved relaxed pod security profile for this exact service scope; requires node_name and one replica. Empty keeps the restricted profile. */
+            node_profile?: string;
             serverless?: components["schemas"]["Serverless"];
             session?: components["schemas"]["SandboxSession"];
         };
