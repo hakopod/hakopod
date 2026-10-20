@@ -60,6 +60,7 @@ The available settings map to the same environment options used by the server:
 | `smtp.username`, `password_file` | `HAKOPOD_SMTP_USERNAME`, `HAKOPOD_SMTP_PASSWORD_FILE` |
 | `container_daemons.file` | `HAKOPOD_CONTAINER_DAEMONS_FILE` |
 | `runtime_profiles.file` | `HAKOPOD_RUNTIME_PROFILES_FILE` |
+| `node_profiles.file` | `HAKOPOD_NODE_PROFILES_FILE` |
 | `backups.pg_dump_path` | `HAKOPOD_PG_DUMP_PATH` |
 | `backups.state_dir` | `HAKOPOD_BACKUP_STATE_DIR` |
 | `backups.managed_postgres` | `HAKOPOD_MANAGED_POSTGRES` |

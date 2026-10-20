@@ -79,6 +79,7 @@ type Service struct {
 	AWSIdentity             string                  `json:"aws_identity,omitempty" toml:"aws_identity"`
 	ContainerDaemon         string                  `json:"container_daemon,omitempty" toml:"container_daemon"`
 	RuntimeProfile          string                  `json:"runtime_profile,omitempty" toml:"runtime_profile,omitempty"`
+	NodeProfile             string                  `json:"node_profile,omitempty" toml:"node_profile,omitempty"`
 	TLS                     *TLSConfig              `json:"tls,omitempty" toml:"tls"`
 	// BackendHTTP2 makes the ingress speak HTTP/2 to this service, which gRPC needs.
 	BackendHTTP2 bool `json:"backend_http2,omitempty" toml:"backend_http2,omitempty"`
@@ -260,6 +261,9 @@ func Normalize(input Application) (Application, error) {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
 		if err := validateRuntimeProfile(runtimeService); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
+		if err := validateNodeProfile(runtimeService); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
 		if err := validateRuntimeService(svc); err != nil {
@@ -570,6 +574,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "aws_identity", a.AWSIdentity, b.AWSIdentity, false)
 		add(name, "container_daemon", a.ContainerDaemon, b.ContainerDaemon, false)
 		add(name, "runtime_profile", a.RuntimeProfile, b.RuntimeProfile, false)
+		add(name, "node_profile", a.NodeProfile, b.NodeProfile, false)
 		add(name, "certificate_mounts", a.CertificateMounts, b.CertificateMounts, false)
 		add(name, "volume", a.Volume, b.Volume, false)
 		add(name, "mounts", a.Mounts, b.Mounts, false)
