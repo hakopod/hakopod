@@ -168,12 +168,23 @@ CHAIN_TRUST_PATHS = {
 
 NEXT_CHAIN_BASE = {'tag': 'v0.1.0-alpha.61', 'commit': 'bc3b46803d3bba40c6438ddb27e190c628d8622a'}
 NEXT_CHAIN_PREDECESSORS = {'myduck': '085a8c279f0326940b0c8dcf135e4867d20bd6b62d60c281670730ea62fe3449', 'oracle-free': 'f5f198616153525fc6a1f30cddef2d80eb28d09d93bdfc39b577b52cddf009cd', 'vitess': '6d2881634cf4befdea15bc74d05a1c1ecc3c535472b76c467b120dc1c28ae8eb'}
+ALPHA63_CHAIN_BASE = {'tag': 'v0.1.0-alpha.62', 'commit': '641141e4013cee35e85931ce44377ba3c5719e72'}
+ALPHA63_CHAIN_PREDECESSORS = {'myduck': 'd1dccdaf71c403d8edf6c9f74b418f61a65502f6a31ec11d16e4d72b0e1b5a4b', 'oracle-free': 'cceffdfb89ae29fdc53d1a997793abaff6b096e216fd3f73e36129a67efece89', 'vitess': '23022f9aef64fb1f6827f9ec3e159dc5c746ce02afa394a7457d43037ae9388c'}
+# Each reviewed release names its published predecessor review, oldest first.
+# Built on each call so the constants stay the single source of truth.
+def chain_links():
+    return {
+        CHAIN_RELEASE: (CHAIN_BASE, CHAIN_PREDECESSORS, 'source-compatibility-alpha59.json'),
+        'v0.1.0-alpha.62': (NEXT_CHAIN_BASE, NEXT_CHAIN_PREDECESSORS, 'source-compatibility-alpha61.json'),
+        'v0.1.0-alpha.63': (ALPHA63_CHAIN_BASE, ALPHA63_CHAIN_PREDECESSORS, 'source-compatibility-alpha62.json'),
+    }
 
 def chain_header(root, runtime, record):
-    next_review = record.get('reviewed_release') == 'v0.1.0-alpha.62' if isinstance(record, dict) else False
-    base = NEXT_CHAIN_BASE if next_review else CHAIN_BASE
-    anchors = NEXT_CHAIN_PREDECESSORS if next_review else CHAIN_PREDECESSORS
-    release = 'v0.1.0-alpha.62' if next_review else CHAIN_RELEASE
+    release = record.get('reviewed_release') if isinstance(record, dict) else None
+    links = chain_links()
+    if release not in links:
+        raise ValueError('Invalid chained runtime compatibility review')
+    base, anchors, predecessor_file = links[release]
     scope_key = 'scopes' if runtime == 'vitess' else 'delta'
     version = 3 if runtime == 'vitess' else 2
     fields = {'schema_version', 'runtime', 'qualified_release', 'reviewed_release',
@@ -188,7 +199,7 @@ def chain_header(root, runtime, record):
     expected = dict(base, review_sha256=anchors[runtime])
     if record['predecessor'] != expected:
         raise ValueError('Runtime compatibility predecessor identity changed')
-    path = Path(root) / 'release' / ('managed-' + runtime) / ('source-compatibility-alpha61.json' if next_review else 'source-compatibility-alpha59.json')
+    path = Path(root) / 'release' / ('managed-' + runtime) / predecessor_file
     if path.is_symlink() or not path.is_file() or not 1 <= path.stat().st_size <= 512 * 1024:
         raise ValueError('Published runtime predecessor review is unavailable')
     predecessor = json.loads(path.read_text(), object_pairs_hook=unique)
@@ -249,9 +260,13 @@ def validate_chain(root, runtime, record, recorded, current, protected, artifact
     if artifact_sha256 is not None and record['qualified_release'][manifest_key] != artifact_sha256:
         raise ValueError('Chained compatibility review belongs to another native manifest')
     prior_delta = predecessor['scopes'][scope] if runtime == 'vitess' else predecessor['delta']
-    if record['reviewed_release'] == 'v0.1.0-alpha.62':
-        older = json.loads((Path(root) / 'release' / ('managed-' + runtime) / 'source-compatibility-alpha59.json').read_text(), object_pairs_hook=unique)
-        if canonical_hash(older) != CHAIN_PREDECESSORS[runtime]:
+    # Replay every published review older than the immediate predecessor.
+    links = chain_links()
+    releases = list(links)
+    for older_release in releases[:releases.index(record['reviewed_release'])]:
+        _, older_anchors, older_file = links[older_release]
+        older = json.loads((Path(root) / 'release' / ('managed-' + runtime) / older_file).read_text(), object_pairs_hook=unique)
+        if canonical_hash(older) != older_anchors[runtime]:
             raise ValueError('Historical runtime predecessor changed')
         recorded = apply_chain_delta(recorded, older['scopes'][scope] if runtime == 'vitess' else older['delta'])
     previous = apply_chain_delta(recorded, prior_delta)

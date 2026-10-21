@@ -39,24 +39,33 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
                 self.assertEqual(CHAIN["canonical_hash"](reconstructed), delta["current_sha256"])
 
     def test_alpha62_preserves_exact_anchors_and_rejects_tampering(self):
-        for runtime, anchor in CHAIN["NEXT_CHAIN_PREDECESSORS"].items():
+        self.check_published_review("NEXT_CHAIN_PREDECESSORS", "source-compatibility-alpha62.json",
+                                    ["source-compatibility-alpha59.json", "source-compatibility-alpha61.json"])
+
+    def test_alpha63_preserves_exact_anchors_and_rejects_tampering(self):
+        self.check_published_review("ALPHA63_CHAIN_PREDECESSORS", "source-compatibility.json",
+                                    ["source-compatibility-alpha59.json", "source-compatibility-alpha61.json",
+                                     "source-compatibility-alpha62.json"])
+
+    def check_published_review(self, anchors, record_file, chain_files):
+        for runtime, anchor in CHAIN[anchors].items():
             with self.subTest(runtime=runtime):
                 temporary = tempfile.TemporaryDirectory()
                 self.addCleanup(temporary.cleanup)
                 root = Path(temporary.name)
                 directory = root / "release" / ("managed-" + runtime)
                 shutil.copytree(HERE / ("managed-" + runtime), directory)
-                predecessor_path = directory / "source-compatibility-alpha61.json"
+                predecessor_path = directory / chain_files[-1]
                 predecessor = json.loads(predecessor_path.read_text())
                 self.assertEqual(CHAIN["canonical_hash"](predecessor), anchor)
-                record = json.loads((directory / "source-compatibility.json").read_text())
+                record = json.loads((directory / record_file).read_text())
                 manifest = json.loads((directory / "manifest.json").read_text())
                 recorded = manifest["source_files"]
-                older = json.loads((directory / "source-compatibility-alpha59.json").read_text())
                 def delta(review):
                     return review["scopes"]["runtime"] if runtime == "vitess" else review["delta"]
-                previous = CHAIN["apply_chain_delta"](recorded, delta(older))
-                previous = CHAIN["apply_chain_delta"](previous, delta(predecessor))
+                previous = recorded
+                for name in chain_files:
+                    previous = CHAIN["apply_chain_delta"](previous, delta(json.loads((directory / name).read_text())))
                 current = CHAIN["apply_chain_delta"](previous, delta(record))
                 manifest_key = "native_manifest_sha256" if runtime == "vitess" else "manifest_sha256"
                 artifact = record["qualified_release"][manifest_key]

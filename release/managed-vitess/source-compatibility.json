@@ -1,19 +1,19 @@
 {
   "bootstrap": {
-    "commit": "bc3b46803d3bba40c6438ddb27e190c628d8622a",
-    "reviewed_release": "v0.1.0-alpha.62",
-    "tag": "v0.1.0-alpha.61",
+    "commit": "641141e4013cee35e85931ce44377ba3c5719e72",
+    "reviewed_release": "v0.1.0-alpha.63",
+    "tag": "v0.1.0-alpha.62",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py",
       "release/verify-vitess-runtime.py"
     ]
   },
-  "control_plane_commit": "d4bfae6b3782a136398398f5f0af59526dc2706b",
+  "control_plane_commit": "85e46cd75d6f174a70118670eb28ee4c5a72f72d",
   "predecessor": {
-    "commit": "bc3b46803d3bba40c6438ddb27e190c628d8622a",
-    "review_sha256": "6d2881634cf4befdea15bc74d05a1c1ecc3c535472b76c467b120dc1c28ae8eb",
-    "tag": "v0.1.0-alpha.61"
+    "commit": "641141e4013cee35e85931ce44377ba3c5719e72",
+    "review_sha256": "23022f9aef64fb1f6827f9ec3e159dc5c746ce02afa394a7457d43037ae9388c",
+    "tag": "v0.1.0-alpha.62"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -24,14 +24,14 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestDeploymentRuntimeBudgetIncludesSlowSetupAndLateBeat",
-      "TestSlowSetupLeavesLateHealthyBeatItsOwnWindow",
-      "TestUnhealthyServiceStillExpiresItsOwnReadinessWindow",
-      "TestNilRuntimeHasNoInstallationReadinessBudget"
+      "TestNodeProfileGrantIsScopedAndPinned",
+      "TestApplyNodeProfileRecreatesAndOnlyRelaxesTheServiceContainer",
+      "TestNodeProfileBindingsFileIsStrict",
+      "TestValidateNodeProfileRequiresPinnedSingleton"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/38069631268"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/39641964659"
   },
-  "reviewed_release": "v0.1.0-alpha.62",
+  "reviewed_release": "v0.1.0-alpha.63",
   "runtime": "vitess",
   "schema_version": 3,
   "scopes": {
@@ -41,298 +41,100 @@
       "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
     },
     "runtime": {
-      "baseline_sha256": "8dd1316c672ed18244761a9c70c41309fd1d6841d773da58c15d98d12b884bd0",
+      "baseline_sha256": "7b67a23b5f5240d76ff265a1ed02ce1af34d20f1e3cf1ce9481c7f3d6c2fc82a",
       "changes": [
         {
-          "after": "34eb426968edeeaededb97adf0d06c8bc72d6140439a55dbd055ee7c3a1d0c0d",
-          "before": "afa425146f245a40f1f06ef95e11dba5f9d8d8045868ba3068e82f26fd5b59be",
+          "after": "f9ae4b7169684a63574b56dbfedb1e3ce6c4b27617c073faa032bb2750497805",
+          "before": "34eb426968edeeaededb97adf0d06c8bc72d6140439a55dbd055ee7c3a1d0c0d",
           "path": "cmd/hakopod-server/main.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "868fddb7721a2d07263f7839360fb87cf1b1a088aecc93f58f851c428dc692d5",
-          "before": "9ad25258ad72cb99c3f8198c51c92e3d005284fdb7f10fdf9a562bec3507e48c",
-          "path": "internal/agent/agent.go",
-          "reason": "Reviewed control-plane change (mcp: tool input schemas never serialize required as null); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "3c2e15319dcdb62a4d13777c9769ebf2fdfbe4e8b3ee4f079a249db5f4e2c5c6",
+          "before": "3c0723bdfca548af216143a3b8ebe49e012ece8a6679e2009752fd95e8509a35",
+          "path": "cmd/hakopod-server/operator_config.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "05d49bb2ed01ee572029d863a44c6725eaf484ee578e8343aece3259d001e90a",
-          "before": "e44be561440ed2a673cc1bc0cf3a53f8505c21d446ad0c1745d39465adca6de6",
-          "path": "internal/agent/operations.go",
-          "reason": "Reviewed control-plane change (mcp: tool input schemas never serialize required as null); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "c7bce049e0ed223e47abcc33fc3c7830e066768c750d5c76f62917dd3e30341f",
-          "before": null,
-          "path": "internal/agent/schema_test.go",
-          "reason": "Reviewed control-plane change (mcp: tool input schemas never serialize required as null); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "7eb977a4c6a627a5d5ced9f2a256fbb54a81d0a3da720eea8992e24ec72ca3a5",
-          "before": "8ec4633fb3e9ca1893db72aabacc6e15c9b3012944d4c2b8617dfba6cd6ad4db",
-          "path": "internal/api/api.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings; plan: warn when env points at unapproved private destination); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "e2bd130078ef54e6e7a749164bc8e04aa225c92ba91da0ffb64deb0b2812d5d4",
-          "before": "5cf85207f38b6f8577ad57df8158681a550078255d915eb405844073c20d4482",
-          "path": "internal/api/database_binding_options_test.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "69e36f0f8aa477d2829c18e2f0cad7aa3e6bacb9cd5d707593ebede2246dec1b",
-          "before": "27758a6ba1e46058cad74b411b30ee425f1a62da943d86ce03d22887b539f3ee",
-          "path": "internal/api/database_bindings.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "cde0ed53682a53a673136331583250a0ecc861ddbd5e5d96f74a353192371e9d",
-          "before": "ede9a471c0f33f966a22767ba0882f2070e83c519cb333b4578cc92245c441c0",
-          "path": "internal/api/database_explorer_runtime.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "35f325103921fd19b6dd5c753ce735356c7ea2266e015b80cb19c58c4539f11f",
-          "before": "f0227cbdd95b258a45317bbce9fefd9fd43f3519881fb3df8b93e7e49f9fb5ac",
-          "path": "internal/api/databases.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "074b2e8c73cdb1c25b28516be8da68d40baeb6614096164abe35ebf41fa96b32",
-          "before": null,
-          "path": "internal/api/private_egress_bindings.go",
-          "reason": "Reviewed control-plane change (feat: private destinations dashboard, scoped read and RDS discovery; feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "2432bd1995467146da14ca6c1269db57292818b29c762d18c4665e7cc68e4755",
-          "before": null,
-          "path": "internal/api/private_egress_bindings_integration_test.go",
-          "reason": "Reviewed control-plane change (feat: private destinations dashboard, scoped read and RDS discovery; feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "a6148941702fac5156cfd699b9bc35efd06d5f225b5075c35cd3e9f649c23e27",
-          "before": "0f62f824b7f550fff1ca5c3cc5a0a8e90a01c9031a20b65f0dd87bac8b910b26",
-          "path": "internal/cluster/database_backup.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "65befebd552f480754d93d78a001b898ff76f1fbf62a93f25e8566d80bc2cd75",
-          "before": "b7a0ca9d4c18252cb4fcf6669d950bb357e0f9f6bc461d28522be171974475cf",
-          "path": "internal/cluster/database_public_endpoint_identity.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "a659a4367c8930c36106ee66dcc3392744b5226ecc12098ecb5c37326a6e618e",
-          "before": "0ddd1898bf2a6970a9c3d3c079c5b234adf9f9a0f29d349a771664c1da71d1ce",
-          "path": "internal/cluster/database_query.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "f085aa84b85b9e634e7e4d98dce8201daaedeb485824f1d25dc03dd358db260e",
-          "before": "640c85390a4461fb111e48cb60fab868738e03feb825caf7bfceb8c9b0292d21",
-          "path": "internal/cluster/database_query_test.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "e2ad338a2553ca9853c175d785d7cda15dafade3e58820d4f7e01bdc7a9cc876",
-          "before": "4a1b390d31034556e299d3c3d489e6a884dfaea333d4ef598d3385640931aa06",
-          "path": "internal/cluster/database_tls.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "6ac6a995e802e32e5acd681854273017b587d44fe9ad05051d83b96fd5b4e980",
-          "before": "c5ee3ab08fb56e3a7e5a026d0c81ef9c449cdb51b7879c689c676e569182682a",
-          "path": "internal/cluster/databases.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "cd4585aee3f1b75c48a220a2f87a76811dd0ac9113dcecd08a9be019f5268d60",
-          "before": "be5a68e1147f637fe5341962021ba3751e4959bacc86986d8c2275df6630db57",
+          "after": "d1748f3381b904f9af5b9cc1aaa60467daa6d92f52e3882739610866816bc832",
+          "before": "cd4585aee3f1b75c48a220a2f87a76811dd0ac9113dcecd08a9be019f5268d60",
           "path": "internal/cluster/delivery.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "692eac46116b94ff4bb96d10f32eaf51f4a4b7a8372ec4710a64cdeffc298fe8",
-          "before": "6f84c582db873ec43ba94913aded59cb6bd3be24917e5cf6231a2f7d6a3de3de",
+          "after": "598e6ca37e5ce5fa46c486096b69caf00814f3eb0ae5af6991339633b5fa28fa",
+          "before": "692eac46116b94ff4bb96d10f32eaf51f4a4b7a8372ec4710a64cdeffc298fe8",
           "path": "internal/cluster/deploy.go",
-          "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "e460b580633dde4f92d6e032e7a6cee06e10637e3bdfed4bb4cf47f0f77b673a",
-          "before": "e64ca9b1e42f1d8427caf3926e04c8cbef3abc3e91b965e32d158574d3911424",
-          "path": "internal/cluster/external_database_policy.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "c950dc183d10cb2b07d08f80974e6ef9ed0467288983adbd9ebeb8670d191449",
-          "before": "d993e86e23b2405d7075b76f44f9e19676fe02383da054611f5f8f76147435ed",
-          "path": "internal/cluster/invocations.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "092c886b98301d115ca8a9b65b32c5daf7ed2588add0a493a96d22136efc4194",
-          "before": "a3f23df85beda06fa331787e6cc4e3a629871233f3bb09499c257bd3f4063de2",
-          "path": "internal/cluster/live_network_test.go",
-          "reason": "Reviewed control-plane change (Use the running HPA specification in native capacity verification; Exclude stopped services from deployment compute capacity); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "fe7e54c6aa2d7154636fd1085a301e1d2c0f05c45715adbb33ceb5d9d9434add",
+          "after": "2cdf3d1b0cc36085e4474c6ad7263546ae8b20a75465248469dcd077e9426313",
           "before": null,
-          "path": "internal/cluster/live_postgres_identity_test.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
+          "path": "internal/cluster/node_profile.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "0519ce16d246da2845c7d7f58a77fb18eda6754b25dc5a527163dc23d0cb4b67",
-          "before": "c2fb9ddda1012a216e4687007ec19723b10ef62965fb5752164f54843787ab62",
-          "path": "internal/cluster/placement.go",
-          "reason": "Reviewed control-plane change (Exclude stopped services from deployment compute capacity); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "9e6e6a8538dfd7edfb7f40e7d8c4365c04fed0797ef8a2e3b8349b0337d68c5b",
-          "before": "fe38d8c41d479a04a684f1e7bc22e195c5c302c67abc9f610188665cce95682d",
-          "path": "internal/cluster/preflight.go",
-          "reason": "Reviewed control-plane change (Exclude stopped services from deployment compute capacity); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "0b7c76e07f01ab3c66dc4c82e4b37401e18d9ee5d6c15ea27eac54c8f27b877f",
-          "before": "e02614e9828f7b53bfb92161f4fec51f4bba7585f022aaa072d06a70781951f0",
-          "path": "internal/cluster/preflight_test.go",
-          "reason": "Reviewed control-plane change (Exclude stopped services from deployment compute capacity); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "b9f5b5bc18570bcaf52eac2b971d292dbb3c53b3c6214b1f9cfd168bba2e930d",
-          "before": "4411475b181ce107bc515bdfb505edae18b802c843ff4c12a1885a8e5b53e1ae",
-          "path": "internal/cluster/private_egress.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings; plan: warn when env points at unapproved private destination); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "5323e7d5b1cc2df5c7a046798a6dc29fe216704d7970bc8f5c1986826ec2d1ce",
+          "after": "2e38dfc51a08385478aa0f17bc6cdbfecd2345faa8fa8cb257019ae508c84d3d",
           "before": null,
-          "path": "internal/cluster/private_egress_discovery.go",
-          "reason": "Reviewed RDS private egress discovery reimplemented over stdlib net/http with the existing aws-sdk-go-v2 core SigV4 signer; go.mod/go.sum unchanged; not a runtime binary, image, dependency, authorization or native harness input."
+          "path": "internal/cluster/node_profile_test.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "370ea3c7a1d6947383d55297d30faec54fc3b1771914879ab2630c820aebc37e",
-          "before": null,
-          "path": "internal/cluster/private_egress_discovery_test.go",
-          "reason": "Reviewed RDS private egress discovery reimplemented over stdlib net/http with the existing aws-sdk-go-v2 core SigV4 signer; go.mod/go.sum unchanged; not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "c4be3302a5b1092e3206cb0ddd6e30fdef964eef371b917288e423c6d46d55f6",
-          "before": "de8858d8742cd5cc28f2ce6370eb57789958d1d3493976ff31e0686cbdd851ca",
-          "path": "internal/cluster/private_egress_test.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings; plan: warn when env points at unapproved private destination); not a runtime binary, image, dependency, authorization or native harness input."
-        },
-        {
-          "after": "ec2a3e1073c5a828f8ee38e6335bdd98be0a76023d30e931720cec742e5993af",
-          "before": null,
-          "path": "internal/cluster/rollout_deadline_test.go",
-          "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
-        },
-        {
-          "after": "3d4ceb10e51899bf41cb08b953669849f33c1f6d426f839e2c1cb04c4b519e8d",
-          "before": "5bfe5148cb15b61f2ce3ec15cdd99b053687d41afd37d284954a15ea237f385a",
+          "after": "186e5f6ab04bb65533beeba3592f3c382e46f961fd01b21c1184e24c8a9b3fb4",
+          "before": "3d4ceb10e51899bf41cb08b953669849f33c1f6d426f839e2c1cb04c4b519e8d",
           "path": "internal/cluster/types.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "2b51a149ff1dbe610ba329249f2d68b912d466a819b8f47735af59ff2dfd439d",
-          "before": "1f4368183f3669960bc906b53b6049a751217d663a6c9b106be88388935ada4d",
-          "path": "internal/database/model.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "cb102e357b119838f429adbe79fbac997b7a401d7bb49c96b49c95f9bb4b3b86",
+          "before": "de0044ed3f88a07184b5c641318530c3a8508e1666ee7de63945ad28e4fb810a",
+          "path": "internal/spec/delivery.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "007cb2d22ea6fc69c48f2a068164e09f2d51ba509b1f087de4cd60132e3c588f",
+          "after": "60a82dc88b11d079fe5fdd00146f99d4eef7a48e026615b9b429918dc16afd71",
           "before": null,
-          "path": "internal/database/postgres.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
+          "path": "internal/spec/node_profile.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "45c7661bf83034d08570f19e28fe8caf0c660b8a8d12b74f564c511c1c71f3d6",
+          "after": "641b95ebaed07ccb1b1f3abacc4ce3c4d0f2dc46b72ed5d73629d5b81defb97e",
           "before": null,
-          "path": "internal/database/postgres_test.go",
-          "reason": "Reviewed control-plane change (Support named PostgreSQL databases and owner logins); not a runtime binary, image, dependency, authorization or native harness input."
+          "path": "internal/spec/node_profile_test.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "b5ab2ae9c91cfbbdda90385e02ae96f649fd603819af336f817a0e3c341e7355",
-          "before": null,
-          "path": "internal/store/097_private_egress_bindings.sql",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "497be6431a8261dd9351b9570b5e880586f2dbdcc22d1a15c1844611ec134ae3",
+          "before": "76ccaaf62bd80e59e34ccdd0a9fb006a15231b74fcf6f53254fbdcb4e74db877",
+          "path": "internal/spec/preview.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "6ed64c4a254ecfc586ad76c4328405ee6ee48b3ae0863cf1d6c7f0510e3fa8a1",
-          "before": null,
-          "path": "internal/store/private_egress_bindings.go",
-          "reason": "Reviewed control-plane change (feat(cluster): database-managed private egress bindings); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "e9a6f4fd446dd4c7ce350969b41bd50ebd2f7445d129a80121284ac15537c27a",
+          "before": "944da376610d150df9e2b068418da816b7c28492534d3e68468a9f083ed3ec50",
+          "path": "internal/spec/service_transfer.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "0b78fef17553221fcb592d328e2ef9dec9a11dedb19c2f0fd6b9b0c61c087e35",
-          "before": "a022dbba7b7dfb80202e7096102c04feead2c1d6ff800edee42becf5df83563e",
-          "path": "internal/worker/startup_budget_test.go",
-          "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
+          "after": "b1ec5cca432aaba74eef0fb06c910b18cb4ff32af088c25d54c3d7fe86d873fb",
+          "before": "a2eb18546498f4ab37a2eee4cd61e7a1c1a632a2e7d47f584d9fa557912e2faa",
+          "path": "internal/spec/spec.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "7aa1766772d55c60a83e222a78b2a7f5bc441d523a209639650e03f9c4ef0dbd",
-          "before": "eefa9b3f2935ac405855b9592626feb1e418962054470afedf32927125f50f51",
-          "path": "internal/worker/worker.go",
-          "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
-        },
-        {
-          "after": "1459f6782f0af78306e8b48eb9385f6d6fdbd662d062bc9dce10692bf3aa0011",
-          "before": "670bec9f7c97efa529790e22be08c8d6cfd8ed2cfe430bfa0b0db5646e4a2fc7",
+          "after": "6fb505e60373916f1146b0993f2921b8b64cc565a006743fafc167a98b254ab5",
+          "before": "1459f6782f0af78306e8b48eb9385f6d6fdbd662d062bc9dce10692bf3aa0011",
           "path": "release/runtime-source-compatibility.py",
-          "reason": "Reviewed bounded deployment readiness budgets and nil-runtime compatibility; retained database binaries, images, dependencies, authorization and native harness inputs are unchanged. Trust-root change pins this exact alpha.62 review to the published alpha.61 predecessor."
+          "reason": "Reviewed alpha.63 chain trust root: extends the authenticated source chain to the alpha.62 review; no qualification logic change."
         },
         {
-          "after": "651274d03a508620f941182e0d9fe7e43bcafe639d29257a4ab4774d26fbfc03",
-          "before": "57acd8593127119b32cae5625590d1a0f7033b712a35eb0899f852bae2048db1",
+          "after": "ae3511cd5d9c765f745ec9d7cddd4333a8a9e345c88bfc7a799491f484aba6ea",
+          "before": "651274d03a508620f941182e0d9fe7e43bcafe639d29257a4ab4774d26fbfc03",
           "path": "release/verify-vitess-runtime.py",
-          "reason": "Exact alpha.62 authenticated chain declaration; protected native validation and harness expectations are unchanged."
-        },
-        {
-          "after": "e25c2db0e96bf098c23147c11596ec7c5ed175b4403c27392e873bd0f47857de",
-          "before": "1d9b681094d841aa4038d14d352dfe65e220bacf8d0682f9e0ccb6fe21b328d3",
-          "path": "templates/README.md",
-          "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "4eb4d6b31232a30786cab6b0e6c6363323f19fb3c53b85e5b817377644a551a4",
-          "before": null,
-          "path": "templates/blueprints/synehq-oos/README.md",
-          "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "88bc4cdfceb2c13e7ee65964751bfdd15b01ebe23a2d8463056cf0c7376df4da",
-          "before": null,
-          "path": "templates/blueprints/synehq-oos/candidate.toml",
-          "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "0a2f01b258015b0d83f085b494ee97ebb68d72bb8c6413cbc53747affa9d1554",
-          "before": null,
-          "path": "templates/blueprints/synehq-oos/logo.png",
-          "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "3ceb07d9c03537638aa9f8fdeccd0eb3640d4fc48784a01e313ac07af165a228",
-          "before": null,
-          "path": "templates/blueprints/synehq-oos/migration.json",
-          "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "e44c1509c5b2ecb7ac3cd249a4c70d21187c56033c829b1211e1eb1bef8529be",
-          "before": "ad971752860ede9fffc183dac0d6df112efd2ecfb7bd72f03f2ca1d10d8fde25",
-          "path": "templates/catalog.json",
-          "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "8c69c904c3ab23ddebdeb1a599756e6ec7e33c1f224e378541228fb4a6899f04",
-          "before": "11a564088275f0d775665126ec36994756d509bc48c4735c099e452b49decff7",
-          "path": "templates/images.lock.json",
-          "reason": "Reviewed templates submodule bump to a112f02 (SyneHQ OOS migration guide blueprint, hakopod/templates#12); catalog content only, not a runtime binary, image, dependency or native harness input."
+          "reason": "Reviewed alpha.63 chain trust root: extends the authenticated source chain to the alpha.62 review; no qualification logic change."
         }
       ],
-      "current_sha256": "7b67a23b5f5240d76ff265a1ed02ce1af34d20f1e3cf1ce9481c7f3d6c2fc82a"
+      "current_sha256": "1368aafc811f2cc61196bbac876c941d9c3574433532081b2ac0f272f4eeae88"
     }
   }
 }
