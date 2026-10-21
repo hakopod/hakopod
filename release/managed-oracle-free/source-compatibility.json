@@ -128,7 +128,7 @@
       "TestNodeProfileBindingsFileIsStrict",
       "TestValidateNodeProfileRequiresPinnedSingleton"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/39641964659"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/39642800540"
   },
   "reviewed_release": "v0.1.0-alpha.63",
   "runtime": "oracle-free",
