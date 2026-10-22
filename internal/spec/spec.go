@@ -80,6 +80,7 @@ type Service struct {
 	ContainerDaemon         string                  `json:"container_daemon,omitempty" toml:"container_daemon"`
 	RuntimeProfile          string                  `json:"runtime_profile,omitempty" toml:"runtime_profile,omitempty"`
 	NodeProfile             string                  `json:"node_profile,omitempty" toml:"node_profile,omitempty"`
+	Sidecars                []Sidecar               `json:"sidecars,omitempty" toml:"sidecars"`
 	TLS                     *TLSConfig              `json:"tls,omitempty" toml:"tls"`
 	// BackendHTTP2 makes the ingress speak HTTP/2 to this service, which gRPC needs.
 	BackendHTTP2 bool `json:"backend_http2,omitempty" toml:"backend_http2,omitempty"`
@@ -374,6 +375,9 @@ func Normalize(input Application) (Application, error) {
 		if err := validateWorkload(svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
+		if err := normalizeSidecars(name, &svc); err != nil {
+			return Application{}, fmt.Errorf("%s: %w", field, err)
+		}
 		if err := normalizeJobAndFiles(&svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
@@ -589,6 +593,9 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "architecture", a.Architecture, b.Architecture, false)
 		add(name, "node_name", a.NodeName, b.NodeName, false)
 		add(name, "serverless", a.Serverless, b.Serverless, false)
+		if !reflect.DeepEqual(a.Sidecars, b.Sidecars) {
+			changes = append(changes, Change{Service: name, Field: "sidecars", Before: redactSidecars(a.Sidecars), After: redactSidecars(b.Sidecars), Sensitive: true})
+		}
 	}
 	return changes
 }
