@@ -19,7 +19,7 @@ func TestSessionSpecificationIsStableAndRejectsAmbientAuthority(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(first, second) {
 		t.Fatal("session normalization changed frozen source", err)
 	}
-	if len(first.Services["worker"].Networks) != 0 || first.Services["worker"].Session.IdleSeconds != 900 {
+	if len(first.Services["worker"].Networks) != 0 || first.Services["worker"].Session.IdleSeconds != 900 || first.Services["worker"].Session.CallTimeoutSeconds != 150 {
 		t.Fatal("session gained network access or invalid defaults")
 	}
 	for name, change := range map[string]func(*Service){
@@ -41,6 +41,8 @@ func TestSessionSpecificationIsStableAndRejectsAmbientAuthority(t *testing.T) {
 		},
 		"guard-parent":      func(s *Service) { s.TemporaryMounts = []TemporaryMount{{MountPath: "/run", SizeMiB: 32, Memory: true}} },
 		"persistent-volume": func(s *Service) { s.Volume = &Volume{MountPath: "/data", SizeGiB: 1} },
+		"short-call":        func(s *Service) { s.Session.CallTimeoutSeconds = 9 },
+		"call-beyond-idle":  func(s *Service) { s.Session.IdleSeconds = 300; s.Session.CallTimeoutSeconds = 301 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			app := sessionSpecFixture()
@@ -64,5 +66,16 @@ func TestSessionCannotBeAServiceDependency(t *testing.T) {
 	app.Services["api"] = Service{Image: "example/api:1", DependsOn: []string{"worker"}}
 	if _, err := Normalize(app); err == nil {
 		t.Fatal("service dependency accepted a session template")
+	}
+}
+
+func TestSessionCallTimeoutIsBoundedByIdleDeadline(t *testing.T) {
+	app := sessionSpecFixture()
+	svc := app.Services["worker"]
+	svc.Session.CallTimeoutSeconds = 900
+	app.Services["worker"] = svc
+	got, err := Normalize(app)
+	if err != nil || got.Services["worker"].Session.CallTimeoutSeconds != 900 {
+		t.Fatal("call timeout at the idle limit rejected", err)
 	}
 }

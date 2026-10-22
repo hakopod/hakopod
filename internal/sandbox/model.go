@@ -15,16 +15,16 @@ import (
 )
 
 const (
-	Starting       = "starting"
-	Ready          = "ready"
-	Closing        = "closing"
-	Closed         = "closed"
-	MaxSessions    = spec.MaxSandboxSessions
-	MaxHistory     = 1000
-	MaxInputBytes  = 48 << 20
-	MaxOutputBytes = 52 << 20
-	CallTimeout    = 150 * time.Second
-	Retention      = 24 * time.Hour
+	Starting           = "starting"
+	Ready              = "ready"
+	Closing            = "closing"
+	Closed             = "closed"
+	MaxSessions        = spec.MaxSandboxSessions
+	MaxHistory         = 1000
+	MaxInputBytes      = 48 << 20
+	MaxOutputBytes     = 52 << 20
+	DefaultCallTimeout = 150 * time.Second
+	Retention          = 24 * time.Hour
 )
 
 // Record excludes authority, frozen source, leases and Kubernetes identifiers.
@@ -50,6 +50,14 @@ type Record struct {
 	LeaseToken                                          string           `json:"-"`
 	LeaseUntil                                          time.Time        `json:"-"`
 	Source                                              spec.Application `json:"-"`
+}
+
+// CallTimeout is the frozen template's per-call limit; older receipts use the default.
+func (r Record) CallTimeout() time.Duration {
+	if svc, ok := r.Source.Services[r.Service]; ok && svc.Session != nil && svc.Session.CallTimeoutSeconds > 0 {
+		return time.Duration(svc.Session.CallTimeoutSeconds) * time.Second
+	}
+	return DefaultCallTimeout
 }
 
 type CreateRequest struct {
