@@ -1,126 +1,90 @@
 {
   "bootstrap": {
-    "commit": "5838d12e4121c1815890227fbbd7d09e8327194d",
-    "reviewed_release": "v0.1.0-alpha.64",
-    "tag": "v0.1.0-alpha.63",
+    "commit": "0e711c2c2e06490c972e522785da7d5c3097d08d",
+    "reviewed_release": "v0.1.0-alpha.65",
+    "tag": "v0.1.0-alpha.64",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py"
     ]
   },
-  "control_plane_commit": "0c9786a6061d554c6cbfbc80411399ab9abf97e3",
+  "control_plane_commit": "1eb697400176a26bb893be1dbb37388ced45ada9",
   "delta": {
-    "baseline_sha256": "ce83dd53944749fcb397d4e0f44b2f868b361e11560b5175ebfa8a6e0ff8afbd",
+    "baseline_sha256": "f832c113dc55f993697314c82dd4032e5b93c24b410ebbb838e3cfec5af4bf53",
     "changes": [
       {
-        "after": "f57282cda17b2b098cb79a4b5340a2c0657f4de5632d1649d235136f66672e8a",
-        "before": "ac536dd6fe459f06f0f177b2a5b464bec3e8b87f68919e5c1c1baa0621413468",
-        "path": "api/contracts/workloads.py",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "3ed33f2a5944c6a9d335e75815a824f8808dde9798a61af8c87771f1ad12f80b",
+        "before": "07d6e6079e7a6553609fc605536bf27870e0ce4fd263e457232610bdd630e4cb",
+        "path": "api/contracts/zz_sandbox_sessions.py",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "4a11ea3f8a463810ae01f2cf2e317620ee6149995dbcd7b813eba1c95f434c2d",
-        "before": "825a2400576e28b509df64f5b31a40b3cf6fcb70099816aefa396c13a11ddef0",
+        "after": "10f7d93e45795d74cb9f1981f39a1dbfa6d526ccffd3ef5658f1c0eb419a4724",
+        "before": "4a11ea3f8a463810ae01f2cf2e317620ee6149995dbcd7b813eba1c95f434c2d",
         "path": "api/openapi.json",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "fa0a3fbc1c540990bac9fe4786192a5d9ff8acd53f6d7534120a296603b742eb",
-        "before": "6ae02bc751d5223d1f64699591cad196010e2c6093a400585127c52c60c3395f",
-        "path": "internal/api/service_transfers.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "913676afb207936f103dd839dbe7473fc012cd2afe8a8ab98a2c3d40ee34da97",
+        "before": "ce1cf3a5b3452feafb67ad8a77347c7b673742efc018e928a565e5a953cfcfe5",
+        "path": "internal/api/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "4f0213d9edd01b99363e96b0d63df244674f2e2eed1a71ae4577d5329ff54ab2",
-        "before": "4a6eb36e9b922380b36ff6d2874ec07a30297ca58c473ec7dff33d76e7d23c10",
-        "path": "internal/cluster/config_files.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "46820922d49ee99451406b4acbb003a6095d449742cf7e4d7ac66ac836eb083b",
+        "before": "e39c90758f04b5640839059e29e89f3f83fb28b4ef53309b55996416c6f700e4",
+        "path": "internal/cluster/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "0c59ebb7be9bfea803baad41e8e3422d30b2f7d29e860078dbb21a116b89409b",
-        "before": "598e6ca37e5ce5fa46c486096b69caf00814f3eb0ae5af6991339633b5fa28fa",
-        "path": "internal/cluster/deploy.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "ec400c5b15b34712e2ec01c06195b4ab67849081198dab23a664d8131e97c056",
+        "before": "b2c18f995491d2d09318246f9e2b87891ec2ca8d327be01aef2ddb975b01c4b4",
+        "path": "internal/sandbox/model.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "03c92a66208c13d3bce971b2436d8fa4c1d099c4e8b0d366fff9a3c5ffa86ed9",
-        "before": "2cdf3d1b0cc36085e4474c6ad7263546ae8b20a75465248469dcd077e9426313",
-        "path": "internal/cluster/node_profile.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "2131331d515d137bea9f54d4ef544823f98baac682d172c0cc35d3e632ea1f35",
+        "before": "f248fa749053d2e7d609fa10ad09ab8c5b9576df185aa1941d579d7c11f64bb6",
+        "path": "internal/sandbox/model_test.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "e1ed316a88bc32bf364e251a9ee5637b32decbab90b613028ca0da8b76c4b518",
-        "before": "6fb247d992bc65851e8de5c8676269a2d3b5b4e136c0c5dba848b49fbf6fef11",
-        "path": "internal/cluster/resource_quota.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "4876c8c81fef4a0732ee6074e5ef0c6027ddb1faeacad464cfa5d3d9e338782f",
+        "before": "3ef275b4ac77fa0e5219bf7a44bbae01a8450310819e4b59afef92849f5c9c6f",
+        "path": "internal/spec/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "a81701ac36c2b7578b0e388eeab91038815664175ad1dc7b05a6cfebafd503ef",
-        "before": "c52cb784f9e2e611f9d3259c626adc419f769912e79fe54a100b47095b24d64c",
-        "path": "internal/cluster/session_resources.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "38d976066469670baf35fac8814f43595d56388b26d464e04114bf3800cd8ef6",
+        "before": "141edae5d95dc550932c027b91bceb8497c8d448344019b8afa1566908f72a46",
+        "path": "internal/spec/sandbox_sessions_test.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "e1f42756fefb0ff867533930e82eb4a0027f62dea70ac5a3b1b67226a54f6e4d",
-        "before": null,
-        "path": "internal/cluster/sidecars.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "c0a66107f9a662788778173f201369bbfaa7715f3fd20713f30745efd1cb29dc",
+        "before": "a4bc6fb313c4ecef916d16164f365e8106c99591c52dbde1f35811c9b615d4e3",
+        "path": "internal/store/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "6c4631ba2beb4de74fab2892d8280e6130ad7f70cf3ed1ee95d4ef3749182ce0",
-        "before": null,
-        "path": "internal/cluster/sidecars_test.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "7c0603e2f60c54faf52969bef0c4b2485ab0bfa1d97d6791837f93e05fcfb656",
+        "before": "8ce0778fa9f21bd074d5b2548f80c14ac58ede7f9b6783570d130f9986cb34ee",
+        "path": "internal/store/sandbox_sessions_test.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "287d9814c03d55fb5eb1adb92a887236608b963d53c833b16fa06e107a68864b",
-        "before": "4a31a1eab673f499bc00a8e016118861781095332bfbffa2a26233725e741239",
-        "path": "internal/cluster/terminal.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "fc1393d967c42a8884a2865d318915c6aa54a8bc3dd0e64892c2fd3ca40a7976",
-        "before": "0a3f99b23aeea891e778550068e524dd759e9eeb9a9003cdd6b752f3951205bd",
-        "path": "internal/spec/lifecycle.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "ee944c410f5656b739502af71bff888c30ed9c44486113e6c8d733c31afc6481",
-        "before": null,
-        "path": "internal/spec/sidecars.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "cf0da8082af05df288b41ab973cf92c425487c8e124ffc4bf83a390470d6befa",
-        "before": null,
-        "path": "internal/spec/sidecars_test.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "83480aa91140618a6fbd122b193d57c44ba1c96bb909ea025d162f8d5ce3d1e2",
-        "before": "b1ec5cca432aaba74eef0fb06c910b18cb4ff32af088c25d54c3d7fe86d873fb",
-        "path": "internal/spec/spec.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "0a88a99f84094bd2e8d722e93db7c4a54995c06a87b68e3b4dc7213606608ba5",
-        "before": "e7f62a9187078144085e934ac9a0b09d43c6a56368d40695153a049e499381f5",
-        "path": "internal/store/database_allocations.go",
-        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "35dbee831455c3d6233ccdbb1a871b62da5d21ce70192b156c748ec69135b5c0",
-        "before": "6fb505e60373916f1146b0993f2921b8b64cc565a006743fafc167a98b254ab5",
+        "after": "601d4808d80892aaa706a9159f595f2ea011beba64b3e899cf3bd1fb21720c60",
+        "before": "35dbee831455c3d6233ccdbb1a871b62da5d21ce70192b156c748ec69135b5c0",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Reviewed alpha.64 chain trust root: extends the authenticated source chain to the alpha.63 review; no qualification logic change."
+        "reason": "Reviewed alpha.65 chain trust root: extends the authenticated source chain to the alpha.64 review; no qualification logic change."
       }
     ],
-    "current_sha256": "f832c113dc55f993697314c82dd4032e5b93c24b410ebbb838e3cfec5af4bf53"
+    "current_sha256": "b0a26288f059d4120bc1541ed32344dea0a97fb4c1a6c75cba43185063841107"
   },
   "predecessor": {
-    "commit": "5838d12e4121c1815890227fbbd7d09e8327194d",
-    "review_sha256": "e47df078156e9f8771bd8742b7782baee3af5b25408ef5ff107579354eec6727",
-    "tag": "v0.1.0-alpha.63"
+    "commit": "0e711c2c2e06490c972e522785da7d5c3097d08d",
+    "review_sha256": "12469e1441bfb190118871f47269ee42b2a1e5b8d1f7d5454726e89c027fb275",
+    "tag": "v0.1.0-alpha.64"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -129,16 +93,14 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestSidecarsRenderAsRestrictedNativeSidecars",
-      "TestSidecarPrivilegesComeOnlyFromTheBinding",
-      "TestNodeProfileRunAsRootAppliesToTheServiceContainerOnly",
-      "TestSidecarsCountInCapacityAndQuota",
-      "TestNodeProfileSidecarGrantsAreStrict",
-      "TestSidecarValidation"
+      "TestSessionSpecificationIsStableAndRejectsAmbientAuthority",
+      "TestSessionCallTimeoutIsBoundedByIdleDeadline",
+      "TestCallTimeoutComesFromFrozenTemplate",
+      "TestSessionGenerationCallReplayAndCancellation"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/39727505418"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/39812857921"
   },
-  "reviewed_release": "v0.1.0-alpha.64",
+  "reviewed_release": "v0.1.0-alpha.65",
   "runtime": "myduck",
   "schema_version": 2
 }

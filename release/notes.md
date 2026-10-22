@@ -1,27 +1,25 @@
-Hakopod 0.1.0-alpha.64 adds sidecar containers.
+Hakopod 0.1.0-alpha.65 lets a sandbox session template set its helper call timeout.
 
-- Declare up to four sidecars per service with `[[services.<name>.sidecars]]`. Each has a digest-pinned image, its own environment, secrets, CPU and memory, and can mount the service's volumes. Sidecars start before the main container and count toward capacity and quota.
-- Sidecars run with the restricted security baseline. An administrator can grant a named sidecar `NET_ADMIN`/`NET_RAW`, the host `/dev/net/tun` device and root through a node profile, for example a Tailscale exit-node sidecar.
-- Node profiles can also let the profiled service container start as root, for an entrypoint that sets up its own cgroup subtree before dropping privileges.
-- The terminal and exec accept a sidecar's container name. Logs still show the main container.
-- This release is covered by unit tests. It has not been run on a real cluster.
+- Set `session.call_timeout_seconds` on a session template to allow helper calls longer than the default 150 seconds. The value must be between 10 and the template's `idle_seconds`, and at most 900.
+- The API, the exec stream and the stored call lease all use the template's value. Sessions created before the upgrade keep 150 seconds.
+- This release is covered by unit tests and real PostgreSQL store tests. It has not been run on a real cluster.
 
-Read the [sidecars guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.64/docs/sidecars.md).
+Read the [sandbox sessions guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.65/docs/sandbox-sessions.md).
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.64/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.64
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.65/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.65
 ```
 
-Upgrade an alpha.62 or alpha.63 installation:
+Upgrade an alpha.63 or alpha.64 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.64/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.64
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.65/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.65
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
