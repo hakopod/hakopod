@@ -18,7 +18,7 @@ func serviceResourceQuota(q *corev1.ResourceQuota, t Target) {
 	}
 	for _, app := range apps {
 		for name, s := range app.Services {
-			p := spec.EffectiveResources(s)
+			p := spec.PodResources(s)
 			count := max(s.Replicas, 1)
 			if s.Autoscaling != nil {
 				count = max(count, s.Autoscaling.MaxReplicas)

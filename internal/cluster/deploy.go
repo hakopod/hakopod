@@ -575,6 +575,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 	configureWorkload(result, svc)
 	configureSharedReadWriteOnce(t, name, &result.Spec.Template.Spec)
 	configureFiles(t, name, svc, &result.Spec.Template.Spec)
+	configureSidecars(t, name, svc, &result.Spec.Template.Spec)
 	applyBackendCertificateMounts(svc, &result.Spec.Template.Spec)
 	applyDatabaseTrustMount(t, name, &result.Spec.Template.Spec)
 	image := ""
@@ -610,6 +611,9 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	}
 	svc = resolved
 	if err := c.prepareFiles(ctx, t, name, svc); err != nil {
+		return 0, err
+	}
+	if err := c.prepareSidecarSecrets(ctx, t, name, svc); err != nil {
 		return 0, err
 	}
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))

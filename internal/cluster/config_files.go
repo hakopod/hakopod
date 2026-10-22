@@ -116,6 +116,13 @@ func (c *Client) cleanupFiles(ctx context.Context, t Target) error {
 	selector := managedBy + "=hakopod," + ownerKey + "=" + ownerID(t.ApplicationID)
 	used := map[string]bool{}
 	mark := func(p corev1.PodSpec) {
+		for _, c := range p.InitContainers {
+			for _, e := range c.Env {
+				if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+					used[e.ValueFrom.SecretKeyRef.Name] = true
+				}
+			}
+		}
 		for _, v := range p.Volumes {
 			if v.ConfigMap != nil {
 				used[v.ConfigMap.Name] = true

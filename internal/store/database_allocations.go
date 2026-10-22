@@ -83,6 +83,18 @@ func applicationMemoryReservation(s spec.Application) (int64, error) {
 		if svc.Resources != nil && svc.Resources.MemoryLimit != "" {
 			memory = svc.Resources.MemoryLimit
 		}
+		for _, sc := range svc.Sidecars {
+			q, err := resource.ParseQuantity(memory)
+			if err != nil {
+				return 0, ErrInput
+			}
+			add, err := resource.ParseQuantity(sc.Memory)
+			if err != nil {
+				return 0, ErrInput
+			}
+			q.Add(add)
+			memory = q.String()
+		}
 		q, err := resource.ParseQuantity(memory)
 		if err != nil {
 			return 0, ErrInput
@@ -99,7 +111,7 @@ func applicationMemoryReservation(s spec.Application) (int64, error) {
 func applicationCapacityReservation(s spec.Application) (managedplatform.Capacity, error) {
 	var total managedplatform.Capacity
 	for _, service := range s.Services {
-		resources := spec.EffectiveResources(service)
+		resources := spec.PodResources(service)
 		cpu, err := resource.ParseQuantity(resources.CPURequest)
 		if err != nil || cpu.MilliValue() < 1 {
 			return managedplatform.Capacity{}, ErrInput
