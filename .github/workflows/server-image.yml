@@ -1,0 +1,125 @@
+name: Server image
+# Publishes the root Dockerfile (hakopod-server plus /hakopod-session-guard) as a
+# public, digest-pinned multi-platform image. Operators set
+# HAKOPOD_SESSION_GUARD_IMAGE to the published reference, so it must match the
+# running server version. Dispatch with a tag to publish a release cut before
+# this workflow existed.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v0.1.0-alpha.65
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: server-image-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+jobs:
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Validate release tag
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "invalid tag: $RELEASE_TAG" >&2; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - name: Build the native server image and check the session guard
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker buildx build --platform "linux/$ARCH" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+            --label "org.opencontainers.image.version=$RELEASE_TAG" \
+            --provenance=false --load --tag hakopod-server:release .
+          container=$(docker create hakopod-server:release)
+          docker cp "$container:/hakopod-session-guard" ./hakopod-session-guard
+          docker cp "$container:/hakopod-server" ./hakopod-server
+          docker rm "$container"
+          test -x ./hakopod-session-guard && test -x ./hakopod-server
+      - name: Push the tested platform image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          # Run-scoped tags avoid overwriting a published version during partial retries.
+          tag="$image:run-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCH"
+          docker tag hakopod-server:release "$tag"
+          docker push "$tag"
+          digest=$(docker buildx imagetools inspect "$tag" --format '{{.Manifest.Digest}}')
+          printf '%s@%s\n' "$image" "$digest" > "server-$ARCH.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-${{ matrix.arch }}
+          path: server-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 7
+  index:
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: server-*
+          merge-multiple: true
+          path: .local/server
+      - name: Publish the versioned multi-platform server image
+        id: index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker buildx imagetools create --tag "$image:$RELEASE_TAG" \
+            "$(cat .local/server/server-amd64.txt)" "$(cat .local/server/server-arm64.txt)"
+          digest=$(docker buildx imagetools inspect "$image:$RELEASE_TAG" --format '{{.Manifest.Digest}}')
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "### Session guard image" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$image@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+          # Fail publication if self-hosted nodes cannot pull without credentials.
+          # GHCR package settings must be Public before the first release completes.
+          anonymous_config=$(mktemp -d)
+          trap 'rm -rf "$anonymous_config"' EXIT
+          DOCKER_CONFIG="$anonymous_config" docker manifest inspect "$image@$digest"
+      - name: Attest the server image index
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3.0.0
+        with:
+          subject-name: ${{ steps.index.outputs.image }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
