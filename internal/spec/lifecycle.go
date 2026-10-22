@@ -59,6 +59,7 @@ func SecretReferences(s Service) map[string]SecretRef {
 			refs[BindingSecretKey(key)] = *binding.Password
 		}
 	}
+	sidecarSecretReferences(s, refs)
 	return refs
 }
 
