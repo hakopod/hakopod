@@ -9675,6 +9675,8 @@ export interface components {
             idle_seconds: number;
             /** @default 3600 */
             lifetime_seconds: number;
+            /** @default 150 */
+            call_timeout_seconds: number;
         };
         SandboxSessionReceipt: {
             id: string;

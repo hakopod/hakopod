@@ -173,7 +173,7 @@ func (s *Server) callSandboxSession(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), sandbox.CallTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), record.CallTimeout())
 	defer cancel()
 	done := make(chan struct{})
 	go func() {

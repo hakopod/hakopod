@@ -263,7 +263,7 @@ func (c *Client) ObserveSession(ctx context.Context, r sandbox.Record) (sandbox.
 
 // CallSession executes only the template helper. Caller input waits for the guard identity handshake.
 func (c *Client) CallSession(ctx context.Context, r sandbox.Record, input io.Reader, output io.Writer) error {
-	ctx, cancel := context.WithTimeout(ctx, sandbox.CallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, r.CallTimeout())
 	defer cancel()
 	if input == nil || output == nil {
 		return fmt.Errorf("session call requires input and output streams")

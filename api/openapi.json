@@ -41482,6 +41482,12 @@
             "minimum": 60,
             "maximum": 3600,
             "default": 3600
+          },
+          "call_timeout_seconds": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 900,
+            "default": 150
           }
         },
         "required": [

@@ -3,6 +3,9 @@ package sandbox
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/hakopod/hakopod/internal/spec"
 )
 
 func TestSessionImagesRequireRepositoryAndDigest(t *testing.T) {
@@ -14,5 +17,16 @@ func TestSessionImagesRequireRepositoryAndDigest(t *testing.T) {
 		if ValidImage(image) {
 			t.Fatal("invalid image accepted")
 		}
+	}
+}
+
+func TestCallTimeoutComesFromFrozenTemplate(t *testing.T) {
+	r := Record{Service: "worker", Source: spec.Application{Services: map[string]spec.Service{"worker": {Session: &spec.SandboxSession{CallTimeoutSeconds: 600}}}}}
+	if r.CallTimeout() != 600*time.Second {
+		t.Fatal("template call timeout ignored")
+	}
+	r.Source.Services["worker"].Session.CallTimeoutSeconds = 0
+	if r.CallTimeout() != DefaultCallTimeout || (Record{}).CallTimeout() != DefaultCallTimeout {
+		t.Fatal("older receipts must keep the default call timeout")
 	}
 }

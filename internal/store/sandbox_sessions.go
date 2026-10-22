@@ -254,7 +254,7 @@ func (s *Store) ClaimSessionCall(ctx context.Context, p Principal, app, service,
 	r.CallToken = NewID()
 	r.CallRequestID = requestID
 	r.CallKeyID = p.KeyID
-	_, err = tx.Exec(ctx, `UPDATE sandbox_sessions SET call_token=$2,call_request_id=$3,call_until=now()+interval '150 seconds' WHERE id=$1`, id, r.CallToken, requestID)
+	_, err = tx.Exec(ctx, `UPDATE sandbox_sessions SET call_token=$2,call_request_id=$3,call_until=now()+make_interval(secs => $4) WHERE id=$1`, id, r.CallToken, requestID, r.CallTimeout().Seconds())
 	if err != nil {
 		return zero, err
 	}

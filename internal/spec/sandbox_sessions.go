@@ -15,6 +15,8 @@ type SandboxSession struct {
 	ReadyCommand      []string `json:"ready_command" toml:"ready_command"`
 	IdleSeconds       int64    `json:"idle_seconds,omitempty" toml:"idle_seconds"`
 	LifetimeSeconds   int64    `json:"lifetime_seconds,omitempty" toml:"lifetime_seconds"`
+	// CallTimeoutSeconds bounds one helper call. A call cannot outlive the idle deadline it is checked against.
+	CallTimeoutSeconds int64 `json:"call_timeout_seconds,omitempty" toml:"call_timeout_seconds"`
 }
 
 func normalizeSandboxSession(app Application, svc *Service) error {
@@ -49,6 +51,12 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 	}
 	if cfg.IdleSeconds < 60 || cfg.IdleSeconds > 900 || cfg.LifetimeSeconds < cfg.IdleSeconds || cfg.LifetimeSeconds > 3600 {
 		return fmt.Errorf("session idle_seconds must be 60-900 and lifetime_seconds must be at least idle_seconds and at most 3600")
+	}
+	if cfg.CallTimeoutSeconds == 0 {
+		cfg.CallTimeoutSeconds = 150
+	}
+	if cfg.CallTimeoutSeconds < 10 || cfg.CallTimeoutSeconds > cfg.IdleSeconds {
+		return fmt.Errorf("session call_timeout_seconds must be at least 10 and at most idle_seconds")
 	}
 	if svc.Job != nil || svc.Actions != nil || svc.Serverless != nil || svc.Autoscaling != nil || svc.GPU != nil || svc.Volume != nil || svc.ContainerDaemon != "" || svc.AWSIdentity != "" {
 		return fmt.Errorf("session cannot use another workload mode, autoscaling, GPU, persistent volume, container daemon or AWS identity")

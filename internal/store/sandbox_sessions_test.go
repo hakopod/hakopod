@@ -136,6 +136,10 @@ func TestSessionGenerationCallReplayAndCancellation(t *testing.T) {
 	if err = db.CheckSessionCall(ctx, call); err != nil {
 		t.Fatal(err)
 	}
+	var callSeconds float64
+	if err = db.Pool.QueryRow(ctx, `SELECT extract(epoch FROM call_until-now()) FROM sandbox_sessions WHERE id=$1`, created.ID).Scan(&callSeconds); err != nil || callSeconds < 140 || callSeconds > 150 {
+		t.Fatal("call lease does not follow the template call timeout", callSeconds, err)
+	}
 	if _, err = db.ClaimSessionCall(ctx, p, d.ApplicationID, "worker", owner, created.ID, created.Generation, "call-2", strings.Repeat("b", 64)); !errors.Is(err, ErrConflict) {
 		t.Fatal("parallel call admitted", err)
 	}
