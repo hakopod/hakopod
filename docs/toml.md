@@ -101,6 +101,7 @@ DNS routing and certificate coverage are separate checks.
 | `volume` | One persistent data directory: `mount_path`, `size_gib` (1–200), optional `storage_class`; one replica, no HPA |
 | `mounts` | References application-level named volumes; each sets volume, mount_path, optional read_only and sub_path |
 | `temporary_mounts` | Bounded scratch directories; mount_path, size_mib and optional memory=true for tmpfs |
+| `sidecars` | Up to 4 extra containers that run beside the service; see [sidecar containers](sidecars.md) |
 | `gpu` | `count` from1–8; requires advertised NVIDIA GPU capacity; no GPU HPA |
 | `tls` | Exactly one managed `certificate` or cert-manager `issuer`; public services only |
 | `restart_nonce` | Opaque restart marker written by the restart action; at most64 letters, digits, `_` or `-` |
