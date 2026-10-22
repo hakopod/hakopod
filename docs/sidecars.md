@@ -107,9 +107,6 @@ Application:
 ```toml
 name = "kelvo"
 
-[secrets]
-# optional application defaults
-
 [services.node]
 image = "ghcr.io/example/kelvo@sha256:..."
 node_profile = "kelvo-node"
