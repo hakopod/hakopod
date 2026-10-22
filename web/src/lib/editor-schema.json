@@ -937,6 +937,14 @@
         "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$",
         "description": "Self-hosted: operator-approved relaxed pod security profile for this exact service scope; requires node_name and one replica. Empty keeps the restricted profile."
       },
+      "sidecars": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Sidecar"
+        },
+        "maxItems": 4,
+        "description": "Extra containers that run beside the service container. Not available for Managed Actions, serverless, session or job services. Privileges beyond the restricted baseline come only from an operator-approved node profile."
+      },
       "serverless": {
         "$ref": "#/components/schemas/Serverless"
       },
@@ -1016,6 +1024,89 @@
     },
     "required": [
       "protocol"
+    ],
+    "additionalProperties": false
+  },
+  "Sidecar": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "maxLength": 63,
+        "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+      },
+      "image": {
+        "type": "string",
+        "description": "Image pinned by sha256 digest."
+      },
+      "command": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "args": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "env": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "secrets": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/SecretRef"
+        }
+      },
+      "cpu": {
+        "type": "string",
+        "description": "CPU request and limit, such as 100m."
+      },
+      "memory": {
+        "type": "string",
+        "description": "Memory request and limit, such as 128Mi."
+      },
+      "mounts": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/SidecarMount"
+        },
+        "maxItems": 8
+      }
+    },
+    "required": [
+      "name",
+      "image",
+      "cpu",
+      "memory"
+    ],
+    "additionalProperties": false
+  },
+  "SidecarMount": {
+    "type": "object",
+    "properties": {
+      "volume": {
+        "type": "string",
+        "description": "A named volume the service itself mounts."
+      },
+      "temporary": {
+        "type": "string",
+        "description": "The mount_path of one of the service's temporary_mounts."
+      },
+      "mount_path": {
+        "type": "string"
+      },
+      "read_only": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "mount_path"
     ],
     "additionalProperties": false
   },

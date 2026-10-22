@@ -5423,6 +5423,8 @@ export interface components {
             runtime_profile?: string;
             /** @description Self-hosted: operator-approved relaxed pod security profile for this exact service scope; requires node_name and one replica. Empty keeps the restricted profile. */
             node_profile?: string;
+            /** @description Extra containers that run beside the service container. Not available for Managed Actions, serverless, session or job services. Privileges beyond the restricted baseline come only from an operator-approved node profile. */
+            sidecars?: components["schemas"]["Sidecar"][];
             serverless?: components["schemas"]["Serverless"];
             session?: components["schemas"]["SandboxSession"];
         };
@@ -9472,6 +9474,32 @@ export interface components {
             name: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        SidecarMount: {
+            /** @description A named volume the service itself mounts. */
+            volume?: string;
+            /** @description The mount_path of one of the service's temporary_mounts. */
+            temporary?: string;
+            mount_path: string;
+            read_only?: boolean;
+        };
+        Sidecar: {
+            name: string;
+            /** @description Image pinned by sha256 digest. */
+            image: string;
+            command?: string[];
+            args?: string[];
+            env?: {
+                [key: string]: string;
+            };
+            secrets?: {
+                [key: string]: components["schemas"]["SecretRef"];
+            };
+            /** @description CPU request and limit, such as 100m. */
+            cpu: string;
+            /** @description Memory request and limit, such as 128Mi. */
+            memory: string;
+            mounts?: components["schemas"]["SidecarMount"][];
         };
         PlacementNode: {
             name: string;
