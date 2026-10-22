@@ -1,0 +1,144 @@
+{
+  "bootstrap": {
+    "commit": "5838d12e4121c1815890227fbbd7d09e8327194d",
+    "reviewed_release": "v0.1.0-alpha.64",
+    "tag": "v0.1.0-alpha.63",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "0c9786a6061d554c6cbfbc80411399ab9abf97e3",
+  "delta": {
+    "baseline_sha256": "ce83dd53944749fcb397d4e0f44b2f868b361e11560b5175ebfa8a6e0ff8afbd",
+    "changes": [
+      {
+        "after": "f57282cda17b2b098cb79a4b5340a2c0657f4de5632d1649d235136f66672e8a",
+        "before": "ac536dd6fe459f06f0f177b2a5b464bec3e8b87f68919e5c1c1baa0621413468",
+        "path": "api/contracts/workloads.py",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "4a11ea3f8a463810ae01f2cf2e317620ee6149995dbcd7b813eba1c95f434c2d",
+        "before": "825a2400576e28b509df64f5b31a40b3cf6fcb70099816aefa396c13a11ddef0",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fa0a3fbc1c540990bac9fe4786192a5d9ff8acd53f6d7534120a296603b742eb",
+        "before": "6ae02bc751d5223d1f64699591cad196010e2c6093a400585127c52c60c3395f",
+        "path": "internal/api/service_transfers.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "4f0213d9edd01b99363e96b0d63df244674f2e2eed1a71ae4577d5329ff54ab2",
+        "before": "4a6eb36e9b922380b36ff6d2874ec07a30297ca58c473ec7dff33d76e7d23c10",
+        "path": "internal/cluster/config_files.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "0c59ebb7be9bfea803baad41e8e3422d30b2f7d29e860078dbb21a116b89409b",
+        "before": "598e6ca37e5ce5fa46c486096b69caf00814f3eb0ae5af6991339633b5fa28fa",
+        "path": "internal/cluster/deploy.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "03c92a66208c13d3bce971b2436d8fa4c1d099c4e8b0d366fff9a3c5ffa86ed9",
+        "before": "2cdf3d1b0cc36085e4474c6ad7263546ae8b20a75465248469dcd077e9426313",
+        "path": "internal/cluster/node_profile.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e1ed316a88bc32bf364e251a9ee5637b32decbab90b613028ca0da8b76c4b518",
+        "before": "6fb247d992bc65851e8de5c8676269a2d3b5b4e136c0c5dba848b49fbf6fef11",
+        "path": "internal/cluster/resource_quota.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a81701ac36c2b7578b0e388eeab91038815664175ad1dc7b05a6cfebafd503ef",
+        "before": "c52cb784f9e2e611f9d3259c626adc419f769912e79fe54a100b47095b24d64c",
+        "path": "internal/cluster/session_resources.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e1f42756fefb0ff867533930e82eb4a0027f62dea70ac5a3b1b67226a54f6e4d",
+        "before": null,
+        "path": "internal/cluster/sidecars.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "6c4631ba2beb4de74fab2892d8280e6130ad7f70cf3ed1ee95d4ef3749182ce0",
+        "before": null,
+        "path": "internal/cluster/sidecars_test.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "287d9814c03d55fb5eb1adb92a887236608b963d53c833b16fa06e107a68864b",
+        "before": "4a31a1eab673f499bc00a8e016118861781095332bfbffa2a26233725e741239",
+        "path": "internal/cluster/terminal.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fc1393d967c42a8884a2865d318915c6aa54a8bc3dd0e64892c2fd3ca40a7976",
+        "before": "0a3f99b23aeea891e778550068e524dd759e9eeb9a9003cdd6b752f3951205bd",
+        "path": "internal/spec/lifecycle.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "ee944c410f5656b739502af71bff888c30ed9c44486113e6c8d733c31afc6481",
+        "before": null,
+        "path": "internal/spec/sidecars.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "cf0da8082af05df288b41ab973cf92c425487c8e124ffc4bf83a390470d6befa",
+        "before": null,
+        "path": "internal/spec/sidecars_test.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "83480aa91140618a6fbd122b193d57c44ba1c96bb909ea025d162f8d5ce3d1e2",
+        "before": "b1ec5cca432aaba74eef0fb06c910b18cb4ff32af088c25d54c3d7fe86d873fb",
+        "path": "internal/spec/spec.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "0a88a99f84094bd2e8d722e93db7c4a54995c06a87b68e3b4dc7213606608ba5",
+        "before": "e7f62a9187078144085e934ac9a0b09d43c6a56368d40695153a049e499381f5",
+        "path": "internal/store/database_allocations.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "35dbee831455c3d6233ccdbb1a871b62da5d21ce70192b156c748ec69135b5c0",
+        "before": "6fb505e60373916f1146b0993f2921b8b64cc565a006743fafc167a98b254ab5",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed alpha.64 chain trust root: extends the authenticated source chain to the alpha.63 review; no qualification logic change."
+      }
+    ],
+    "current_sha256": "f832c113dc55f993697314c82dd4032e5b93c24b410ebbb838e3cfec5af4bf53"
+  },
+  "predecessor": {
+    "commit": "5838d12e4121c1815890227fbbd7d09e8327194d",
+    "review_sha256": "e47df078156e9f8771bd8742b7782baee3af5b25408ef5ff107579354eec6727",
+    "tag": "v0.1.0-alpha.63"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestSidecarsRenderAsRestrictedNativeSidecars",
+      "TestSidecarPrivilegesComeOnlyFromTheBinding",
+      "TestNodeProfileRunAsRootAppliesToTheServiceContainerOnly",
+      "TestSidecarsCountInCapacityAndQuota",
+      "TestNodeProfileSidecarGrantsAreStrict",
+      "TestSidecarValidation"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/39727505418"
+  },
+  "reviewed_release": "v0.1.0-alpha.64",
+  "runtime": "myduck",
+  "schema_version": 2
+}

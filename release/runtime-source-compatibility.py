@@ -172,6 +172,8 @@ ALPHA63_CHAIN_BASE = {'tag': 'v0.1.0-alpha.62', 'commit': '641141e4013cee35e8593
 ALPHA63_CHAIN_PREDECESSORS = {'myduck': 'd1dccdaf71c403d8edf6c9f74b418f61a65502f6a31ec11d16e4d72b0e1b5a4b', 'oracle-free': 'cceffdfb89ae29fdc53d1a997793abaff6b096e216fd3f73e36129a67efece89', 'vitess': '23022f9aef64fb1f6827f9ec3e159dc5c746ce02afa394a7457d43037ae9388c'}
 ALPHA64_CHAIN_BASE = {'tag': 'v0.1.0-alpha.63', 'commit': '5838d12e4121c1815890227fbbd7d09e8327194d'}
 ALPHA64_CHAIN_PREDECESSORS = {'myduck': 'e47df078156e9f8771bd8742b7782baee3af5b25408ef5ff107579354eec6727', 'oracle-free': '80b00fd6af9d74c8f453519103de7cdf247e6976833b1298de5349895edcc0e4', 'vitess': '1aa65c2eee336322c46bded1aaf6622bb7b1b0ce18de532110ecf29533c53981'}
+ALPHA65_CHAIN_BASE = {'tag': 'v0.1.0-alpha.64', 'commit': '0e711c2c2e06490c972e522785da7d5c3097d08d'}
+ALPHA65_CHAIN_PREDECESSORS = {'myduck': '12469e1441bfb190118871f47269ee42b2a1e5b8d1f7d5454726e89c027fb275', 'oracle-free': '2031bafcb9d2b5fd47d905ed738a4cd3edfa053a295668b63cfdd7ad714417e8', 'vitess': '885495fdeab29abb2d3d9fb312381dfae7e622a986c142e7eae448564a01edb1'}
 # Each reviewed release names its published predecessor review, oldest first.
 # Built on each call so the constants stay the single source of truth.
 def chain_links():
@@ -180,6 +182,7 @@ def chain_links():
         'v0.1.0-alpha.62': (NEXT_CHAIN_BASE, NEXT_CHAIN_PREDECESSORS, 'source-compatibility-alpha61.json'),
         'v0.1.0-alpha.63': (ALPHA63_CHAIN_BASE, ALPHA63_CHAIN_PREDECESSORS, 'source-compatibility-alpha62.json'),
         'v0.1.0-alpha.64': (ALPHA64_CHAIN_BASE, ALPHA64_CHAIN_PREDECESSORS, 'source-compatibility-alpha63.json'),
+        'v0.1.0-alpha.65': (ALPHA65_CHAIN_BASE, ALPHA65_CHAIN_PREDECESSORS, 'source-compatibility-alpha64.json'),
     }
 
 def chain_header(root, runtime, record):
