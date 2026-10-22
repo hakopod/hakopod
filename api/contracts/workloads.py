@@ -31,6 +31,10 @@ schemas["Service"]["properties"]["container_daemon"] = {**S,"maxLength":63,"patt
 schemas["Service"]["properties"]["runtime_profile"] = {**S,"maxLength":63,"pattern":"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$","description":"Self-hosted: approved runtime alias for this exact service scope. Empty uses the installation's normal runtime policy."}
 schemas["Service"]["properties"]["node_profile"] = {**S,"maxLength":63,"pattern":"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?$","description":"Self-hosted: operator-approved relaxed pod security profile for this exact service scope; requires node_name and one replica. Empty keeps the restricted profile."}
 
+schemas["SidecarMount"] = obj({"volume": {**S,"description":"A named volume the service itself mounts."}, "temporary": {**S,"description":"The mount_path of one of the service's temporary_mounts."}, "mount_path": S, "read_only": B}, ["mount_path"])
+schemas["Sidecar"] = obj({"name": {**S,"maxLength":63,"pattern":"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"}, "image": {**S,"description":"Image pinned by sha256 digest."}, "command": array(S), "args": array(S), "env": mapping(S), "secrets": mapping(ref("SecretRef")), "cpu": {**S,"description":"CPU request and limit, such as 100m."}, "memory": {**S,"description":"Memory request and limit, such as 128Mi."}, "mounts": {**array(ref("SidecarMount")),"maxItems":8}}, ["name","image","cpu","memory"])
+schemas["Service"]["properties"]["sidecars"] = {**array(ref("Sidecar")),"maxItems":4,"description":"Extra containers that run beside the service container. Not available for Managed Actions, serverless, session or job services. Privileges beyond the restricted baseline come only from an operator-approved node profile."}
+
 schemas["PlacementNode"] = obj({"name":S,"architecture":S,"available":B,"reason":S}, ["name","architecture","available","reason"])
 route("/placement/nodes", "get", "listPlacementNodes", obj({"items":array(ref("PlacementNode")),"serverless_available":B},["items","serverless_available"]), scope=True)
 paths["/placement/nodes"]["get"]["parameters"].append({"name":"application","in":"query","schema":S})
