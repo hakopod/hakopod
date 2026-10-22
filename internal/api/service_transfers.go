@@ -138,6 +138,14 @@ func remapMoveSecrets(svc *spec.Service, move store.ServiceTransfer) {
 			svc.Secrets[key] = ref
 		}
 	}
+	for i := range svc.Sidecars {
+		for key, ref := range svc.Sidecars[i].Secrets {
+			if ref.Ref != "" {
+				ref.Ref = moveSecretName(move, ref.Ref)
+				svc.Sidecars[i].Secrets[key] = ref
+			}
+		}
+	}
 	for key, file := range svc.Files {
 		if file.Secret != nil && file.Secret.Ref != "" {
 			ref := *file.Secret

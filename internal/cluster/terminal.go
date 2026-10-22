@@ -81,6 +81,18 @@ func (c *Client) TerminalPod(ctx context.Context, t Target, service string, o Te
 			return pod.UID, nil
 		}
 	}
+	// A native sidecar reports through the init container statuses. Only a
+	// sidecar this service declares qualifies, never a platform helper.
+	for _, sc := range t.Spec.Services[service].Sidecars {
+		if sc.Name != o.Container {
+			continue
+		}
+		for _, status := range pod.Status.InitContainerStatuses {
+			if status.Name == sc.Name && status.State.Running != nil {
+				return pod.UID, nil
+			}
+		}
+	}
 	return "", fmt.Errorf("selected container is not running")
 }
 func (c *Client) Terminal(ctx context.Context, t Target, service string, o TerminalOptions, uid types.UID, stdin io.Reader, stdout io.Writer, sizes remotecommand.TerminalSizeQueue) error {

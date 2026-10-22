@@ -15,7 +15,7 @@ const (
 )
 
 func scheduledPodRequests(s spec.Service, policy *WorkloadPolicy) (resource.Quantity, resource.Quantity) {
-	p := spec.EffectiveResources(s)
+	p := spec.PodResources(s)
 	if policy != nil && policy.MemoryRequest != "" {
 		p.MemoryRequest = policy.MemoryRequest
 	}

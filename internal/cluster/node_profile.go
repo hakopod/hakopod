@@ -33,6 +33,21 @@ type NodeProfileBinding struct {
 	Seccomp string `toml:"seccomp" json:"seccomp"`
 	// Privileged gives the container write access to its cgroup subtree.
 	Privileged bool `toml:"privileged" json:"privileged"`
+	// RunAsRoot lets the service container start as uid 0, for an entrypoint
+	// that must set up its own cgroup subtree before dropping privileges.
+	RunAsRoot bool `toml:"run_as_root" json:"run_as_root"`
+	// Sidecars grants extra privileges to named sidecars of this service.
+	// A sidecar without an entry stays restricted.
+	Sidecars map[string]SidecarGrant `toml:"sidecars" json:"sidecars,omitempty"`
+}
+
+// SidecarGrant is what an operator allows one sidecar beyond the restricted
+// baseline. NET_ADMIN and NET_RAW are the only capabilities that can be added.
+type SidecarGrant struct {
+	Capabilities []string `toml:"capabilities" json:"capabilities,omitempty"`
+	// TUN mounts the host /dev/net/tun character device at /dev/net/tun.
+	TUN       bool `toml:"tun" json:"tun"`
+	RunAsRoot bool `toml:"run_as_root" json:"run_as_root"`
 }
 
 func ValidateNodeProfileBindings(bindings []NodeProfileBinding) error {
@@ -55,6 +70,21 @@ func ValidateNodeProfileBindings(bindings []NodeProfileBinding) error {
 		}
 		if b.Seccomp != "runtime-default" && b.Seccomp != "unconfined" {
 			return fmt.Errorf("node profile %s: seccomp must be runtime-default or unconfined", b.Name)
+		}
+		if len(b.Sidecars) > spec.MaxSidecars {
+			return fmt.Errorf("node profile %s: at most %d sidecar grants", b.Name, spec.MaxSidecars)
+		}
+		for sidecar, g := range b.Sidecars {
+			if len(validation.IsDNS1123Label(sidecar)) != 0 || len(g.Capabilities) > 2 {
+				return fmt.Errorf("node profile %s: sidecar grants need a sidecar name and at most two capabilities", b.Name)
+			}
+			caps := map[string]bool{}
+			for _, capability := range g.Capabilities {
+				if capability != "NET_ADMIN" && capability != "NET_RAW" || caps[capability] {
+					return fmt.Errorf("node profile %s: sidecar %s may be granted only NET_ADMIN and NET_RAW, each once", b.Name, sidecar)
+				}
+				caps[capability] = true
+			}
 		}
 	}
 	return nil
@@ -149,6 +179,7 @@ func (c *Client) prepareNodeProfile(t Target, name string, svc spec.Service, wan
 		return err
 	}
 	applyNodeProfile(binding, &wanted.Spec)
+	applySidecarGrants(binding, &wanted.Spec.Template.Spec)
 	return nil
 }
 
@@ -179,5 +210,8 @@ func applyNodeProfile(b NodeProfileBinding, d *appsv1.DeploymentSpec) {
 		}
 		c.SecurityContext.Privileged = ptr(b.Privileged)
 		c.SecurityContext.AllowPrivilegeEscalation = ptr(b.Privileged)
+		if b.RunAsRoot {
+			c.SecurityContext.RunAsUser, c.SecurityContext.RunAsNonRoot = ptr(int64(0)), ptr(false)
+		}
 	}
 }
