@@ -1,0 +1,140 @@
+{
+  "bootstrap": {
+    "commit": "641141e4013cee35e85931ce44377ba3c5719e72",
+    "reviewed_release": "v0.1.0-alpha.63",
+    "tag": "v0.1.0-alpha.62",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py",
+      "release/verify-vitess-runtime.py"
+    ]
+  },
+  "control_plane_commit": "85e46cd75d6f174a70118670eb28ee4c5a72f72d",
+  "predecessor": {
+    "commit": "641141e4013cee35e85931ce44377ba3c5719e72",
+    "review_sha256": "23022f9aef64fb1f6827f9ec3e159dc5c746ce02afa394a7457d43037ae9388c",
+    "tag": "v0.1.0-alpha.62"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "http_evidence_sha256": "7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545",
+    "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274",
+    "native_manifest_sha256": "64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestNodeProfileGrantIsScopedAndPinned",
+      "TestApplyNodeProfileRecreatesAndOnlyRelaxesTheServiceContainer",
+      "TestNodeProfileBindingsFileIsStrict",
+      "TestValidateNodeProfileRequiresPinnedSingleton"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/39642800540"
+  },
+  "reviewed_release": "v0.1.0-alpha.63",
+  "runtime": "vitess",
+  "schema_version": 3,
+  "scopes": {
+    "http_harness": {
+      "baseline_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb",
+      "changes": [],
+      "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
+    },
+    "runtime": {
+      "baseline_sha256": "7b67a23b5f5240d76ff265a1ed02ce1af34d20f1e3cf1ce9481c7f3d6c2fc82a",
+      "changes": [
+        {
+          "after": "f9ae4b7169684a63574b56dbfedb1e3ce6c4b27617c073faa032bb2750497805",
+          "before": "34eb426968edeeaededb97adf0d06c8bc72d6140439a55dbd055ee7c3a1d0c0d",
+          "path": "cmd/hakopod-server/main.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "3c2e15319dcdb62a4d13777c9769ebf2fdfbe4e8b3ee4f079a249db5f4e2c5c6",
+          "before": "3c0723bdfca548af216143a3b8ebe49e012ece8a6679e2009752fd95e8509a35",
+          "path": "cmd/hakopod-server/operator_config.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "d1748f3381b904f9af5b9cc1aaa60467daa6d92f52e3882739610866816bc832",
+          "before": "cd4585aee3f1b75c48a220a2f87a76811dd0ac9113dcecd08a9be019f5268d60",
+          "path": "internal/cluster/delivery.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "598e6ca37e5ce5fa46c486096b69caf00814f3eb0ae5af6991339633b5fa28fa",
+          "before": "692eac46116b94ff4bb96d10f32eaf51f4a4b7a8372ec4710a64cdeffc298fe8",
+          "path": "internal/cluster/deploy.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "2cdf3d1b0cc36085e4474c6ad7263546ae8b20a75465248469dcd077e9426313",
+          "before": null,
+          "path": "internal/cluster/node_profile.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "2e38dfc51a08385478aa0f17bc6cdbfecd2345faa8fa8cb257019ae508c84d3d",
+          "before": null,
+          "path": "internal/cluster/node_profile_test.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "186e5f6ab04bb65533beeba3592f3c382e46f961fd01b21c1184e24c8a9b3fb4",
+          "before": "3d4ceb10e51899bf41cb08b953669849f33c1f6d426f839e2c1cb04c4b519e8d",
+          "path": "internal/cluster/types.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "cb102e357b119838f429adbe79fbac997b7a401d7bb49c96b49c95f9bb4b3b86",
+          "before": "de0044ed3f88a07184b5c641318530c3a8508e1666ee7de63945ad28e4fb810a",
+          "path": "internal/spec/delivery.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "60a82dc88b11d079fe5fdd00146f99d4eef7a48e026615b9b429918dc16afd71",
+          "before": null,
+          "path": "internal/spec/node_profile.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "641b95ebaed07ccb1b1f3abacc4ce3c4d0f2dc46b72ed5d73629d5b81defb97e",
+          "before": null,
+          "path": "internal/spec/node_profile_test.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "497be6431a8261dd9351b9570b5e880586f2dbdcc22d1a15c1844611ec134ae3",
+          "before": "76ccaaf62bd80e59e34ccdd0a9fb006a15231b74fcf6f53254fbdcb4e74db877",
+          "path": "internal/spec/preview.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "e9a6f4fd446dd4c7ce350969b41bd50ebd2f7445d129a80121284ac15537c27a",
+          "before": "944da376610d150df9e2b068418da816b7c28492534d3e68468a9f083ed3ec50",
+          "path": "internal/spec/service_transfer.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "b1ec5cca432aaba74eef0fb06c910b18cb4ff32af088c25d54c3d7fe86d873fb",
+          "before": "a2eb18546498f4ab37a2eee4cd61e7a1c1a632a2e7d47f584d9fa557912e2faa",
+          "path": "internal/spec/spec.go",
+          "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "6fb505e60373916f1146b0993f2921b8b64cc565a006743fafc167a98b254ab5",
+          "before": "1459f6782f0af78306e8b48eb9385f6d6fdbd662d062bc9dce10692bf3aa0011",
+          "path": "release/runtime-source-compatibility.py",
+          "reason": "Reviewed alpha.63 chain trust root: extends the authenticated source chain to the alpha.62 review; no qualification logic change."
+        },
+        {
+          "after": "ae3511cd5d9c765f745ec9d7cddd4333a8a9e345c88bfc7a799491f484aba6ea",
+          "before": "651274d03a508620f941182e0d9fe7e43bcafe639d29257a4ab4774d26fbfc03",
+          "path": "release/verify-vitess-runtime.py",
+          "reason": "Reviewed alpha.63 chain trust root: extends the authenticated source chain to the alpha.62 review; no qualification logic change."
+        }
+      ],
+      "current_sha256": "1368aafc811f2cc61196bbac876c941d9c3574433532081b2ac0f272f4eeae88"
+    }
+  }
+}

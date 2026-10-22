@@ -1,120 +1,126 @@
 {
   "bootstrap": {
-    "commit": "641141e4013cee35e85931ce44377ba3c5719e72",
-    "reviewed_release": "v0.1.0-alpha.63",
-    "tag": "v0.1.0-alpha.62",
+    "commit": "5838d12e4121c1815890227fbbd7d09e8327194d",
+    "reviewed_release": "v0.1.0-alpha.64",
+    "tag": "v0.1.0-alpha.63",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py"
     ]
   },
-  "control_plane_commit": "85e46cd75d6f174a70118670eb28ee4c5a72f72d",
+  "control_plane_commit": "0c9786a6061d554c6cbfbc80411399ab9abf97e3",
   "delta": {
-    "baseline_sha256": "6c635effe1212f86debd0beccdd1d2ba2612e63592a0ddc3f9542c5b51e7d817",
+    "baseline_sha256": "01ef22482318cca39b0c535c7b25a596d7d2520c984a498e239125e52294cf5b",
     "changes": [
       {
-        "after": "ac536dd6fe459f06f0f177b2a5b464bec3e8b87f68919e5c1c1baa0621413468",
-        "before": "d9ec6d6de636ad9f635970921f0f587b7d858a723ffa31cbbfdd86022b8cad42",
+        "after": "f57282cda17b2b098cb79a4b5340a2c0657f4de5632d1649d235136f66672e8a",
+        "before": "ac536dd6fe459f06f0f177b2a5b464bec3e8b87f68919e5c1c1baa0621413468",
         "path": "api/contracts/workloads.py",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "825a2400576e28b509df64f5b31a40b3cf6fcb70099816aefa396c13a11ddef0",
-        "before": "ba9029f6b7fdde6eeb4ca5a4f6f46a822f6897fff57e352ae5567b7aab798188",
+        "after": "4a11ea3f8a463810ae01f2cf2e317620ee6149995dbcd7b813eba1c95f434c2d",
+        "before": "825a2400576e28b509df64f5b31a40b3cf6fcb70099816aefa396c13a11ddef0",
         "path": "api/openapi.json",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "f9ae4b7169684a63574b56dbfedb1e3ce6c4b27617c073faa032bb2750497805",
-        "before": "34eb426968edeeaededb97adf0d06c8bc72d6140439a55dbd055ee7c3a1d0c0d",
-        "path": "cmd/hakopod-server/main.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "fa0a3fbc1c540990bac9fe4786192a5d9ff8acd53f6d7534120a296603b742eb",
+        "before": "6ae02bc751d5223d1f64699591cad196010e2c6093a400585127c52c60c3395f",
+        "path": "internal/api/service_transfers.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "3c2e15319dcdb62a4d13777c9769ebf2fdfbe4e8b3ee4f079a249db5f4e2c5c6",
-        "before": "3c0723bdfca548af216143a3b8ebe49e012ece8a6679e2009752fd95e8509a35",
-        "path": "cmd/hakopod-server/operator_config.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "4f0213d9edd01b99363e96b0d63df244674f2e2eed1a71ae4577d5329ff54ab2",
+        "before": "4a6eb36e9b922380b36ff6d2874ec07a30297ca58c473ec7dff33d76e7d23c10",
+        "path": "internal/cluster/config_files.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "d1748f3381b904f9af5b9cc1aaa60467daa6d92f52e3882739610866816bc832",
-        "before": "cd4585aee3f1b75c48a220a2f87a76811dd0ac9113dcecd08a9be019f5268d60",
-        "path": "internal/cluster/delivery.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "598e6ca37e5ce5fa46c486096b69caf00814f3eb0ae5af6991339633b5fa28fa",
-        "before": "692eac46116b94ff4bb96d10f32eaf51f4a4b7a8372ec4710a64cdeffc298fe8",
+        "after": "0c59ebb7be9bfea803baad41e8e3422d30b2f7d29e860078dbb21a116b89409b",
+        "before": "598e6ca37e5ce5fa46c486096b69caf00814f3eb0ae5af6991339633b5fa28fa",
         "path": "internal/cluster/deploy.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "2cdf3d1b0cc36085e4474c6ad7263546ae8b20a75465248469dcd077e9426313",
-        "before": null,
+        "after": "03c92a66208c13d3bce971b2436d8fa4c1d099c4e8b0d366fff9a3c5ffa86ed9",
+        "before": "2cdf3d1b0cc36085e4474c6ad7263546ae8b20a75465248469dcd077e9426313",
         "path": "internal/cluster/node_profile.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "2e38dfc51a08385478aa0f17bc6cdbfecd2345faa8fa8cb257019ae508c84d3d",
+        "after": "e1ed316a88bc32bf364e251a9ee5637b32decbab90b613028ca0da8b76c4b518",
+        "before": "6fb247d992bc65851e8de5c8676269a2d3b5b4e136c0c5dba848b49fbf6fef11",
+        "path": "internal/cluster/resource_quota.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a81701ac36c2b7578b0e388eeab91038815664175ad1dc7b05a6cfebafd503ef",
+        "before": "c52cb784f9e2e611f9d3259c626adc419f769912e79fe54a100b47095b24d64c",
+        "path": "internal/cluster/session_resources.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e1f42756fefb0ff867533930e82eb4a0027f62dea70ac5a3b1b67226a54f6e4d",
         "before": null,
-        "path": "internal/cluster/node_profile_test.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "path": "internal/cluster/sidecars.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "186e5f6ab04bb65533beeba3592f3c382e46f961fd01b21c1184e24c8a9b3fb4",
-        "before": "3d4ceb10e51899bf41cb08b953669849f33c1f6d426f839e2c1cb04c4b519e8d",
-        "path": "internal/cluster/types.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "cb102e357b119838f429adbe79fbac997b7a401d7bb49c96b49c95f9bb4b3b86",
-        "before": "de0044ed3f88a07184b5c641318530c3a8508e1666ee7de63945ad28e4fb810a",
-        "path": "internal/spec/delivery.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "60a82dc88b11d079fe5fdd00146f99d4eef7a48e026615b9b429918dc16afd71",
+        "after": "6c4631ba2beb4de74fab2892d8280e6130ad7f70cf3ed1ee95d4ef3749182ce0",
         "before": null,
-        "path": "internal/spec/node_profile.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "path": "internal/cluster/sidecars_test.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "641b95ebaed07ccb1b1f3abacc4ce3c4d0f2dc46b72ed5d73629d5b81defb97e",
+        "after": "287d9814c03d55fb5eb1adb92a887236608b963d53c833b16fa06e107a68864b",
+        "before": "4a31a1eab673f499bc00a8e016118861781095332bfbffa2a26233725e741239",
+        "path": "internal/cluster/terminal.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fc1393d967c42a8884a2865d318915c6aa54a8bc3dd0e64892c2fd3ca40a7976",
+        "before": "0a3f99b23aeea891e778550068e524dd759e9eeb9a9003cdd6b752f3951205bd",
+        "path": "internal/spec/lifecycle.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "ee944c410f5656b739502af71bff888c30ed9c44486113e6c8d733c31afc6481",
         "before": null,
-        "path": "internal/spec/node_profile_test.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "path": "internal/spec/sidecars.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "497be6431a8261dd9351b9570b5e880586f2dbdcc22d1a15c1844611ec134ae3",
-        "before": "76ccaaf62bd80e59e34ccdd0a9fb006a15231b74fcf6f53254fbdcb4e74db877",
-        "path": "internal/spec/preview.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "cf0da8082af05df288b41ab973cf92c425487c8e124ffc4bf83a390470d6befa",
+        "before": null,
+        "path": "internal/spec/sidecars_test.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "e9a6f4fd446dd4c7ce350969b41bd50ebd2f7445d129a80121284ac15537c27a",
-        "before": "944da376610d150df9e2b068418da816b7c28492534d3e68468a9f083ed3ec50",
-        "path": "internal/spec/service_transfer.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "b1ec5cca432aaba74eef0fb06c910b18cb4ff32af088c25d54c3d7fe86d873fb",
-        "before": "a2eb18546498f4ab37a2eee4cd61e7a1c1a632a2e7d47f584d9fa557912e2faa",
+        "after": "83480aa91140618a6fbd122b193d57c44ba1c96bb909ea025d162f8d5ce3d1e2",
+        "before": "b1ec5cca432aaba74eef0fb06c910b18cb4ff32af088c25d54c3d7fe86d873fb",
         "path": "internal/spec/spec.go",
-        "reason": "Reviewed control-plane change (Add operator-approved node profiles; chain the alpha.63 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "6fb505e60373916f1146b0993f2921b8b64cc565a006743fafc167a98b254ab5",
-        "before": "1459f6782f0af78306e8b48eb9385f6d6fdbd662d062bc9dce10692bf3aa0011",
+        "after": "0a88a99f84094bd2e8d722e93db7c4a54995c06a87b68e3b4dc7213606608ba5",
+        "before": "e7f62a9187078144085e934ac9a0b09d43c6a56368d40695153a049e499381f5",
+        "path": "internal/store/database_allocations.go",
+        "reason": "Reviewed control-plane change (Sidecar containers and node-profile root grants; chain the alpha.64 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "35dbee831455c3d6233ccdbb1a871b62da5d21ce70192b156c748ec69135b5c0",
+        "before": "6fb505e60373916f1146b0993f2921b8b64cc565a006743fafc167a98b254ab5",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Reviewed alpha.63 chain trust root: extends the authenticated source chain to the alpha.62 review; no qualification logic change."
+        "reason": "Reviewed alpha.64 chain trust root: extends the authenticated source chain to the alpha.63 review; no qualification logic change."
       }
     ],
-    "current_sha256": "01ef22482318cca39b0c535c7b25a596d7d2520c984a498e239125e52294cf5b"
+    "current_sha256": "96ca8392693cf3110a0ce0c611694f2967ba6bb89ff59e5b75b1c634a579dc71"
   },
   "predecessor": {
-    "commit": "641141e4013cee35e85931ce44377ba3c5719e72",
-    "review_sha256": "cceffdfb89ae29fdc53d1a997793abaff6b096e216fd3f73e36129a67efece89",
-    "tag": "v0.1.0-alpha.62"
+    "commit": "5838d12e4121c1815890227fbbd7d09e8327194d",
+    "review_sha256": "80b00fd6af9d74c8f453519103de7cdf247e6976833b1298de5349895edcc0e4",
+    "tag": "v0.1.0-alpha.63"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -123,14 +129,16 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestNodeProfileGrantIsScopedAndPinned",
-      "TestApplyNodeProfileRecreatesAndOnlyRelaxesTheServiceContainer",
-      "TestNodeProfileBindingsFileIsStrict",
-      "TestValidateNodeProfileRequiresPinnedSingleton"
+      "TestSidecarsRenderAsRestrictedNativeSidecars",
+      "TestSidecarPrivilegesComeOnlyFromTheBinding",
+      "TestNodeProfileRunAsRootAppliesToTheServiceContainerOnly",
+      "TestSidecarsCountInCapacityAndQuota",
+      "TestNodeProfileSidecarGrantsAreStrict",
+      "TestSidecarValidation"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/39642800540"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/39727505418"
   },
-  "reviewed_release": "v0.1.0-alpha.63",
+  "reviewed_release": "v0.1.0-alpha.64",
   "runtime": "oracle-free",
   "schema_version": 2
 }
