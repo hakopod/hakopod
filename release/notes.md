@@ -1,25 +1,26 @@
-Hakopod 0.1.0-alpha.65 lets a sandbox session template set its helper call timeout.
+Hakopod 0.1.0-alpha.66 lets Managed Actions run on additional K3s agents.
 
-- Set `session.call_timeout_seconds` on a session template to allow helper calls longer than the default 150 seconds. The value must be between 10 and the template's `idle_seconds`, and at most 900.
-- The API, the exec stream and the stored call lease all use the template's value. Sessions created before the upgrade keep 150 seconds.
-- This release is covered by unit tests and real PostgreSQL store tests. It has not been run on a real cluster.
+- Join extra Linux machines, such as cloud spot instances, as K3s agents and run GitHub, GitLab and Bitbucket runner pools on them. Adopt each agent on the server with `modules.py managed-actions --adopt-node`, then prepare it on its own host with `actions_runtime.py agent`.
+- A node tainted `hakopod.io/actions-only=true:NoSchedule` runs runner pods only; application workloads never schedule there.
+- `modules.py managed-actions --runtime-class-only` publishes the sandbox RuntimeClass without restarting the server, for clusters where only agents run jobs.
+- Agents support the VFS workspace profile. This release is covered by unit tests. It has not been run on a real multi-node cluster.
 
-Read the [sandbox sessions guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.65/docs/sandbox-sessions.md).
+Read the [Managed Actions guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.66/docs/managed-actions.md#additional-runner-nodes).
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.65/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.65
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.66/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.66
 ```
 
-Upgrade an alpha.63 or alpha.64 installation:
+Upgrade an alpha.64 or alpha.65 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.65/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.65
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.66/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.66
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
