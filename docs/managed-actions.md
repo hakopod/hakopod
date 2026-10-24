@@ -59,86 +59,113 @@ is prepared on its own host because the runtime check reads that host's
 generated containerd configuration and verifies the pinned gVisor files there.
 No server credential is copied to the agent.
 
-Status: covered by installer unit tests. It has not yet been exercised on a
-real multi-node installation; treat the first rollout as an acceptance run.
+Status: covered by installer and placement unit tests. It has not yet been
+exercised on a real multi-node installation; treat the first rollout as an
+acceptance run.
 
-1. **Join the machine.** In the dashboard, create a short-lived worker
-   enrollment (see [the cockpit guide](cockpit.md)). It shows the server URL
-   and an expiring token. The simplest network is the server's own private
-   network, for example the same AWS VPC. Across networks, a tunnel such as
-   Tailscale must make the server's `supervisor_host` and `node_ip` reachable
-   from the agent, and the agent's node IP reachable from the server; Flannel
-   VXLAN traffic is not encrypted and must not cross the public internet. Allow
-   TCP 6443 from the agent to the server and TCP 10250 and UDP 8472 between
-   nodes only. On the agent:
+Requirements for each agent: Linux on AMD64 or ARM64 with systemd, Python 3.11
+or newer (for example Ubuntu 24.04 or Debian 12), outbound HTTPS to GitHub for
+the pinned runtime download, and the server's exact K3s release.
+
+1. **Join the machine as a dedicated runner node.** In the dashboard, create a
+   short-lived worker enrollment (see [the cockpit guide](cockpit.md)). It
+   shows the server URL and an expiring token. Then, on the new machine:
 
    ```sh
-   curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=<server's K3s version> \
+   curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=<server's K3s release> \
      K3S_URL=https://<supervisor_host>:6443 K3S_TOKEN=<enrollment token> \
-     sh -s - agent --node-name <name> --node-ip <private address>
+     sh -s - agent --node-name <name> --node-ip <private address> \
+     --node-taint hakopod.io/actions-only=true:NoSchedule
    ```
 
-   Use the server's exact K3s version (`kubectl get nodes` shows it). This
-   procedure supports the standard K3s agent installation only: the
-   `k3s-agent` systemd unit, `/usr/local/bin/k3s` and the default data
-   directory. Do not add a NoSchedule taint for this purpose: a tainted node is
-   unavailable for automatic and pinned Actions placement.
+   `kubectl get nodes -o wide` on the server shows its K3s release. The
+   `hakopod.io/actions-only=true:NoSchedule` taint reserves the machine for
+   runner pods: application workloads never schedule there, so interrupting
+   the machine cannot take an application down. Runner pods tolerate only
+   this exact taint; any other NoSchedule or NoExecute taint makes the node
+   unavailable for Actions. Leave the taint out only if the machine should
+   also run applications.
 
-2. **Adopt it on the server.** Only the server operator marks a node as part
-   of the installation:
+   The simplest network is the server's own private network, for example the
+   same AWS VPC. Across networks, a tunnel such as Tailscale must make the
+   server's `supervisor_host` and `node_ip` reachable from the agent, and the
+   agent's node IP reachable from the server. Flannel VXLAN traffic is not
+   encrypted and must not cross the public internet. Allow TCP 6443 from
+   agents to the server, and TCP 10250 and UDP 8472 between nodes only.
+
+2. **Adopt it on the server.** Only the server operator makes a node part of
+   the installation:
 
    ```sh
-   sudo /opt/hakopod/tools/kubectl --kubeconfig=/etc/hakopod/admin-kubeconfig \
-     label node <name> hakopod.com/installation=<id from /etc/hakopod/installation.json>
+   sudo python3 ./installer/modules.py managed-actions --adopt-node <name>
    ```
+
+   Adoption refuses a control-plane node, a node that is not ready, a node of
+   another installation, and an agent that is not on the server's exact K3s
+   release. It warns when the dedicated taint is missing and prints the
+   command for step 4, including the installation ID.
 
 3. **Publish the RuntimeClass.** Run `modules.py managed-actions` on the server
-   once as above, or, to keep CI off the server and avoid restarting its K3s:
+   once as described above. To keep CI off the server and avoid restarting
+   its K3s, publish only the RuntimeClass instead:
 
    ```sh
    sudo python3 ./installer/modules.py managed-actions --runtime-class-only
    ```
 
 4. **Prepare the agent.** Copy the same verified installer kit to the agent and
-   run on the agent during its maintenance window:
+   run on the agent:
 
    ```sh
    sudo python3 ./installer/actions_runtime.py agent --node <name> \
      --installation-id <id>
    ```
 
-   The command refuses a node that is not adopted by that installation, a
+   The K3s binary and data directory are read from the running service, so a
+   custom data directory or binary location works. Pass `--unit` if the
+   agent's systemd unit is not `k3s-agent`. The command refuses, before
+   changing anything, a node that is not adopted by that installation, a
    different host (the node's machine ID must match `/etc/machine-id`), a
-   control-plane node, a non-standard agent unit and a missing or changed
-   RuntimeClass, before changing anything. It withdraws the node's Actions
-   label, installs the pinned runtime, restarts `k3s-agent`, verifies the
-   generated configuration and runtime files, and only then publishes
-   `hakopod.io/actions-runtime=ready` with the node's own kubelet identity.
-   Kubernetes restricts that identity to its own node.
+   control-plane node, a K3s release that differs from the server's, a K3s
+   binary writable by anyone but root, and a missing or changed RuntimeClass.
+   It then withdraws the node's Actions label, installs the pinned runtime,
+   restarts the agent's K3s, verifies the generated configuration and runtime
+   files, and only then publishes `hakopod.io/actions-runtime=ready` with the
+   node's own kubelet identity. Kubernetes restricts that identity to its own
+   node.
 
 Automatic placement then uses any ready, schedulable node carrying that label;
 nodes without it are never used. A pool pinned to a node stays on it and waits
-while the node is unavailable. Agents support only the VFS workspace profile:
-the `shared-overlay2-v1` qualification probe needs the server's administrator
-credential and binary on the probed host. If the server has qualified
-`shared-overlay2-v1`, automatic placement prefers it over VFS agents, so pin
-pools to agents, or keep the server on VFS, when CI must run on the agents.
+while the node is unavailable. Agents support the default VFS workspace
+profile only: the `shared-overlay2-v1` qualification probe needs the server's
+administrator credential and binary on the probed host. If the server has
+qualified `shared-overlay2-v1`, automatic GitHub placement prefers qualified
+nodes, so keep the server on VFS or pin pools to agents when CI must run there.
 
-Limits:
+### Operating runner nodes
 
-- An adopted agent is a full cluster member. Ordinary application pods can
-  also be scheduled on it, and a compromised agent host can forge its own
-  labels. Join only machines you administer.
-- Spot interruption ends running jobs on that machine and GitHub reports them
-  as failed. Delete the Node object of a terminated machine
-  (`kubectl delete node <name>`) so its runner pods are released and
-  replacements can start on the remaining eligible nodes. A replacement
-  machine, even with the same name, must be joined, adopted and prepared again.
-- Upgrading the pinned runtime means repeating step 4 on every agent with the
-  new release's kit. Each run restarts that agent's K3s; drain it first if it
-  runs jobs you do not want interrupted.
-- The server's database and control plane are still single-node. Agents add
-  CI capacity, not availability.
+- **Maintenance.** Step 4 restarts the agent's K3s. Cordon and drain the node
+  first if it is running jobs you do not want to lose.
+- **Upgrades.** After upgrading Hakopod, repeat step 4 on every agent with the
+  new release's kit so it runs the release's pinned runtime. After upgrading
+  the server's K3s, upgrade each agent's K3s to the same release and repeat
+  step 4.
+- **Interruption.** A reclaimed spot machine ends its running jobs, and GitHub
+  reports them as failed. A cloud interruption handler that cordons and drains
+  the node on the interruption notice, such as AWS Node Termination Handler,
+  avoids starting new jobs on a machine about to disappear. Delete the Node
+  object of a terminated machine (`kubectl delete node <name>`) so its runner
+  pods are released and replacements start on remaining eligible nodes.
+- **Replacement.** A replacement machine, even with the same name, must be
+  joined, adopted and prepared again.
+- **Removal.** To stop new jobs on a node, remove its label with
+  `kubectl label node <name> hakopod.io/actions-runtime-`, then drain it.
+  Pools pinned to that node wait until it is prepared again.
+- **Trust.** An adopted agent is a cluster member. Its kubelet can change its
+  own node's labels, so join only machines you administer and protect their
+  root access like the server's.
+- **Availability.** The server's database and control plane remain on one
+  machine. Agents add CI capacity, not availability.
 
 External cluster operators must provision the same pinned runtime on eligible
 nodes and the RuntimeClass scheduling selector. Do not run the CI setup script

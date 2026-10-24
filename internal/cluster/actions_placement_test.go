@@ -132,6 +132,44 @@ func TestActionsPlacementPreservesSchedulingTaints(t *testing.T) {
 	}
 }
 
+func TestActionsDedicatedTaintReservesNodeForRunners(t *testing.T) {
+	ctx := context.Background()
+	target := runnerTarget(t)
+	svc := target.Spec.Services["runner"]
+	dedicated := placementNode("spot")
+	dedicated.Labels["hakopod.io/actions-runtime"] = "ready"
+	dedicated.Spec.Taints = []corev1.Taint{{Key: ActionsDedicatedTaint, Value: "true", Effect: corev1.TaintEffectNoSchedule}}
+	runtime := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: ActionsRuntime, Labels: map[string]string{managedBy: "hakopod"}}, Handler: ActionsRuntime,
+		Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{"hakopod.io/actions-runtime": "ready"}}}
+	c := &Client{kube: fake.NewClientset(dedicated, runtime)}
+	if reason := actionsNodeUnavailable(*dedicated, nil); reason != "" {
+		t.Fatal("dedicated Actions node rejected", reason)
+	}
+	if nodeUnavailable(*dedicated, nil, false) == "" {
+		t.Fatal("dedicated Actions node accepted ordinary workloads")
+	}
+	if err := c.SaveActionsConfig(ctx, target, "runner", "dedicated", "unused-development-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.StartActionsPod(ctx, target, "runner", "dedicated", svc); err != nil {
+		t.Fatal("automatic placement ignored the dedicated node", err)
+	}
+	pod, err := c.kube.CoreV1().Pods(Namespace(target.ApplicationID)).Get(ctx, "actions-dedicated", metav1.GetOptions{})
+	if err != nil || len(pod.Spec.Tolerations) != 1 || pod.Spec.Tolerations[0] != actionsDedicatedToleration() {
+		t.Fatal("runner pod does not tolerate the dedicated taint", pod, err)
+	}
+	for _, taint := range []corev1.Taint{
+		{Key: ActionsDedicatedTaint, Value: "false", Effect: corev1.TaintEffectNoSchedule},
+		{Key: ActionsDedicatedTaint, Value: "true", Effect: corev1.TaintEffectNoExecute},
+		{Key: "maintenance", Effect: corev1.TaintEffectNoSchedule},
+	} {
+		dedicated.Spec.Taints = []corev1.Taint{{Key: ActionsDedicatedTaint, Value: "true", Effect: corev1.TaintEffectNoSchedule}, taint}
+		if actionsNodeUnavailable(*dedicated, nil) == "" {
+			t.Fatal("other taint ignored on a dedicated node", taint)
+		}
+	}
+}
+
 func TestActionsAllocatedPlacementDoesNotScanOtherNodes(t *testing.T) {
 	ctx := context.Background()
 	node := placementNode("allocated")
@@ -174,7 +212,7 @@ func TestActionsAllocatedPlacementDoesNotScanOtherNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	fields := pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[0].MatchFields
-	if pod.Spec.NodeName != "" || pod.Spec.NodeSelector["kubernetes.io/hostname"] != "" || pod.Spec.NodeSelector["hakopod.com/pool"] != "private" || pod.Spec.NodeSelector["kubernetes.io/arch"] != "amd64" || fields[0].Values[0] != "allocated" || len(pod.Spec.Tolerations) != 1 {
+	if pod.Spec.NodeName != "" || pod.Spec.NodeSelector["kubernetes.io/hostname"] != "" || pod.Spec.NodeSelector["hakopod.com/pool"] != "private" || pod.Spec.NodeSelector["kubernetes.io/arch"] != "amd64" || fields[0].Values[0] != "allocated" || len(pod.Spec.Tolerations) != 2 || pod.Spec.Tolerations[1] != actionsDedicatedToleration() {
 		t.Fatal("trusted exact-node scheduling constraints were lost", pod.Spec)
 	}
 	mismatch := svc
