@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
+import re
 import shutil
 import stat
 import time
@@ -37,13 +38,10 @@ WORKSPACE_KEYS = ['dev.gvisor.spec.mount.runner.' + name for name in ('type', 's
 MAINTENANCE_LOCK = Path('/run/lock/hakopod-actions-runtime.lock')
 INSTALLATION_LABEL = 'hakopod.com/installation'
 CONTROL_PLANE_LABEL = 'node-role.kubernetes.io/control-plane'
-# Paths of a standard K3s agent installation (get.k3s.io, default data dir).
-AGENT_TEMPLATE = Path('/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl')
-# The agent publishes only its own node's label with its kubelet identity;
-# Kubernetes' NodeRestriction admission confines that identity to this node.
-AGENT_KUBE = ['/usr/local/bin/k3s', 'kubectl', '--kubeconfig=/var/lib/rancher/k3s/agent/kubelet.kubeconfig',
-              '--request-timeout=15s']
+DEDICATED_TAINT = 'hakopod.io/actions-only'
+CONTAINERD_CONFIG = 'agent/etc/containerd/config.toml'
 MACHINE_ID = Path('/etc/machine-id')
+PROC = Path('/proc')
 
 
 class RuntimeMaintenanceLock:
@@ -311,25 +309,105 @@ def publish_runtime_class(marker, kube, read):
             apply_runtime_class(ident, kube, read, tmp)
 
 
+def k3s_version(node):
+    return node.get('status', {}).get('nodeInfo', {}).get('kubeletVersion', '')
+
+
+def require_server_k3s_version(node, nodes):
+    # The containerd template name and generated layout follow the K3s
+    # release, so an agent is prepared only on the server's exact release.
+    servers = [item for item in nodes if CONTROL_PLANE_LABEL in item['metadata'].get('labels', {})]
+    version = k3s_version(node)
+    if '+k3s' not in version or not servers or any(k3s_version(server) != version for server in servers):
+        raise ValueError('The agent must run the server\'s exact K3s release (agent ' + (version or 'unknown') + ', server ' +
+                         ', '.join(sorted({k3s_version(server) for server in servers})) + ')')
+
+
+def adopt_node(name, ident, kube, read):
+    """Mark a joined K3s agent as part of this installation (server side)."""
+    nodes = read('get', 'nodes')['items']
+    matches = [item for item in nodes if item['metadata']['name'] == name]
+    if len(matches) != 1:
+        raise ValueError('Node ' + name + ' is not joined to this cluster')
+    node = matches[0]
+    labels = node['metadata'].get('labels', {})
+    if CONTROL_PLANE_LABEL in labels:
+        raise ValueError('Only K3s agents can be adopted')
+    if labels.get(INSTALLATION_LABEL) not in (None, ident):
+        raise ValueError('Node ' + name + ' belongs to another installation')
+    if not any(c.get('type') == 'Ready' and c.get('status') == 'True' for c in node.get('status', {}).get('conditions', [])):
+        raise ValueError('Node ' + name + ' is not ready')
+    require_server_k3s_version(node, nodes)
+    if labels.get(INSTALLATION_LABEL) != ident:
+        subprocess.run([*kube, 'label', 'node', name, INSTALLATION_LABEL + '=' + ident,
+                        '--resource-version=' + node['metadata']['resourceVersion']], check=True, timeout=30)
+    if not any(taint.get('key') == DEDICATED_TAINT and taint.get('value') == 'true' and taint.get('effect') == 'NoSchedule'
+               for taint in node.get('spec', {}).get('taints', [])):
+        print('Warning: ' + name + ' has no ' + DEDICATED_TAINT + '=true:NoSchedule taint, so application workloads can also run there.')
+    print('Adopted ' + name + '. On that host run: sudo python3 ./installer/actions_runtime.py agent --node ' + name +
+          ' --installation-id ' + ident)
+
+
+def agent_host(unit):
+    """Locate the running K3s agent's binary and data directory.
+
+    Paths come from the running service rather than installation defaults, so
+    a custom binary or data directory is supported and a stopped or foreign
+    agent is refused.
+    """
+    if not re.fullmatch(r'[A-Za-z0-9@_.-]{1,128}', unit):
+        raise ValueError('Invalid K3s agent unit name')
+    shown = subprocess.check_output(['systemctl', 'show', unit, '--property=ExecStart', '--value'], text=True, timeout=15)
+    commands = re.findall(r'argv\[\]=(/\S+) agent(?:\s|;)', shown)
+    if len(commands) != 1:
+        raise ValueError('The ' + unit + ' unit does not run one K3s agent')
+    binary = Path(commands[0])
+    info = binary.lstat()
+    if binary.resolve(strict=True) != binary or not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
+        raise ValueError('The K3s binary must be a root-owned regular file that only root can write')
+    suffix = '/' + unit + '.service'
+    configs = set()
+    for entry in PROC.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            cgroups = (entry / 'cgroup').read_text().splitlines()
+            argv = (entry / 'cmdline').read_bytes().split(b'\0')
+        except OSError:
+            continue
+        if not any(line.endswith(suffix) for line in cgroups) or Path(argv[0].decode(errors='replace')).name != 'containerd':
+            continue
+        configs.update(value.decode() for flag, value in zip(argv, argv[1:]) if flag in (b'-c', b'--config'))
+    if len(configs) != 1 or not next(iter(configs)).endswith('/' + CONTAINERD_CONFIG):
+        raise ValueError('The running K3s agent\'s containerd configuration could not be identified; start ' + unit + ' first')
+    data_dir = Path(next(iter(configs))[:-len('/' + CONTAINERD_CONFIG)])
+    if not data_dir.is_absolute():
+        raise ValueError('The K3s agent data directory must be absolute')
+    # The agent publishes only its own node's label with its kubelet identity;
+    # Kubernetes' NodeRestriction admission confines that identity to this node.
+    kube = [str(binary), 'kubectl', '--kubeconfig=' + str(data_dir / 'agent/kubelet.kubeconfig'), '--request-timeout=15s']
+    return {'unit': unit, 'template': data_dir / 'agent/etc/containerd/config-v3.toml.tmpl', 'kube': kube}
+
+
 def install(config, marker, kube, read, workspace_profile=None):
     with RuntimeMaintenanceLock() as maintenance:
         return install_locked(config, marker, kube, read, workspace_profile, maintenance)
 
 
-def install_agent(node_name, ident, kube, read, workspace_profile=None):
+def install_agent(node_name, ident, host, read, workspace_profile=None):
     if workspace_profile not in (None, 'vfs'):
         # The workspace probe needs the server's administrator credential and
         # binary on the probed host; agents are not given either.
         raise ValueError('An adopted agent supports only the VFS workspace profile')
     with RuntimeMaintenanceLock() as maintenance:
-        return install_locked({'node_name': node_name}, {'id': ident}, kube, read, 'vfs', maintenance, agent=True)
+        return install_locked({'node_name': node_name}, {'id': ident}, host['kube'], read, 'vfs', maintenance, agent=host)
 
 
-def install_locked(config, marker, kube, read, workspace_profile, maintenance, agent=False):
+def install_locked(config, marker, kube, read, workspace_profile, maintenance, agent=None):
     if platform.system() != 'Linux' or platform.machine() not in DIGESTS:
         raise ValueError('Actions requires Linux AMD64 or ARM64')
-    template = AGENT_TEMPLATE if agent else TEMPLATE
-    unit_name = 'k3s-agent' if agent else 'hakopod-k3s'
+    template = agent['template'] if agent else TEMPLATE
+    unit_name = agent['unit'] if agent else 'hakopod-k3s'
     if not template.parent.is_dir():
         raise ValueError('The K3s containerd directory is missing')
     ident = marker['id']
@@ -342,9 +420,7 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance, a
             raise ValueError('Run agent setup on the host of the named node')
         if CONTROL_PLANE_LABEL in node['metadata'].get('labels', {}):
             raise ValueError('Agent setup applies only to K3s agents; use modules.py on the server')
-        unit = subprocess.check_output(['systemctl', 'show', unit_name, '--property=ExecStart', '--value'], text=True, timeout=15)
-        if '/usr/local/bin/k3s' not in unit or ' agent' not in unit:
-            raise ValueError('The K3s agent unit could not be verified')
+        require_server_k3s_version(node, read('get', 'nodes')['items'])
     else:
         nodes = read('get', 'nodes')['items']
         own = [item for item in nodes if item['metadata']['name'] == config['node_name']]
@@ -483,16 +559,18 @@ def agent_cli(argv=None):
     parser.add_argument('command', choices=['agent'])
     parser.add_argument('--node', required=True, help='Kubernetes node name of this host')
     parser.add_argument('--installation-id', required=True, help='ID from the server\'s /etc/hakopod/installation.json')
+    parser.add_argument('--unit', default='k3s-agent', help='systemd unit running the K3s agent (default k3s-agent)')
     parser.add_argument('--workspace-profile', choices=['vfs'])
     args = parser.parse_args(argv)
     if os.geteuid() != 0:
         raise ValueError('Run agent setup as root')
     os.umask(0o077)
+    host = agent_host(args.unit)
 
     def read(*command):
-        raw = subprocess.check_output([*AGENT_KUBE, *command, '-o', 'json'], timeout=20, text=True)
+        raw = subprocess.check_output([*host['kube'], *command, '-o', 'json'], timeout=20, text=True)
         return json.loads(raw) if raw.strip() else {}
-    install_agent(args.node, args.installation_id, AGENT_KUBE, read, args.workspace_profile)
+    install_agent(args.node, args.installation_id, host, read, args.workspace_profile)
     print('Managed Actions runtime is ready on ' + args.node + '.')
 
 

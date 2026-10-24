@@ -232,6 +232,7 @@ func (c *Client) StartGitLabActionsPod(ctx context.Context, t Target, service, i
 		pinActionsNode(&pod.Spec, placement.nodeName)
 	}
 	pod.Spec.NodeSelector = placement.selector
+	pod.Spec.Tolerations = append(pod.Spec.Tolerations, actionsDedicatedToleration())
 	if err = beforeStep(ctx, t); err != nil {
 		return err
 	}

@@ -102,6 +102,15 @@ func (c *Client) PlacementNodesForRuntime(ctx context.Context, t Target, runtime
 }
 
 func actionsNodeUnavailable(node corev1.Node, policy *WorkloadPolicy) string {
+	// Runner pods tolerate the dedicated Actions taint; any other taint still
+	// makes the node unavailable.
+	var taints []corev1.Taint
+	for _, taint := range node.Spec.Taints {
+		if !isActionsDedicatedTaint(taint) {
+			taints = append(taints, taint)
+		}
+	}
+	node.Spec.Taints = taints
 	if reason := nodeUnavailable(node, policy, false); reason != "" {
 		return reason
 	}

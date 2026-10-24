@@ -26,21 +26,21 @@ def read(*args):
 def run(*args):
     subprocess.run(args,check=True,timeout=240)
 
-def main(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False):
+def main(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False, adopt_node=None):
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
     os.umask(0o077)
     # This broader lock also covers the ordinary qualification probe, after
     # runtime installation hands off its separate local maintenance lock.
     with open("/run/lock/hakopod-install.lock","a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
-        options = {key: value for key, value in {'engines': engines, 'plan_path': plan_path, 'review_path': review_path, 'runtime_class_only': runtime_class_only or None}.items() if value is not None}
+        options = {key: value for key, value in {'engines': engines, 'plan_path': plan_path, 'review_path': review_path, 'runtime_class_only': runtime_class_only or None, 'adopt_node': adopt_node}.items() if value is not None}
         return apply_module(module, workspace_profile, **options)
 
-def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False):
-    if (workspace_profile is not None or runtime_class_only) and module != 'managed-actions':
-        raise ValueError('Workspace profiles and --runtime-class-only apply only to Managed Actions')
-    if runtime_class_only and workspace_profile is not None:
-        raise ValueError('--runtime-class-only does not change a workspace profile')
+def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False, adopt_node=None):
+    if (workspace_profile is not None or runtime_class_only or adopt_node) and module != 'managed-actions':
+        raise ValueError('Workspace profiles, --runtime-class-only and --adopt-node apply only to Managed Actions')
+    if sum((workspace_profile is not None, runtime_class_only, adopt_node is not None)) > 1:
+        raise ValueError('Choose one of --workspace-profile, --runtime-class-only or --adopt-node')
     if any(value is not None for value in (engines, plan_path, review_path)) and module != 'managed-databases':
         raise ValueError('Engine selection and reviewed plans apply only to Managed Databases')
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
@@ -78,7 +78,10 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
             raise ValueError('Refusing an unowned resource: '+kind+'/'+name)
     with tempfile.TemporaryDirectory(prefix='hakopod-module-') as tmp:
         if module=='managed-actions':
-            from actions_runtime import install, publish_runtime_class
+            from actions_runtime import adopt_node as adopt, install, publish_runtime_class
+            if adopt_node:
+                adopt(adopt_node, ident, KUBE, read)
+                return
             if runtime_class_only:
                 publish_runtime_class(marker, KUBE, read)
             else:
@@ -111,11 +114,13 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
 def cli(argv=None):
     parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions','managed-databases'])
     parser.add_argument('--workspace-profile', choices=['vfs', 'shared-overlay2-v1'])
+    parser.add_argument('--adopt-node', metavar='NODE', help='Managed Actions: mark a joined K3s agent as part of this installation')
     parser.add_argument('--runtime-class-only', action='store_true', help='Managed Actions: publish the RuntimeClass for adopted agents without preparing or restarting this server')
     parser.add_argument('--engines', nargs='+', choices=ENGINES)
     parser.add_argument('--plan'); parser.add_argument('--apply-reviewed-plan')
     args=parser.parse_args(argv)
     main(args.module, args.workspace_profile, engines=args.engines, plan_path=args.plan, review_path=args.apply_reviewed_plan,
-         **({'runtime_class_only': True} if args.runtime_class_only else {}))
+         **({'runtime_class_only': True} if args.runtime_class_only else {}),
+         **({'adopt_node': args.adopt_node} if args.adopt_node else {}))
 
 if __name__=='__main__':cli()
