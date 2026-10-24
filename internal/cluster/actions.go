@@ -15,6 +15,20 @@ import (
 )
 
 const ActionsRuntime = "hakopod-actions"
+
+// ActionsDedicatedTaint reserves a node for Actions runner pods. Only runner
+// pods tolerate it, so interruptible CI capacity never receives application
+// workloads.
+const ActionsDedicatedTaint = "hakopod.io/actions-only"
+
+func actionsDedicatedToleration() corev1.Toleration {
+	return corev1.Toleration{Key: ActionsDedicatedTaint, Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule}
+}
+
+func isActionsDedicatedTaint(t corev1.Taint) bool {
+	return t.Key == ActionsDedicatedTaint && t.Value == "true" && t.Effect == corev1.TaintEffectNoSchedule
+}
+
 const ActionsDaemonImage = "docker.io/library/docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0"
 
 //go:embed actions-daemon.sh
@@ -301,6 +315,7 @@ func (c *Client) StartActionsPod(ctx context.Context, t Target, service, id stri
 		pinActionsNode(&p.Spec, placement.nodeName)
 	}
 	p.Spec.NodeSelector = placement.selector
+	p.Spec.Tolerations = append(p.Spec.Tolerations, actionsDedicatedToleration())
 	if err = applyActionsWorkspaceProfile(p, spec.ActionsWorkspaceGiB(s.Actions), placement.workspaceProfile); err != nil {
 		return err
 	}

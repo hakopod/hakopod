@@ -305,7 +305,7 @@ serverless plans are available. See [serverless setup](../docs/serverless.md).
 
 ### Managed Actions runner sandbox
 
-Managed Actions is an optional Pro module. See [the setup and lifecycle guide](../docs/managed-actions.md). Run `sudo python3 ./installer/modules.py managed-actions` from the verified installer kit for your installed release during a maintenance window; it restarts K3s and does not change the default workload runtime.
+Managed Actions is an optional Pro module. See [the setup and lifecycle guide](../docs/managed-actions.md). Run `sudo python3 ./installer/modules.py managed-actions` from the verified installer kit for your installed release during a maintenance window; it restarts K3s and does not change the default workload runtime. Additional K3s agents can run runner pools after the server adopts them; see [Additional runner nodes](../docs/managed-actions.md#additional-runner-nodes).
 
 ## Managed database controllers
 
