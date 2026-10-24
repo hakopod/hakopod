@@ -16,6 +16,18 @@ class ModulesCLITest(unittest.TestCase):
                 }
                 main.assert_called_once_with('managed-databases', None, **kwargs)
 
+    def test_runtime_class_only_reaches_managed_actions_module(self):
+        with patch.object(modules, 'main') as main:
+            modules.cli(['managed-actions', '--runtime-class-only'])
+        main.assert_called_once_with('managed-actions', None, engines=None, plan_path=None, review_path=None,
+                                     runtime_class_only=True)
+
+    def test_runtime_class_only_rejects_other_modules_and_profiles(self):
+        for module, profile in (('storage', None), ('managed-actions', 'vfs')):
+            with self.subTest(module=module), patch.object(modules.os, 'geteuid', return_value=0), \
+                 patch.object(modules.os, 'umask'), self.assertRaises(ValueError):
+                modules.apply_module(module, profile, runtime_class_only=True)
+
     def test_unsupported_engine_is_rejected_before_module_handoff(self):
         with patch.object(modules, 'main') as main, self.assertRaises(SystemExit):
             modules.cli(['managed-databases', '--engines', 'unsupported', '--plan', '/tmp/review.json'])
