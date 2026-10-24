@@ -1,8 +1,11 @@
-"""Install the optional Actions runtime on an installer-owned K3s server.
+"""Install the optional Actions runtime on an installer-owned K3s node.
 
-This command restarts K3s, so it is an explicit operator maintenance action.
-It never alters the default runtime or uses a customer's Docker socket.
+The installer's server uses modules.py. An additional K3s agent adopted by that
+server runs this file's `agent` command on the agent host itself. Both restart
+K3s, so they are explicit operator maintenance actions. Neither alters the
+default runtime or uses a customer's Docker socket.
 """
+import argparse
 import fnmatch
 import fcntl
 import hashlib
@@ -32,6 +35,15 @@ WORKSPACE_LABEL = 'hakopod.io/actions-workspace'
 RUNTIME_LABEL = 'hakopod.io/actions-runtime'
 WORKSPACE_KEYS = ['dev.gvisor.spec.mount.runner.' + name for name in ('type', 'share', 'options')]
 MAINTENANCE_LOCK = Path('/run/lock/hakopod-actions-runtime.lock')
+INSTALLATION_LABEL = 'hakopod.com/installation'
+CONTROL_PLANE_LABEL = 'node-role.kubernetes.io/control-plane'
+# Paths of a standard K3s agent installation (get.k3s.io, default data dir).
+AGENT_TEMPLATE = Path('/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl')
+# The agent publishes only its own node's label with its kubelet identity;
+# Kubernetes' NodeRestriction admission confines that identity to this node.
+AGENT_KUBE = ['/usr/local/bin/k3s', 'kubectl', '--kubeconfig=/var/lib/rancher/k3s/agent/kubelet.kubeconfig',
+              '--request-timeout=15s']
+MACHINE_ID = Path('/etc/machine-id')
 
 
 class RuntimeMaintenanceLock:
@@ -256,30 +268,98 @@ def unpack_runtime(source, destination):
                 path.chmod(0o755)
 
 
+def runtime_class(ident):
+    return {'apiVersion': 'node.k8s.io/v1', 'kind': 'RuntimeClass', 'metadata': {'name': 'hakopod-actions', 'labels': {'app.kubernetes.io/managed-by': 'hakopod', INSTALLATION_LABEL: ident}}, 'handler': 'hakopod-actions', 'scheduling': {'nodeSelector': {RUNTIME_LABEL: 'ready'}}, 'overhead': {'podFixed': {'memory': '512Mi', 'cpu': '100m'}}}
+
+
+def verify_runtime_class(installed, ident):
+    runtime = runtime_class(ident)
+    labels = installed.get('metadata', {}).get('labels', {}) if installed else {}
+    if labels.get(INSTALLATION_LABEL) != ident or labels.get('app.kubernetes.io/managed-by') != 'hakopod' or any(installed.get(key) != runtime[key] for key in ('handler', 'scheduling', 'overhead')):
+        raise ValueError('Actions RuntimeClass verification failed')
+
+
+def refuse_unowned_published_nodes(nodes, ident):
+    # The RuntimeClass admits every node carrying the runtime label. A node
+    # published outside this installation could receive jobs on an unverified
+    # runtime, so the class is not created or refreshed while one exists.
+    for node in nodes:
+        labels = node['metadata'].get('labels', {})
+        if (RUNTIME_LABEL in labels or WORKSPACE_LABEL in labels) and labels.get(INSTALLATION_LABEL) != ident:
+            raise ValueError('Node ' + node['metadata']['name'] + ' publishes Actions eligibility without this installation\'s ownership label')
+
+
+def apply_runtime_class(ident, kube, read, tmp):
+    manifest = Path(tmp) / 'runtime.json'
+    manifest.write_text(json.dumps(runtime_class(ident)))
+    subprocess.run([*kube, 'apply', '--server-side', '--field-manager=hakopod-installer', '-f', str(manifest)], check=True, timeout=30)
+    verify_runtime_class(read('get', 'runtimeclass', 'hakopod-actions'), ident)
+
+
+def publish_runtime_class(marker, kube, read):
+    """Create the cluster's RuntimeClass without preparing the server node.
+
+    Used when only adopted agents run jobs, so the server's K3s keeps running.
+    """
+    with RuntimeMaintenanceLock():
+        ident = marker['id']
+        existing = read('get', 'runtimeclass', 'hakopod-actions', '--ignore-not-found')
+        if existing and existing.get('metadata', {}).get('labels', {}).get(INSTALLATION_LABEL) != ident:
+            raise ValueError('An unowned Actions RuntimeClass already exists')
+        refuse_unowned_published_nodes(read('get', 'nodes')['items'], ident)
+        with tempfile.TemporaryDirectory(prefix='hakopod-actions-') as tmp:
+            apply_runtime_class(ident, kube, read, tmp)
+
+
 def install(config, marker, kube, read, workspace_profile=None):
     with RuntimeMaintenanceLock() as maintenance:
         return install_locked(config, marker, kube, read, workspace_profile, maintenance)
 
 
-def install_locked(config, marker, kube, read, workspace_profile, maintenance):
+def install_agent(node_name, ident, kube, read, workspace_profile=None):
+    if workspace_profile not in (None, 'vfs'):
+        # The workspace probe needs the server's administrator credential and
+        # binary on the probed host; agents are not given either.
+        raise ValueError('An adopted agent supports only the VFS workspace profile')
+    with RuntimeMaintenanceLock() as maintenance:
+        return install_locked({'node_name': node_name}, {'id': ident}, kube, read, 'vfs', maintenance, agent=True)
+
+
+def install_locked(config, marker, kube, read, workspace_profile, maintenance, agent=False):
     if platform.system() != 'Linux' or platform.machine() not in DIGESTS:
         raise ValueError('Actions requires Linux AMD64 or ARM64')
-    if not TEMPLATE.parent.is_dir():
-        raise ValueError('The installer-owned K3s containerd directory is missing')
-    # Only this installation's single local server is changed. An external or
-    # multi-node cluster needs its own reviewed node runtime configuration.
-    nodes = read('get', 'nodes')['items']
-    if len(nodes) != 1 or nodes[0]['metadata']['name'] != config['node_name']:
-        raise ValueError('Automatic Actions setup requires the installer-owned single server')
-    unit = subprocess.check_output(['systemctl', 'show', 'hakopod-k3s', '--property=ExecStart', '--value'], text=True, timeout=15)
-    if '/opt/hakopod/tools/k3s' not in unit or '/etc/hakopod/k3s.yaml' not in unit:
-        raise ValueError('The installer-owned K3s unit could not be verified')
+    template = AGENT_TEMPLATE if agent else TEMPLATE
+    unit_name = 'k3s-agent' if agent else 'hakopod-k3s'
+    if not template.parent.is_dir():
+        raise ValueError('The K3s containerd directory is missing')
     ident = marker['id']
-    if nodes[0]['metadata'].get('labels', {}).get('hakopod.com/installation') != ident:
+    if agent:
+        # An agent changes only its own host. The server operator adopts the
+        # node first; the machine ID proves this host is that node.
+        node = read('get', 'node', config['node_name'])
+        machine = MACHINE_ID.read_text().strip() if MACHINE_ID.is_file() else ''
+        if not machine or node.get('status', {}).get('nodeInfo', {}).get('machineID') != machine:
+            raise ValueError('Run agent setup on the host of the named node')
+        if CONTROL_PLANE_LABEL in node['metadata'].get('labels', {}):
+            raise ValueError('Agent setup applies only to K3s agents; use modules.py on the server')
+        unit = subprocess.check_output(['systemctl', 'show', unit_name, '--property=ExecStart', '--value'], text=True, timeout=15)
+        if '/usr/local/bin/k3s' not in unit or ' agent' not in unit:
+            raise ValueError('The K3s agent unit could not be verified')
+    else:
+        nodes = read('get', 'nodes')['items']
+        own = [item for item in nodes if item['metadata']['name'] == config['node_name']]
+        if len(own) != 1:
+            raise ValueError('Actions setup requires the installer-owned server node')
+        node = own[0]
+        refuse_unowned_published_nodes(nodes, ident)
+        unit = subprocess.check_output(['systemctl', 'show', unit_name, '--property=ExecStart', '--value'], text=True, timeout=15)
+        if '/opt/hakopod/tools/k3s' not in unit or '/etc/hakopod/k3s.yaml' not in unit:
+            raise ValueError('The installer-owned K3s unit could not be verified')
+    if node['metadata'].get('labels', {}).get(INSTALLATION_LABEL) != ident:
         raise ValueError('Actions node belongs to another installation')
-    if 'hakopod.io/actions-workspace-probe' in nodes[0]['metadata'].get('annotations', {}):
+    if 'hakopod.io/actions-workspace-probe' in node['metadata'].get('annotations', {}):
         raise ValueError('Finish the existing Actions workspace probe before runtime maintenance')
-    if TEMPLATE.is_symlink() or BASE.is_symlink():
+    if template.is_symlink() or BASE.is_symlink():
         raise ValueError('Refusing a symlink in the runtime configuration')
     profile_path = BASE / 'workspace-profile'
     if workspace_profile is None:
@@ -292,8 +372,12 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance):
     if workspace_profile not in ('vfs', WORKSPACE_PROFILE):
         raise ValueError('Unknown Actions workspace profile')
     existing = read('get', 'runtimeclass', 'hakopod-actions', '--ignore-not-found')
-    if existing and existing.get('metadata', {}).get('labels', {}).get('hakopod.com/installation') != ident:
+    if existing and existing.get('metadata', {}).get('labels', {}).get(INSTALLATION_LABEL) != ident:
         raise ValueError('An unowned Actions RuntimeClass already exists')
+    if agent:
+        # The agent's kubelet identity cannot create the class; the server's
+        # module publishes it before any agent is prepared.
+        verify_runtime_class(existing, ident)
     if BASE.exists():
         info = BASE.lstat()
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022 or read_runtime_text(BASE / 'owner', 128) != ident:
@@ -303,13 +387,13 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance):
         info = root.lstat()
         if root.resolve(strict=True) != root or not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
             raise ValueError('Installed Actions runtime directory has invalid ownership')
-    original = read_runtime_text(TEMPLATE, 262144) if TEMPLATE.exists() else '{{ template "base" . }}\n'
+    original = read_runtime_text(template, 262144) if template.exists() else '{{ template "base" . }}\n'
     updated = extend_template(original, root, workspace_profile)
     verify_generated_config(runtime_section(root, workspace_profile), root, workspace_profile)
-    withdraw = [name + '-' for name in (RUNTIME_LABEL, WORKSPACE_LABEL) if name in nodes[0]['metadata'].get('labels', {})]
+    withdraw = [name + '-' for name in (RUNTIME_LABEL, WORKSPACE_LABEL) if name in node['metadata'].get('labels', {})]
     if withdraw:
         subprocess.run([*kube, 'label', 'node', config['node_name'], *withdraw,
-                        '--resource-version=' + nodes[0]['metadata']['resourceVersion']], check=True, timeout=30)
+                        '--resource-version=' + node['metadata']['resourceVersion']], check=True, timeout=30)
     with tempfile.TemporaryDirectory(prefix='hakopod-actions-') as tmp:
         tmp = Path(tmp)
         archive = tmp / 'gvisor.tar.bz2'
@@ -342,7 +426,7 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance):
         (stage / 'runsc-actions.toml').write_text(runtime_profile(root))
         (stage / 'runsc-actions.toml').chmod(0o644)
         current = read('get', 'node', config['node_name'])
-        if current['metadata']['uid'] != nodes[0]['metadata']['uid'] or current['metadata'].get('labels', {}).get('hakopod.com/installation') != ident or 'hakopod.io/actions-workspace-probe' in current['metadata'].get('annotations', {}):
+        if current['metadata']['uid'] != node['metadata']['uid'] or current['metadata'].get('labels', {}).get(INSTALLATION_LABEL) != ident or 'hakopod.io/actions-workspace-probe' in current['metadata'].get('annotations', {}):
             raise ValueError('Actions node ownership changed before runtime maintenance')
         if any(name in current['metadata'].get('labels', {}) for name in (RUNTIME_LABEL, WORKSPACE_LABEL)):
             raise ValueError('Actions eligibility changed during runtime maintenance')
@@ -365,23 +449,20 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance):
             backup = BASE / 'containerd-template.before-actions'
             if not backup.exists():
                 atomic_write(backup, original, 0o600)
-            atomic_write(TEMPLATE, updated)
-        subprocess.run(['systemctl', 'restart', 'hakopod-k3s'], check=True, timeout=300)
+            atomic_write(template, updated)
+        subprocess.run(['systemctl', 'restart', unit_name], check=True, timeout=300)
         subprocess.run([*kube, 'wait', '--for=condition=Ready', 'node/' + config['node_name'], '--timeout=180s'], check=True, timeout=200)
         # Publish eligibility only after the generated containerd config contains
         # our exact runtime, keeping unsandboxed fallback impossible.
-        generated = TEMPLATE.parent / 'config.toml'
+        generated = template.parent / 'config.toml'
         verify_generated_config(read_runtime_text(generated, 262144), root, workspace_profile)
         verify_installed_runtime(root, stage)
-        runtime = {'apiVersion': 'node.k8s.io/v1', 'kind': 'RuntimeClass', 'metadata': {'name': 'hakopod-actions', 'labels': {'app.kubernetes.io/managed-by': 'hakopod', 'hakopod.com/installation': ident}}, 'handler': 'hakopod-actions', 'scheduling': {'nodeSelector': {'hakopod.io/actions-runtime': 'ready'}}, 'overhead': {'podFixed': {'memory': '512Mi', 'cpu': '100m'}}}
-        manifest = tmp / 'runtime.json'
-        manifest.write_text(json.dumps(runtime))
-        subprocess.run([*kube, 'apply', '--server-side', '--field-manager=hakopod-installer', '-f', str(manifest)], check=True, timeout=30)
-        installed = read('get', 'runtimeclass', 'hakopod-actions')
-        if installed.get('metadata', {}).get('labels', {}).get('hakopod.com/installation') != ident or installed.get('metadata', {}).get('labels', {}).get('app.kubernetes.io/managed-by') != 'hakopod' or any(installed.get(key) != runtime[key] for key in ('handler', 'scheduling', 'overhead')):
-            raise ValueError('Actions RuntimeClass verification failed')
+        if agent:
+            verify_runtime_class(read('get', 'runtimeclass', 'hakopod-actions'), ident)
+        else:
+            apply_runtime_class(ident, kube, read, tmp)
         current = read('get', 'node', config['node_name'])
-        if current['metadata']['uid'] != nodes[0]['metadata']['uid'] or current['metadata'].get('labels', {}).get('hakopod.com/installation') != ident or 'hakopod.io/actions-workspace-probe' in current['metadata'].get('annotations', {}) or any(name in current['metadata'].get('labels', {}) for name in (RUNTIME_LABEL, WORKSPACE_LABEL)):
+        if current['metadata']['uid'] != node['metadata']['uid'] or current['metadata'].get('labels', {}).get(INSTALLATION_LABEL) != ident or 'hakopod.io/actions-workspace-probe' in current['metadata'].get('annotations', {}) or any(name in current['metadata'].get('labels', {}) for name in (RUNTIME_LABEL, WORKSPACE_LABEL)):
             raise ValueError('Actions node eligibility changed before runtime verification completed')
         subprocess.run([*kube, 'label', 'node', config['node_name'], RUNTIME_LABEL + '=ready',
                         '--resource-version=' + current['metadata']['resourceVersion']], check=True, timeout=30)
@@ -395,3 +476,25 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance):
                             '--node', config['node_name'], '--installation-id', ident,
                             '--workspace-profile', workspace_profile], check=True, timeout=1000)
         atomic_write(profile_path, workspace_profile + '\n', 0o600)
+
+
+def agent_cli(argv=None):
+    parser = argparse.ArgumentParser(description='Prepare this adopted K3s agent for Managed Actions.')
+    parser.add_argument('command', choices=['agent'])
+    parser.add_argument('--node', required=True, help='Kubernetes node name of this host')
+    parser.add_argument('--installation-id', required=True, help='ID from the server\'s /etc/hakopod/installation.json')
+    parser.add_argument('--workspace-profile', choices=['vfs'])
+    args = parser.parse_args(argv)
+    if os.geteuid() != 0:
+        raise ValueError('Run agent setup as root')
+    os.umask(0o077)
+
+    def read(*command):
+        raw = subprocess.check_output([*AGENT_KUBE, *command, '-o', 'json'], timeout=20, text=True)
+        return json.loads(raw) if raw.strip() else {}
+    install_agent(args.node, args.installation_id, AGENT_KUBE, read, args.workspace_profile)
+    print('Managed Actions runtime is ready on ' + args.node + '.')
+
+
+if __name__ == '__main__':
+    agent_cli()

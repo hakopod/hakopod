@@ -292,6 +292,162 @@ class ActionsRuntimeTests(unittest.TestCase):
                     self.assertFalse(state.held)
 
 
+class MultiNodeTests(unittest.TestCase):
+    IDENT = 'install-id'
+
+    def node(self, name, labels=None, machine='m-' + 'a' * 30, role=None):
+        labels = dict(labels or {})
+        if role:
+            labels[actions_runtime.CONTROL_PLANE_LABEL] = 'true'
+        return {'metadata': {'name': name, 'uid': name + '-uid', 'resourceVersion': '7', 'labels': labels},
+                'status': {'nodeInfo': {'machineID': machine}}}
+
+    @contextmanager
+    def host(self, machine='m-' + 'a' * 30):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            template = root / 'containerd/config-v3.toml.tmpl'; template.parent.mkdir()
+            (root / 'machine-id').write_text(machine + '\n')
+            with patch.object(actions_runtime.platform, 'system', return_value='Linux'), \
+                 patch.object(actions_runtime.platform, 'machine', return_value='aarch64'), \
+                 patch.object(actions_runtime, 'TEMPLATE', template), \
+                 patch.object(actions_runtime, 'AGENT_TEMPLATE', template), \
+                 patch.object(actions_runtime, 'BASE', root / 'actions-runtime'), \
+                 patch.object(actions_runtime, 'MACHINE_ID', root / 'machine-id'):
+                yield root, template
+
+    def test_server_accepts_owned_agents_and_refuses_unowned_published_nodes(self):
+        owned = {'hakopod.com/installation': self.IDENT}
+        cases = [
+            ([self.node('server', owned, role=True), self.node('spot-1'), self.node('spot-2', {**owned, actions_runtime.RUNTIME_LABEL: 'ready'})], 'unit could not be verified'),
+            ([self.node('server', owned, role=True), self.node('stray', {actions_runtime.RUNTIME_LABEL: 'ready'})], 'without this installation'),
+            ([self.node('server', owned, role=True), self.node('stray', {'hakopod.com/installation': 'other', actions_runtime.WORKSPACE_LABEL: 'shared-overlay2-v1'})], 'without this installation'),
+            ([self.node('spot-1', owned)], 'installer-owned server node'),
+        ]
+        for nodes, message in cases:
+            with self.subTest(message=message, nodes=[n['metadata']['name'] for n in nodes]), self.host(), \
+                 patch.object(actions_runtime.subprocess, 'check_output', return_value='/usr/bin/other-k3s server') as unit, \
+                 patch.object(actions_runtime.subprocess, 'run') as run, self.assertRaisesRegex(ValueError, message):
+                actions_runtime.install_locked({'node_name': 'server'}, {'id': self.IDENT}, ['kubectl'],
+                                               lambda *args: {'items': nodes}, None, None)
+            run.assert_not_called()
+            if message != 'unit could not be verified':
+                unit.assert_not_called()
+
+    def test_runtime_class_only_publishes_class_without_touching_nodes(self):
+        owned = {'hakopod.com/installation': self.IDENT}
+        applied = {}
+
+        def read(*args):
+            if args[:2] == ('get', 'nodes'):
+                return {'items': [self.node('server', owned, role=True), self.node('spot-1', {**owned, actions_runtime.RUNTIME_LABEL: 'ready'})]}
+            if '--ignore-not-found' in args:
+                return {}
+            return applied['value']
+
+        def run(args, **_kwargs):
+            self.assertEqual(args[:2], ['kubectl', 'apply'])
+            applied['value'] = json.loads(Path(args[-1]).read_text())
+
+        class Lock:
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+
+        with patch.object(actions_runtime, 'RuntimeMaintenanceLock', Lock), \
+             patch.object(actions_runtime.subprocess, 'run', side_effect=run) as called:
+            actions_runtime.publish_runtime_class({'id': self.IDENT}, ['kubectl'], read)
+        called.assert_called_once()
+        self.assertEqual(applied['value'], actions_runtime.runtime_class(self.IDENT))
+
+    def test_agent_refuses_before_mutation(self):
+        owned = {'hakopod.com/installation': self.IDENT}
+        good_unit = '{ path=/usr/local/bin/k3s ; argv[]=/usr/local/bin/k3s agent ; }'
+        runtime = actions_runtime.runtime_class(self.IDENT)
+        cases = [
+            ('unadopted', self.node('spot-1'), runtime, good_unit, 'another installation'),
+            ('other host', self.node('spot-1', owned, machine='m-' + 'b' * 30), runtime, good_unit, 'host of the named node'),
+            ('server', self.node('spot-1', owned, role=True), runtime, good_unit, 'only to K3s agents'),
+            ('unit', self.node('spot-1', owned), runtime, '/usr/local/bin/k3s server', 'agent unit'),
+            ('no class', self.node('spot-1', owned), {}, good_unit, 'RuntimeClass verification'),
+            ('changed class', self.node('spot-1', owned), {**runtime, 'handler': 'runc'}, good_unit, 'RuntimeClass verification'),
+        ]
+        for name, node, klass, unit, message in cases:
+            def read(*args, node=node, klass=klass):
+                return node if args[:2] == ('get', 'node') else klass
+            with self.subTest(name), self.host(), \
+                 patch.object(actions_runtime.subprocess, 'check_output', return_value=unit), \
+                 patch.object(actions_runtime.subprocess, 'run') as run, \
+                 patch.object(actions_runtime.urllib.request, 'urlopen') as download, \
+                 self.assertRaisesRegex(ValueError, message):
+                actions_runtime.install_locked({'node_name': 'spot-1'}, {'id': self.IDENT}, ['kubectl'], read,
+                                               'vfs', None, agent=True)
+            run.assert_not_called()
+            download.assert_not_called()
+        with patch.object(actions_runtime, 'RuntimeMaintenanceLock') as lock, \
+             self.assertRaisesRegex(ValueError, 'only the VFS'):
+            actions_runtime.install_agent('spot-1', self.IDENT, ['kubectl'], None, actions_runtime.WORKSPACE_PROFILE)
+        lock.assert_not_called()
+
+    def test_agent_restarts_its_own_unit_and_publishes_only_after_verification(self):
+        owned = {'hakopod.com/installation': self.IDENT}
+        runtime = actions_runtime.runtime_class(self.IDENT)
+        events = []
+        with self.host() as (root, template):
+            template.write_text('{{ template "base" . }}\n'); template.chmod(0o644)
+
+            def read(*args):
+                if args[:2] == ('get', 'node'):
+                    events.append('node-check')
+                    return self.node('spot-1', {**owned, actions_runtime.RUNTIME_LABEL: 'ready'} if not events.count('node-check') - 1 else owned)
+                events.append('runtimeclass-check')
+                return runtime
+
+            def unpack(_archive, destination):
+                destination.mkdir()
+                for name in ('runsc', 'containerd-shim-runsc-v1', 'gvisor-bin'):
+                    (destination / name).write_bytes(b'x'); (destination / name).chmod(0o755)
+
+            def run(args, **_kwargs):
+                command = ' '.join(args)
+                if args[:2] == ['systemctl', 'restart']:
+                    self.assertEqual(args[2], 'k3s-agent')
+                    events.append('restart')
+                    generated = template.parent / 'config.toml'
+                    generated.write_text(actions_runtime.runtime_section(root / 'actions-runtime' / actions_runtime.VERSION, 'vfs'))
+                    generated.chmod(0o644)
+                elif actions_runtime.RUNTIME_LABEL + '=ready' in command:
+                    events.append('publish')
+                elif actions_runtime.RUNTIME_LABEL + '-' in command:
+                    events.append('withdraw')
+                self.assertNotIn('apply', args)
+                self.assertFalse(args[0].endswith('hakopod-server'))
+                return SimpleNamespace(stdout=b'', stderr=b'')
+
+            empty_sha = actions_runtime.hashlib.sha256(b'').hexdigest()
+            original_lstat, original_stat = Path.lstat, Path.stat
+
+            def owned_stat(result):
+                return SimpleNamespace(st_mode=result.st_mode, st_uid=0, st_nlink=result.st_nlink,
+                                       st_size=result.st_size, st_dev=result.st_dev, st_ino=result.st_ino)
+
+            with patch.multiple(Path, lstat=lambda path: owned_stat(original_lstat(path)),
+                                stat=lambda path, **kwargs: owned_stat(original_stat(path, **kwargs))), \
+                 patch.dict(actions_runtime.DIGESTS, {'aarch64': empty_sha}), \
+                 patch.object(actions_runtime.urllib.request, 'urlopen', return_value=io.BytesIO(b'')), \
+                 patch.object(actions_runtime, 'unpack_runtime', side_effect=unpack), \
+                 patch.object(actions_runtime, 'verify_installed_runtime'), \
+                 patch.object(actions_runtime.subprocess, 'check_output', return_value='/usr/local/bin/k3s agent'), \
+                 patch.object(actions_runtime.subprocess, 'run', side_effect=run):
+                actions_runtime.install_locked({'node_name': 'spot-1'}, {'id': self.IDENT}, ['kubectl'], read,
+                                               'vfs', None, agent=True)
+            self.assertEqual((root / 'actions-runtime/workspace-profile').read_text(), 'vfs\n')
+            self.assertIn('hakopod-actions', template.read_text())
+        self.assertLess(events.index('withdraw'), events.index('restart'))
+        self.assertLess(events.index('restart'), events.index('publish'))
+        self.assertEqual(events[-1], 'publish')
+        self.assertLess(events.index('restart'), len(events) - 1 - events[::-1].index('runtimeclass-check'))
+
+
 class RuntimeMaintenanceLockTests(unittest.TestCase):
     @contextmanager
     def isolated_lock(self):
