@@ -1,90 +1,60 @@
 {
   "bootstrap": {
-    "commit": "0e711c2c2e06490c972e522785da7d5c3097d08d",
-    "reviewed_release": "v0.1.0-alpha.65",
-    "tag": "v0.1.0-alpha.64",
+    "commit": "80189221c202147567246a33b12d6bdff3bf8b5e",
+    "reviewed_release": "v0.1.0-alpha.66",
+    "tag": "v0.1.0-alpha.65",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py"
     ]
   },
-  "control_plane_commit": "1eb697400176a26bb893be1dbb37388ced45ada9",
+  "control_plane_commit": "8b63b90ac3f711377402ccfbb94fe0a55d07f62e",
   "delta": {
-    "baseline_sha256": "f832c113dc55f993697314c82dd4032e5b93c24b410ebbb838e3cfec5af4bf53",
+    "baseline_sha256": "b0a26288f059d4120bc1541ed32344dea0a97fb4c1a6c75cba43185063841107",
     "changes": [
       {
-        "after": "3ed33f2a5944c6a9d335e75815a824f8808dde9798a61af8c87771f1ad12f80b",
-        "before": "07d6e6079e7a6553609fc605536bf27870e0ce4fd263e457232610bdd630e4cb",
-        "path": "api/contracts/zz_sandbox_sessions.py",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "9900e3841acab471a4b154b884ead11250094eafb722ca4f4d221c7ccaa5622e",
+        "before": "bb208f583e45418f54d449ea6b72a72c490fb296c8fb1fb23b84f0c49668ddbb",
+        "path": "internal/cluster/actions.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "10f7d93e45795d74cb9f1981f39a1dbfa6d526ccffd3ef5658f1c0eb419a4724",
-        "before": "4a11ea3f8a463810ae01f2cf2e317620ee6149995dbcd7b813eba1c95f434c2d",
-        "path": "api/openapi.json",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "49e8a8adf2ba8877b602e40614deb9985519c82b3f11aaefc40160044a282ec0",
+        "before": "2a300b81f0ce68a48a4d17753d0d27245daec2464aa8f148b9f61cbde0582032",
+        "path": "internal/cluster/actions_bitbucket.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "913676afb207936f103dd839dbe7473fc012cd2afe8a8ab98a2c3d40ee34da97",
-        "before": "ce1cf3a5b3452feafb67ad8a77347c7b673742efc018e928a565e5a953cfcfe5",
-        "path": "internal/api/sandbox_sessions.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "601959d04d869ef813879fce0617b181ff8e28568e7482aff114e684d6ff65df",
+        "before": "a153bf15f928beafb73a29711f2ac52d476a1ff42034dffda1e51449c6bfd265",
+        "path": "internal/cluster/actions_gitlab.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "46820922d49ee99451406b4acbb003a6095d449742cf7e4d7ac66ac836eb083b",
-        "before": "e39c90758f04b5640839059e29e89f3f83fb28b4ef53309b55996416c6f700e4",
-        "path": "internal/cluster/sandbox_sessions.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "a88d408d1c0c5d0cb46db4268c06707cfa1f592b1e358585c5460c9f83ad119d",
+        "before": "5c66482bdea37973924c3de3cdcc297799f9112d4ca579fb9112fad5930a6ec7",
+        "path": "internal/cluster/actions_placement_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "ec400c5b15b34712e2ec01c06195b4ab67849081198dab23a664d8131e97c056",
-        "before": "b2c18f995491d2d09318246f9e2b87891ec2ca8d327be01aef2ddb975b01c4b4",
-        "path": "internal/sandbox/model.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        "after": "ff1163f36047e769ccf586a0577ab8866a78a58e260ef3f3b8b98e0672033bb7",
+        "before": "0519ce16d246da2845c7d7f58a77fb18eda6754b25dc5a527163dc23d0cb4b67",
+        "path": "internal/cluster/placement.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       },
       {
-        "after": "2131331d515d137bea9f54d4ef544823f98baac682d172c0cc35d3e632ea1f35",
-        "before": "f248fa749053d2e7d609fa10ad09ab8c5b9576df185aa1941d579d7c11f64bb6",
-        "path": "internal/sandbox/model_test.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "4876c8c81fef4a0732ee6074e5ef0c6027ddb1faeacad464cfa5d3d9e338782f",
-        "before": "3ef275b4ac77fa0e5219bf7a44bbae01a8450310819e4b59afef92849f5c9c6f",
-        "path": "internal/spec/sandbox_sessions.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "38d976066469670baf35fac8814f43595d56388b26d464e04114bf3800cd8ef6",
-        "before": "141edae5d95dc550932c027b91bceb8497c8d448344019b8afa1566908f72a46",
-        "path": "internal/spec/sandbox_sessions_test.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "c0a66107f9a662788778173f201369bbfaa7715f3fd20713f30745efd1cb29dc",
-        "before": "a4bc6fb313c4ecef916d16164f365e8106c99591c52dbde1f35811c9b615d4e3",
-        "path": "internal/store/sandbox_sessions.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "7c0603e2f60c54faf52969bef0c4b2485ab0bfa1d97d6791837f93e05fcfb656",
-        "before": "8ce0778fa9f21bd074d5b2548f80c14ac58ede7f9b6783570d130f9986cb34ee",
-        "path": "internal/store/sandbox_sessions_test.go",
-        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
-      },
-      {
-        "after": "601d4808d80892aaa706a9159f595f2ea011beba64b3e899cf3bd1fb21720c60",
-        "before": "35dbee831455c3d6233ccdbb1a871b62da5d21ce70192b156c748ec69135b5c0",
+        "after": "a893cc4425073fd53ba5f14e0a7e590f24460cbb94e3ddf0f99bc368c4458220",
+        "before": "601d4808d80892aaa706a9159f595f2ea011beba64b3e899cf3bd1fb21720c60",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Reviewed alpha.65 chain trust root: extends the authenticated source chain to the alpha.64 review; no qualification logic change."
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
       }
     ],
-    "current_sha256": "b0a26288f059d4120bc1541ed32344dea0a97fb4c1a6c75cba43185063841107"
+    "current_sha256": "c3759d45a9b2ca97bc0e869cb596acce0ea289944f652c47074e919e087892f6"
   },
   "predecessor": {
-    "commit": "0e711c2c2e06490c972e522785da7d5c3097d08d",
-    "review_sha256": "12469e1441bfb190118871f47269ee42b2a1e5b8d1f7d5454726e89c027fb275",
-    "tag": "v0.1.0-alpha.64"
+    "commit": "80189221c202147567246a33b12d6bdff3bf8b5e",
+    "review_sha256": "f5cf2bdcbf94720a2ab76cb7ca4672fe2a34135d0a274c704bba7cf212b1675c",
+    "tag": "v0.1.0-alpha.65"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -93,14 +63,15 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestSessionSpecificationIsStableAndRejectsAmbientAuthority",
-      "TestSessionCallTimeoutIsBoundedByIdleDeadline",
-      "TestCallTimeoutComesFromFrozenTemplate",
-      "TestSessionGenerationCallReplayAndCancellation"
+      "TestActionsDedicatedTaintReservesNodeForRunners",
+      "TestActionsAllocatedPlacementDoesNotScanOtherNodes",
+      "TestActionsSelectedNodeRequiresSandboxAndExactName",
+      "TestActionsPlacementPreservesSchedulingTaints",
+      "TestActionsPlacementDiscoveryRespectsRuntimeAndAllocation"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/39812857921"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40088404560"
   },
-  "reviewed_release": "v0.1.0-alpha.65",
+  "reviewed_release": "v0.1.0-alpha.66",
   "runtime": "myduck",
   "schema_version": 2
 }

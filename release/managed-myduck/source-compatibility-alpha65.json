@@ -1,0 +1,106 @@
+{
+  "bootstrap": {
+    "commit": "0e711c2c2e06490c972e522785da7d5c3097d08d",
+    "reviewed_release": "v0.1.0-alpha.65",
+    "tag": "v0.1.0-alpha.64",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "1eb697400176a26bb893be1dbb37388ced45ada9",
+  "delta": {
+    "baseline_sha256": "f832c113dc55f993697314c82dd4032e5b93c24b410ebbb838e3cfec5af4bf53",
+    "changes": [
+      {
+        "after": "3ed33f2a5944c6a9d335e75815a824f8808dde9798a61af8c87771f1ad12f80b",
+        "before": "07d6e6079e7a6553609fc605536bf27870e0ce4fd263e457232610bdd630e4cb",
+        "path": "api/contracts/zz_sandbox_sessions.py",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "10f7d93e45795d74cb9f1981f39a1dbfa6d526ccffd3ef5658f1c0eb419a4724",
+        "before": "4a11ea3f8a463810ae01f2cf2e317620ee6149995dbcd7b813eba1c95f434c2d",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "913676afb207936f103dd839dbe7473fc012cd2afe8a8ab98a2c3d40ee34da97",
+        "before": "ce1cf3a5b3452feafb67ad8a77347c7b673742efc018e928a565e5a953cfcfe5",
+        "path": "internal/api/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "46820922d49ee99451406b4acbb003a6095d449742cf7e4d7ac66ac836eb083b",
+        "before": "e39c90758f04b5640839059e29e89f3f83fb28b4ef53309b55996416c6f700e4",
+        "path": "internal/cluster/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "ec400c5b15b34712e2ec01c06195b4ab67849081198dab23a664d8131e97c056",
+        "before": "b2c18f995491d2d09318246f9e2b87891ec2ca8d327be01aef2ddb975b01c4b4",
+        "path": "internal/sandbox/model.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "2131331d515d137bea9f54d4ef544823f98baac682d172c0cc35d3e632ea1f35",
+        "before": "f248fa749053d2e7d609fa10ad09ab8c5b9576df185aa1941d579d7c11f64bb6",
+        "path": "internal/sandbox/model_test.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "4876c8c81fef4a0732ee6074e5ef0c6027ddb1faeacad464cfa5d3d9e338782f",
+        "before": "3ef275b4ac77fa0e5219bf7a44bbae01a8450310819e4b59afef92849f5c9c6f",
+        "path": "internal/spec/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "38d976066469670baf35fac8814f43595d56388b26d464e04114bf3800cd8ef6",
+        "before": "141edae5d95dc550932c027b91bceb8497c8d448344019b8afa1566908f72a46",
+        "path": "internal/spec/sandbox_sessions_test.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "c0a66107f9a662788778173f201369bbfaa7715f3fd20713f30745efd1cb29dc",
+        "before": "a4bc6fb313c4ecef916d16164f365e8106c99591c52dbde1f35811c9b615d4e3",
+        "path": "internal/store/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "7c0603e2f60c54faf52969bef0c4b2485ab0bfa1d97d6791837f93e05fcfb656",
+        "before": "8ce0778fa9f21bd074d5b2548f80c14ac58ede7f9b6783570d130f9986cb34ee",
+        "path": "internal/store/sandbox_sessions_test.go",
+        "reason": "Reviewed control-plane change (Configurable sandbox session call timeout; chain the alpha.65 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "601d4808d80892aaa706a9159f595f2ea011beba64b3e899cf3bd1fb21720c60",
+        "before": "35dbee831455c3d6233ccdbb1a871b62da5d21ce70192b156c748ec69135b5c0",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed alpha.65 chain trust root: extends the authenticated source chain to the alpha.64 review; no qualification logic change."
+      }
+    ],
+    "current_sha256": "b0a26288f059d4120bc1541ed32344dea0a97fb4c1a6c75cba43185063841107"
+  },
+  "predecessor": {
+    "commit": "0e711c2c2e06490c972e522785da7d5c3097d08d",
+    "review_sha256": "12469e1441bfb190118871f47269ee42b2a1e5b8d1f7d5454726e89c027fb275",
+    "tag": "v0.1.0-alpha.64"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestSessionSpecificationIsStableAndRejectsAmbientAuthority",
+      "TestSessionCallTimeoutIsBoundedByIdleDeadline",
+      "TestCallTimeoutComesFromFrozenTemplate",
+      "TestSessionGenerationCallReplayAndCancellation"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/39812857921"
+  },
+  "reviewed_release": "v0.1.0-alpha.65",
+  "runtime": "myduck",
+  "schema_version": 2
+}
