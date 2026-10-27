@@ -159,6 +159,7 @@ class UpgradeLifecycleTests(unittest.TestCase):
                 if failure=='backup':raise RuntimeError('backup failed')
             stack.enter_context(patch.object(m,'backup',side_effect=backup))
             stack.enter_context(patch.object(m,'enable'))
+            stack.enter_context(patch.object(m.host,'upgrade_historic_logs'))
             def repair(installation):
                 self.assertEqual(installation, 'a'*32)
                 events.append(['repair-credentials'])

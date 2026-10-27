@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
+import pwd
 import re
 import secrets
 import shutil
@@ -38,6 +39,10 @@ DEFAULTS = dict(schema_version=1, version='0.1.0-dev', app_domain='', node_ip=''
     postgres_memory_mib=256, max_pods=50, deployment_mode='self-hosted', public_tcp_ports=[], oauth={})
 LABEL = 'hakopod.com/installation'
 ROOTS = ('/etc/hakopod', '/opt/hakopod', '/var/lib/hakopod')
+PODS_DIR = Path('/var/log/pods')
+LOG_DIR = Path('/var/log')
+APP_LOGS = Path('/var/lib/hakopod/app-logs')
+API_RW = '/var/lib/hakopod/backups /var/lib/hakopod/app-logs'
 UNITS = ('hakopod-k3s', 'hakopod-api', 'hakopod-dashboard', 'hakopod-dashboard-certificate')
 
 def fail(message):
@@ -225,6 +230,7 @@ def plan(c, arch, directory):
     print('Install: dedicated K3s ' + PINS['k3s']['version'] + ', Helm ' + PINS['helm']['version'] + ', Node LTS ' + PINS['node']['version'])
     print(f'Node: {c["node_name"]} / {c["node_ip"]}; workers connect to https://{c["supervisor_host"]}:6443')
     print('Data: /var/lib/hakopod; configuration/secrets: /etc/hakopod; binaries: /opt/hakopod')
+    print('Historic logs: read-only ACL (rX, plus default ACL) for hakopod-api on /var/log/pods, traverse (o+x) on /var/log, and a private /var/lib/hakopod/app-logs (hakopod-api, 0700) added to the API ReadWritePaths; kubelet container-log-max-size=20Mi.')
     print('K3s encryption at rest; Traefik, ServiceLB and default storage disabled. No adoption of another cluster.')
     print('HAProxy: one controller pinned to this node; host ports80/443; private administration/metrics.')
     if c['public_tcp_ports']: print('Additional TCP host ports: ' + ', '.join(map(str, c['public_tcp_ports'])) + '; firewall remains operator-managed; applications must claim listeners explicitly.')
@@ -452,7 +458,7 @@ def render(c, arch, installation, out):
         'node-label': [LABEL + '=' + installation],
         'secrets-encryption': True, 'disable': ['traefik', 'servicelb', 'local-storage'],
         'flannel-backend': 'vxlan', 'cluster-cidr': '10.42.0.0/16', 'service-cidr': '10.43.0.0/16',
-        'kubelet-arg': ['max-pods=' + str(c['max_pods']), 'container-log-max-size=10Mi', 'container-log-max-files=3'],
+        'kubelet-arg': ['max-pods=' + str(c['max_pods']), 'container-log-max-size=20Mi', 'container-log-max-files=3'],
         'kube-apiserver-arg': ['max-requests-inflight=100', 'max-mutating-requests-inflight=50', 'event-ttl=1h'],
     }, indent=2) + '\n')
     emit('haproxy.json', json.dumps({'kubernetes-ingress': {'controller': {
@@ -643,7 +649,7 @@ UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-{'ReadWritePaths=/var/lib/hakopod/backups' if name == 'api' else ''}
+{'ReadWritePaths=' + API_RW if name == 'api' else ''}
 ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -662,9 +668,48 @@ CPUQuota=100%
 WantedBy=multi-user.target
 ''')
 
+def checked(args, **kwargs):
+    return subprocess.run(args, check=True, **kwargs)
+
+def historic_logs(run=checked, dry_run=False):
+    # run must add check=True itself (both checked() and maintenance.command() do); never pass it here.
+    """Idempotently let hakopod-api read pod logs and keep masked history. Call only after K3s is ready."""
+    acl = 'u:hakopod-api:rX'
+    steps = [['setfacl', '-m', acl, str(PODS_DIR)], ['setfacl', '-d', '-m', acl, str(PODS_DIR)],
+             ['setfacl', '-R', '-m', acl, str(PODS_DIR)],
+             # Existing pod directories also need the default ACL so rotated files inherit it.
+             ['setfacl', '-R', '-d', '-m', acl, str(PODS_DIR)]]
+    if dry_run:
+        print(f'Would ensure {PODS_DIR} (root:root 0755), run: ' + '; '.join(' '.join(s) for s in steps))
+        print(f'Would add o+x to {LOG_DIR} if missing, and ensure {APP_LOGS} (hakopod-api:hakopod-api 0700)')
+        return
+    try:
+        PODS_DIR.mkdir(mode=0o755, parents=True, exist_ok=True); os.chown(PODS_DIR, 0, 0); os.chmod(PODS_DIR, 0o755)
+        mode = LOG_DIR.stat().st_mode
+        if not mode & 0o001: os.chmod(LOG_DIR, (mode & 0o7777) | 0o001)
+        for step in steps: run(step, timeout=300)
+        user = pwd.getpwnam('hakopod-api')
+        APP_LOGS.mkdir(mode=0o700, exist_ok=True); os.chown(APP_LOGS, user.pw_uid, user.pw_gid); os.chmod(APP_LOGS, 0o700)
+    except (OSError, KeyError, subprocess.SubprocessError) as error:
+        fail('Could not set up historic log access (' + str(error) + '). Check that the acl package is installed and /var/log is on a filesystem with ACLs, then resume.')
+
+def upgrade_historic_logs(run=checked, unit=Path('/etc/systemd/system/hakopod-api.service'), k3s=Path('/etc/hakopod/k3s.yaml')):
+    """Apply the historic-log changes to an existing installation. K3s is NOT restarted."""
+    if not shutil.which('setfacl'):
+        env = dict(os.environ, DEBIAN_FRONTEND='noninteractive')
+        run(['apt-get', '-o', 'DPkg::Lock::Timeout=120', 'install', '-y', '--no-install-recommends', 'acl'], env=env, timeout=1200)
+    historic_logs(run)
+    text = unit.read_text()
+    if 'ReadWritePaths=/var/lib/hakopod/backups\n' in text:
+        write(unit, text.replace('ReadWritePaths=/var/lib/hakopod/backups\n', 'ReadWritePaths=' + API_RW + '\n'), 0o644)
+    # Takes effect at the next K3s restart (reboot or maintenance window), never forced here.
+    if k3s.is_file() and 'container-log-max-size=10Mi' in k3s.read_text():
+        write(k3s, k3s.read_text().replace('container-log-max-size=10Mi', 'container-log-max-size=20Mi'))
+    run(['systemctl', 'daemon-reload'], timeout=60)
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('action', choices=('plan', 'config', 'platform-preflight', 'preflight', 'prepare', 'render', 'unpack', 'pin', 'owned', 'namespace', 'complete'))
+    p.add_argument('action', choices=('plan', 'config', 'platform-preflight', 'preflight', 'prepare', 'render', 'unpack', 'pin', 'owned', 'namespace', 'complete', 'historic-logs'))
     p.add_argument('--config'); p.add_argument('--arch'); p.add_argument('--artifact-dir'); p.add_argument('--resume', action='store_true')
     p.add_argument('--source'); p.add_argument('--destination'); p.add_argument('--root'); p.add_argument('--name'); p.add_argument('--id')
     a = p.parse_args()
@@ -676,6 +721,7 @@ def main():
     if a.action == 'complete':
         marker = read_json('/etc/hakopod/installation.json'); marker['completed'] = True
         write('/etc/hakopod/installation.json', json.dumps(marker) + '\n'); return
+    if a.action == 'historic-logs': return historic_logs()
     c = config(a.config); arch = architecture(a.arch)
     if a.action == 'config':
         for key, value in c.items(): print(key + '\t' + (str(value).lower() if isinstance(value, bool) else str(value)))

@@ -418,6 +418,7 @@ def perform_upgrade(target, install_lock):
                 backup(config, backup_dir)
                 credentials.repair_namespace(marker['id'])
                 enable()
+                host.upgrade_historic_logs(command)
                 progress('restarting', 'Starting the new API and dashboard. Keep this page open.')
                 link = CURRENT.with_name('current.next')
                 if link.exists() or link.is_symlink():
