@@ -155,10 +155,13 @@ func run() error {
 	ttl := fs.Duration("ttl", 24*time.Hour, "API key lifetime, maximum 90 days")
 	tail := fs.Int64("tail", 100, "maximum log tail lines (1–1000)")
 	follow := fs.Bool("follow", false, "follow live logs (each connection capped at ten minutes)")
-	pod := fs.String("pod", "", "pod name for terminal or log search")
+	pod := fs.String("pod", "", "pod name for terminal or log search; log history also accepts a pod UID")
 	container := fs.String("container", "app", "container name")
 	query := fs.String("query", "", "SQL-like log predicate; returns sampled entries and histogram as JSON")
-	since := fs.Duration("since", time.Hour, "log search window, maximum 24h")
+	since := fs.String("since", "1h", "log search window such as 90m, 2h or 3d; maximum 24h, or 30d with --history")
+	history := fs.Bool("history", false, "read stored log history, including pods that no longer exist")
+	logFrom := fs.String("from", "", "history start: RFC 3339 time or relative duration such as 2h or 3d")
+	logTo := fs.String("to", "", "history end: RFC 3339 time or relative duration")
 	previous := fs.Bool("previous", false, "search the previous container instance")
 	hostname := fs.String("hostname", "", "certificate DNS hostname")
 	certificateFile := fs.String("certificate-file", "", "PEM certificate chain file, maximum 256 KiB")
@@ -375,6 +378,9 @@ func run() error {
 	arg := ""
 	if fs.NArg() > 0 {
 		arg = fs.Arg(0)
+		if command == "logs" && arg == "pods" && fs.NArg() > 1 {
+			arg = fs.Arg(1)
+		}
 	}
 	switch command {
 	case "external-database":
@@ -607,6 +613,9 @@ func run() error {
 		case "networks":
 			return printJSON(a.Spec.Networks)
 		case "logs":
+			if fs.Arg(0) == "pods" && fs.NArg() > 1 {
+				return printLogPods(ctx, c, a.ID, *since, time.Now(), os.Stdout, os.Stderr)
+			}
 			if *service == "" {
 				if len(a.Spec.Services) == 1 {
 					for n := range a.Spec.Services {
@@ -616,12 +625,38 @@ func run() error {
 					return &exitError{2, "--service is required for a multi-service application"}
 				}
 			}
+			sinceSpan, err := parseSpan(*since)
+			if err != nil {
+				return &exitError{2, err.Error()}
+			}
+			if *history || *logFrom != "" || *logTo != "" {
+				if *follow {
+					return &exitError{2, "log history is a bounded snapshot; omit --follow"}
+				}
+				limit := 1000
+				fs.Visit(func(f *flag.Flag) {
+					if f.Name == "limit" {
+						limit = *apiLimit
+					}
+				})
+				if limit < 1 || limit > 10000 {
+					return &exitError{2, "--limit must be 1 to 10000"}
+				}
+				body, err := historyBody(historyOptions{Service: *service, Pod: *pod, Query: *query, From: *logFrom, To: *logTo, Since: *since}, time.Now())
+				if err != nil {
+					return &exitError{2, err.Error()}
+				}
+				return printHistoryLogs(ctx, c, a.ID, body, limit, liveOptions{Container: *container, Tail: *tail, Now: time.Now()}, os.Stdout, os.Stderr)
+			}
+			if sinceSpan > maxLiveSince {
+				return &exitError{2, "--since is at most 24h without --history"}
+			}
 			if *query != "" || *pod != "" || *previous || *container != "app" {
 				if *follow {
 					return &exitError{2, "log search is a bounded snapshot; omit --follow"}
 				}
 				var result any
-				if err := c.request(ctx, "POST", "/applications/"+a.ID+"/logs/query", map[string]any{"service": *service, "pod": *pod, "container": *container, "query": *query, "tail": *tail, "since_seconds": int64(since.Seconds()), "previous": *previous}, "", &result); err != nil {
+				if err := c.request(ctx, "POST", "/applications/"+a.ID+"/logs/query", map[string]any{"service": *service, "pod": *pod, "container": *container, "query": *query, "tail": *tail, "since_seconds": int64(sinceSpan.Seconds()), "previous": *previous}, "", &result); err != nil {
 					return err
 				}
 				return printJSON(result)
@@ -868,7 +903,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--history": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -904,6 +939,9 @@ func help() {
   hakopod status shop --project demo --environment development
   hakopod logs shop --service api --follow
   hakopod logs shop --service api --query "severity >= ERROR" --since 1h
+  hakopod logs shop --service api --history --since 3d [--limit 1000]
+  hakopod logs shop --service api --history --from 2026-10-01T08:00:00Z --to 2h --pod POD_NAME_OR_UID
+  hakopod logs pods shop [--since 7d]
   hakopod terminal shop --service api --pod POD_NAME
   hakopod terminal shop --service db --pod POD_NAME --command-json '["psql", "-U", "postgres"]'
   hakopod certificates mail --service smtp

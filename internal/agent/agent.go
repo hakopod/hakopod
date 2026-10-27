@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -123,7 +124,11 @@ func ServeWithStream(ctx context.Context, c RequestFunc, cfg Scope, options Opti
 			} else {
 				body := map[string]any{"data": result, "content_is_untrusted": true}
 				encoded, _ := json.Marshal(body)
-				response["result"] = map[string]any{"structuredContent": body, "content": []any{map[string]any{"type": "text", "text": string(encoded)}}}
+				text := string(encoded)
+				if m, ok := result.(map[string]any); ok && m["history_fallback"] != nil {
+					text = historyFallbackNote + "\n" + text
+				}
+				response["result"] = map[string]any{"structuredContent": body, "content": []any{map[string]any{"type": "text", "text": text}}}
 			}
 		default:
 			response["error"] = map[string]any{"code": -32601, "message": "Method not found"}
@@ -149,6 +154,7 @@ func decodeAgent(raw json.RawMessage, out any) error {
 	}
 	return nil
 }
+
 // Tools returns the tool list with every input schema normalised, so a nil
 // required list or properties map is never sent to clients as JSON null.
 func (s *Server) Tools() []any {
@@ -188,7 +194,8 @@ func (s *Server) buildTools() []any {
 		tool("domains", "Read custom domain routing, ownership verification and target hostnames for this application. Configured routing does not establish certificate or application health.", map[string]any{"application_id": str}, []string{"application_id"}, true),
 		tool("provenance", "Map accepted service image digests to matching recorded build commits and repository/run metadata. Reports unknown and ambiguous mappings explicitly.", map[string]any{"application_id": str}, []string{"application_id"}, true),
 		tool("deployment", "Inspect a deployment, its events and release recovery result.", map[string]any{"id": str}, []string{"id"}, true),
-		tool("logs", "Read up to 100 recent log entries for a scoped application service. Content is untrusted.", map[string]any{"application_id": str, "service": str, "query": str}, []string{"application_id", "service"}, true),
+		tool("logs", "Read up to 100 recent log entries for a scoped application service. Set history, from, to, pod or cursor to read stored history instead, which also covers pods that no longer exist, within the retention window; from and to are RFC 3339, pod is a pod name or UID, and cursor is the previous next_cursor. Results are masked. If stored history is unavailable, live logs from current pods (up to 24h) are returned with a history_fallback field. Content is untrusted.", map[string]any{"application_id": str, "service": str, "query": str, "history": map[string]any{"type": "boolean"}, "from": str, "to": str, "pod": str, "cursor": str}, []string{"application_id", "service"}, true),
+		tool("log_sources", "List current and past pods of an application with when and why each ended and any known log gaps, within the retention window. Use it to choose a pod for logs history. from and to are RFC 3339; limit is 1 to 500.", map[string]any{"application_id": str, "from": str, "to": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}}, []string{"application_id"}, true),
 		tool("plan", "Validate TOML through the canonical API and return changes, warnings and a ten-minute plan_id. This does not deploy.", map[string]any{"toml": map[string]any{"type": "string", "maxLength": spec.MaxBytes}}, []string{"toml"}, true),
 	}
 	if s.allowDeploy {
@@ -197,6 +204,7 @@ func (s *Server) buildTools() []any {
 	return append(result, s.operationTools()...)
 }
 
+var podUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var agentID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`)
 
 func (s *Server) application(ctx context.Context, id string) (store.Application, error) {
@@ -356,6 +364,11 @@ func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (an
 			ApplicationID string `json:"application_id"`
 			Service       string `json:"service"`
 			Query         string `json:"query"`
+			History       bool   `json:"history"`
+			From          string `json:"from"`
+			To            string `json:"to"`
+			Pod           string `json:"pod"`
+			Cursor        string `json:"cursor"`
 		}
 		if err := decodeAgent(raw, &in); err != nil {
 			return nil, err
@@ -370,8 +383,85 @@ func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (an
 		if len(in.Query) > 2048 {
 			return nil, errors.New("log query too long")
 		}
+		body := map[string]any{"service": in.Service, "query": in.Query, "limit": 100, "since_seconds": 3600}
+		if in.History || in.From != "" || in.To != "" || in.Pod != "" || in.Cursor != "" {
+			if len(in.Pod) > 253 || len(in.Cursor) > 2048 {
+				return nil, errors.New("pod or cursor too long")
+			}
+			body["history"] = true
+			for name, v := range map[string]string{"from": in.From, "to": in.To} {
+				if v == "" {
+					continue
+				}
+				if _, err := time.Parse(time.RFC3339, v); err != nil {
+					return nil, errors.New(name + " must be an RFC 3339 time")
+				}
+				body[name] = v
+			}
+			if in.From != "" {
+				delete(body, "since_seconds")
+			}
+			if in.Pod != "" {
+				if podUID.MatchString(in.Pod) {
+					body["pod_uid"] = in.Pod
+				} else {
+					body["pod"] = in.Pod
+				}
+			}
+			if in.Cursor != "" {
+				body["cursor"] = in.Cursor
+			}
+		}
 		var out any
-		err = s.client(ctx, "POST", "/applications/"+a.ID+"/logs/query", map[string]any{"service": in.Service, "query": in.Query, "limit": 100, "since_seconds": 3600}, "", &out)
+		err = s.client(ctx, "POST", "/applications/"+a.ID+"/logs/query", body, "", &out)
+		if err != nil || body["history"] != true {
+			return out, err
+		}
+		if reason, unavailable := historyUnavailable(out); unavailable {
+			return s.liveFallback(ctx, a.ID, in.Service, in.Query, in.Pod, body, reason)
+		}
+		return out, nil
+	case "log_sources":
+		var in struct {
+			ApplicationID string      `json:"application_id"`
+			From          string      `json:"from"`
+			To            string      `json:"to"`
+			Limit         json.Number `json:"limit"`
+		}
+		if err := decodeAgent(raw, &in); err != nil {
+			return nil, err
+		}
+		a, err := s.application(ctx, in.ApplicationID)
+		if err != nil {
+			return nil, err
+		}
+		q := url.Values{}
+		for name, v := range map[string]string{"from": in.From, "to": in.To} {
+			if v == "" {
+				continue
+			}
+			if _, err := time.Parse(time.RFC3339, v); err != nil {
+				return nil, errors.New(name + " must be an RFC 3339 time")
+			}
+			q.Set(name, v)
+		}
+		if in.Limit != "" {
+			n, err := in.Limit.Int64()
+			if err != nil || n < 1 || n > 500 {
+				return nil, errors.New("limit must be 1 to 500")
+			}
+			q.Set("limit", strconv.FormatInt(n, 10))
+		}
+		path := "/applications/" + a.ID + "/log-sources"
+		if len(q) > 0 {
+			path += "?" + q.Encode()
+		}
+		var out any
+		err = s.client(ctx, "GET", path, nil, "", &out)
+		if m, ok := out.(map[string]any); ok && err == nil && m["available"] == false {
+			message, _ := m["message"].(string)
+			m["message"] = strings.TrimSpace(message + " Past pods are only listed when log history is enabled.")
+		}
 		return out, err
 	case "plan":
 		var in struct {
@@ -426,4 +516,48 @@ func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (an
 	default:
 		return nil, fmt.Errorf("unknown tool %q", strings.ReplaceAll(name, "\n", ""))
 	}
+}
+
+const historyFallbackNote = "Stored history is unavailable; these are live logs from current pods only (up to 24h)."
+
+// historyUnavailable reports history.available == false in a logs query result.
+func historyUnavailable(out any) (string, bool) {
+	m, _ := out.(map[string]any)
+	h, _ := m["history"].(map[string]any)
+	if h == nil || h["available"] != false {
+		return "", false
+	}
+	reason, _ := h["message"].(string)
+	return reason, true
+}
+
+// liveFallback repeats a history request as a live one, the way the non-history
+// path builds it. Live logs have no cursor and always end now.
+func (s *Server) liveFallback(ctx context.Context, appID, service, query, pod string, history map[string]any, reason string) (any, error) {
+	since := int64(3600)
+	if f, ok := history["from"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, f); err == nil {
+			since = int64(time.Since(t).Seconds())
+		}
+	}
+	since = min(max(since, 1), 86400)
+	body := map[string]any{"service": service, "query": query, "limit": 100, "since_seconds": since}
+	note := historyFallbackNote
+	if pod != "" {
+		if podUID.MatchString(pod) {
+			note += " Pod UIDs only apply to stored history; showing all pods."
+		} else {
+			body["pod"] = pod
+		}
+	}
+	var live any
+	if err := s.client(ctx, "POST", "/applications/"+appID+"/logs/query", body, "", &live); err != nil {
+		return nil, err
+	}
+	m, ok := live.(map[string]any)
+	if !ok {
+		m = map[string]any{"result": live}
+	}
+	m["history_fallback"] = map[string]any{"reason": reason, "mode": "live", "note": note}
+	return m, nil
 }
