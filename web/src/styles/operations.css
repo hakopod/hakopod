@@ -1410,6 +1410,9 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+.ops-logs .log-pad {
+  padding-inline: 20px;
+}
 .ops-range-banner {
   display: flex;
   align-items: center;

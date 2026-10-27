@@ -440,3 +440,4 @@ test('new failure reopens a group already marked by an earlier warning', () => {
     true,
   )
 })
+import './log-history.test'
