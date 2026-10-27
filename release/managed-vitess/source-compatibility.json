@@ -1,19 +1,19 @@
 {
   "bootstrap": {
-    "commit": "80189221c202147567246a33b12d6bdff3bf8b5e",
-    "reviewed_release": "v0.1.0-alpha.66",
-    "tag": "v0.1.0-alpha.65",
+    "commit": "96bc2b7fb326ce086d6a84aaf7db0fe1aa705fc6",
+    "reviewed_release": "v0.1.0-alpha.67",
+    "tag": "v0.1.0-alpha.66",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py",
       "release/verify-vitess-runtime.py"
     ]
   },
-  "control_plane_commit": "8b63b90ac3f711377402ccfbb94fe0a55d07f62e",
+  "control_plane_commit": "e91e10a223d00525014322937aaee26bbe647352",
   "predecessor": {
-    "commit": "80189221c202147567246a33b12d6bdff3bf8b5e",
-    "review_sha256": "3cc762129b3d9dfe2cae11bca023b92719842e95ee26fa22868d2fdc6f4f430d",
-    "tag": "v0.1.0-alpha.65"
+    "commit": "96bc2b7fb326ce086d6a84aaf7db0fe1aa705fc6",
+    "review_sha256": "b9b2065f690fa25e4a15f78206ab314f51986372497a4bb81d1782b8fd980349",
+    "tag": "v0.1.0-alpha.66"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -24,15 +24,17 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestActionsDedicatedTaintReservesNodeForRunners",
-      "TestActionsAllocatedPlacementDoesNotScanOtherNodes",
-      "TestActionsSelectedNodeRequiresSandboxAndExactName",
-      "TestActionsPlacementPreservesSchedulingTaints",
-      "TestActionsPlacementDiscoveryRespectsRuntimeAndAllocation"
+      "TestAppLogQueryHistoryMapsStoredLinesAndGaps",
+      "TestTailInodeReuse",
+      "TestTailRotatedFileGone",
+      "TestCollectorPrivateKeyBlockSurvivesProcessRestart",
+      "TestAppLogSettings",
+      "TestLineEquivalence",
+      "TestReadCursorEqualTimestamps"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/40088404560"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40570689733"
   },
-  "reviewed_release": "v0.1.0-alpha.66",
+  "reviewed_release": "v0.1.0-alpha.67",
   "runtime": "vitess",
   "schema_version": 3,
   "scopes": {
@@ -42,52 +44,406 @@
       "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
     },
     "runtime": {
-      "baseline_sha256": "abbf3b122d03e1f8226fd3598c4b9c06a295f8bd03a3b58ad06abc3f7e90deb3",
+      "baseline_sha256": "3edf7db13c890d7062851d95b514cbe478547bf26febf5d5329d03a2b91ae375",
       "changes": [
         {
-          "after": "9900e3841acab471a4b154b884ead11250094eafb722ca4f4d221c7ccaa5622e",
-          "before": "bb208f583e45418f54d449ea6b72a72c490fb296c8fb1fb23b84f0c49668ddbb",
-          "path": "internal/cluster/actions.go",
-          "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "1699c0e193acbdf752b42486b500d252ec757a5d1974662908c689ecd5a2474c",
+          "before": "868fddb7721a2d07263f7839360fb87cf1b1a088aecc93f58f851c428dc692d5",
+          "path": "internal/agent/agent.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "49e8a8adf2ba8877b602e40614deb9985519c82b3f11aaefc40160044a282ec0",
-          "before": "2a300b81f0ce68a48a4d17753d0d27245daec2464aa8f148b9f61cbde0582032",
-          "path": "internal/cluster/actions_bitbucket.go",
-          "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "c2f6944d06736eb33eb91e4e21b0477ee4d7da2d96a0faf84371493dd65e111e",
+          "before": null,
+          "path": "internal/agent/logs_history_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "601959d04d869ef813879fce0617b181ff8e28568e7482aff114e684d6ff65df",
-          "before": "a153bf15f928beafb73a29711f2ac52d476a1ff42034dffda1e51449c6bfd265",
-          "path": "internal/cluster/actions_gitlab.go",
-          "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "a47fd834965489fed8cae9c533807a7b48cfa945e72cd75abcf2564ba6d926ca",
+          "before": "7eb977a4c6a627a5d5ced9f2a256fbb54a81d0a3da720eea8992e24ec72ca3a5",
+          "path": "internal/api/api.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "a88d408d1c0c5d0cb46db4268c06707cfa1f592b1e358585c5460c9f83ad119d",
-          "before": "5c66482bdea37973924c3de3cdcc297799f9112d4ca579fb9112fad5930a6ec7",
-          "path": "internal/cluster/actions_placement_test.go",
-          "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "9d80bdd5e5ee7caf680bd81e056e2bde5f3d65c45706e48390fd143a02f4d486",
+          "before": null,
+          "path": "internal/api/app_log_history_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "ff1163f36047e769ccf586a0577ab8866a78a58e260ef3f3b8b98e0672033bb7",
-          "before": "0519ce16d246da2845c7d7f58a77fb18eda6754b25dc5a527163dc23d0cb4b67",
-          "path": "internal/cluster/placement.go",
-          "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+          "after": "8c76fa36ff781e1fc9336fc31e151f74d18fc71b36a6e5010d5f1d3651a4f6dd",
+          "before": null,
+          "path": "internal/api/app_log_settings.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "a893cc4425073fd53ba5f14e0a7e590f24460cbb94e3ddf0f99bc368c4458220",
-          "before": "601d4808d80892aaa706a9159f595f2ea011beba64b3e899cf3bd1fb21720c60",
+          "after": "902a2af984851ae8084af05ab441dfddfa88e1e95ac19c35664ee5867b169dc8",
+          "before": null,
+          "path": "internal/api/app_log_sources.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "683632e78eeb0de26afcc2e2d5e381dce1d17ba2a3a56d737d7bdb2559131f45",
+          "before": null,
+          "path": "internal/api/app_logs_run.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "11be1724cef006e187b831d7098529701d703ca3bc04a23f6c809ad2ba5f9a49",
+          "before": "9c1c809b48a6e6f93caa3598c595b145bafd40b984a9eaab7029f2b23b4cd718",
+          "path": "internal/api/cloud_policy.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "841c793073aff909e9687ad24228527ec443b028bdd3a09971ca3922f68ede80",
+          "before": "103be10cc54e64819c5a2cc453fbbe31ae1b50066d3c663f8b20c067c98c09d5",
+          "path": "internal/api/logquery.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "3c1d302b7870478593552417b534095cad73115f840cd6d69b58321c4f8f67ff",
+          "before": null,
+          "path": "internal/applogs/collector.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "6c52e51a3f5aa5b7738c147656515d55c7061b1d285a259b0970eb858d046d49",
+          "before": null,
+          "path": "internal/applogs/collector_norace_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "ca7bdeb6177d989e6a4e1f4c1332ca76240e22fe27de3254f36d2db67289aa44",
+          "before": null,
+          "path": "internal/applogs/collector_race_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "f485729a36c770c1ebb25fa8b1cd53bd8186d931a1732c79f1157f1329b9502f",
+          "before": null,
+          "path": "internal/applogs/collector_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "188387797210257c6d33832d8d2759e77bed6656f46f48fa999180fd2b63f9ec",
+          "before": null,
+          "path": "internal/applogs/inode_other.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "703bbc08c14a12fd708d07bac1ecc2e66ba6e54cdfd898f3239f9ea6eb30c701",
+          "before": null,
+          "path": "internal/applogs/inode_unix.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "94f04de77f59d408bdce701696e49294682ec3b0251966a8d31c83eba98d0121",
+          "before": null,
+          "path": "internal/applogs/segments.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "05a676efbe43e35861f23b4aeaad3585267c5fa96950a25781eca4c9fe4c284f",
+          "before": null,
+          "path": "internal/applogs/segments_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "5856e2523d416d86ae16760b7cdc07091ccc41049887074d423736d947febf2d",
+          "before": null,
+          "path": "internal/applogs/tail.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "7e2f5658cf173af92af14a4be95ce5bf2c49b7c82488e2eff4d25269d124dbc0",
+          "before": null,
+          "path": "internal/applogs/tail_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "32f9872546b8ec20c924f02bbc782c5696df99e080257a8d47ec4ea4f080d2b3",
+          "before": null,
+          "path": "internal/applogs/types.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "a98f05dd065c389fe5e9d652e79a8a2613de8155cf18e7ab28e172fc6aad242f",
+          "before": null,
+          "path": "internal/cluster/applog_pods.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "337fc62209b72224a3f6410fb166d66c89e981080d6d8a6dcded7762397e3c57",
+          "before": null,
+          "path": "internal/cluster/applog_pods_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "55375cc9d3ca7b38d2b4441ad9416c06a16181c999aec9b7944d0f8e7c475770",
+          "before": "cd2682360445e025a75147c475a1a9f351dc4f303231e80487df9d7a2f065a39",
+          "path": "internal/logmask/mask.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "eaaa2d332ee738aeaba76c6891e9dc787982e7c6fe18aa401a06abf488c255ee",
+          "before": null,
+          "path": "internal/logmask/mask_equiv_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "21845826aecabc0c45b10fec8ceb8bfb3e8d3ceddd9409c2c2b25ad07ee7a912",
+          "before": null,
+          "path": "internal/logmask/mask_legacy_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "095316a84f9f155f701f32f0a130e7c33a852ef7d33d5851749c67f1993c935a",
+          "before": "5313968b0166e3ae3560e5f72259794f08125090d0d25529d78fefbdb9f01309",
+          "path": "internal/logmask/mask_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "9e8c7f2ca340e926c1ae6dd996b66bb585f2faf9d74759c0231b2bd1c1e30795",
+          "before": "a37ac6c0e3b5a4e51596699dacb87dc81ba3202e4ebdd4b972a5f9459536aa49",
+          "path": "internal/management/runtime.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "279d016f43cf2b3505b94678a8f3d07c713a808d9102447e3b9f36f00d5d92ba",
+          "before": null,
+          "path": "internal/store/098_app_logs.sql",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "5ccd54d33fdeae3818a4a6a5563109480001b9f8270bb3bda3b7fd0dbda5a793",
+          "before": null,
+          "path": "internal/store/app_logs.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "f0ae5d50c104defb57dcbeaaf015e30c0d9a513460a495cb1bb75c4bede62fce",
+          "before": null,
+          "path": "internal/store/app_logs_test.go",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "525502572c705219b118f2849cd8a2ba4c9164fb018f86725e910cec4abe06c1",
+          "before": "a893cc4425073fd53ba5f14e0a7e590f24460cbb94e3ddf0f99bc368c4458220",
           "path": "release/runtime-source-compatibility.py",
-          "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         },
         {
-          "after": "ba1aceec8d7fef357ef98a6299cabc623ff3d3fb3dc1f5790956d3e14f5f8e2f",
-          "before": "f57bc68b428e1a868986821f0ba5c65c5933ce2051964aa1eaeef2bd6fd62ecc",
+          "after": "0031e86a7de1efba33ef96f5f6cf284ed8aef905b8f9265f3f672ba34fceebdf",
+          "before": "ba1aceec8d7fef357ef98a6299cabc623ff3d3fb3dc1f5790956d3e14f5f8e2f",
           "path": "release/verify-vitess-runtime.py",
-          "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "829c613d2c719be7b12835ed6624ce40143ec97bc1d45d6c01c91c17b9a6f684",
+          "before": "df2033f3a310a8ab6f47356ca8a42ebe4467c186e081d487ebdff6596222facf",
+          "path": "templates/.github/workflows/catalog-images.yml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "8407191222bc8b8bdb4a04c4c39dfa80298091115bc5c8851b69e509549b788d",
+          "before": null,
+          "path": "templates/.github/workflows/template-smoke.yml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "652793aafc139d2b971c3b202c80f88dd28460d1980c3aacd9701561ee457d80",
+          "before": "e25c2db0e96bf098c23147c11596ec7c5ed175b4403c27392e873bd0f47857de",
+          "path": "templates/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "913bd137fd339b14121947ce3a8d9a5914e5931484ac1e058572f3db8227c688",
+          "before": null,
+          "path": "templates/blueprints/directus/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "b2e7dc9f48867bf9aada5d9a5b42a4cc7e1d65dbf0b9b87ffe5a383b6a4f809d",
+          "before": null,
+          "path": "templates/blueprints/directus/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "590c2e6606121bdfe323664bdf7c81f4100a8bbd5525694b1955650b19cfaf55",
+          "before": null,
+          "path": "templates/blueprints/excalidraw/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "7037cd1ad9533d2c77efda38ea253ede2f7d935b90b3fc22bc36285055bf4ae8",
+          "before": null,
+          "path": "templates/blueprints/excalidraw/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "4f54c3776b2abffc624f84d920017d376169dc5588da058c1cde7658312c4a92",
+          "before": null,
+          "path": "templates/blueprints/freshrss/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "bb2ac31c8e434d27e0abe548963190001ae02fc1216044084270262cbc652153",
+          "before": null,
+          "path": "templates/blueprints/freshrss/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "406bdb4bcd8b2496c6612767cb9cd658540761610646d21fafd88e965a2c3f78",
+          "before": null,
+          "path": "templates/blueprints/ghost/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "0693827275c718e969f4a3bbfd12ffa058f7661317f6cc0e75f5b734f8cafb67",
+          "before": null,
+          "path": "templates/blueprints/ghost/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "e0e093c4943f1f5bde2f6df5faf00204911d4cfa5fa7d9eea5280be6a6a51273",
+          "before": null,
+          "path": "templates/blueprints/it-tools/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "c7b7c6c09e21d5587b03aa0f72b194e1c58a89c9fdb386e3af64007d9062a64f",
+          "before": null,
+          "path": "templates/blueprints/it-tools/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "70ac7639a9d42c10eacb30852544b3a0adf7447b9f9c23b988994e87869f12b4",
+          "before": null,
+          "path": "templates/blueprints/kafka/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "a9840ebe849d25106c937d97979478deb1bfc60a44c2266728bf243b7364b529",
+          "before": null,
+          "path": "templates/blueprints/kafka/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "b6a71ae2834c5de066df92b8515bf67b8da8ad86272c26a693eba4efacae7411",
+          "before": null,
+          "path": "templates/blueprints/meilisearch/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "bbec3490ea8dee0581ce3c1a7bfbaed92d4f94e52e722bed1da530a6f0ba3fbd",
+          "before": null,
+          "path": "templates/blueprints/meilisearch/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "9f2294d0441a20ab09450d7f4e1b2dfa9dc4b70b8cf0b75649541284db2f4503",
+          "before": null,
+          "path": "templates/blueprints/nocodb/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "83f7e869bbb5c97473751e31bb0ce6f097be9e6f6e81398b8b7ee2a12cf4c2d7",
+          "before": null,
+          "path": "templates/blueprints/nocodb/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "bfaf8f73bf207a419492bd4ebc794cc7794faa820412bfd0a57ac46f152f2fc3",
+          "before": null,
+          "path": "templates/blueprints/stirling-pdf/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "eb14c733dc09d823dea5c352a310000d9d08e4193d78474a2432b0e8b56c5b67",
+          "before": null,
+          "path": "templates/blueprints/stirling-pdf/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "0b560e561581dc9be0cff05ff59461545df5440865acab4ddad5c0402634e3ba",
+          "before": null,
+          "path": "templates/blueprints/umami/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "044a2409448a285392f0bc01548e314a92261e17b8ab088fc79145590d168ff5",
+          "before": null,
+          "path": "templates/blueprints/umami/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "ba0113d08fe2b1c10e181d7add9cb9aae7be117dc91bc481b39ae2e3a2664b10",
+          "before": null,
+          "path": "templates/blueprints/wiki-js/README.md",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "59e7435b8afeb9b60cc1188db6870cbfcfae5bbca925ac88355f25445ed4829d",
+          "before": null,
+          "path": "templates/blueprints/wiki-js/hakopod.toml",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "5e49147eebee2faf497fc226ba28f149e06758d1767f85ee9172cc12b8ab293a",
+          "before": "e44c1509c5b2ecb7ac3cd249a4c70d21187c56033c829b1211e1eb1bef8529be",
+          "path": "templates/catalog.json",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "ec3eeea7734921acc5a99ea8bb8e010bd53ebf235d076af2cf9fc25e8abe623e",
+          "before": "8c69c904c3ab23ddebdeb1a599756e6ec7e33c1f224e378541228fb4a6899f04",
+          "path": "templates/images.lock.json",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "a9ca689dfe1b121347f99e81c148fb63728614d9fee5b03041893b57e02fd1d7",
+          "before": null,
+          "path": "templates/images/excalidraw/Dockerfile",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "1352d204fdb90d5e482c13139d848bc2c9300a9a7de358a0a558a23e72d0d8be",
+          "before": null,
+          "path": "templates/images/excalidraw/LICENSE",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "2a713508fafdd9048819f32e249ed1c8ee046a6585839ab34bf58ef390a6e7c4",
+          "before": null,
+          "path": "templates/images/it-tools/Dockerfile",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "8b1ba204bb69a0ade2bfcf65ef294a920f6bb361b317dba43c7ef29d96332b9b",
+          "before": null,
+          "path": "templates/images/it-tools/LICENSE",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "3a3030cdb96b5d206e413f4fa2b9a2d3641d578e413d3ed7cbe520ff94f3b2c4",
+          "before": null,
+          "path": "templates/images/it-tools/nginx.conf",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "b8657c726fbea9b8b476c29ccef931ef5c0b0f3860c036c7a5c3bd81ffb28eac",
+          "before": null,
+          "path": "templates/scripts/smoke_template.py",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "30acb5e7a43049b9392647c09cdd746738103b6e663c117c2d26f1b9ab7b43a2",
+          "before": null,
+          "path": "templates/scripts/test_smoke_template.py",
+          "reason": "Reviewed control-plane change (Historic application logs, faster log masking and new catalog templates; chain the alpha.67 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
         }
       ],
-      "current_sha256": "3edf7db13c890d7062851d95b514cbe478547bf26febf5d5329d03a2b91ae375"
+      "current_sha256": "9f654e26b2b836d28f1d472aa94ba20904d29819742439e0cd0505a0c0d1f2b4"
     }
   }
 }

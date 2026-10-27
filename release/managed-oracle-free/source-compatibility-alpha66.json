@@ -1,0 +1,77 @@
+{
+  "bootstrap": {
+    "commit": "80189221c202147567246a33b12d6bdff3bf8b5e",
+    "reviewed_release": "v0.1.0-alpha.66",
+    "tag": "v0.1.0-alpha.65",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "8b63b90ac3f711377402ccfbb94fe0a55d07f62e",
+  "delta": {
+    "baseline_sha256": "cbca5c0aabb472a7c6e37fc66a5232cade7bc41f104f93b4a47a8260cb05e9aa",
+    "changes": [
+      {
+        "after": "9900e3841acab471a4b154b884ead11250094eafb722ca4f4d221c7ccaa5622e",
+        "before": "bb208f583e45418f54d449ea6b72a72c490fb296c8fb1fb23b84f0c49668ddbb",
+        "path": "internal/cluster/actions.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "49e8a8adf2ba8877b602e40614deb9985519c82b3f11aaefc40160044a282ec0",
+        "before": "2a300b81f0ce68a48a4d17753d0d27245daec2464aa8f148b9f61cbde0582032",
+        "path": "internal/cluster/actions_bitbucket.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "601959d04d869ef813879fce0617b181ff8e28568e7482aff114e684d6ff65df",
+        "before": "a153bf15f928beafb73a29711f2ac52d476a1ff42034dffda1e51449c6bfd265",
+        "path": "internal/cluster/actions_gitlab.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a88d408d1c0c5d0cb46db4268c06707cfa1f592b1e358585c5460c9f83ad119d",
+        "before": "5c66482bdea37973924c3de3cdcc297799f9112d4ca579fb9112fad5930a6ec7",
+        "path": "internal/cluster/actions_placement_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "ff1163f36047e769ccf586a0577ab8866a78a58e260ef3f3b8b98e0672033bb7",
+        "before": "0519ce16d246da2845c7d7f58a77fb18eda6754b25dc5a527163dc23d0cb4b67",
+        "path": "internal/cluster/placement.go",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a893cc4425073fd53ba5f14e0a7e590f24460cbb94e3ddf0f99bc368c4458220",
+        "before": "601d4808d80892aaa706a9159f595f2ea011beba64b3e899cf3bd1fb21720c60",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed control-plane change (Managed Actions on adopted K3s agents; chain the alpha.66 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      }
+    ],
+    "current_sha256": "b402a1f8f8c838b3e3e5b5447b97576bc3bef0933bb17add40c9f5886527971d"
+  },
+  "predecessor": {
+    "commit": "80189221c202147567246a33b12d6bdff3bf8b5e",
+    "review_sha256": "35a4fce0965d6b75c743bf3cd841874c14198cfd0fb77af30c13571e83310683",
+    "tag": "v0.1.0-alpha.65"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestActionsDedicatedTaintReservesNodeForRunners",
+      "TestActionsAllocatedPlacementDoesNotScanOtherNodes",
+      "TestActionsSelectedNodeRequiresSandboxAndExactName",
+      "TestActionsPlacementPreservesSchedulingTaints",
+      "TestActionsPlacementDiscoveryRespectsRuntimeAndAllocation"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40088404560"
+  },
+  "reviewed_release": "v0.1.0-alpha.66",
+  "runtime": "oracle-free",
+  "schema_version": 2
+}
