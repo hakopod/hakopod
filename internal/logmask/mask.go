@@ -39,6 +39,7 @@ type Masker struct {
 	replacer   *strings.Replacer
 	failed     bool
 	privateKey bool
+	dynamic    []string // values learned from ::add-mask:: commands
 }
 
 func SensitiveName(name string) bool { return assignment.MatchString(name + "=x") }
@@ -50,6 +51,24 @@ func New(secrets ...string) *Masker {
 	}
 	return m
 }
+
+func (m *Masker) learn(v string) {
+	if len(m.dynamic) < 256 && len(v) <= MaxLineBytes {
+		m.dynamic = append(m.dynamic, v)
+	}
+}
+
+// Added returns the values learned from ::add-mask:: commands, so a rebuilt
+// masker can be given them again with Add.
+func (m *Masker) Added() []string { return append([]string(nil), m.dynamic...) }
+
+// InPrivateKey reports whether the masker is inside a private key block, whose
+// body is withheld until the END line.
+func (m *Masker) InPrivateKey() bool { return m.privateKey }
+
+// ResumePrivateKey puts a new masker back inside a private key block, for a
+// reader that restarted in the middle of one.
+func (m *Masker) ResumePrivateKey() { m.privateKey = true }
 
 // Invalidate withholds subsequent output when a skipped physical record may
 // have contained a mask command. Missing redaction state never means no secrets.
@@ -151,7 +170,12 @@ func (m *Masker) Line(line string) string {
 		m.failed = true
 		return withheld
 	}
-	line = controls.ReplaceAllString(ansi.ReplaceAllString(line, ""), "")
+	if strings.IndexByte(line, '\x1b') >= 0 {
+		line = ansi.ReplaceAllString(line, "")
+	}
+	if hasControl(line) {
+		line = controls.ReplaceAllString(line, "")
+	}
 	keepCR := strings.ContainsRune(line, '\r') && gitlabSection.MatchString(line)
 	if !keepCR {
 		line = strings.ReplaceAll(line, "\r", "")
@@ -159,16 +183,19 @@ func (m *Masker) Line(line string) string {
 	if at := strings.Index(line, "::add-mask::"); at >= 0 {
 		value := strings.NewReplacer("%0D", "\r", "%0A", "\n", "%25", "%").Replace(line[at+len("::add-mask::"):])
 		m.Add(value)
+		m.learn(value)
 		for _, word := range strings.Fields(value) {
 			m.add(word)
+			m.learn(word)
 		}
 		line = line[:at] + "::add-mask::" + Replacement
 	}
-	if privateBegin.MatchString(line) {
+	hasKey := strings.Contains(line, "PRIVATE KEY")
+	if hasKey && privateBegin.MatchString(line) {
 		m.privateKey = true
 	}
 	if m.privateKey {
-		if privateEnd.MatchString(line) {
+		if hasKey && privateEnd.MatchString(line) {
 			m.privateKey = false
 		}
 		return Replacement
@@ -187,12 +214,121 @@ func (m *Masker) Line(line string) string {
 
 func (m *Masker) redactText(line string) string {
 	line = m.replaceKnown(line)
-	line = userinfo.ReplaceAllString(line, "${1}"+Replacement+"@")
-	line = bearer.ReplaceAllStringFunc(line, func(value string) string { return strings.Fields(value)[0] + " " + Replacement })
-	line = token.ReplaceAllString(line, Replacement)
-	line = header.ReplaceAllString(line, "${1}"+Replacement)
-	line = redactAssignments(assignment, line)
-	return redactAssignments(flag, line)
+	// Each regexp runs only when the line holds the literal bytes it needs;
+	// the prefilters may over-approximate but never skip a possible match.
+	if strings.IndexByte(line, '@') >= 0 && strings.Contains(line, "://") {
+		line = userinfo.ReplaceAllString(line, "${1}"+Replacement+"@")
+	}
+	if mayBearer(line) {
+		line = bearer.ReplaceAllStringFunc(line, func(value string) string { return strings.Fields(value)[0] + " " + Replacement })
+	}
+	if mayToken(line) {
+		line = token.ReplaceAllString(line, Replacement)
+	}
+	if !mentionsSensitive(line) {
+		return line
+	}
+	colon := strings.IndexByte(line, ':') >= 0
+	if colon {
+		line = header.ReplaceAllString(line, "${1}"+Replacement)
+	}
+	if colon || strings.IndexByte(line, '=') >= 0 {
+		line = redactAssignments(assignment, line)
+	}
+	if strings.Contains(line, "--") {
+		return redactAssignments(flag, line)
+	}
+	return line
+}
+
+// hasControl reports whether controls could match: \x00-\x08, \x0b, \x0c, \x0e-\x1f, \x7f.
+func hasControl(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x20 && c != '\t' && c != '\n' && c != '\r' || c == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+// foldHas reports whether s starts with lit, ignoring ASCII case. lit is lowercase letters.
+func foldHas(s, lit string) bool {
+	if len(s) < len(lit) {
+		return false
+	}
+	for j := 0; j < len(lit); j++ {
+		if s[j]|0x20 != lit[j] {
+			return false
+		}
+	}
+	return true
+}
+
+// Go's (?i) also folds s with U+017F (UTF-8 c5 bf) and k with U+212A (e2 84 aa),
+// so those lead bytes conservatively count as a possible match.
+
+// mayBearer is a necessary condition for bearer: "bearer" or "basic", any case.
+func mayBearer(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == 0xc5 {
+			return true
+		}
+		if c|0x20 == 'b' && (foldHas(s[i+1:], "earer") || foldHas(s[i+1:], "asic")) {
+			return true
+		}
+	}
+	return false
+}
+
+// mayToken is a necessary condition for token; its literals are case sensitive.
+func mayToken(s string) bool {
+	for _, lit := range [...]string{"gh", "gl", "AKIA", "ASIA", "eyJ", "github_pat_"} {
+		if strings.Contains(s, lit) {
+			return true
+		}
+	}
+	return false
+}
+
+// mentionsSensitive is a necessary condition for assignment, header and flag:
+// every branch of those patterns holds one of pass, pwd, token, key, secret,
+// sig, credential, authorization or cookie, in any case.
+func mentionsSensitive(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == 0xc5 || c == 0xe2 {
+			return true
+		}
+		r := s[i+1:]
+		switch c | 0x20 {
+		case 'p':
+			if foldHas(r, "ass") || foldHas(r, "wd") {
+				return true
+			}
+		case 't':
+			if foldHas(r, "oken") {
+				return true
+			}
+		case 'k':
+			if foldHas(r, "ey") {
+				return true
+			}
+		case 's':
+			if foldHas(r, "ecret") || foldHas(r, "ig") {
+				return true
+			}
+		case 'c':
+			if foldHas(r, "redential") || foldHas(r, "ookie") {
+				return true
+			}
+		case 'a':
+			if foldHas(r, "uthorization") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func redactAssignments(pattern *regexp.Regexp, line string) string {
