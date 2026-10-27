@@ -544,6 +544,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/log-sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List current and past pods that wrote logs for an application */
+        get: operations["listApplicationLogSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/app-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get application log history settings */
+        get: operations["getAppLogSettings"];
+        /** Update application log history settings */
+        put: operations["putAppLogSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/history": {
         parameters: {
             query?: never;
@@ -6087,6 +6122,42 @@ export interface components {
         AlarmReadInput: {
             expected_event_id?: number;
         };
+        AppLogSource: {
+            pod_uid: string;
+            pod_name: string;
+            service: string;
+            revision: number;
+            node: string;
+            /** @enum {string} */
+            source: "file" | "api";
+            /** Format: date-time */
+            started_at: string;
+            ended_at: string | null;
+            /** @enum {string} */
+            end_reason: "" | "completed" | "error" | "oom_killed" | "evicted" | "replaced" | "deleted";
+            restarts: number;
+            gap_seconds: number;
+            gap_note?: string;
+            current: boolean;
+        };
+        AppLogSourceList: {
+            items: components["schemas"]["AppLogSource"][];
+            retention_days: number;
+            available: boolean;
+            message: string;
+        };
+        AppLogSettings: {
+            enabled: boolean;
+            retention_days: number;
+            max_mib_per_app: number;
+            revision: number;
+        };
+        AppLogSettingsInput: {
+            enabled: boolean;
+            retention_days: number;
+            max_mib_per_app: number;
+            expected_revision: number;
+        };
         ProjectRole: {
             project: string;
             role: string;
@@ -7105,6 +7176,8 @@ export interface components {
             pods: number;
             window_seconds: number;
             warnings: string[];
+            next_cursor?: string;
+            history?: components["schemas"]["LogHistory"];
             source: string;
             /** Format: date-time */
             observed_at: string;
@@ -8401,6 +8474,19 @@ export interface components {
             branch?: string;
             run_url?: string;
         };
+        LogHistory: {
+            available: boolean;
+            message: string;
+            collected_through: string | null;
+            scan_limited: boolean;
+            gaps: {
+                pod_uid: string;
+                pod_name: string;
+                seconds: number;
+                note: string;
+            }[];
+            retention_days: number;
+        };
         LogEntry: {
             /** Format: date-time */
             timestamp: string;
@@ -8412,6 +8498,11 @@ export interface components {
             fields: {
                 [key: string]: unknown;
             };
+            pod_uid?: string;
+            revision?: number;
+            restart?: number;
+            stream?: string;
+            truncated?: boolean;
         };
         LogQuery: {
             service: string;
@@ -8422,6 +8513,13 @@ export interface components {
             limit?: number;
             tail?: number;
             previous?: boolean;
+            history?: boolean;
+            /** Format: date-time */
+            from?: string;
+            /** Format: date-time */
+            to?: string;
+            pod_uid?: string;
+            cursor?: string;
         };
         LogQueryResult: {
             entries: components["schemas"]["LogEntry"][];
@@ -8436,6 +8534,8 @@ export interface components {
             pods: number;
             window_seconds: number;
             warnings: string[];
+            next_cursor?: string;
+            history?: components["schemas"]["LogHistory"];
         };
         TerminalInput: {
             pod: string;
@@ -10943,6 +11043,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AlarmSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listApplicationLogSources: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppLogSourceList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAppLogSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppLogSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putAppLogSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppLogSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppLogSettings"];
                 };
             };
             /** @description Error */
