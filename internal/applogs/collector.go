@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -21,14 +23,15 @@ import (
 // defined here because applogs cannot import cluster or store (both import
 // applogs); the API package adapts between them.
 type Container struct {
-	Name                string
-	Restart             int
-	Running, Terminated bool
-	Reason              string
-	ExitCode            int32
-	PreviousRestart     int
-	PreviousReason      string
-	PreviousExitCode    int32
+	Name                           string
+	Restart                        int
+	Running, Terminated            bool
+	Reason                         string
+	ExitCode                       int32
+	PreviousRestart                int
+	PreviousReason                 string
+	PreviousExitCode               int32
+	FinishedAt, PreviousFinishedAt time.Time
 }
 
 type Pod struct {
@@ -90,6 +93,7 @@ const (
 	NoteFileGap       = "Log file rotated before Hakopod read it."
 	NoteRestartGap    = "Container restarted more than once between collections; earlier runs were not collected."
 	NoteRestartingGap = "Hakopod was restarting; output in this period may be missing."
+	NoteLogsGone      = "Pod logs were removed before Hakopod finished reading them."
 	NoteBurstGap      = "Burst of output within one second exceeded what Hakopod reads; some lines were skipped."
 	NoteAPIGap        = "Pod was removed before its last output was collected."
 )
@@ -116,6 +120,7 @@ type Collector struct {
 	setAt       time.Time
 	housekeptAt time.Time
 	permWarned  bool
+	started     bool
 }
 
 type maskEntry struct {
@@ -126,6 +131,7 @@ type maskEntry struct {
 type trackedPod struct {
 	fails      map[string]int // failed reads of a previous run, by cursor key
 	raw        map[string]rawGroup
+	end        map[string]bool // last read of each instance reached the end of its data
 	pod        Pod
 	src        Source
 	lastRead   time.Time
@@ -195,6 +201,11 @@ func (c *Collector) Tick(ctx context.Context) error {
 	if c.tracked == nil {
 		c.reset()
 	}
+	if !c.started {
+		c.started = true
+		_, statErr := os.Stat(c.Tailer.root())
+		slog.Info("Application log collection started", "file_tailing", statErr == nil, "store_root", c.Store.root())
+	}
 	set := c.loadSettings(ctx)
 	c.housekeep(ctx, set)
 	if !set.Enabled {
@@ -224,6 +235,9 @@ func (c *Collector) Run(ctx context.Context) {
 			end, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			defer stop()
 			_ = c.Store.SealIdle(end)
+			if c.started {
+				slog.Info("Application log collection stopped")
+			}
 			_ = c.Records.ReleaseAppLogCollector(end, c.Owner) // lets another process collect at once
 			return
 		case <-t.C:
@@ -326,7 +340,7 @@ func (c *Collector) track(p Pod) *trackedPod {
 	defer c.mu.Unlock()
 	tr := c.tracked[p.UID]
 	if tr == nil {
-		tr = &trackedPod{last: map[string]time.Time{}, fails: map[string]int{}, raw: map[string]rawGroup{}}
+		tr = &trackedPod{last: map[string]time.Time{}, fails: map[string]int{}, raw: map[string]rawGroup{}, end: map[string]bool{}}
 		c.tracked[p.UID] = tr
 	}
 	tr.pod = p
@@ -457,14 +471,32 @@ func (c *Collector) drainPrevious(ctx context.Context, tr *trackedPod, k Contain
 	if k.Restart > 1 && !prevKnown {
 		skipped = c.sinceLastLine(tr)
 	}
-	eof, err := c.readInstance(ctx, tr, k, prev, true, mask, b, limit)
-	if err != nil {
+	var eof bool
+	if tr.src == SourceFile && !c.runFileExists(p, k.Name, prev) {
+		// Its files are gone (the tailer reports no error for that). It is a
+		// loss only if the last read had not caught up to its end.
+		if !tr.end[key] {
+			to := k.PreviousFinishedAt
+			if to.IsZero() {
+				to = c.now()
+			}
+			c.addGap(ctx, tr, to.Sub(c.lastLine(tr, key)), NoteLogsGone)
+		}
+		eof = true
+	} else if eof, err = c.readInstance(ctx, tr, k, prev, true, mask, b, limit); err != nil {
 		tr.fails[key]++
 		if !errors.Is(err, fs.ErrNotExist) && tr.fails[key] < 3 {
 			return false, err
 		}
-		// The previous run can no longer be read.
-		c.addGap(ctx, tr, c.sinceLine(tr, key), NoteFileGap)
+		// The previous run can no longer be read. A gap needs evidence: it is
+		// not one if its last read had already reached the end of its data.
+		if !tr.end[key] {
+			to := k.PreviousFinishedAt
+			if to.IsZero() {
+				to = c.now()
+			}
+			c.addGap(ctx, tr, to.Sub(c.lastLine(tr, key)), NoteLogsGone)
+		}
 		eof = true
 	}
 	if eof && skipped > 0 {
@@ -473,15 +505,17 @@ func (c *Collector) drainPrevious(ctx context.Context, tr *trackedPod, k Contain
 	return eof, nil
 }
 
+// runFileExists reports whether any file of that container run is still on disk.
+func (c *Collector) runFileExists(p Pod, container string, restart int) bool {
+	m, _ := filepath.Glob(filepath.Join(c.Tailer.PodDir(p.Namespace, p.Name, p.UID), container, fmt.Sprintf("%d.log*", restart)))
+	return len(m) > 0
+}
+
 func (c *Collector) lastLine(tr *trackedPod, key string) time.Time {
 	if t := tr.last[key]; !t.IsZero() {
 		return t
 	}
 	return tr.pod.StartedAt
-}
-
-func (c *Collector) sinceLine(tr *trackedPod, key string) time.Duration {
-	return c.now().Sub(c.lastLine(tr, key))
 }
 
 // sinceLastLine is seconds since the newest line collected for this pod, 1..3600.
@@ -604,8 +638,9 @@ func (c *Collector) readInstance(ctx context.Context, tr *trackedPod, k Containe
 		if err != nil {
 			return false, err
 		}
+		tr.end[key] = eof
 		if gap {
-			c.fileGap(ctx, tr, key, lines)
+			c.fileGap(ctx, tr, key, k, previous, lines)
 		}
 		if len(lines) > 0 {
 			if err := c.Store.Append(ctx, inst, lines); err != nil {
@@ -676,13 +711,30 @@ func (c *Collector) fileDenied(tr *trackedPod) {
 	}
 }
 
-// fileGap records a rotation gap, with or without lines after it.
-func (c *Collector) fileGap(ctx context.Context, tr *trackedPod, key string, lines []Line) {
-	to := c.now()
+// fileGap handles a gap the tailer reported. If the pod's directory is gone and
+// the last read had reached the end of the data, the file vanished because the
+// pod did, which is not a loss. Otherwise it is a rotation (directory present) or
+// removal of unread logs.
+func (c *Collector) fileGap(ctx context.Context, tr *trackedPod, key string, k Container, previous bool, lines []Line) {
+	p, note := tr.pod, NoteFileGap
+	if !c.Tailer.Exists(p.Namespace, p.Name, p.UID) {
+		if tr.end[key] && len(lines) == 0 {
+			return
+		}
+		note = NoteLogsGone
+	} else if previous && tr.end[key] && len(lines) == 0 {
+		return // a finished run whose last read had caught up: nothing is known to be missing
+	}
+	to, stopped := c.now(), k.FinishedAt
+	if previous {
+		stopped = k.PreviousFinishedAt
+	}
 	if len(lines) > 0 {
 		to = lines[0].Time
+	} else if !stopped.IsZero() {
+		to = stopped
 	}
-	c.addGap(ctx, tr, to.Sub(c.lastLine(tr, key)), NoteFileGap)
+	c.addGap(ctx, tr, to.Sub(c.lastLine(tr, key)), note)
 }
 
 // step does one bounded read and returns masked lines, the next cursor, whether
@@ -873,7 +925,10 @@ func lineMsgs(ls []Line) []string {
 }
 
 // endReason picks the most specific reason from the pod's last known state.
-func endReason(p Pod) EndReason {
+// current is the newest revision seen for its service and anyLive says whether
+// the service still has a pod. A pod from an older revision was replaced by a
+// rollout; a pod of the current revision that simply went away was deleted.
+func endReason(p Pod, current int64, anyLive bool) EndReason {
 	if p.Reason == "Evicted" {
 		return EndEvicted
 	}
@@ -888,16 +943,18 @@ func endReason(p Pod) EndReason {
 			return EndOOMKilled
 		}
 	}
-	if p.Terminating || !any { // a rollout's SIGTERM exit is not a failure
-		return EndReplaced
-	}
-	for _, k := range p.Containers {
-		if k.Terminated && k.ExitCode != 0 {
-			return EndError
+	if !p.Terminating && any { // a rollout's SIGTERM exit is not a failure
+		for _, k := range p.Containers {
+			if k.Terminated && k.ExitCode != 0 {
+				return EndError
+			}
+		}
+		if all {
+			return EndCompleted
 		}
 	}
-	if all {
-		return EndCompleted
+	if p.Revision > 0 && p.Revision >= current && anyLive {
+		return EndDeleted
 	}
 	return EndReplaced
 }
@@ -921,6 +978,15 @@ func (c *Collector) finishAbsent(ctx context.Context, pods []Pod) {
 	for _, uid := range gone {
 		goneApp[uid] = c.tracked[uid].pod.ApplicationID
 	}
+	current, liveSvc := map[string]int64{}, map[string]bool{}
+	svc := func(p Pod) string { return p.ApplicationID + "|" + p.Service }
+	for _, p := range pods {
+		liveSvc[svc(p)] = true
+		current[svc(p)] = max(current[svc(p)], p.Revision)
+	}
+	for _, tr := range c.tracked {
+		current[svc(tr.pod)] = max(current[svc(tr.pod)], tr.pod.Revision)
+	}
 	now := c.now().UTC()
 	for app, uids := range byApp {
 		if !c.swept[app] {
@@ -940,7 +1006,7 @@ func (c *Collector) finishAbsent(ctx context.Context, pods []Pod) {
 				seen = append(seen, other)
 			}
 		}
-		if err := c.Records.EndOpenLogPods(ctx, app, seen, now, endReason(tr.pod)); err != nil {
+		if err := c.Records.EndOpenLogPods(ctx, app, seen, now, endReason(tr.pod, current[svc(tr.pod)], liveSvc[svc(tr.pod)])); err != nil {
 			continue // keep tracking so the next tick tries again
 		}
 		delete(c.tracked, uid)
@@ -984,5 +1050,20 @@ func (c *Collector) recordVanishGap(ctx context.Context, tr *trackedPod, now tim
 		}
 	case tr.src == SourceAPI && !tr.drained:
 		_ = c.Records.AddLogGap(ctx, tr.pod.UID, int(PollInterval/time.Second), NoteAPIGap)
+	case tr.src == SourceFile && !c.Tailer.Exists(tr.pod.Namespace, tr.pod.Name, tr.pod.UID):
+		// The directory went away with the pod. That is a loss only if a
+		// container's last read had not reached the end of its data.
+		for _, k := range tr.pod.Containers {
+			key := cursorKey(tr.pod.UID, k.Name, k.Restart)
+			if tr.end[key] {
+				continue
+			}
+			to := now
+			if !k.FinishedAt.IsZero() {
+				to = k.FinishedAt
+			}
+			c.addGap(ctx, tr, to.Sub(c.lastLine(tr, key)), NoteLogsGone)
+			return
+		}
 	}
 }

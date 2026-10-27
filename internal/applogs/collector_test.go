@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -300,19 +301,136 @@ func TestEndReasonMapping(t *testing.T) {
 	cases := []struct {
 		name string
 		p    Pod
+		cur  int64
+		live bool
 		want EndReason
 	}{
-		{"evicted", Pod{Reason: "Evicted", Containers: []Container{run(0)}}, EndEvicted},
-		{"oom", Pod{Containers: []Container{term("OOMKilled", 137)}}, EndOOMKilled},
-		{"error", Pod{Containers: []Container{term("Error", 1)}}, EndError},
-		{"completed", Pod{Containers: []Container{term("Completed", 0)}}, EndCompleted},
-		{"replaced", Pod{Containers: []Container{run(0)}}, EndReplaced},
-		{"rollout sigterm", Pod{Terminating: true, Containers: []Container{term("Error", 143)}}, EndReplaced},
+		{"evicted", Pod{Reason: "Evicted", Containers: []Container{run(0)}}, 0, true, EndEvicted},
+		{"oom", Pod{Containers: []Container{term("OOMKilled", 137)}}, 0, true, EndOOMKilled},
+		{"oom while terminating", Pod{Terminating: true, Revision: 3, Containers: []Container{term("OOMKilled", 137)}}, 3, true, EndOOMKilled},
+		{"error", Pod{Containers: []Container{term("Error", 1)}}, 0, true, EndError},
+		{"completed", Pod{Containers: []Container{term("Completed", 0)}}, 0, true, EndCompleted},
+		{"unknown revision", Pod{Containers: []Container{run(0)}}, 4, true, EndReplaced},
+		{"older revision is replaced", Pod{Revision: 3, Terminating: true, Containers: []Container{term("Error", 143)}}, 4, true, EndReplaced},
+		{"current revision removed is deleted", Pod{Revision: 4, Terminating: true, Containers: []Container{term("Error", 143)}}, 4, true, EndDeleted},
+		{"current revision vanished is deleted", Pod{Revision: 4, Containers: []Container{run(0)}}, 4, true, EndDeleted},
+		{"service scaled to nothing is replaced", Pod{Revision: 4, Terminating: true, Containers: []Container{run(0)}}, 4, false, EndReplaced},
 	}
 	for _, c := range cases {
-		if got := endReason(c.p); got != c.want {
+		if got := endReason(c.p, c.cur, c.live); got != c.want {
 			t.Errorf("%s: got %q want %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestTickManualDeleteIsDeletedAndRolloutIsReplaced(t *testing.T) {
+	h := newHarness(t)
+	rev := func(uid string, r int64) Pod { p := pod(uid, "app1", run(0)); p.Revision = r; return p }
+	h.cl.set(rev("old", 3), rev("cur", 4), rev("cur2", 4))
+	h.tick()
+	h.cl.set(rev("cur", 4), rev("cur2", 4)) // the revision 3 pod is gone
+	h.tick()
+	h.cl.set(rev("cur", 4)) // a revision 4 pod is deleted
+	h.tick()
+	// ends[0] is the startup sweep. After that, the first call that leaves a
+	// pod out of Seen is the one that ended it.
+	reasons := map[string]EndReason{}
+	for _, e := range h.rec.ends[1:] {
+		for _, uid := range []string{"old", "cur2"} {
+			listed := false
+			for _, s := range e.Seen {
+				listed = listed || s == uid
+			}
+			if _, done := reasons[uid]; !listed && !done {
+				reasons[uid] = e.Reason
+			}
+		}
+	}
+	if reasons["old"] != EndReplaced || reasons["cur2"] != EndDeleted {
+		t.Fatalf("reasons %v (ends %+v)", reasons, h.rec.ends)
+	}
+}
+
+func TestTickVanishedDirectoryAfterAtEndIsNotAGap(t *testing.T) {
+	h := newHarness(t)
+	done := Container{Name: "app", Terminated: true, Reason: "Completed", FinishedAt: base.Add(5 * time.Second)}
+	h.cl.set(pod("u1", "app1", done))
+	h.writeLog("u1", "app", 0, 0, "a", "b")
+	h.tick()
+	os.RemoveAll(filepath.Join(h.logs, "hp-a_u1_u1")) // kubelet removes it with the pod
+	h.cl.set()
+	h.tick()
+	want(t, h.stored("app1"), "u1/r0:a", "u1/r0:b")
+	if len(h.rec.gaps) != 0 {
+		t.Fatalf("false gap %+v", h.rec.gaps)
+	}
+}
+
+func TestTickVanishedDirectoryWithUnreadBytesIsAGapUpToFinishTime(t *testing.T) {
+	h := newHarness(t)
+	h.c.TickBytes = 300 // too small to reach the end
+	done := Container{Name: "app", Terminated: true, Reason: "Error", ExitCode: 1, FinishedAt: base.Add(60 * time.Second)}
+	h.cl.set(pod("u1", "app1", done))
+	var many []string
+	for i := 0; i < 40; i++ {
+		many = append(many, fmt.Sprintf("line-%02d-%s", i, strings.Repeat("q", 60)))
+	}
+	h.writeLog("u1", "app", 0, 0, many...)
+	h.tick()
+	os.RemoveAll(filepath.Join(h.logs, "hp-a_u1_u1"))
+	h.cl.set()
+	h.tick()
+	if len(h.rec.gaps) != 1 || h.rec.gaps[0].Note != NoteLogsGone {
+		t.Fatalf("gaps %+v", h.rec.gaps)
+	}
+	stored := len(h.stored("app1"))
+	if want := 60 - (stored - 1); h.rec.gaps[0].Seconds != want {
+		t.Fatalf("gap %d s, want %d (last stored line to the container's finish)", h.rec.gaps[0].Seconds, want)
+	}
+}
+
+func TestTickCrashBackoffIsNotAGap(t *testing.T) {
+	h := newHarness(t)
+	h.cl.set(pod("u1", "app1", run(0)))
+	h.writeLog("u1", "app", 0, 0, "last before oom")
+	h.tick()
+	os.Remove(filepath.Join(h.logs, "hp-a_u1_u1", "app", "0.log")) // already read to its end
+	h.writeLog("u1", "app", 1, 300, "after backoff")
+	k := run(1)
+	k.PreviousFinishedAt = base.Add(time.Second)
+	h.cl.set(pod("u1", "app1", k))
+	h.tick()
+	if len(h.rec.gaps) != 0 {
+		t.Fatalf("gap across backoff %+v", h.rec.gaps)
+	}
+	// A previous run that was never read and is gone: the gap ends at its finish.
+	k2 := run(1)
+	k2.PreviousFinishedAt = base.Add(7 * time.Second)
+	h.cl.set(pod("u1", "app1", run(1)), pod("u2", "app1", k2))
+	h.writeLog("u2", "app", 1, 400, "new run")
+	h.tick()
+	if len(h.rec.gaps) != 1 || h.rec.gaps[0].UID != "u2" || h.rec.gaps[0].Note != NoteLogsGone || h.rec.gaps[0].Seconds != 7 {
+		t.Fatalf("gaps %+v", h.rec.gaps)
+	}
+}
+
+func TestCollectorLogsStartAndStop(t *testing.T) {
+	var buf strings.Builder
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(old)
+	h := newHarness(t)
+	h.tick()
+	h.tick()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { h.c.Run(ctx); close(done) }()
+	time.Sleep(30 * time.Millisecond)
+	cancel()
+	<-done
+	out := buf.String()
+	if strings.Count(out, "collection started") != 1 || strings.Count(out, "collection stopped") != 1 || !strings.Contains(out, "store_root") {
+		t.Fatalf("log output:\n%s", out)
 	}
 }
 
