@@ -363,10 +363,10 @@ func TestTailTruncation(t *testing.T) {
 	f.write("0.log", rec(1, "stdout", "F", "a long first line")+rec(2, "stdout", "F", "second"))
 	_, cur, _ := f.read(FileCursor{}, 0)
 	// Same inode, now shorter than the offset.
-	f.write("0.log", rec(3, "stdout", "F", "x"))
+	f.write("0.log", rec(1, "stdout", "F", "x"))
 	lines, next, gap := f.read(cur, 0)
 	same(t, lines, "x")
-	if !gap || next.Offset != int64(len(rec(3, "stdout", "F", "x"))) {
+	if !gap || next.Offset != int64(len(rec(1, "stdout", "F", "x"))) {
 		t.Fatalf("gap=%v cursor=%+v", gap, next)
 	}
 }
@@ -457,5 +457,50 @@ func TestTailReadFinal(t *testing.T) {
 	same(t, res.Lines, "cut off")
 	if !res.AtEnd {
 		t.Fatal("expected AtEnd")
+	}
+}
+
+func TestTailInodeReuse(t *testing.T) {
+	// Pretend every file has the same inode, as when the kernel hands the
+	// inode of a deleted rotated file to the new live file.
+	orig := fileIdentity
+	fileIdentity = func(path string, fi os.FileInfo) (uint64, string) {
+		_, first := orig(path, fi)
+		return 42, first
+	}
+	t.Cleanup(func() { fileIdentity = orig })
+
+	f := newFixture(t)
+	f.write("0.log", rec(1, "stdout", "F", "a")+rec(2, "stdout", "F", "b"))
+	_, cur, _ := f.read(FileCursor{}, 0)
+	if cur.First == "" || cur.Inode != 42 {
+		t.Fatalf("cursor = %+v", cur)
+	}
+	os.Remove(filepath.Join(f.dir, "0.log"))
+	f.write("0.log", rec(5, "stdout", "F", "new1")+rec(6, "stdout", "F", "new2")+rec(7, "stdout", "F", "new3"))
+	lines, next, gap := f.read(cur, 0)
+	if !gap || len(lines) != 3 || lines[0].Message != unknownStartMessage || lines[1].Message != "new2" {
+		t.Fatalf("gap=%v lines=%+v", gap, lines)
+	}
+	if next.First == cur.First {
+		t.Fatal("cursor kept the old identity")
+	}
+	// An old cursor without First is matched by inode once, then filled in.
+	old := FileCursor{File: "0.log", Inode: 42, Offset: next.Offset}
+	f.appendTo("0.log", rec(8, "stdout", "F", "new4"))
+	lines, upgraded, gap := f.read(old, 0)
+	same(t, lines, "new4")
+	if gap || upgraded.First != next.First {
+		t.Fatalf("gap=%v cursor=%+v", gap, upgraded)
+	}
+	// A new file with no first record yet is left alone.
+	g := newFixture(t)
+	g.write("0.log", rec(1, "stdout", "F", "a"))
+	_, c, _ := g.read(FileCursor{}, 0)
+	os.Remove(filepath.Join(g.dir, "0.log"))
+	g.write("0.log", "")
+	res, _ := g.tl.ReadN("hp-app", "web-1", "uid1", "web", 0, c, 0)
+	if res.Gap || len(res.Lines) != 0 || res.Next != c {
+		t.Fatalf("res = %+v", res)
 	}
 }
