@@ -10,8 +10,12 @@ Missing metrics stay unavailable; they are never displayed as zero usage.
 The log explorer searches one application's selected service, across up to eight
 of its newest pods, or one explicitly selected pod/container. Its histogram counts
 matching lines in the sampled window. A truncation notice means some retained
-logs or matches were omitted. Kubernetes log rotation, deleted pods, and node
-loss limit what is available; this is not a historical audit archive.
+logs or matches were omitted. Live reads come from Kubernetes, so rotation and
+deleted pods limit them. Hakopod also keeps masked copies of application logs
+after a pod is gone (7 days and 512 MiB per application by default), readable
+with `history`, `from`, `to` and `pod` in the API, MCP and CLI, and through the
+dashboard pod picker. Known gaps are reported, and this is not an audit archive.
+See [application logs](application-logs.md).
 
 ```sql
 severity >= ERROR AND message ILIKE '%timeout%'
