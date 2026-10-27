@@ -156,3 +156,30 @@ func TestClientControlCleanupCannotReconstructSecrets(t *testing.T) {
 		t.Fatal("a credential crossed a preserved section boundary")
 	}
 }
+
+func TestPrivateKeyStateCanBeResumedByANewMasker(t *testing.T) {
+	m := New()
+	if m.InPrivateKey() || m.Line("-----BEGIN PRIVATE KEY-----") != Replacement || !m.InPrivateKey() {
+		t.Fatal("begin line must open a block")
+	}
+	fresh := New()
+	fresh.ResumePrivateKey()
+	if got := fresh.Line("MIIBODYBODY"); got != Replacement {
+		t.Fatalf("body leaked: %q", got)
+	}
+	if fresh.Line("-----END PRIVATE KEY-----"); fresh.InPrivateKey() {
+		t.Fatal("end line must close the block")
+	}
+}
+
+func TestAddedReturnsValuesLearnedFromMaskCommands(t *testing.T) {
+	m := New()
+	m.Line("::add-mask::hunter2-value")
+	fresh := New()
+	for _, v := range m.Added() {
+		fresh.Add(v)
+	}
+	if got := fresh.Line("password was hunter2-value ok"); strings.Contains(got, "hunter2-value") {
+		t.Fatalf("learned mask lost: %q", got)
+	}
+}
