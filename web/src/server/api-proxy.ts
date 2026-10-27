@@ -83,6 +83,8 @@ export const allowed = [
   /^teams\/[A-Za-z0-9_-]+$/,
   /^license$/,
   /^applications\/[A-Za-z0-9_-]+\/logs\/query$/,
+  /^applications\/[A-Za-z0-9_-]+\/log-sources$/,
+  /^settings\/app-logs$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input|poll))?)?$/,
   /^(me|projects(?:\/[A-Za-z0-9_-]+)?|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback)|\/services\/[A-Za-z0-9_-]+\/(?:runtime|restart|stop|resume|scale|tls|delivery|certificates|exec))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/(?:cancel|resume))?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit|settings\/appearance)$/,
   /^auth\/(?:status|onboarding|invites\/inspect|security|sessions(?:\/[A-Za-z0-9_-]+)?|device(?:\/approve)?|mfa\/totp\/(?:start|confirm|disable)|passkeys\/(?:(?:register|login)\/(?:start|finish)|[A-Za-z0-9_-]+))$/,

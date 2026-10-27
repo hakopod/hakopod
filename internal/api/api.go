@@ -18,6 +18,7 @@ import (
 	contract "github.com/hakopod/hakopod/api"
 
 	"github.com/hakopod/hakopod/internal/actions"
+	"github.com/hakopod/hakopod/internal/applogs"
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/dnsprovider"
@@ -30,6 +31,9 @@ import (
 )
 
 type Server struct {
+	// appLogs reads stored application logs; built lazily by appLogReader.
+	appLogs            *applogs.Store
+	appLogsOnce        sync.Once
 	explorerRuntime    *explorerRuntime
 	sessionCalls       chan struct{}
 	sessionTestRuntime sandbox.Runtime
@@ -203,6 +207,9 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("POST /api/v1/applications/{id}/rollback", s.rollback)
 	routes.HandleFunc("GET /api/v1/applications/{id}/logs", s.logs)
 	routes.HandleFunc("POST /api/v1/applications/{id}/logs/query", s.queryLogs)
+	routes.HandleFunc("GET /api/v1/applications/{id}/log-sources", s.listLogSources)
+	routes.HandleFunc("GET /api/v1/settings/app-logs", s.getAppLogSettings)
+	routes.HandleFunc("PUT /api/v1/settings/app-logs", s.putAppLogSettings)
 	routes.HandleFunc("GET /api/v1/nodes", s.nodes)
 	routes.HandleFunc("GET /api/v1/placement/nodes", s.placementNodes)
 	routes.HandleFunc("GET /api/v1/keys", s.keys)

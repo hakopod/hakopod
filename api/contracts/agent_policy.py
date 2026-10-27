@@ -2670,6 +2670,11 @@ for operation in ['listPrivateEgressBindings','getPrivateEgressBinding','putPriv
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith(('list','get')) else 'canonical','sensitive_fields':ADMIN_SENSITIVE}
 POLICIES['listScopedPrivateEgressBindings'] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'review':'none','prerequisite':'','sensitive_fields':[]}
 
+# Historic application logs: the source list is a scoped read; retention settings are installation administration.
+POLICIES['listApplicationLogSources'] = {'boundary':'project','category':'read','exposure':'generic','permissions':['logs:read'],'prerequisite':'','review':'none','sensitive_fields':[]}
+for operation in ['getAppLogSettings','putAppLogSettings']:
+    POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

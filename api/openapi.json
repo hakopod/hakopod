@@ -2423,6 +2423,171 @@
         "summary": "Save alarm settings for the selected scope."
       }
     },
+    "/applications/{id}/log-sources": {
+      "get": {
+        "operationId": "listApplicationLogSources",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppLogSourceList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List current and past pods that wrote logs for an application",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "logs:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/settings/app-logs": {
+      "get": {
+        "operationId": "getAppLogSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppLogSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get application log history settings",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "put": {
+        "operationId": "putAppLogSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppLogSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppLogSettingsInput"
+              }
+            }
+          }
+        },
+        "summary": "Update application log history settings",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/audit/history": {
       "get": {
         "operationId": "listUserAuditHistory",
@@ -27545,6 +27710,170 @@
         "required": [],
         "additionalProperties": false
       },
+      "AppLogSource": {
+        "type": "object",
+        "properties": {
+          "pod_uid": {
+            "type": "string"
+          },
+          "pod_name": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "file",
+              "api"
+            ]
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end_reason": {
+            "type": "string",
+            "enum": [
+              "",
+              "completed",
+              "error",
+              "oom_killed",
+              "evicted",
+              "replaced",
+              "deleted"
+            ]
+          },
+          "restarts": {
+            "type": "integer"
+          },
+          "gap_seconds": {
+            "type": "integer"
+          },
+          "gap_note": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pod_uid",
+          "pod_name",
+          "service",
+          "revision",
+          "node",
+          "source",
+          "started_at",
+          "ended_at",
+          "end_reason",
+          "restarts",
+          "gap_seconds",
+          "current"
+        ],
+        "additionalProperties": false
+      },
+      "AppLogSourceList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppLogSource"
+            }
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "retention_days",
+          "available",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "AppLogSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "retention_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "max_mib_per_app": {
+            "type": "integer",
+            "minimum": 64,
+            "maximum": 4096
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "retention_days",
+          "max_mib_per_app",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "AppLogSettingsInput": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "retention_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "max_mib_per_app": {
+            "type": "integer",
+            "minimum": 64,
+            "maximum": 4096
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "retention_days",
+          "max_mib_per_app",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
       "ProjectRole": {
         "type": "object",
         "properties": {
@@ -31423,6 +31752,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "history": {
+            "$ref": "#/components/schemas/LogHistory"
           },
           "source": {
             "type": "string"
@@ -36453,6 +36788,70 @@
         ],
         "additionalProperties": false
       },
+      "LogHistory": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "collected_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scan_limited": {
+            "type": "boolean"
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pod_uid": {
+                  "type": "string"
+                },
+                "pod_name": {
+                  "type": "string"
+                },
+                "seconds": {
+                  "type": "integer"
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "pod_uid",
+                "pod_name",
+                "seconds",
+                "note"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "retention_days": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "available",
+          "message",
+          "collected_through",
+          "scan_limited",
+          "gaps",
+          "retention_days"
+        ],
+        "additionalProperties": false
+      },
       "LogEntry": {
         "type": "object",
         "properties": {
@@ -36478,6 +36877,21 @@
           "fields": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "pod_uid": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "restart": {
+            "type": "integer"
+          },
+          "stream": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -36517,6 +36931,25 @@
           },
           "previous": {
             "type": "boolean"
+          },
+          "history": {
+            "type": "boolean"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "pod_uid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,64}$"
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 512
           }
         },
         "required": [
@@ -36573,6 +37006,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "history": {
+            "$ref": "#/components/schemas/LogHistory"
           }
         },
         "required": [

@@ -176,6 +176,27 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "listApplicationLogSources",
+    "method": "GET",
+    "path": "/applications/{id}/log-sources",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "getAppLogSettings",
+    "method": "GET",
+    "path": "/settings/app-logs",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "putAppLogSettings",
+    "method": "PUT",
+    "path": "/settings/app-logs",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "listUserAuditHistory",
     "method": "GET",
     "path": "/audit/history",
