@@ -2,17 +2,20 @@ import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Textarea } from './ui/textarea'
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Badge, Tooltip } from './ui/surfaces'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Button } from './ui/button'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
 import { client, unwrap } from '../lib/client'
-import { timestamp } from '../lib/api'
+import { message, timestamp } from '../lib/api'
+import { podOptions, timeOptions, validateCustom } from '../lib/app-logs'
+import { CutMark, HistoryStatus, HistoryUnavailable, PastPods } from './log-history'
 import type { components } from '../lib/api.generated'
 const LiveLogs = lazy(() => import('./live-logs'))
-type Query = components['schemas']['LogQuery']
+type ApiQuery = components['schemas']['LogQuery']
+type Query = ApiQuery & { window?: string; customFrom?: string; customTo?: string }
 type LogEntry = components['schemas']['LogEntry']
 type ExplorerResult = components['schemas']['LogQueryResult'] & {
   source?: string
@@ -55,6 +58,15 @@ export function Logs({
   const [since, setSince] = useState(3600)
   const [limit, setLimit] = useState(installation ? 200 : 500)
   const [previous, setPrevious] = useState(false)
+  const [podUid, setPodUid] = useState('')
+  const [custom, setCustom] = useState(false)
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [lastAvailable, setLastAvailable] = useState<boolean | undefined>()
+  const [more, setMore] = useState<{ entries: LogEntry[]; cursor?: string }>({ entries: [] })
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [moreError, setMoreError] = useState('')
+  const [showPods, setShowPods] = useState(false)
   const [wrap, setWrap] = useState(true)
   const [query, setQuery] = useState<Query>({
     service,
@@ -62,6 +74,34 @@ export function Logs({
     limit: installation ? 200 : 500,
     tail: 2000,
   })
+  const sources = useQuery({
+    queryKey: ['log-sources', applicationId, custom ? `${customFrom}|${customTo}` : since],
+    queryFn: ({ signal }) => {
+      const to = custom ? new Date(customTo) : new Date()
+      const from = custom ? new Date(customFrom) : new Date(to.getTime() - since * 1000)
+      return unwrap(
+        client.GET('/applications/{id}/log-sources', {
+          signal,
+          params: {
+            path: { id: applicationId },
+            query: { from: from.toISOString(), to: to.toISOString(), limit: 200 },
+          },
+        }),
+      )
+    },
+    placeholderData: keepPreviousData,
+    enabled:
+      !installation &&
+      mode === 'explore' &&
+      !(custom && validateCustom(customFrom, customTo, undefined)),
+    gcTime: 0,
+    staleTime: 30000,
+    retry: false,
+  })
+  const retentionDays = sources.data?.retention_days
+  const historyOn = !installation && (lastAvailable ?? sources.data?.available) === true
+  const sourcesSettled = installation || !sources.isPending
+  const customError = custom ? validateCustom(customFrom, customTo, retentionDays) : ''
   const runtime = useQuery({
     queryKey: ['log-pods', applicationId, service],
     queryFn: ({ signal }) =>
@@ -75,10 +115,35 @@ export function Logs({
     gcTime: 0,
     staleTime: 30000,
   })
+  const request = (): ApiQuery => {
+    if (!historyOn) {
+      const { window: _w, customFrom: _f, customTo: _t, ...live } = query
+      return live
+    }
+    const to = query.window === 'custom' ? new Date(query.customTo || '') : new Date()
+    const from =
+      query.window === 'custom'
+        ? new Date(query.customFrom || '')
+        : new Date(to.getTime() - (query.since_seconds || 3600) * 1000)
+    return {
+      service: query.service,
+      query: query.query,
+      limit: query.limit,
+      history: true,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      pod_uid: query.pod_uid,
+    }
+  }
   const logs = useQuery({
-    queryKey: [installation ? 'installation-log-query' : 'log-query', applicationId, query],
-    queryFn: async ({ signal }): Promise<ExplorerResult> =>
-      installation
+    queryKey: [
+      installation ? 'installation-log-query' : 'log-query',
+      applicationId,
+      query,
+      historyOn,
+    ],
+    queryFn: async ({ signal }): Promise<ExplorerResult> => {
+      const result = await (installation
         ? unwrap(
             client.POST('/installation/logs/query', {
               signal,
@@ -89,37 +154,50 @@ export function Logs({
             client.POST('/applications/{id}/logs/query', {
               signal,
               params: { path: { id: applicationId } },
-              body: query,
+              body: request(),
             }),
-          ),
+          ))
+      if (result.history) setLastAvailable(result.history.available)
+      return result
+    },
     enabled: installation
       ? mode === 'explore' || visible
-      : Boolean(query.service) && mode === 'explore',
+      : Boolean(query.service) && mode === 'explore' && sourcesSettled,
     refetchInterval: installation && mode === 'live' && visible ? 5000 : false,
     gcTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
-  const run = () => {
+  const run = (podOverride?: string) => {
     setRange(null)
-    const next = {
+    if (custom && customError) return
+    setMore({ entries: [] })
+    setMoreError('')
+    const next: Query = {
       service,
-      pod: pod || undefined,
-      container: container || 'app',
+      pod: historyOn ? undefined : pod || undefined,
+      pod_uid: historyOn ? (podOverride ?? podUid) || undefined : undefined,
+      window: custom ? 'custom' : undefined,
+      customFrom: custom ? customFrom : undefined,
+      customTo: custom ? customTo : undefined,
+      container: historyOn ? undefined : container || 'app',
       query: draft,
       since_seconds: since,
       limit,
       tail: 2000,
-      previous,
+      previous: historyOn ? undefined : previous,
     }
     if (JSON.stringify(next) === JSON.stringify(query)) void logs.refetch()
     else setQuery(next)
   }
+  const pastPods = (sources.data?.items || []).filter(
+    (item) => item.service === service && !item.current && item.ended_at,
+  )
   const data = logs.data
   const histogram = data?.histogram.slice(0, 120) || []
   const maximum = Math.max(1, ...histogram.map((bar) => bar.count))
-  const entries = (data?.entries.slice(0, 1000) || []).filter(
+  const entries = [...(data?.entries.slice(0, 1000) || []), ...more.entries].filter(
     (entry) =>
       !range ||
       (Date.parse(entry.timestamp) >= range.from && Date.parse(entry.timestamp) < range.to),
@@ -275,43 +353,87 @@ export function Logs({
                     Pod
                     <SelectField
                       label="Pod"
-                      value={pod}
-                      onValueChange={setPod}
-                      options={[
-                        { value: '', label: 'All service pods' },
-                        ...(runtime.data?.pods || []).map((item) => ({
-                          value: item.name,
-                          label: item.name,
-                        })),
-                      ]}
+                      value={historyOn ? podUid : pod}
+                      onValueChange={historyOn ? setPodUid : setPod}
+                      options={
+                        historyOn
+                          ? podOptions(
+                              (sources.data?.items || []).filter(
+                                (item) => item.service === service,
+                              ),
+                            )
+                          : [
+                              { value: '', label: 'All service pods' },
+                              ...(runtime.data?.pods || []).map((item) => ({
+                                value: item.name,
+                                label: item.name,
+                              })),
+                            ]
+                      }
                     />
                   </label>
-                  <label>
-                    Container
-                    <Input
-                      value={container}
-                      onChange={(e) => setContainer(e.target.value)}
-                      placeholder="app"
-                      maxLength={63}
-                    />
-                  </label>
+                  {!historyOn && (
+                    <label>
+                      Container
+                      <Input
+                        value={container}
+                        onChange={(e) => setContainer(e.target.value)}
+                        placeholder="app"
+                        maxLength={63}
+                      />
+                    </label>
+                  )}
                 </>
               )}
               <label>
                 Time window
                 <SelectField
                   label="Time window"
-                  value={String(since)}
-                  onValueChange={(value) => setSince(Number(value))}
-                  options={[
-                    { value: '900', label: 'Last 15 minutes' },
-                    { value: '3600', label: 'Last hour' },
-                    { value: '21600', label: 'Last 6 hours' },
-                    { value: '86400', label: 'Last 24 hours' },
-                  ]}
+                  value={custom && historyOn ? 'custom' : String(since)}
+                  onValueChange={(value) => {
+                    setCustom(value === 'custom')
+                    if (value !== 'custom') setSince(Number(value))
+                  }}
+                  options={timeOptions(retentionDays, historyOn)}
                 />
               </label>
+              {historyOn && custom && (
+                <>
+                  <label>
+                    From
+                    <Input
+                      type="datetime-local"
+                      value={customFrom}
+                      aria-invalid={Boolean(customError)}
+                      aria-describedby={customError ? 'custom-range-error' : undefined}
+                      onChange={(e) => setCustomFrom(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    To
+                    <Input
+                      type="datetime-local"
+                      value={customTo}
+                      aria-invalid={Boolean(customError)}
+                      aria-describedby={customError ? 'custom-range-error' : undefined}
+                      onChange={(e) => setCustomTo(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
             </div>
+            {historyOn && custom && customError && (
+              <p
+                id="custom-range-error"
+                role="alert"
+                className="m-0 text-sm text-destructive [overflow-wrap:anywhere]"
+              >
+                {customError}
+              </p>
+            )}
+            {!installation && sources.data && !sources.data.available && (
+              <HistoryUnavailable message={sources.data.message} />
+            )}
             <div className="query-editor">
               <span className="query-prefix">WHERE</span>
               <Textarea
@@ -328,7 +450,11 @@ export function Logs({
                   }
                 }}
               />
-              <Button type="submit" variant="primary" disabled={logs.isFetching}>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={logs.isFetching || Boolean(custom && historyOn && customError)}
+              >
                 <Icon name="play" size={14} />
                 {logs.isFetching ? 'Querying…' : 'Run query'}
               </Button>
@@ -341,7 +467,7 @@ export function Logs({
                 </button>
               ))}
               <span className="form-spacer" />
-              {!installation && (
+              {!installation && !historyOn && (
                 <label className="checkbox-row">
                   <Input
                     type="checkbox"
@@ -375,15 +501,19 @@ export function Logs({
                 )}
                 <code>message</code>, <code>severity</code>, or <code>json.status</code>. Combine
                 comparisons with <code>AND</code>, <code>OR</code>, <code>NOT</code>, and
-                parentheses. <code>ILIKE</code> matches text without case.
+                parentheses. <code>ILIKE</code> matches text without case.{' '}
                 {installation
                   ? 'This filters at most 200 available API entries; it cannot search older history.'
-                  : 'This filters sampled container output; it does not query a retained log database.'}
+                  : historyOn
+                    ? retentionDays
+                      ? `Searches stored history for up to ${retentionDays} days.`
+                      : 'Searches stored history.'
+                    : 'This filters sampled container output; it does not query a retained log database.'}
               </p>
             </details>
           </form>
           {logs.error ? (
-            <ErrorState error={logs.error} retry={run} />
+            <ErrorState error={logs.error} retry={() => run()} />
           ) : logs.isPending ? (
             <Loading rows={3} />
           ) : (
@@ -397,6 +527,18 @@ export function Logs({
                   </span>
                   {data.truncated && <Badge tone="warning">Truncated</Badge>}
                   <span className="form-spacer" />
+                  {historyOn && pastPods.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={showPods}
+                      aria-controls="past-pods-panel"
+                      className="max-sm:min-h-11"
+                      onClick={() => setShowPods(!showPods)}
+                    >
+                      Past pods ({pastPods.length})
+                    </Button>
+                  )}
                   <label className="checkbox-row">
                     <Input
                       type="checkbox"
@@ -411,6 +553,29 @@ export function Logs({
                     Download
                   </Button>
                 </div>
+                {data.history && !data.history.available && sources.data?.available !== false && (
+                  <div className="log-pad">
+                    <HistoryUnavailable message={data.history.message} />
+                  </div>
+                )}
+                {data.history?.available && (
+                  <div className="log-pad">
+                    <HistoryStatus history={data.history} />
+                  </div>
+                )}
+                {historyOn && showPods && pastPods.length > 0 && (
+                  <div className="log-pad" id="past-pods-panel">
+                    <PastPods
+                      items={pastPods}
+                      selected={podUid}
+                      onSelect={(uid) => {
+                        setPodUid(uid)
+                        setPod('')
+                        run(uid)
+                      }}
+                    />
+                  </div>
+                )}
                 {data.warnings.map((warning) => (
                   <Note key={warning}>{warning}</Note>
                 ))}
@@ -434,10 +599,17 @@ export function Logs({
                         <span className={`log-severity severity-${entry.severity.toLowerCase()}`}>
                           {entry.severity || 'DEFAULT'}
                         </span>
-                        <code className="log-pod" title={entry.pod}>
+                        <code
+                          className="log-pod min-w-0 [overflow-wrap:anywhere]"
+                          title={entry.pod}
+                        >
                           {entry.pod}
+                          {entry.pod_uid && entry.restart !== undefined && ` r${entry.restart}`}
                         </code>
-                        <span className="log-message">{entry.message}</span>
+                        <span className="log-message min-w-0 [overflow-wrap:anywhere]">
+                          {entry.message}
+                          <CutMark truncated={entry.truncated} />
+                        </span>
                         <Icon name="chevron" size={12} />
                       </button>
                     ))
@@ -448,22 +620,72 @@ export function Logs({
                       description={
                         installation
                           ? 'Change your filter or time window, then run the query again.'
-                          : 'Change your filter, container, or time window, then run the query again.'
+                          : historyOn
+                            ? 'Change your filter, pod, or time window.'
+                            : 'Change your filter, container, or time window, then run the query again.'
                       }
                     />
                   )}
                 </div>
+                {(more.cursor ?? data.next_cursor) && (
+                  <div className="log-pad grid gap-1 pt-2">
+                    <div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="max-sm:min-h-11"
+                        disabled={loadingMore}
+                        onClick={async () => {
+                          if (loadingMore) return
+                          setLoadingMore(true)
+                          setMoreError('')
+                          try {
+                            const page = await unwrap(
+                              client.POST('/applications/{id}/logs/query', {
+                                params: { path: { id: applicationId } },
+                                body: { ...request(), cursor: more.cursor ?? data.next_cursor },
+                              }),
+                            )
+                            setMore({
+                              entries: [...more.entries, ...page.entries],
+                              cursor: page.next_cursor || '',
+                            })
+                          } catch (e) {
+                            setMoreError(message(e))
+                          } finally {
+                            setLoadingMore(false)
+                          }
+                        }}
+                      >
+                        {loadingMore ? 'Loading…' : 'Load more'}
+                      </Button>
+                    </div>
+                    {moreError && (
+                      <p
+                        role="alert"
+                        className="m-0 text-sm text-destructive [overflow-wrap:anywhere]"
+                      >
+                        {moreError}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="log-footer">
                   <span>
                     {installation
                       ? `API server · ${data.source === 'process' ? 'Current process' : 'Journal sample'}`
-                      : `Queried ${query.service} · Recent pod output`}
+                      : historyOn
+                        ? `Queried ${query.service} · Stored history`
+                        : `Queried ${query.service} · Recent pod output`}
                   </span>
                   <span>
                     {installation
                       ? 'Up to 200 available API entries'
-                      : 'Up to 2,000 lines per sampled pod'}{' '}
-                    · {query.limit} result limit
+                      : historyOn
+                        ? ''
+                        : 'Up to 2,000 lines per sampled pod'}{' '}
+                    {historyOn ? '' : '· '}
+                    {query.limit} result limit
                   </span>
                 </div>
               </>

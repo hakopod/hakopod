@@ -50,6 +50,7 @@ const SMTPSettings = lazy(() =>
     default: module.SMTPSettingsPanel,
   })),
 )
+const AppLogSettings = lazy(() => import('../components/app-log-settings'))
 const ProxySettings = lazy(() => import('../components/proxy-settings'))
 const SecretProviders = lazy(() =>
   import('../components/secret-providers').then((module) => ({
@@ -90,6 +91,7 @@ export const Route = createFileRoute('/settings')({
         'login-providers',
         'smtp',
         'edge',
+        'logs',
       ].includes(search.tab)
         ? search.tab
         : undefined,
@@ -147,6 +149,7 @@ function Administration() {
           },
           { id: 'keys', label: 'API keys', group: 'Installation' },
           { id: 'audit', label: 'Audit events', group: 'Installation' },
+          { id: 'logs', label: 'Logs', group: 'Installation' },
           ...(installation.allowed
             ? [
                 {
@@ -196,6 +199,7 @@ function Administration() {
               {tab === 'private-destinations' && <PrivateDestinations />}
               {tab === 'dns-providers' && <DNSProviders />}
               {tab === 'audit' && <AuditLog />}
+              {tab === 'logs' && <AppLogSettings />}
               {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
               {installation.allowed && tab === 'smtp' && <SMTPSettings />}
               {installation.allowed && tab === 'edge' && <ProxySettings />}
