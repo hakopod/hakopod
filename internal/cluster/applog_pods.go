@@ -34,6 +34,8 @@ type AppLogContainer struct {
 	PreviousRestart  int
 	PreviousReason   string
 	PreviousExitCode int32
+	// When each run stopped, so gaps are measured to the stop, not across backoff.
+	FinishedAt, PreviousFinishedAt time.Time
 }
 
 // AppLogPods lists pods Hakopod owns in hp-* namespaces, at most limit of them.
@@ -70,10 +72,10 @@ func (c *Client) appLogPod(ctx context.Context, p corev1.Pod, revisions map[stri
 	for _, s := range p.Status.ContainerStatuses {
 		k := AppLogContainer{Name: s.Name, Restart: int(s.RestartCount), Running: s.State.Running != nil}
 		if t := s.State.Terminated; t != nil {
-			k.Terminated, k.Reason, k.ExitCode = true, t.Reason, t.ExitCode
+			k.Terminated, k.Reason, k.ExitCode, k.FinishedAt = true, t.Reason, t.ExitCode, t.FinishedAt.Time
 		}
 		if t := s.LastTerminationState.Terminated; t != nil && s.RestartCount > 0 {
-			k.PreviousRestart, k.PreviousReason, k.PreviousExitCode = int(s.RestartCount)-1, t.Reason, t.ExitCode
+			k.PreviousRestart, k.PreviousReason, k.PreviousExitCode, k.PreviousFinishedAt = int(s.RestartCount)-1, t.Reason, t.ExitCode, t.FinishedAt.Time
 		}
 		pod.Containers = append(pod.Containers, k)
 	}
