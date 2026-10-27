@@ -1,0 +1,48 @@
+name: Debug runner
+# Opens a disposable GitHub-hosted runner on the maintainer's tailnet so heavy
+# tests (Docker, K3s, template smoke runs) happen here instead of on a laptop.
+# Manual only. Never runs for pull requests, and never for other actors.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner image
+        type: choice
+        options: [ubuntu-24.04, ubuntu-24.04-arm]
+        default: ubuntu-24.04
+      minutes:
+        description: How long to keep the runner (1-330)
+        type: number
+        default: 60
+permissions:
+  contents: read
+concurrency:
+  group: debug-runner-${{ github.actor }}
+  cancel-in-progress: false
+jobs:
+  runner:
+    if: github.actor == 'theboringhumane'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Join tailnet with Tailscale SSH
+        uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          tags: tag:ci
+          hostname: gh-runner-${{ github.run_id }}
+          args: --ssh
+      - name: Show how to connect
+        run: |
+          echo "Connect with: tailscale ssh runner@gh-runner-${{ github.run_id }}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Keep the runner available
+        env:
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          m=$(( MINUTES < 1 ? 1 : (MINUTES > 330 ? 330 : MINUTES) ))
+          echo "Runner stays up for $m minutes. Create /tmp/done to finish early."
+          end=$(( $(date +%s) + m * 60 ))
+          while [ "$(date +%s)" -lt "$end" ] && [ ! -e /tmp/done ]; do sleep 20; done
