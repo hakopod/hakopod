@@ -34,7 +34,14 @@ One API process holds a database lease and runs one pass every 5 seconds.
   through the Kubernetes API for the rest of its life.
 
 Pods that disappear are marked ended with a reason: `completed`, `error`,
-`oom_killed`, `evicted`, `replaced` or `deleted`.
+`oom_killed`, `evicted`, `replaced` or `deleted`. `replaced` means the pod
+belonged to an older revision, for example after a rollout. `deleted` means a
+pod of the current revision went away without another reason, for example
+`kubectl delete pod` or a node drain. A scale-down at the current revision
+also shows as `deleted`.
+
+The collector logs "Application log collection started" once when it starts,
+with whether file tailing is available and where logs are stored.
 
 ## What is stored and where
 
@@ -169,7 +176,12 @@ missing output, in seconds, and appears in the API, the CLI and the dashboard.
   timestamp are matched by content so they are not repeated; if the match
   fails, Hakopod keeps a possible duplicate rather than lose a line.
 - **Query bounds.** 2,000 lines and 64 MiB scanned per request. Use the cursor
-  or a narrower range.
+  or a narrower range. Log queries share the API's rate limit, so paging very
+  quickly through a large range can return HTTP 429; wait briefly and retry.
+- **Pod logs removed before they were read.** If kubelet removes a finished
+  pod's log directory while unread output remains, the missing part is
+  recorded as "Pod logs were removed before Hakopod finished reading them."
+  A pod that was read to the end before it went away has no gap.
 - **Not collected:** anything that happened before this feature was installed,
   and stored logs older than the retention window.
 
