@@ -199,7 +199,8 @@ class HistoricLogsTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
-        (self.root / 'var-log').mkdir(mode=0o750)
+        (self.root / 'var-log').mkdir()
+        (self.root / 'var-log').chmod(0o750)  # explicit: mkdir modes are masked by the runner's umask
         patches = [patch.object(host, 'PODS_DIR', self.root / 'var-log/pods'), patch.object(host, 'LOG_DIR', self.root / 'var-log'),
                    patch.object(host, 'APP_LOGS', self.root / 'app-logs'),
                    patch.object(host.os, 'chown'), patch.object(host.pwd, 'getpwnam', return_value=type('U', (), {'pw_uid': 7, 'pw_gid': 8})())]
