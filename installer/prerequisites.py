@@ -9,7 +9,7 @@ import shutil
 import subprocess
 
 HERE = Path(__file__).resolve().parent
-BASE = ('python3', 'bash', 'curl', 'ca-certificates', 'openssl', 'iproute2', 'util-linux', 'passwd', 'kmod', 'coreutils')
+BASE = ('python3', 'bash', 'curl', 'ca-certificates', 'openssl', 'iproute2', 'util-linux', 'acl', 'passwd', 'kmod', 'coreutils')
 
 
 def requested(config):

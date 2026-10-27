@@ -301,6 +301,7 @@ for ((attempt=0; attempt<60; attempt++)); do
   sleep 2
 done
 "$ready" || die 'K3s is not ready. Inspect journalctl -u hakopod-k3s, fix the cause, then resume'
+python3 "$helper" historic-logs
 install -m 0400 -o hakopod-api -g hakopod-api "$KUBECONFIG" /etc/hakopod/api-kubeconfig
 # API readiness can precede kubelet registration on a fresh server.
 kubectl wait --for=create "node/$cfg_node_name" --timeout=180s

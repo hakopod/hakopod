@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -193,5 +194,82 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaises(ValueError): host.regular(path, True)
         path.chmod(0o600); link = self.root / 'link'; link.symlink_to(path)
         with self.assertRaises(ValueError): host.regular(link, True)
+
+class HistoricLogsTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        (self.root / 'var-log').mkdir(mode=0o750)
+        patches = [patch.object(host, 'PODS_DIR', self.root / 'var-log/pods'), patch.object(host, 'LOG_DIR', self.root / 'var-log'),
+                   patch.object(host, 'APP_LOGS', self.root / 'app-logs'),
+                   patch.object(host.os, 'chown'), patch.object(host.pwd, 'getpwnam', return_value=type('U', (), {'pw_uid': 7, 'pw_gid': 8})())]
+        self.chown = None
+        for item in patches:
+            mocked = item.start(); self.addCleanup(item.stop)
+            if item.attribute == 'chown': self.chown = mocked
+        self.calls = []
+        self.run = lambda args, **kw: self.calls.append(args)
+    def unit_text(self):
+        config = dict(host.DEFAULTS, app_domain='apps.example.test', node_ip='192.0.2.10', acme='off')
+        secret = self.root / 'secret'; secret.write_text('a' * 64 + '\n'); secret.chmod(0o600)
+        with patch.object(host, 'regular', return_value=secret): host.render(config, 'arm64', 'b' * 32, self.root / 'render')
+        return config, self.root / 'render'
+    def test_rendered_unit_and_kubelet(self):
+        _, rendered = self.unit_text()
+        api = (rendered / 'hakopod-api.service').read_text()
+        service = api.split('[Service]')[1].split('[Install]')[0]
+        self.assertIn('ReadWritePaths=/var/lib/hakopod/backups /var/lib/hakopod/app-logs\n', service)
+        self.assertNotIn('app-logs', (rendered / 'hakopod-dashboard.service').read_text())
+        args = json.loads((rendered / 'k3s.yaml').read_text())['kubelet-arg']
+        self.assertIn('container-log-max-size=20Mi', args); self.assertIn('container-log-max-files=3', args)
+        self.assertNotIn('container-log-max-size=10Mi', args)
+    def test_acl_commands_run_in_order_and_are_idempotent(self):
+        pods = str(self.root / 'var-log/pods'); acl = 'u:hakopod-api:rX'
+        expected = [['setfacl', '-m', acl, pods], ['setfacl', '-d', '-m', acl, pods], ['setfacl', '-R', '-m', acl, pods], ['setfacl', '-R', '-d', '-m', acl, pods]]
+        host.historic_logs(self.run)
+        self.assertEqual(self.calls, expected)
+        self.assertEqual(stat.S_IMODE((self.root / 'var-log/pods').stat().st_mode), 0o755)
+        self.assertTrue((self.root / 'var-log').stat().st_mode & 0o001)
+        self.assertEqual(stat.S_IMODE((self.root / 'app-logs').stat().st_mode), 0o700)
+        self.chown.assert_any_call(self.root / 'app-logs', 7, 8)
+        self.calls.clear(); host.historic_logs(self.run)
+        self.assertEqual(self.calls, expected)
+        self.assertEqual(stat.S_IMODE((self.root / 'var-log').stat().st_mode), 0o751)
+    def test_failure_stops_with_clear_message(self):
+        def broken(args, **kw): raise subprocess.CalledProcessError(1, args)
+        with self.assertRaisesRegex(ValueError, 'acl package'): host.historic_logs(broken)
+    def test_dry_run_changes_nothing_and_prints_paths(self):
+        out = io.StringIO()
+        with patch('sys.stdout', out): host.historic_logs(self.run, dry_run=True)
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root / 'var-log/pods').exists()); self.assertFalse((self.root / 'app-logs').exists())
+        self.assertEqual(stat.S_IMODE((self.root / 'var-log').stat().st_mode), 0o750)
+        self.assertIn('app-logs', out.getvalue()); self.assertIn('setfacl -d -m', out.getvalue())
+    def test_upgrade_applies_unit_kubelet_acl_without_restarting_k3s(self):
+        unit = self.root / 'api.service'; unit.write_text('[Service]\nReadWritePaths=/var/lib/hakopod/backups\nProtectHome=yes\n')
+        k3s = self.root / 'k3s.yaml'; k3s.write_text('{"kubelet-arg": ["container-log-max-size=10Mi"]}')
+        with patch.object(host.shutil, 'which', return_value='/usr/bin/setfacl'):
+            for _ in range(2): host.upgrade_historic_logs(self.run, unit, k3s)
+        self.assertEqual(unit.read_text().count('app-logs'), 1)
+        self.assertIn('ReadWritePaths=/var/lib/hakopod/backups /var/lib/hakopod/app-logs\n', unit.read_text())
+        self.assertIn('20Mi', k3s.read_text())
+        self.assertIn(['systemctl', 'daemon-reload'], self.calls)
+        self.assertFalse(any('k3s' in ' '.join(c) for c in self.calls))
+        self.assertTrue((self.root / 'app-logs').is_dir())
+    def test_real_command_wrappers_do_not_clash_on_kwargs(self):
+        import maintenance
+        for wrapper in (host.checked, maintenance.command):
+            with patch.object(host.shutil, 'which', return_value=None), patch.object(host.subprocess, 'run') as sub:
+                unit = self.root / 'u.service'; unit.write_text('ReadWritePaths=/var/lib/hakopod/backups\n')
+                host.historic_logs(wrapper); host.upgrade_historic_logs(wrapper, unit, self.root / 'none.yaml')
+            self.assertTrue(sub.call_count >= 9)
+            self.assertTrue(all(c.kwargs['check'] is True for c in sub.call_args_list))
+            self.assertIn(['apt-get'], [c.args[0][:1] for c in sub.call_args_list])
+    def test_installer_runs_acl_step_after_k3s_ready_before_api_start(self):
+        text = (HERE.parent / 'scripts/install.sh').read_text()
+        ready, step, start = (text.index(s) for s in ("K3s is not ready", 'historic-logs', 'systemctl enable --now hakopod-api'))
+        self.assertTrue(ready < step < start)
+        self.assertIn("'acl'", (HERE / 'prerequisites.py').read_text())
+
 
 if __name__ == '__main__': unittest.main(verbosity=2)

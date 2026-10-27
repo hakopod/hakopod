@@ -100,7 +100,7 @@ bash scripts/install.sh --artifact-dir /path/to/artifacts --config /path/to/inst
 sudo bash scripts/install.sh --artifact-dir /path/to/artifacts --config /path/to/install.json
 ```
 
-`--dry-run` is safe on macOS and on disposable Linux containers; it validates input and both local archive checksums and prints the intended paths, routing, modules and memory limits. It does not create installation state, credentials or services. Interactive review may use a temporary input file that is removed at exit. A real install rejects unsupported distributions, insufficient resources and ordinary non-systemd containers before installing the remaining OS packages. The full preflight then checks ports, cluster ownership and routes before creating Hakopod state. Missing Bash, Python 3, curl, CA certificates, OpenSSL, iproute2, util-linux, passwd, kmod and coreutils are installed from existing distro repositories. No global package upgrade or repository change occurs. K3s supplies containerd. `install_docker=true` optionally installs Docker Engine when no existing daemon or client installation would be replaced; the default is false.
+`--dry-run` is safe on macOS and on disposable Linux containers; it validates input and both local archive checksums and prints the intended paths, routing, modules and memory limits. It does not create installation state, credentials or services. Interactive review may use a temporary input file that is removed at exit. A real install rejects unsupported distributions, insufficient resources and ordinary non-systemd containers before installing the remaining OS packages. The full preflight then checks ports, cluster ownership and routes before creating Hakopod state. Missing Bash, Python 3, curl, CA certificates, OpenSSL, iproute2, util-linux, acl, passwd, kmod and coreutils are installed from existing distro repositories. No global package upgrade or repository change occurs. K3s supplies containerd. `install_docker=true` optionally installs Docker Engine when no existing daemon or client installation would be replaced; the default is false.
 
 The final prompt requires typing `install`. `--yes` accepts that printed plan for an unattended run with explicit config. It never supplies a user identity, owner email, password or OAuth account. Root must trust and review the installer code it executes. Root-controlled local files are outside the hostile-tenant boundary.
 
@@ -203,7 +203,7 @@ a restore drill before enabling management backups against an external server.
 
 | Component | Default hard limit | Runtime settings |
 | --- | ---: | --- |
-| K3s service | 2048 MiB | Go soft target 1536 MiB, 2 processors, max 50 pods |
+| K3s service | 2048 MiB | Go soft target 1536 MiB, 2 processors, max 50 pods, pod logs rotate at 20 MiB x 3 files |
 | API + reconciler | 256 MiB | Go soft target 192 MiB, 2 processors, one process |
 | Dashboard | 320 MiB | One Node process, 192 MiB JS heap, request/header timeouts |
 | PostgreSQL | 256 MiB | shared_buffers 32 MiB, 30 connections, work_mem 2 MiB |
@@ -211,6 +211,8 @@ a restore drill before enabling management backups against an external server.
 | Optional cert-manager | 384 MiB total controllers | 2 concurrent challenges; solver 64 MiB each |
 
 systemd limits are hard limits on each service cgroup; pod limits apply separately. Go/Node soft targets are not RSS promises. OOM events cause restarts and require reducing load or increasing the reviewed caps. The installer does not run builders, Prometheus, Grafana, Redis or a queue service. Docker Engine is installed only when explicitly requested. Optional application images have their own explicit resource requirements.
+
+The API can read Kubernetes pod logs: a read-only ACL (read and traverse only, with a default ACL so new pods inherit it) on `/var/log/pods` and traverse permission on `/var/log` are applied after K3s is ready, which needs the `acl` package. Masked historic logs live in `/var/lib/hakopod/app-logs` (owner `hakopod-api`, mode 0700), the only writable path the API unit has besides backups. `--upgrade` applies the same ACL, directory and unit change; a K3s restart (for example a reboot) is what activates the new 20 MiB log size, and the upgrade does not force one.
 
 API and dashboard run under separate non-login users. Only the API receives the protected Kubernetes admin kubeconfig; the management process is privileged within its dedicated cluster. Applications receive no cluster credentials. Database credentials and setup/auth keys use the server's protected-file inputs. A root-only canonical database URL supports resume; the API receives a separate mode 0400 copy. Root-owned EnvironmentFiles supply cookie-encryption secrets. Files are never written into the dashboard client bundle or printed by the installer. Logs do not include generated secret bodies; the dashboard launcher does not log request URLs that might contain OAuth codes.
 
