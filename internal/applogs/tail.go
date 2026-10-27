@@ -73,12 +73,39 @@ func ParseCRI(record []byte) (t time.Time, stream string, partial bool, msg []by
 // holds message bytes: when a read stops inside an unfinished P sequence,
 // Offset points back at the start of that sequence so it is re-read whole.
 type FileCursor struct {
-	File   string `json:"file"`
-	Inode  uint64 `json:"inode"`
+	File  string `json:"file"`
+	Inode uint64 `json:"inode"`
+	// First is the timestamp of the file's first record. Kernels reuse inode
+	// numbers after a delete, so a file is the cursor's file only when the
+	// inode and this timestamp both match. It is a time, never log text.
+	// Cursors saved without it are matched by inode alone once.
+	First  string `json:"first,omitempty"`
 	Offset int64  `json:"offset"`
 	// Skip is set while the rest of an over-long P sequence is being
 	// discarded. The placeholder line was already returned.
 	Skip bool `json:"skip,omitempty"`
+}
+
+// fileIdentity returns a file's inode and the timestamp of its first record.
+// first is empty while the first record has no complete timestamp yet; the
+// file is then unknown. It is a variable so tests can simulate inode reuse.
+var fileIdentity = func(path string, fi os.FileInfo) (ino uint64, first string) {
+	ino = inodeOf(fi)
+	f, err := os.Open(path)
+	if err != nil {
+		return ino, ""
+	}
+	defer f.Close()
+	buf := make([]byte, 64)
+	n, _ := io.ReadFull(f, buf)
+	ts, _, ok := bytes.Cut(buf[:n], []byte(" "))
+	if !ok {
+		return ino, ""
+	}
+	if _, err := time.Parse(time.RFC3339Nano, string(ts)); err != nil {
+		return ino, ""
+	}
+	return ino, string(ts)
 }
 
 // FileTailer reads kubelet container log files.
@@ -269,23 +296,45 @@ func (t FileTailer) readN(namespace, pod, uid, container string, restart int, cu
 	a := &assembler{}
 	var chain []string
 	var start int64
+	// isCursorFile: same inode and, when the cursor knows it, same first record.
+	isCursorFile := func(path string, fi os.FileInfo) (match, unknown bool) {
+		ino, first := fileIdentity(path, fi)
+		if ino != cur.Inode {
+			return false, false
+		}
+		if cur.First == "" {
+			return true, false
+		}
+		return first == cur.First, first == ""
+	}
 	liveFi, liveErr := os.Stat(filepath.Join(dir, liveName))
+	liveMatch, liveUnknown := false, false
+	if liveErr == nil && cur.Inode != 0 {
+		liveMatch, liveUnknown = isCursorFile(filepath.Join(dir, liveName), liveFi)
+	}
 	switch {
 	case cur.Inode == 0:
 		chain = []string{liveName}
 		a.uncertain = siblings // the live file may begin mid-line
-	case liveErr == nil && inodeOf(liveFi) == cur.Inode:
+	case liveMatch:
 		chain, start, a.skip = []string{liveName}, cur.Offset, cur.Skip
 	default:
 		idx := -1
 		for i, n := range rotated {
-			if fi, e := os.Stat(filepath.Join(dir, n)); e == nil && inodeOf(fi) == cur.Inode {
-				idx = i
-				break
+			if fi, e := os.Stat(filepath.Join(dir, n)); e == nil {
+				if m, _ := isCursorFile(filepath.Join(dir, n), fi); m {
+					idx = i
+					break
+				}
 			}
 		}
 		if idx >= 0 {
 			chain, start, a.skip = rotated[idx:], cur.Offset, cur.Skip
+		} else if liveUnknown {
+			// Same inode but no first record yet: it may be our file or a
+			// new one that reused the inode. Decide on a later call.
+			res.AtEnd = true
+			return res, nil
 		} else {
 			res.Gap, chain = true, rotated
 			a.uncertain = true
@@ -323,6 +372,15 @@ func (t FileTailer) readN(namespace, pod, uid, container string, restart int, cu
 			finish()
 			return res, e
 		}
+		ino, first := fileIdentity(filepath.Join(dir, name), fi)
+		if first == "" { // no complete first record yet: unknown, look again later
+			f.Close()
+			if name == liveName {
+				res.AtEnd = i == len(chain)-1
+				break
+			}
+			continue
+		}
 		if off > fi.Size() { // truncated in place
 			off, res.Gap = 0, true
 			*a = assembler{}
@@ -356,7 +414,7 @@ func (t FileTailer) readN(namespace, pod, uid, container string, restart int, cu
 				wasOpen := a.open
 				a.add(ts, stream, partial, msg)
 				if a.open && !wasOpen {
-					seq = FileCursor{File: name, Inode: inodeOf(fi), Offset: before}
+					seq = FileCursor{File: name, Inode: ino, First: first, Offset: before}
 				}
 			}
 			if !complete {
@@ -365,7 +423,7 @@ func (t FileTailer) readN(namespace, pod, uid, container string, restart int, cu
 			}
 		}
 		f.Close()
-		res.Next = FileCursor{File: name, Inode: inodeOf(fi), Offset: off, Skip: a.skip}
+		res.Next = FileCursor{File: name, Inode: ino, First: first, Offset: off, Skip: a.skip}
 		if rerr != nil {
 			finish()
 			return res, rerr
