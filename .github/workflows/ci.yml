@@ -101,7 +101,8 @@ jobs:
           python3 api/generate.py
           python3 -B api/check_route_coverage.py
           git diff --exit-code -- api/openapi.json web/src/server/agent-routes.generated.ts
-      - run: go test ./...
+      # internal/api alone runs close to go test's default 10-minute limit.
+      - run: go test -timeout 20m ./...
       - name: Oracle decoder receive limits and private diagnostics
         working-directory: third_party/go-ora-v3
         run: |
