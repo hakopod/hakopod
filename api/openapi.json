@@ -19824,6 +19824,362 @@
         }
       }
     },
+    "/security/advisories": {
+      "get": {
+        "operationId": "getSecurityOverview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List security advisory findings for visible applications.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/applications/{id}/security": {
+      "get": {
+        "operationId": "getApplicationSecurity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationSecurity"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get security advisory findings for an application.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/applications/{id}/security/check": {
+      "post": {
+        "operationId": "checkApplicationSecurity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationSecurity"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Check an application against security advisories now.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/applications/{id}/security/apply": {
+      "post": {
+        "operationId": "applySecurityFix",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityApplyResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityApplyInput"
+              }
+            }
+          }
+        },
+        "summary": "Apply the fix for a security advisory finding.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/applications/{id}/security/policy": {
+      "put": {
+        "operationId": "putSecurityPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationSecurity"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityPolicyInput"
+              }
+            }
+          }
+        },
+        "summary": "Set the automatic patching policy for an application.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/security/settings": {
+      "get": {
+        "operationId": "getSecuritySettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get installation security advisory settings.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "put": {
+        "operationId": "putSecuritySettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecuritySettingsInput"
+              }
+            }
+          }
+        },
+        "summary": "Update installation security advisory settings.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/settings/appearance": {
       "get": {
         "operationId": "getAppearance",
@@ -30720,11 +31076,12 @@
               "enum": [
                 "succeeded",
                 "failed",
-                "cancelled"
+                "cancelled",
+                "security_advisory"
               ]
             },
             "minItems": 1,
-            "maxItems": 3,
+            "maxItems": 4,
             "uniqueItems": true
           },
           "revision": {
@@ -30774,11 +31131,12 @@
               "enum": [
                 "succeeded",
                 "failed",
-                "cancelled"
+                "cancelled",
+                "security_advisory"
               ]
             },
             "minItems": 1,
-            "maxItems": 3,
+            "maxItems": 4,
             "uniqueItems": true
           },
           "destination": {
@@ -39013,6 +39371,463 @@
           "expected_revision"
         ]
       },
+      "SecurityFeedStatus": {
+        "type": "object",
+        "properties": {
+          "feed_enabled": {
+            "type": "boolean"
+          },
+          "osv_enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "issued_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "feed_enabled",
+          "osv_enabled",
+          "revision",
+          "issued_at",
+          "expires_at",
+          "checked_at",
+          "stale",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "SecurityFinding": {
+        "type": "object",
+        "properties": {
+          "advisory_id": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "advisory_revision": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "hakopod",
+              "osv"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "moderate",
+              "low"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "possible"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string",
+            "enum": [
+              "reresolve",
+              "rebuild",
+              "manual"
+            ]
+          },
+          "fix_reason": {
+            "type": "string"
+          },
+          "auto_eligible": {
+            "type": "boolean"
+          },
+          "fixed_digests": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "advisory_id",
+          "advisory_revision",
+          "source",
+          "severity",
+          "title",
+          "url",
+          "service",
+          "confidence",
+          "evidence",
+          "fix",
+          "fix_reason",
+          "auto_eligible",
+          "fixed_digests"
+        ],
+        "additionalProperties": false
+      },
+      "SecurityPatchAttempt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "advisory_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "verified",
+              "failed",
+              "superseded"
+            ]
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "advisory_id",
+          "service",
+          "status",
+          "deployment_id",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "ApplicationSecurity": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecurityFinding"
+            }
+          },
+          "unknown_services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "incomplete": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "auto_patch": {
+            "type": "boolean"
+          },
+          "approved_by": {
+            "type": "string"
+          },
+          "approval_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policy_revision": {
+            "type": "integer"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecurityPatchAttempt"
+            }
+          },
+          "can_write": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "application_id",
+          "application_name",
+          "project",
+          "environment",
+          "deployment_id",
+          "revision",
+          "checked_at",
+          "evaluated_at",
+          "findings",
+          "unknown_services",
+          "incomplete",
+          "auto_patch",
+          "approved_by",
+          "approval_expires_at",
+          "policy_revision",
+          "attempts",
+          "can_write"
+        ],
+        "additionalProperties": false
+      },
+      "SecurityOverview": {
+        "type": "object",
+        "properties": {
+          "feed": {
+            "$ref": "#/components/schemas/SecurityFeedStatus"
+          },
+          "applications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApplicationSecurity"
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "affected_applications": {
+                "type": "integer"
+              },
+              "critical": {
+                "type": "integer"
+              },
+              "high": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "affected_applications",
+              "critical",
+              "high"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "feed",
+          "applications",
+          "summary"
+        ],
+        "additionalProperties": false
+      },
+      "SecurityApplyInput": {
+        "type": "object",
+        "properties": {
+          "advisory_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "advisory_id",
+          "service",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "SecurityApplyResult": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "reresolve",
+              "rebuild"
+            ]
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "build_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "deployment_id",
+          "build_id"
+        ],
+        "additionalProperties": false
+      },
+      "SecurityPolicyInput": {
+        "type": "object",
+        "properties": {
+          "auto_patch": {
+            "type": "boolean"
+          },
+          "expected_policy_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "auto_patch",
+          "expected_policy_revision"
+        ],
+        "additionalProperties": false
+      },
+      "SecuritySettings": {
+        "type": "object",
+        "properties": {
+          "feed_enabled": {
+            "type": "boolean"
+          },
+          "osv_enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "can_manage": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "feed_enabled",
+          "osv_enabled",
+          "revision",
+          "can_manage"
+        ],
+        "additionalProperties": false
+      },
+      "SecuritySettingsInput": {
+        "type": "object",
+        "properties": {
+          "feed_enabled": {
+            "type": "boolean"
+          },
+          "osv_enabled": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "feed_enabled",
+          "osv_enabled",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
       "Appearance": {
         "type": "object",
         "properties": {
@@ -39069,7 +39884,8 @@
               "service.failed",
               "service.job.scheduled",
               "service.job.completed",
-              "service.certificate.renewed"
+              "service.certificate.renewed",
+              "security.advisory"
             ]
           },
           "category": {
@@ -39217,7 +40033,8 @@
                 "service.failed",
                 "service.job.scheduled",
                 "service.job.completed",
-                "service.certificate.renewed"
+                "service.certificate.renewed",
+                "security.advisory"
               ]
             }
           },
@@ -39332,7 +40149,8 @@
                 "service.failed",
                 "service.job.scheduled",
                 "service.job.completed",
-                "service.certificate.renewed"
+                "service.certificate.renewed",
+                "security.advisory"
               ]
             },
             "minItems": 1,
@@ -39397,7 +40215,8 @@
                   "service.failed",
                   "service.job.scheduled",
                   "service.job.completed",
-                  "service.certificate.renewed"
+                  "service.certificate.renewed",
+                  "security.advisory"
                 ]
               },
               {

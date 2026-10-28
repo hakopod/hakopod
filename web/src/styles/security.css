@@ -1,0 +1,178 @@
+/* Security advisory banner and review page. Theme tokens only; works in light and dark. */
+.advisory-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in oklab, var(--advisory-tone) 35%, var(--hairline));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--advisory-tone) 6%, var(--card));
+  color: var(--foreground);
+  --advisory-tone: var(--warn);
+}
+.advisory-banner[data-critical='true'] {
+  --advisory-tone: var(--destructive);
+}
+.advisory-banner > svg {
+  color: var(--advisory-tone);
+}
+.advisory-eyebrow {
+  display: block;
+  /* Toned toward the text colour so amber and red keep 4.5:1 on the tinted paper in both themes. */
+  color: color-mix(in oklab, var(--advisory-tone) 65%, var(--foreground));
+  font-size: 12px;
+  font-weight: 600;
+}
+.advisory-banner p {
+  margin: 2px 0 0;
+  color: var(--foreground);
+}
+.advisory-banner-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.advisory-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0 0 16px;
+}
+.advisory-summary div {
+  display: grid;
+  gap: 2px;
+}
+.advisory-summary dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.advisory-summary dd {
+  margin: 0;
+  font-weight: 600;
+}
+.advisory-section-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.advisory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .advisory-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .advisory-banner {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .advisory-banner-actions {
+    grid-column: 1 / -1;
+  }
+  .advisory-banner-actions > * {
+    min-height: 44px;
+  }
+  .advisory-banner-actions > button {
+    min-width: 44px;
+  }
+}
+.advisory-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  text-decoration: none;
+}
+.advisory-card:hover {
+  border-color: color-mix(in oklab, var(--foreground) 25%, var(--hairline));
+}
+.advisory-card small,
+.advisory-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.advisory-card > svg {
+  grid-row: 1 / span 3;
+  grid-column: 2;
+  color: var(--muted);
+}
+.advisory-app-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.advisory-detail {
+  margin-top: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--card);
+}
+.advisory-detail > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.advisory-detail-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+.advisory-footer {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.advisory-footer span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.advisory-error {
+  color: var(--destructive);
+  font-size: 12px;
+}
+.advisory-settings {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+.advisory-settings label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.advisory-card-icon {
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  color: var(--muted);
+}
+.advisory-card:has(.advisory-card-icon) {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.advisory-card:has(.advisory-card-icon) > svg {
+  grid-column: 3;
+}
+.advisory-card-plain {
+  grid-template-columns: minmax(0, 1fr);
+}

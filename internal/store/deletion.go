@@ -190,7 +190,7 @@ func deleteApplicationMetadata(ctx context.Context, tx pgx.Tx, a Application) er
 		return err
 	}
 	// Revoke all resource grants before detaching callbacks and their history.
-	if _, err = tx.Exec(ctx, `UPDATE api_keys SET revoked_at=COALESCE(revoked_at,now()) WHERE (project=$2 AND environment=$3 AND application=$4) OR id IN (SELECT grant_id FROM application_sources WHERE application_id=$1) OR id IN (SELECT grant_id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))`, id, a.Project, a.Environment, a.Name); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE api_keys SET revoked_at=COALESCE(revoked_at,now()) WHERE (project=$2 AND environment=$3 AND application=$4) OR id IN (SELECT grant_id FROM application_sources WHERE application_id=$1) OR id IN (SELECT grant_id FROM application_security WHERE application_id=$1) OR id IN (SELECT grant_id FROM build_configs WHERE application_id=$1 OR (project=$2 AND environment=$3 AND name=$4))`, id, a.Project, a.Environment, a.Name); err != nil {
 		return err
 	}
 	for _, query := range []string{

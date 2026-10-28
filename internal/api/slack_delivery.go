@@ -150,6 +150,13 @@ func slackDeliveryText(event string, payload []byte) string {
 	case "test":
 		return "Hakopod Slack test message."
 	}
+	if _, text, ok := securityNotificationText(value); ok && event == "security.advisory" {
+		lines := strings.Split(text, "\n")
+		for i := range lines {
+			lines[i] = slackSafeText(lines[i])
+		}
+		return strings.Join(append([]string{"Hakopod Security advisory"}, lines...), "\n")
+	}
 	definition, ok := slackevents.Definition(event)
 	if !ok {
 		return ""

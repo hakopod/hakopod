@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/actions"
+	"github.com/hakopod/hakopod/internal/advisory"
 	"github.com/hakopod/hakopod/internal/spec"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -159,37 +160,17 @@ func (c *Client) resolveImage(ctx context.Context, image string, architectures [
 	if err != nil {
 		return "", err
 	}
-	endpoint := "https://" + ref.registry + "/v2/" + ref.repository + "/manifests/" + ref.reference
-	var credential *RegistryCredential
-	if len(credentials) > 0 && credentials[0] != nil {
-		copy := *credentials[0]
-		copy.Repository = ref.repository
-		credential = &copy
-		if credential.Registry != ref.registry {
-			return "", fmt.Errorf("registry credential does not match the requested host")
-		}
-	}
-	data, token, err := c.registryGet(ctx, endpoint, manifestTypes, "", credential)
+	credential, err := scopedCredential(ref, credentials...)
 	if err != nil {
 		return "", err
 	}
-	hash := sha256.Sum256(data)
-	digest := fmt.Sprintf("sha256:%x", hash)
-	if strings.HasPrefix(ref.reference, "sha256:") && ref.reference != digest {
-		return "", fmt.Errorf("registry response does not match requested image digest")
+	data, digest, token, err := c.registryManifest(ctx, ref, ref.reference, "", credential)
+	if err != nil {
+		return "", err
 	}
-	var manifest struct {
-		SchemaVersion int    `json:"schemaVersion"`
-		MediaType     string `json:"mediaType"`
-		Manifests     []struct {
-			Platform struct{ Architecture, OS string } `json:"platform"`
-		} `json:"manifests"`
-		Config struct {
-			Digest string `json:"digest"`
-		} `json:"config"`
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil || manifest.SchemaVersion != 2 {
-		return "", fmt.Errorf("registry returned an unsupported image manifest; OCI or Docker schema 2 is required")
+	manifest, err := decodeManifest(data)
+	if err != nil {
+		return "", err
 	}
 	supported := make(map[string]bool)
 	if len(manifest.Manifests) > 0 {
@@ -199,16 +180,9 @@ func (c *Client) resolveImage(ctx context.Context, image string, architectures [
 			}
 		}
 	} else {
-		if !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(manifest.Config.Digest) {
-			return "", fmt.Errorf("manifest has no valid image configuration digest")
-		}
-		config, _, err := c.registryGet(ctx, "https://"+ref.registry+"/v2/"+ref.repository+"/blobs/"+manifest.Config.Digest, "application/octet-stream", token, credential)
+		config, err := c.registryConfig(ctx, ref, manifest.Config.Digest, token, credential)
 		if err != nil {
-			return "", fmt.Errorf("cannot verify image architecture: %w", err)
-		}
-		configHash := sha256.Sum256(config)
-		if fmt.Sprintf("sha256:%x", configHash) != manifest.Config.Digest {
-			return "", fmt.Errorf("registry configuration failed digest verification")
+			return "", err
 		}
 		var platform struct {
 			Architecture string `json:"architecture"`
@@ -227,6 +201,149 @@ func (c *Client) resolveImage(ctx context.Context, image string, architectures [
 		}
 	}
 	return ref.canonical + "@" + digest, nil
+}
+
+type imageManifest struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	MediaType     string `json:"mediaType"`
+	Manifests     []struct {
+		Digest   string                            `json:"digest"`
+		Platform struct{ Architecture, OS string } `json:"platform"`
+	} `json:"manifests"`
+	Config struct {
+		Digest string `json:"digest"`
+	} `json:"config"`
+}
+
+var sha256Digest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+
+func decodeManifest(data []byte) (imageManifest, error) {
+	var manifest imageManifest
+	if err := json.Unmarshal(data, &manifest); err != nil || manifest.SchemaVersion != 2 {
+		return manifest, fmt.Errorf("registry returned an unsupported image manifest; OCI or Docker schema 2 is required")
+	}
+	return manifest, nil
+}
+
+func scopedCredential(ref imageReference, credentials ...*RegistryCredential) (*RegistryCredential, error) {
+	if len(credentials) == 0 || credentials[0] == nil {
+		return nil, nil
+	}
+	copy := *credentials[0]
+	copy.Repository = ref.repository
+	if copy.Registry != ref.registry {
+		return nil, fmt.Errorf("registry credential does not match the requested host")
+	}
+	return &copy, nil
+}
+
+// registryManifest fetches a manifest by tag or digest and returns its
+// computed digest, refusing a response that does not match a requested digest.
+func (c *Client) registryManifest(ctx context.Context, ref imageReference, reference, token string, credential *RegistryCredential) ([]byte, string, string, error) {
+	data, token, err := c.registryGet(ctx, "https://"+ref.registry+"/v2/"+ref.repository+"/manifests/"+reference, manifestTypes, token, credential)
+	if err != nil {
+		return nil, "", "", err
+	}
+	digest := fmt.Sprintf("sha256:%x", sha256.Sum256(data))
+	if strings.HasPrefix(reference, "sha256:") && reference != digest {
+		return nil, "", "", fmt.Errorf("registry response does not match requested image digest")
+	}
+	return data, digest, token, nil
+}
+
+// registryConfig fetches the image configuration blob and verifies its digest.
+func (c *Client) registryConfig(ctx context.Context, ref imageReference, digest, token string, credential *RegistryCredential) ([]byte, error) {
+	if !sha256Digest.MatchString(digest) {
+		return nil, fmt.Errorf("manifest has no valid image configuration digest")
+	}
+	config, _, err := c.registryGet(ctx, "https://"+ref.registry+"/v2/"+ref.repository+"/blobs/"+digest, "application/octet-stream", token, credential)
+	if err != nil {
+		return nil, fmt.Errorf("cannot verify image architecture: %w", err)
+	}
+	if fmt.Sprintf("sha256:%x", sha256.Sum256(config)) != digest {
+		return nil, fmt.Errorf("registry configuration failed digest verification")
+	}
+	return config, nil
+}
+
+// ImageRuntimeEnv reads runtime version variables from the image
+// configuration of image for the first schedulable cluster architecture. Only
+// keys named in advisory.RuntimeEnv are returned; other variables can carry
+// secrets and are dropped before the map leaves this function.
+func (c *Client) ImageRuntimeEnv(ctx context.Context, image, project, environment string) (map[string]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	architectures, err := c.architectures(ctx)
+	if err != nil {
+		return nil, err
+	}
+	architecture := architectures[0]
+	resolved, selected, err := c.resolveWithCredentials(ctx, image, []string{architecture}, project, environment, "")
+	if err != nil {
+		return nil, err
+	}
+	var credential *RegistryCredential
+	if selected != "" {
+		if credential, err = c.RegistryCredential(ctx, project, environment, selected, image); err != nil {
+			return nil, err
+		}
+	}
+	ref, err := parseReference(resolved)
+	if err != nil {
+		return nil, err
+	}
+	if credential, err = scopedCredential(ref, credential); err != nil {
+		return nil, err
+	}
+	data, _, token, err := c.registryManifest(ctx, ref, ref.reference, "", credential)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := decodeManifest(data)
+	if err != nil {
+		return nil, err
+	}
+	if len(manifest.Manifests) > 0 {
+		child := ""
+		for _, item := range manifest.Manifests {
+			if item.Platform.OS == "linux" && item.Platform.Architecture == architecture && sha256Digest.MatchString(item.Digest) {
+				child = item.Digest
+				break
+			}
+		}
+		if child == "" {
+			return nil, fmt.Errorf("image lacks linux/%s support required by a schedulable cluster node", architecture)
+		}
+		if data, _, token, err = c.registryManifest(ctx, ref, child, token, credential); err != nil {
+			return nil, err
+		}
+		if manifest, err = decodeManifest(data); err != nil {
+			return nil, err
+		}
+	}
+	config, err := c.registryConfig(ctx, ref, manifest.Config.Digest, token, credential)
+	if err != nil {
+		return nil, err
+	}
+	var body struct {
+		Config struct {
+			Env []string `json:"Env"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(config, &body); err != nil {
+		return nil, fmt.Errorf("invalid image configuration")
+	}
+	allowed := make(map[string]bool, len(advisory.RuntimeEnv))
+	for _, key := range advisory.RuntimeEnv {
+		allowed[key] = true
+	}
+	result := make(map[string]string)
+	for _, item := range body.Config.Env {
+		if key, value, ok := strings.Cut(item, "="); ok && allowed[key] {
+			result[key] = value
+		}
+	}
+	return result, nil
 }
 
 func (c *Client) registryGet(ctx context.Context, endpoint, accept, token string, credentials ...*RegistryCredential) ([]byte, string, error) {

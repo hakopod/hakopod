@@ -1,0 +1,48 @@
+name: security-advisories
+
+on:
+  push:
+    branches: [main]
+    paths: [security-advisories.json]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: security-advisories
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Sign feed
+        env:
+          HAKOPOD_ADVISORY_SIGNING_KEY: ${{ secrets.HAKOPOD_ADVISORY_SIGNING_KEY }}
+        run: |
+          go run ./cmd/sign-advisories security-advisories.json > "$RUNNER_TEMP/security-advisories.signed.json"
+      - name: Publish to security-advisories branch
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth=1 origin security-advisories; then
+            git switch -C security-advisories FETCH_HEAD
+          else
+            git switch --orphan security-advisories
+            git rm -rf --quiet . || true
+          fi
+          cp "$RUNNER_TEMP/security-advisories.signed.json" security-advisories.signed.json
+          git add security-advisories.signed.json
+          git commit -m "Publish signed security advisories"
+          git push origin HEAD:security-advisories

@@ -66,12 +66,12 @@ func (s *Store) PutNotificationTarget(ctx context.Context, p Principal, a Applic
 	if !p.Allows("deployments:write", a.Project, a.Environment, a.Name) {
 		return n, ErrForbidden
 	}
-	if n.ApplicationID != a.ID || strings.TrimSpace(n.Name) == "" || len(n.Name) > 80 || strings.IndexFunc(n.Name, unicode.IsControl) >= 0 || !slices.Contains([]string{"email", "slack", "discord", "webhook"}, n.Kind) || len(n.Events) == 0 || len(n.Events) > 3 || len(n.Destination) < 28 || len(n.Destination) > 8192 {
+	if n.ApplicationID != a.ID || strings.TrimSpace(n.Name) == "" || len(n.Name) > 80 || strings.IndexFunc(n.Name, unicode.IsControl) >= 0 || !slices.Contains([]string{"email", "slack", "discord", "webhook"}, n.Kind) || len(n.Events) == 0 || len(n.Events) > 4 || len(n.Destination) < 28 || len(n.Destination) > 8192 {
 		return n, fmt.Errorf("%w: invalid notification destination", ErrInput)
 	}
 	seen := map[string]bool{}
 	for _, event := range n.Events {
-		if seen[event] || !slices.Contains([]string{"succeeded", "failed", "cancelled"}, event) {
+		if seen[event] || !slices.Contains([]string{"succeeded", "failed", "cancelled", SecurityNotificationEvent}, event) {
 			return n, fmt.Errorf("%w: choose unique deployment events", ErrInput)
 		}
 		seen[event] = true
