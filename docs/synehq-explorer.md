@@ -1,6 +1,6 @@
 # SyneHQ database explorer integration
 
-The integration adds shared browser login, automatic source synchronization, and an **Explore databases** action for configured scopes. Kubernetes provisioning remains unqualified. Do not advertise automatic explorer installation until the runtime gate below passes.
+The integration adds shared browser login, automatic source synchronization, and an **Explore databases** action for configured scopes. The `synehq-oos` template installs OOS in Kubernetes pod mode, which has no per-query cgroups; read [Kubernetes pod mode](#kubernetes-pod-mode-28-october-2026) before deploying it. Operators still add the engine target by hand.
 
 ## Configure a scope
 
@@ -69,7 +69,7 @@ The isolated development VM ran the updated OOS JavaScript and static files over
 
 Imported-source cards received source review only. Browser tooling did not support touch events. OOS retains its existing light theme and mobile tab scrolling behavior.
 
-The native database fixture was manually added SQLite. It does not prove automatic import or network access to a provisioned Kubernetes database. Source import has contract and store test coverage. The Kubernetes deployment gate remains open.
+The native database fixture was manually added SQLite. It does not prove automatic import or network access to a provisioned Kubernetes database. Source import has contract and store test coverage.
 
 ## Runtime probe: 10 October 2026
 
@@ -91,12 +91,24 @@ The next probe reached Kelvo and failed with `Application containment is unavail
 The published launcher requires a dedicated cgroup subtree and a custom seccomp profile.
 A normal restricted pod does not provide that delegation.
 
-This is a failed runtime qualification. Do not enable automatic deployment from this result.
-Do not remove containment checks or mount writable host-wide cgroups to bypass the failure.
+This was a failed runtime qualification for the strict containment model.
 The probe did not test ARM64 Kubernetes behavior, database connectivity, shared login, or tenant isolation.
+
+## Kubernetes pod mode: 28 October 2026
+
+The project owner accepted pod mode instead of per-query cgroups for Kubernetes. This replaces the earlier rule against removing containment to pass the probe.
+
+- `OOS_RUNTIME=kubernetes` (SyneHQ/synehq-oos#7 and #8) starts Kelvo without its `containment` block (SyneHQ/kelvo-go#298). Query workers have no per-query memory, CPU or process cgroup. The pod limit of 768 MiB is the only boundary, so one runaway query can restart the explorer.
+- Landlock, the worker seccomp filter, non-root execution and the read-only root filesystem still apply. Nothing mounts host cgroups.
+- Kelvo trusts an ancestor directory that is root-owned, writable only by its own group and not world-writable (`KELVO_TRUST_OWN_GROUP_ANCESTORS=1`, SyneHQ/kelvo-go#300). This is the shape of a volume root with an `fsGroup`. Kelvo's own directories and files are still checked as private.
+- The Hakopod key is a secret file. Kubelet makes it `0440 root:65532`; pod mode accepts group read but not group write or other access.
+
+Evidence: OOS CI ran the image in pod mode on amd64 and arm64 with Docker's default seccomp, no cgroup mount and a `root:65532 2775` volume, and passed owner setup, a SQLite query through Kelvo, clean shutdown and restart. The template smoke test (hakopod/templates#15) ran the pinned image on amd64 and arm64 with Hakopod's pod security, the key mounted like kubelet does, and the same volume shape. OOS stayed up past its 30-second Kelvo startup check.
+
+Not yet verified: a deployment on a real K3s cluster, database connectivity from the pod, shared login through a configured engine target, and tenant isolation.
 
 ## Release gate
 
 Run the full engine and OOS suites, affected Cloud checks, and dashboard builds on the isolated development VM or CI. Test encrypted imports, idempotent sync, source rotation and deletion, actor audit, session revocation, read-only grants, foreign workspace denial, and asset paths through the scoped proxy.
 
-The containment failure above still blocks automatic Kubernetes provisioning. Do not weaken cgroups, Landlock, seccomp, or non-root execution to pass it. A configured external OOS runtime must already have private database networking and valid containment. A source or explorer failure must not fail a managed database operation.
+Kubernetes installs use pod mode as described above. Do not weaken Landlock, seccomp, non-root execution or the read-only root filesystem, and do not mount host cgroups. An external OOS runtime on a Docker host keeps the strict containment launcher and needs private database networking. A source or explorer failure must not fail a managed database operation.
