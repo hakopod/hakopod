@@ -3,6 +3,7 @@ package logmask
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -93,6 +94,22 @@ func TestStreamingReadBoundariesAndTruncatedSecretPrefixes(t *testing.T) {
 		if !strings.Contains(string(out), partial) {
 			t.Fatal("truncated last record was emitted")
 		}
+	}
+}
+
+// A pod with a few database links holds hundreds of secret values, each
+// registered in several encodings; the old 512-mask bound withheld all its logs.
+func TestManySecretsStillMask(t *testing.T) {
+	var secrets []string
+	for i := range 400 {
+		secrets = append(secrets, fmt.Sprintf("credential-%03d-%s", i, strings.Repeat("k", 24)))
+	}
+	mask := New(secrets...)
+	if mask.Failed() {
+		t.Fatal("redaction gave up on an ordinary set of secrets")
+	}
+	if got := mask.Line("connected with " + secrets[399]); got != "connected with "+Replacement {
+		t.Fatalf("got %q", got)
 	}
 }
 

@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/hakopod/hakopod/internal/logmask"
 	corev1 "k8s.io/api/core/v1"
@@ -83,6 +84,9 @@ func (c *Client) podLogMasker(ctx context.Context, pod corev1.Pod, containerName
 			}
 			mask.Add(string(value))
 		}
+	}
+	if mask.Failed() {
+		slog.Warn("pod log redaction limit exceeded, output is withheld", "namespace", pod.Namespace, "pod", pod.Name, "container", containerName, "secrets", len(names), "secret_bytes", total)
 	}
 	return mask, nil
 }
