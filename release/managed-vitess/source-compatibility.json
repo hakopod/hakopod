@@ -1,0 +1,79 @@
+{
+  "bootstrap": {
+    "commit": "c02d3069bcb46966f613c03da1dbde9eaeecaaaf",
+    "reviewed_release": "v0.1.0-alpha.69",
+    "tag": "v0.1.0-alpha.68",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py",
+      "release/verify-vitess-runtime.py"
+    ]
+  },
+  "control_plane_commit": "ad6dcfcf34b1b60d7e737776adb676cc6d4a8280",
+  "predecessor": {
+    "commit": "c02d3069bcb46966f613c03da1dbde9eaeecaaaf",
+    "review_sha256": "95cebfba35cb3cb23865f791133d57ec61e29180604cc366fb1984479d381433",
+    "tag": "v0.1.0-alpha.68"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "http_evidence_sha256": "7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545",
+    "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274",
+    "native_manifest_sha256": "64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestManySecretsStillMask",
+      "TestMaskAndLineBoundsFailClosed",
+      "TestStreamingReadBoundariesAndTruncatedSecretPrefixes"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40757141947"
+  },
+  "reviewed_release": "v0.1.0-alpha.69",
+  "runtime": "vitess",
+  "schema_version": 3,
+  "scopes": {
+    "http_harness": {
+      "baseline_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb",
+      "changes": [],
+      "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
+    },
+    "runtime": {
+      "baseline_sha256": "de8ec1c3b28982a346e7ff8787abcbabbc92507727d64e28afc28b26c6e5d860",
+      "changes": [
+        {
+          "after": "0d022dbade9f467d55a00bb99f65ec12c9998db41459f4488525c24ee730924a",
+          "before": "13f0a72cb8001fb3a4dffe395600736ed7c4799ab2b994cab74ae68b307f31d1",
+          "path": "internal/cluster/logmask.go",
+          "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "68c591778cf2bbd621bb85749c315a155218ff7a72e76ad7e2565d45623ab424",
+          "before": "55375cc9d3ca7b38d2b4441ad9416c06a16181c999aec9b7944d0f8e7c475770",
+          "path": "internal/logmask/mask.go",
+          "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "9f700f7d3017341270885f45a3efe6153e6dc3bdea5fd74dca641d0e0970d204",
+          "before": "095316a84f9f155f701f32f0a130e7c33a852ef7d33d5851749c67f1993c935a",
+          "path": "internal/logmask/mask_test.go",
+          "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "2448216f2c2a4e7f1675684d609792adb4155b80ab3d66deef0579fe8cf0f7fe",
+          "before": "e6d177f5c6ddc203a273e88f471fc555700c09b3bc1cbc31a69d737f1e005f6f",
+          "path": "release/runtime-source-compatibility.py",
+          "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "ba1aceec8d7fef357ef98a6299cabc623ff3d3fb3dc1f5790956d3e14f5f8e2f",
+          "before": "f57bc68b428e1a868986821f0ba5c65c5933ce2051964aa1eaeef2bd6fd62ecc",
+          "path": "release/verify-vitess-runtime.py",
+          "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        }
+      ],
+      "current_sha256": "5f78653d328a6d24f80cc1abb738dd856d39674edb123c411f3ce3d7191aa0d4"
+    }
+  }
+}

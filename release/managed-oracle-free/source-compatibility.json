@@ -1,0 +1,63 @@
+{
+  "bootstrap": {
+    "commit": "c02d3069bcb46966f613c03da1dbde9eaeecaaaf",
+    "reviewed_release": "v0.1.0-alpha.69",
+    "tag": "v0.1.0-alpha.68",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "ad6dcfcf34b1b60d7e737776adb676cc6d4a8280",
+  "delta": {
+    "baseline_sha256": "127c00abdec66b6e6a3f9e460a7e4a7c0406abd0d3747a7018729741de72bd99",
+    "changes": [
+      {
+        "after": "0d022dbade9f467d55a00bb99f65ec12c9998db41459f4488525c24ee730924a",
+        "before": "13f0a72cb8001fb3a4dffe395600736ed7c4799ab2b994cab74ae68b307f31d1",
+        "path": "internal/cluster/logmask.go",
+        "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "68c591778cf2bbd621bb85749c315a155218ff7a72e76ad7e2565d45623ab424",
+        "before": "55375cc9d3ca7b38d2b4441ad9416c06a16181c999aec9b7944d0f8e7c475770",
+        "path": "internal/logmask/mask.go",
+        "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "9f700f7d3017341270885f45a3efe6153e6dc3bdea5fd74dca641d0e0970d204",
+        "before": "095316a84f9f155f701f32f0a130e7c33a852ef7d33d5851749c67f1993c935a",
+        "path": "internal/logmask/mask_test.go",
+        "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "2448216f2c2a4e7f1675684d609792adb4155b80ab3d66deef0579fe8cf0f7fe",
+        "before": "e6d177f5c6ddc203a273e88f471fc555700c09b3bc1cbc31a69d737f1e005f6f",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed control-plane change (larger pod log redaction bounds, a warning when they are exceeded and release preparation; chain the alpha.69 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      }
+    ],
+    "current_sha256": "b74bd63e70bdd38a6369035297807f9f1e872be3432894d5dc7c7b9afc884c6b"
+  },
+  "predecessor": {
+    "commit": "c02d3069bcb46966f613c03da1dbde9eaeecaaaf",
+    "review_sha256": "efd3935ec3e765681ae71a5b1055719aa99aa404e5077043c255d6089ee961d9",
+    "tag": "v0.1.0-alpha.68"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestManySecretsStillMask",
+      "TestMaskAndLineBoundsFailClosed",
+      "TestStreamingReadBoundariesAndTruncatedSecretPrefixes"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40757141947"
+  },
+  "reviewed_release": "v0.1.0-alpha.69",
+  "runtime": "oracle-free",
+  "schema_version": 2
+}
