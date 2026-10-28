@@ -417,18 +417,25 @@ func (s *Server) deliverNotification(ctx context.Context, client *http.Client, d
 			return "pending", "Slack entitlement could not be verified; retry scheduled."
 		}
 	}
-	if s.Auth.PublicURL != "" {
-		payload["dashboard_url"] = strings.TrimSuffix(s.Auth.PublicURL, "/") + "/applications/" + url.PathEscape(app) + "?tab=deployments"
+	subject, text, security := securityNotificationText(payload)
+	if security && !slices.Contains(target.Events, store.SecurityNotificationEvent) {
+		return "skipped", "Destination no longer receives security advisories."
 	}
-	text := fmt.Sprintf("Hakopod deployment %v\nApplication: %v\nProject: %v / %v\nRevision: %v", payload["status"], payload["application_name"], payload["project"], payload["environment"], payload["revision"])
-	if link, ok := payload["dashboard_url"].(string); ok {
-		text += "\n" + link
+	if !security {
+		if s.Auth.PublicURL != "" {
+			payload["dashboard_url"] = strings.TrimSuffix(s.Auth.PublicURL, "/") + "/applications/" + url.PathEscape(app) + "?tab=deployments"
+		}
+		text = fmt.Sprintf("Hakopod deployment %v\nApplication: %v\nProject: %v / %v\nRevision: %v", payload["status"], payload["application_name"], payload["project"], payload["environment"], payload["revision"])
+		if link, ok := payload["dashboard_url"].(string); ok {
+			text += "\n" + link
+		}
+		subject = "Hakopod deployment: " + fmt.Sprint(payload["status"])
 	}
 	if target.Kind == "email" {
 		if !s.smtpMailAvailable(ctx) {
 			return "pending", "SMTP delivery is not configured or enabled."
 		}
-		if err := s.sendAuthMail(ctx, secret.Destination, "Hakopod deployment: "+fmt.Sprint(payload["status"]), text); err != nil {
+		if err := s.sendAuthMail(ctx, secret.Destination, subject, text); err != nil {
 			return "pending", "Email delivery failed; retry scheduled."
 		}
 		return "sent", ""
@@ -470,4 +477,38 @@ func (s *Server) deliverNotification(ctx context.Context, client *http.Client, d
 		return "pending", fmt.Sprintf("Webhook returned HTTP %d; retry scheduled.", res.StatusCode)
 	}
 	return "failed", fmt.Sprintf("Webhook returned HTTP %d. Check the destination settings.", res.StatusCode)
+}
+
+// securityNotificationText renders security payloads queued by
+// store.QueueSecurityNotification and store.QueuePatchResultNotification.
+// ok is false for deployment payloads, which keep their original rendering.
+func securityNotificationText(payload map[string]any) (subject, text string, ok bool) {
+	kind, _ := payload["type"].(string)
+	if kind != "security_advisory" && kind != "security_patch_failed" {
+		return "", "", false
+	}
+	field := func(key string) string { v, _ := payload[key].(string); return v }
+	subject = "Security update affects " + field("application_name")
+	lines := []string{}
+	add := func(label, value string) {
+		if value != "" {
+			lines = append(lines, label+value)
+		}
+	}
+	if kind == "security_patch_failed" {
+		add("Automatic patch failed: ", field("advisory_id"))
+		add("Error: ", field("error"))
+	} else {
+		add("", field("title"))
+		add("Severity: ", field("severity"))
+		add("Evidence: ", field("evidence"))
+		add("Next step: ", field("fix_reason"))
+	}
+	add("Application: ", field("application_name"))
+	if field("project") != "" {
+		lines = append(lines, "Project: "+field("project")+" / "+field("environment"))
+	}
+	add("Service: ", field("service"))
+	add("", field("link"))
+	return subject, strings.Join(lines, "\n"), true
 }

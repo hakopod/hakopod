@@ -141,6 +141,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerNativeProbeRoutes(routes)
 	s.registerExternalDatabaseRoutes(routes)
 	s.registerAlarmRoutes(routes)
+	s.registerSecurityRoutes(routes)
 	s.registerNotificationRoutes(routes)
 	s.registerSlackRoutes(mux, routes)
 	s.registerRequestRoutes(routes)

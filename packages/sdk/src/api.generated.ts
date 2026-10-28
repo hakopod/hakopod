@@ -4358,6 +4358,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/security/advisories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List security advisory findings for visible applications. */
+        get: operations["getSecurityOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get security advisory findings for an application. */
+        get: operations["getApplicationSecurity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/security/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check an application against security advisories now. */
+        post: operations["checkApplicationSecurity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/security/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply the fix for a security advisory finding. */
+        post: operations["applySecurityFix"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/security/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the automatic patching policy for an application. */
+        put: operations["putSecurityPolicy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/security/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get installation security advisory settings. */
+        get: operations["getSecuritySettings"];
+        /** Update installation security advisory settings. */
+        put: operations["putSecuritySettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/appearance": {
         parameters: {
             query?: never;
@@ -6908,7 +7011,7 @@ export interface components {
             /** @enum {string} */
             kind: "email" | "slack" | "discord" | "webhook";
             enabled: boolean;
-            events: ("succeeded" | "failed" | "cancelled")[];
+            events: ("succeeded" | "failed" | "cancelled" | "security_advisory")[];
             revision: number;
             /** @description True when this legacy target resolves to a Slack-hosted destination. No destination URL is returned. */
             readonly slack_managed: boolean;
@@ -6918,7 +7021,7 @@ export interface components {
             /** @enum {string} */
             kind: "email" | "slack" | "discord" | "webhook";
             enabled: boolean;
-            events: ("succeeded" | "failed" | "cancelled")[];
+            events: ("succeeded" | "failed" | "cancelled" | "security_advisory")[];
             destination?: string;
             signing_secret?: string;
             expected_revision: number;
@@ -9071,12 +9174,109 @@ export interface components {
                 client_secret?: string;
             };
         };
+        SecurityFeedStatus: {
+            feed_enabled: boolean;
+            osv_enabled: boolean;
+            revision: number;
+            issued_at: string | null;
+            expires_at: string | null;
+            checked_at: string | null;
+            stale: boolean;
+            error: string;
+        };
+        SecurityFinding: {
+            advisory_id: string;
+            aliases?: string[];
+            advisory_revision: number;
+            /** @enum {string} */
+            source: "hakopod" | "osv";
+            /** @enum {string} */
+            severity: "critical" | "high" | "moderate" | "low";
+            title: string;
+            url: string;
+            service: string;
+            /** @enum {string} */
+            confidence: "confirmed" | "possible";
+            evidence: string;
+            /** @enum {string} */
+            fix: "reresolve" | "rebuild" | "manual";
+            fix_reason: string;
+            auto_eligible: boolean;
+            fixed_digests: string[];
+        };
+        SecurityPatchAttempt: {
+            id: string;
+            advisory_id: string;
+            service: string;
+            /** @enum {string} */
+            status: "pending" | "accepted" | "verified" | "failed" | "superseded";
+            deployment_id: string;
+            error: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ApplicationSecurity: {
+            application_id: string;
+            application_name: string;
+            project: string;
+            environment: string;
+            deployment_id: string;
+            revision: number;
+            checked_at: string | null;
+            evaluated_at: string | null;
+            findings: components["schemas"]["SecurityFinding"][];
+            unknown_services: string[];
+            incomplete: string[];
+            auto_patch: boolean;
+            approved_by: string;
+            approval_expires_at: string | null;
+            policy_revision: number;
+            attempts: components["schemas"]["SecurityPatchAttempt"][];
+            can_write: boolean;
+        };
+        SecurityOverview: {
+            feed: components["schemas"]["SecurityFeedStatus"];
+            applications: components["schemas"]["ApplicationSecurity"][];
+            summary: {
+                affected_applications: number;
+                critical: number;
+                high: number;
+            };
+        };
+        SecurityApplyInput: {
+            advisory_id: string;
+            service: string;
+            expected_revision: number;
+        };
+        SecurityApplyResult: {
+            /** @enum {string} */
+            kind: "reresolve" | "rebuild";
+            deployment_id: string;
+            build_id: string;
+        };
+        SecurityPolicyInput: {
+            auto_patch: boolean;
+            expected_policy_revision: number;
+        };
+        SecuritySettings: {
+            feed_enabled: boolean;
+            osv_enabled: boolean;
+            revision: number;
+            can_manage: boolean;
+        };
+        SecuritySettingsInput: {
+            feed_enabled: boolean;
+            osv_enabled: boolean;
+            expected_revision: number;
+        };
         Appearance: {
             accent_color: string;
         };
         SlackEventDefinition: {
             /** @enum {string} */
-            id: "alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed";
+            id: "alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory";
             category: string;
             label: string;
             description: string;
@@ -9107,7 +9307,7 @@ export interface components {
             reason?: string;
             team?: components["schemas"]["SlackTeam"];
             channel?: components["schemas"]["SlackChannel"];
-            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed")[];
+            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory")[];
             event_catalog: components["schemas"]["SlackEventDefinition"][];
             revision: number;
             manifest?: components["schemas"]["SlackManifest"];
@@ -9124,12 +9324,12 @@ export interface components {
             expected_revision: number;
         };
         SlackEventsInput: {
-            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed")[];
+            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory")[];
             expected_revision: number;
         };
         SlackDelivery: {
             id: number;
-            event: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed") | "test";
+            event: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory") | "test";
             /** @enum {string} */
             status: "pending" | "sending" | "sent" | "skipped" | "failed";
             attempts: number;
@@ -20305,6 +20505,231 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    getSecurityOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityOverview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getApplicationSecurity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationSecurity"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    checkApplicationSecurity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationSecurity"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    applySecurityFix: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecurityApplyInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityApplyResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putSecurityPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecurityPolicyInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationSecurity"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getSecuritySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecuritySettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putSecuritySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecuritySettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecuritySettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

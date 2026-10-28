@@ -66,6 +66,8 @@ export const allowed = [
   /^audit\/(?:history|export)$/,
   /^alarms(?:\/[A-Za-z0-9_-]+\/(?:read|acknowledge))?$/,
   /^alarm-settings$/,
+  /^security\/(?:advisories|settings)$/,
+  /^applications\/[A-Za-z0-9_-]+\/security(?:\/(?:check|apply|policy))?$/,
   /^virtual-networks(?:\/[A-Za-z0-9_-]+(?:\/candidates)?)?$/,
   /^sources\/(?:plan|deploy)$/,
   /^showcase(?:\/remove)?$/,

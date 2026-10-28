@@ -18,6 +18,7 @@ import { Route as InfrastructureRouteImport } from './routes/infrastructure'
 import { Route as NetworksRouteImport } from './routes/networks'
 import { Route as PlatformsRouteImport } from './routes/platforms'
 import { Route as RequestsRouteImport } from './routes/requests'
+import { Route as SecurityRouteImport } from './routes/security'
 import { Route as SessionRouteImport } from './routes/session'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TemplatesRouteImport } from './routes/templates'
@@ -153,6 +154,11 @@ const PlatformsRoute = PlatformsRouteImport.update({
 const RequestsRoute = RequestsRouteImport.update({
   id: '/requests',
   path: '/requests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecurityRoute = SecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SessionRoute = SessionRouteImport.update({
@@ -665,6 +671,7 @@ export interface FileRoutesByFullPath {
   '/networks': typeof NetworksRouteWithChildren
   '/platforms': typeof PlatformsRouteWithChildren
   '/requests': typeof RequestsRoute
+  '/security': typeof SecurityRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
@@ -767,6 +774,7 @@ export interface FileRoutesByTo {
   '/networks': typeof NetworksRouteWithChildren
   '/platforms': typeof PlatformsRouteWithChildren
   '/requests': typeof RequestsRoute
+  '/security': typeof SecurityRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
@@ -870,6 +878,7 @@ export interface FileRoutesById {
   '/networks': typeof NetworksRouteWithChildren
   '/platforms': typeof PlatformsRouteWithChildren
   '/requests': typeof RequestsRoute
+  '/security': typeof SecurityRoute
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
@@ -974,6 +983,7 @@ export interface FileRouteTypes {
     | '/networks'
     | '/platforms'
     | '/requests'
+    | '/security'
     | '/session'
     | '/settings'
     | '/templates'
@@ -1076,6 +1086,7 @@ export interface FileRouteTypes {
     | '/networks'
     | '/platforms'
     | '/requests'
+    | '/security'
     | '/session'
     | '/settings'
     | '/templates'
@@ -1178,6 +1189,7 @@ export interface FileRouteTypes {
     | '/networks'
     | '/platforms'
     | '/requests'
+    | '/security'
     | '/session'
     | '/settings'
     | '/templates'
@@ -1281,6 +1293,7 @@ export interface RootRouteChildren {
   NetworksRoute: typeof NetworksRouteWithChildren
   PlatformsRoute: typeof PlatformsRouteWithChildren
   RequestsRoute: typeof RequestsRoute
+  SecurityRoute: typeof SecurityRoute
   SessionRoute: typeof SessionRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   TemplatesRoute: typeof TemplatesRouteWithChildren
@@ -1363,6 +1376,13 @@ declare module '@tanstack/react-router' {
       path: '/requests'
       fullPath: '/requests'
       preLoaderRoute: typeof RequestsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/security': {
+      id: '/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof SecurityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/session': {
@@ -2383,6 +2403,7 @@ const rootRouteChildren: RootRouteChildren = {
   NetworksRoute: NetworksRouteWithChildren,
   PlatformsRoute: PlatformsRouteWithChildren,
   RequestsRoute: RequestsRoute,
+  SecurityRoute: SecurityRoute,
   SessionRoute: SessionRoute,
   SettingsRoute: SettingsRouteWithChildren,
   TemplatesRoute: TemplatesRouteWithChildren,

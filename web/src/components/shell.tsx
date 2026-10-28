@@ -10,6 +10,7 @@ import {
   useEditionAuth,
 } from '../lib/dashboard-edition'
 import { InstallationUpdateNotice } from './installation'
+import { SecurityBanner } from './security-banner'
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -677,6 +678,7 @@ function Workspace({
             !projectPath && (
               <ErrorState error={projects.error} retry={() => void projects.refetch()} />
             )}
+          {!identity.mfa_required && <SecurityBanner />}
           <EditionGate>
             {identity.mfa_required ? (
               <>

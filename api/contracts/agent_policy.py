@@ -2675,6 +2675,14 @@ POLICIES['listApplicationLogSources'] = {'boundary':'project','category':'read',
 for operation in ['getAppLogSettings','putAppLogSettings']:
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
 
+# Security advisories: reads, fixes that accept a new revision, and installation settings.
+for operation in ['getSecurityOverview','getApplicationSecurity']:
+    POLICIES[operation] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'prerequisite':'','review':'none','sensitive_fields':[]}
+for operation in ['checkApplicationSecurity','applySecurityFix','putSecurityPolicy']:
+    POLICIES[operation] = {'boundary':'project','category':'write','exposure':'generic','permissions':['deployments:write'],'prerequisite':'','review':'canonical','sensitive_fields':[]}
+for operation in ['getSecuritySettings','putSecuritySettings']:
+    POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

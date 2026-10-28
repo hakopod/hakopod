@@ -1,3 +1,4 @@
+import '../lib/security.test'
 import '../lib/sql-language.test'
 import '../lib/toml-language.test'
 import '../lib/framework-recipes.test'
@@ -19,6 +20,8 @@ import '../lib/template-review.test'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import './toml-code.test'
+import './security-banner.test'
+import './security-review.test'
 import './shell-behavior.test'
 import './selection-navigation.test'
 import './secret-providers.test'
@@ -441,3 +444,4 @@ test('new failure reopens a group already marked by an earlier warning', () => {
   )
 })
 import './log-history.test'
+import './application-security.test'

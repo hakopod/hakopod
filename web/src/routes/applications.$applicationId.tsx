@@ -1,3 +1,4 @@
+import { ApplicationSecurity } from '../components/application-security'
 import { ManagedActionsStatus } from '../components/managed-actions-status'
 import { VolumeResizeOperations } from '../components/volume-resize'
 import { publicEndpoints } from '../lib/public-endpoints'
@@ -319,6 +320,7 @@ function ApplicationDetail() {
         </Tabs.Content>
         <Tabs.Content value="services" className="tab-content">
           <ManagedActionsStatus application={app} />
+          <ApplicationSecurity applicationId={app.id} />
           <VolumeResizeOperations application={app} />
           {scope.can('deployments:write') && <ServiceMoves application={app} />}
           <div className="ops-section-description">

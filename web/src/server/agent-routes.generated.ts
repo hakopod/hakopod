@@ -1541,6 +1541,55 @@ export const agentRoutes = [
     "boundary": "installation"
   },
   {
+    "id": "getSecurityOverview",
+    "method": "GET",
+    "path": "/security/advisories",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "getApplicationSecurity",
+    "method": "GET",
+    "path": "/applications/{id}/security",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "checkApplicationSecurity",
+    "method": "POST",
+    "path": "/applications/{id}/security/check",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "applySecurityFix",
+    "method": "POST",
+    "path": "/applications/{id}/security/apply",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "putSecurityPolicy",
+    "method": "PUT",
+    "path": "/applications/{id}/security/policy",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "getSecuritySettings",
+    "method": "GET",
+    "path": "/security/settings",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "putSecuritySettings",
+    "method": "PUT",
+    "path": "/security/settings",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "getAppearance",
     "method": "GET",
     "path": "/settings/appearance",

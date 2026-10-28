@@ -27,6 +27,7 @@ const events: [Event, string][] = [
   ['succeeded', 'Deployment succeeds'],
   ['failed', 'Deployment fails'],
   ['cancelled', 'Deployment is cancelled'],
+  ['security_advisory', 'Security advisories'],
 ]
 
 export const Route = createFileRoute('/applications/$applicationId/notifications')({
@@ -73,7 +74,7 @@ export function Notifications() {
   const [kind, setKind] = useState<Kind>('email')
   const [destination, setDestination] = useState('')
   const [secret, setSecret] = useState('')
-  const [selected, setSelected] = useState<Event[]>(['succeeded', 'failed'])
+  const [selected, setSelected] = useState<Event[]>(['succeeded', 'failed', 'security_advisory'])
   const [enabled, setEnabled] = useState(true)
   const [review, setReview] = useState(false)
   const [removing, setRemoving] = useState<Target | null>(null)
@@ -123,7 +124,7 @@ export function Notifications() {
     setKind(target?.kind || 'email')
     setDestination('')
     setSecret('')
-    setSelected(target?.events || ['succeeded', 'failed'])
+    setSelected(target?.events || ['succeeded', 'failed', 'security_advisory'])
     setEnabled(target?.enabled ?? true)
     setReview(false)
     setError('')

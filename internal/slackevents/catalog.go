@@ -49,6 +49,7 @@ var catalog = []SlackEventDefinition{
 	{"service.job.scheduled", "Services", "Job scheduled", "A scheduled job configuration is applied."},
 	{"service.job.completed", "Services", "Job completed", "A service job completes."},
 	{"service.certificate.renewed", "Services", "Certificate renewed", "A service certificate renewal completes."},
+	{"security.advisory", "Security", "Security advisory", "A published security advisory affects a running service."},
 }
 
 func Catalog() []SlackEventDefinition { return append([]SlackEventDefinition(nil), catalog...) }
