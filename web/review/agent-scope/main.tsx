@@ -168,7 +168,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           },
         ],
       }
-    else if (url.pathname === '/api/alarms')
+    else if (url.pathname === '/api/security/advisories') data = { feed: { feed_enabled: true, osv_enabled: true, revision: 0, issued_at: null, expires_at: null, checked_at: null, stale: false, error: '' }, applications: [], summary: { affected_applications: 0, critical: 0, high: 0 } }
+      else if (url.pathname === '/api/alarms')
       data = { items: [], next_cursor: '', summary: { active: 0, unread: 0 } }
     else if (url.pathname === `/api/databases/${databaseID}`) {
       if (scenario === 'loading')

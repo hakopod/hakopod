@@ -32,7 +32,8 @@ window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
   else if(url.pathname==='/api/secrets')data={items:fixture.savedSecrets.map(name=>({name,application:'fixture-mathesar',updated_at:now}))}
   else if(url.pathname==='/api/license')data={valid:false,edition:'community',catalog:[]}
   else if(url.pathname==='/api/auth/status')data={deployment_mode:'self-hosted',setup_required:false,signup_enabled:false,password:true,providers:[],passkeys:true,totp:true,email_delivery:false}
-  else if(url.pathname==='/api/alarms')data={items:[],summary:{active:0,unread:0},truncated:false}
+  else if (url.pathname === '/api/security/advisories') data = { feed: { feed_enabled: true, osv_enabled: true, revision: 0, issued_at: null, expires_at: null, checked_at: null, stale: false, error: '' }, applications: [], summary: { affected_applications: 0, critical: 0, high: 0 } }
+  else if (url.pathname === '/api/alarms')data={items:[],summary:{active:0,unread:0},truncated:false}
   else if(url.pathname==='/api/applications')data={items:[]}
   else if(url.pathname==='/api/teams')data={items:[]}
  }

@@ -97,6 +97,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     else if (url.pathname === '/api/projects') data = { items: [{ id: 'review-project-id', name: application.project, display_name: 'Review project', personal: false, environments: [{ name: 'development' }] }] }
     else if (url.pathname === '/api/auth/status') data = { setup_required: false, deployment_mode: 'self-hosted', password: true, signup_enabled: false, providers: [], passkeys: true, totp: true, email_delivery: false }
     else if (url.pathname === '/api/license') data = { valid: false, plan: 'free', state: 'inactive', installation_id: 'review-installation', revision: 1, edition: 'community', catalog: [] }
+    else if (url.pathname === '/api/security/advisories') data = { feed: { feed_enabled: true, osv_enabled: true, revision: 0, issued_at: null, expires_at: null, checked_at: null, stale: false, error: '' }, applications: [], summary: { affected_applications: 0, critical: 0, high: 0 } }
     else if (url.pathname === '/api/alarms') data = { items: [], next_cursor: '', summary: { active: 0, unread: 0 } }
     else if (url.pathname === '/api/applications') data = { items: scenario === 'empty' ? [] : [application, secondApplication], next_cursor: '' }
     else if (url.pathname === `/api/applications/${applicationID}` || url.pathname === `/api/applications/${secondApplicationID}`) {
