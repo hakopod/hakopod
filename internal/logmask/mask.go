@@ -16,8 +16,12 @@ import (
 
 const Replacement = "***"
 const MaxLineBytes = 64 << 10
-const maxMasks = 512
-const maxMaskBytes = 1 << 20
+
+// Each secret registers about five encodings per value and per line, so 4096
+// masks cover roughly 800 values or 30 PEM blocks in one pod. The byte bound
+// fits the 512 KiB of secret data a pod log masker accepts, encodings included.
+const maxMasks = 4096
+const maxMaskBytes = 4 << 20
 const withheld = "[log output withheld: redaction limit exceeded]"
 const partial = "[incomplete log line withheld]"
 
@@ -61,6 +65,9 @@ func (m *Masker) learn(v string) {
 // Added returns the values learned from ::add-mask:: commands, so a rebuilt
 // masker can be given them again with Add.
 func (m *Masker) Added() []string { return append([]string(nil), m.dynamic...) }
+
+// Failed reports whether redaction gave up, so every later line is withheld.
+func (m *Masker) Failed() bool { return m.failed }
 
 // InPrivateKey reports whether the masker is inside a private key block, whose
 // body is withheld until the END line.
