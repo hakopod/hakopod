@@ -1,30 +1,27 @@
-Hakopod 0.1.0-alpha.67 keeps application logs after pods are replaced and adds eleven app templates.
+Hakopod 0.1.0-alpha.68 checks running applications against security advisories and adds a SyneHQ OOS template for Kubernetes.
 
-- Logs from restarted, OOM-killed, evicted, deleted and rolled-out pods stay readable for 7 days and up to 512 MiB per application by default. Administrators can set 1–30 days and 64–4096 MiB in Settings › Logs. Read them in the Logs explorer, with `hakopod logs --history`, `--from`, `--to` and `--pod`, with `hakopod logs pods`, or through the MCP `logs` and `log_sources` tools. Without history, all of them show live logs as before and say why.
-- Lines are masked before they are stored, while the pod and its secret references still exist. Anything Hakopod could not collect is recorded as a gap and shown, never hidden. No additional services are installed; the management API collects and stores the logs itself.
-- Log masking is about 50 times faster, which also speeds up live logs.
-- New templates: FreshRSS, NocoDB, Stirling PDF, Meilisearch, Umami, Wiki.js, Ghost, Directus, it-tools, Excalidraw and an internal-only Kafka. Every new template passed a runtime smoke test on amd64 and arm64.
-- The installer gives the management API read-only access to `/var/log/pods` and keeps kubelet logs at 3 files of 20 MiB. An upgrade applies the access change; the new log size takes effect at the next K3s restart, such as a reboot. A native install with log history passed restart, deletion, OOM, rollout and MCP checks on a single-node host; multi-node clusters and long-running hosts are not yet verified.
+- Hakopod matches what each application runs against a Hakopod-signed advisory feed and OSV.dev. Affected apps appear in a dashboard banner and on a Security page with the evidence and the fix. Confirmed findings go to the app's notification channels.
+- Where Hakopod can fix a finding, one step creates a new revision: it resolves image tags again to pick up the fixed image, or rebuilds an app built from source. Images pinned by digest need a manual change. Automatic patching can be turned on per app and is off by default.
+- This is not a vulnerability scanner. Hakopod matches image digests, tags and runtime version variables only, not operating system packages, dependencies or application code. No findings does not mean an app is safe.
+- The `synehq-oos` template runs the SyneHQ database explorer in Kubernetes pod mode. Query workers have no per-query cgroups, so the 768 MiB pod limit is the only boundary and one runaway query can restart the explorer. Landlock, seccomp, non-root execution and a read-only root filesystem still apply. Operators add the engine target by hand; a deployment on a real cluster is not yet verified.
 
-Read the [application logs guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.67/docs/application-logs.md).
+Read the [security advisories guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.68/docs/security-advisories.md) and the [SyneHQ explorer guide](https://github.com/hakopod/hakopod/blob/v0.1.0-alpha.68/docs/synehq-explorer.md).
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.67/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.67
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.68/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.68
 ```
 
-Upgrade an alpha.65 or alpha.66 installation:
+Upgrade an alpha.66 or alpha.67 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.67/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.67
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.68/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.68
 ```
-
-Upgrade with `installer.sh --upgrade`, not only from the dashboard, so the log access change is applied. Until then, log history is shown as not set up and live logs keep working.
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
 
