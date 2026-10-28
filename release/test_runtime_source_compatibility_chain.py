@@ -72,7 +72,7 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
                                      "source-compatibility-alpha66.json"])
 
     def test_alpha68_preserves_exact_anchors_and_rejects_tampering(self):
-        self.check_published_review("ALPHA68_CHAIN_PREDECESSORS", "source-compatibility.json",
+        self.check_published_review("ALPHA68_CHAIN_PREDECESSORS", "source-compatibility-alpha68.json",
                                     ["source-compatibility-alpha59.json", "source-compatibility-alpha61.json",
                                      "source-compatibility-alpha62.json", "source-compatibility-alpha63.json",
                                      "source-compatibility-alpha64.json", "source-compatibility-alpha65.json",
