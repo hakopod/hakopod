@@ -78,6 +78,14 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
                                      "source-compatibility-alpha64.json", "source-compatibility-alpha65.json",
                                      "source-compatibility-alpha66.json", "source-compatibility-alpha67.json"])
 
+    def test_alpha69_preserves_exact_anchors_and_rejects_tampering(self):
+        self.check_published_review("ALPHA69_CHAIN_PREDECESSORS", "source-compatibility.json",
+                                    ["source-compatibility-alpha59.json", "source-compatibility-alpha61.json",
+                                     "source-compatibility-alpha62.json", "source-compatibility-alpha63.json",
+                                     "source-compatibility-alpha64.json", "source-compatibility-alpha65.json",
+                                     "source-compatibility-alpha66.json", "source-compatibility-alpha67.json",
+                                     "source-compatibility-alpha68.json"])
+
     def check_published_review(self, anchors, record_file, chain_files):
         for runtime, anchor in CHAIN[anchors].items():
             with self.subTest(runtime=runtime):
