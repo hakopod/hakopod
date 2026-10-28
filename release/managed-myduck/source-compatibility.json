@@ -1,0 +1,327 @@
+{
+  "bootstrap": {
+    "commit": "cd26c751c310d909dd5bc43d75a08b857e495a21",
+    "reviewed_release": "v0.1.0-alpha.68",
+    "tag": "v0.1.0-alpha.67",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "2ba9bcfa2f1892dab7757e741addac842426046e",
+  "delta": {
+    "baseline_sha256": "c2ea1b2072d1f5a55644c4989877760dc4dfbaf8877bfe9dfc956dfa777abbc5",
+    "changes": [
+      {
+        "after": "0ebf72adc0e1197d7eefa279a493c5fe8b3061ad9f53792c2dd079d44cca50f8",
+        "before": "f78965b9cc985aec78dd1e12b077eb12869175f29f38a510eac53e76c95c3fd4",
+        "path": "api/contracts/agent_policy.py",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "3f9a1cce52871f6e7b3df936477e8f1bb226b3d07008573e9cd3776895a185a4",
+        "before": "982d3d8bd90d7d133c92b7824d07efcc1b6bb2da5fd8c4d9ef0b54b2e65f8ebd",
+        "path": "api/contracts/deployment_notifications.py",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "cc1b1f7718cc5665a9f5b82206c5af5f7c7b2d7411e595411008d81d88f8136e",
+        "before": null,
+        "path": "api/contracts/security.py",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "ce3da9a27c24c102b3cdd66d5ea10ab49ebca94e7485ff644b2891b6f9c7c07d",
+        "before": "16482780bb1a62c2d1d94364407239ac45a78ecf3e113396cdbb838fd10bb30a",
+        "path": "api/contracts/slack.py",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "660448b09a2795713ea53b8df9bb52c395047385806223895522216ff2561abe",
+        "before": "999fe2961d43f9e051260a0fc59a83447ab1bcd1e51377c0cfbcc1db1d8bbb57",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e86eccfb7626fe27c82abca112aeeae903b3e8a12fe9fa254a67ba75d2822959",
+        "before": null,
+        "path": "internal/advisory/feed.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "be4602e3c6658c415527fd7d4a4083add86a206db1dddf56f1f08139e56e48ac",
+        "before": null,
+        "path": "internal/advisory/feed_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "5f0c51496eae606dd781a098d744fe2000afbfa5b060b8f42cf1574990bb7f80",
+        "before": null,
+        "path": "internal/advisory/match.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "6f0871c30314cb3091e0559d558962db78f5b173c41e3cb189508a824b8cd5ed",
+        "before": null,
+        "path": "internal/advisory/match_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a0ad1f7f1a3d5851d64580d6e20bf0cf6f2491119ced72311c4cd5171f1af8be",
+        "before": null,
+        "path": "internal/advisory/osv.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fcd9b9c43dd3590b7149d550289692e866dac4b1a98be8575447985d612651fe",
+        "before": null,
+        "path": "internal/advisory/osv_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "bf26424ac64b0ff13b59b6e9bb181eac5fc16990be947d567c0db0e25bc38e78",
+        "before": null,
+        "path": "internal/advisory/signing-public-key.txt",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "5de7b5d02aea188e3fbe3e07290e902ed2441641b55bd8ff92955dc130b19898",
+        "before": null,
+        "path": "internal/advisory/testdata/osv_querybatch.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fe720f42733bc5085df4dc21a5d304f69dd127bf72899d3acfd7347893e50da0",
+        "before": null,
+        "path": "internal/advisory/testdata/osv_querybatch_withdrawn.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a830f86e09f46da70225c5b705fb50f09cbdd1c7949da35f2ae666286d28dc87",
+        "before": null,
+        "path": "internal/advisory/testdata/osv_vuln_go.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "35df5d6246c2ca6697c0006d4ca067dd97cd35868f4bafcebb6a968f14db8a1c",
+        "before": null,
+        "path": "internal/advisory/testdata/osv_vuln_node.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fd30dd9ad905b68bbb4b3161f915dcc19ec56aea712954d4d67967953416ea45",
+        "before": null,
+        "path": "internal/advisory/testdata/osv_vuln_withdrawn.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "eb7a96da12054cac2cd8a1350ce44a4b1990430b0411acc44d8425727b0dedab",
+        "before": null,
+        "path": "internal/advisory/types.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "11ce33ac93b8520b221bdf990d852da71024bdeb4b7cb7fc950e92de6a556927",
+        "before": null,
+        "path": "internal/advisory/verify.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fdb861e038e4ce0e1a5851bba5fbeb3b9b241646e0f5d41f4c855de360753432",
+        "before": "a47fd834965489fed8cae9c533807a7b48cfa945e72cd75abcf2564ba6d926ca",
+        "path": "internal/api/api.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "924cc6c6a52ed06eb5af1966518759aa3cda92bf6d39aefab971f7289a1b9ab3",
+        "before": "28e48cb6566bfb737605c14a95108cfc5bd80a40978a7d4cd9b1c5fb2309adb4",
+        "path": "internal/api/deployment_notifications.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "5b308074ce5248f06ee780bb9fdfc39ddc2ba9a4618f40279a529c673df65268",
+        "before": null,
+        "path": "internal/api/security_advisories.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "3c995a946bbd4e993df2b6f497cefe3a1a0ffd5e925a9d749cc8801335c95305",
+        "before": null,
+        "path": "internal/api/security_advisories_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "0cd10be742246e40983ed1e2b0235ec8da578a0b302d29627cb5f6d837dfe992",
+        "before": null,
+        "path": "internal/api/security_notification_render_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a1737ab8308815f947a7489e35bee4fc192562f0d47ef5ce71f29c1a66003ba8",
+        "before": null,
+        "path": "internal/api/security_scan.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "cb456a0bcbe379fb6467dfc16b13b2555ec8529a8bd398167632a692690faabc",
+        "before": "b48991159f4dc5ea1a158915b2ff66025f354e9448801576b9682f67604204a4",
+        "path": "internal/api/slack_delivery.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "8e311b0b972925a407ab1fddc814a975588560db2124acea0e0993c4b6f01dea",
+        "before": "b112a8b9ad7f1e0ac938a84eccee74ea896ddb6f95aeadb91a58ec02f021bf8f",
+        "path": "internal/cluster/registry.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e46114b85b736211cbb8847c1b8528b5815b3e5452efafaa911ffc7886255eff",
+        "before": null,
+        "path": "internal/cluster/registry_runtime_env_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "bafe007a18c43aff2ba4d0efbb604718d3857df8306e2f177be38221e22f7809",
+        "before": "9e8c7f2ca340e926c1ae6dd996b66bb585f2faf9d74759c0231b2bd1c1e30795",
+        "path": "internal/management/runtime.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "ca94f794692c4eb2149b3e89d39a9c833172351aebbce476099adb630bd18970",
+        "before": "8dd499582fa422e401b6e55bba752676fadf3d4e776ebe8fc442168e7d97133c",
+        "path": "internal/slackevents/catalog.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "633b482c8e326c6d84365508191ad747d1bb06544070fe7552fb250d12b233f4",
+        "before": null,
+        "path": "internal/store/099_security_advisories.sql",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "b00a39e8566e90c5af473268d99b673ba6b91028ded82a98abfb05d68ceb6fc9",
+        "before": null,
+        "path": "internal/store/100_security_notifications.sql",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "41ca4653f96461b35db293df8aa211bf61a8e75acd79a9c047177f175fdc9dc9",
+        "before": "c50535569ecf7a40c0a1e0deaa85dd6dbd9575af9964c2fb16a90a2df900eb85",
+        "path": "internal/store/deletion.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "079edef5f37d04a75042f7e2460c2b087a180b6e04bcedc2a7775b9e04b1516a",
+        "before": "5efe710751738b6e0f88f2135902101e98d080052820250364cad552c9754c21",
+        "path": "internal/store/deployment_notifications.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "8b3e572a550dfbad4dcbb04820ecad12c5aaedc860306f5b25b0764c9972348f",
+        "before": null,
+        "path": "internal/store/security_advisories.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "24ff8fc6e4e2bbb1d8a59fd3399a5abe5238f272ceaa9702cb0db93d31e72bca",
+        "before": null,
+        "path": "internal/store/security_advisories_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "185cfc94067ac28080e0037b46849c03ceffc323d063c23ff45daa3e7c1971b1",
+        "before": null,
+        "path": "internal/store/security_notifications.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a5d003750da4cdaa62681ee407ba8d3df328e18768e698d11d742f0d8d475ce6",
+        "before": null,
+        "path": "internal/store/security_notifications_test.go",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e6d177f5c6ddc203a273e88f471fc555700c09b3bc1cbc31a69d737f1e005f6f",
+        "before": "525502572c705219b118f2849cd8a2ba4c9164fb018f86725e910cec4abe06c1",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "867c132301e26966a2a2769e7725b5898fa09936593af984729c43b501f5eaec",
+        "before": "4eb4d6b31232a30786cab6b0e6c6363323f19fb3c53b85e5b817377644a551a4",
+        "path": "templates/blueprints/synehq-oos/README.md",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": null,
+        "before": "88bc4cdfceb2c13e7ee65964751bfdd15b01ebe23a2d8463056cf0c7376df4da",
+        "path": "templates/blueprints/synehq-oos/candidate.toml",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "8b65192f350ea6f10dd8b2dcb3f43fcce41fd83906fcbc8324d8925cd9af3e01",
+        "before": null,
+        "path": "templates/blueprints/synehq-oos/hakopod.toml",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": null,
+        "before": "3ceb07d9c03537638aa9f8fdeccd0eb3640d4fc48784a01e313ac07af165a228",
+        "path": "templates/blueprints/synehq-oos/migration.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "f2e363f4f1893574909ad65d8ef057a43380b894debef190891b9c2c18278054",
+        "before": "5e49147eebee2faf497fc226ba28f149e06758d1767f85ee9172cc12b8ab293a",
+        "path": "templates/catalog.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "bf99b8a19f75f9f8b5915b62dedfac13a154f1a798d1acd5f8c449e33d05dcb1",
+        "before": "ec3eeea7734921acc5a99ea8bb8e010bd53ebf235d076af2cf9fc25e8abe623e",
+        "path": "templates/images.lock.json",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "70dead0d66f9b1a5faf12aea3fb321830cdd1c403c0a7d67f51dd1fdf4ba3a1e",
+        "before": "b8657c726fbea9b8b476c29ccef931ef5c0b0f3860c036c7a5c3bd81ffb28eac",
+        "path": "templates/scripts/smoke_template.py",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "2c164597028c0d87f9630cfc74c6ff4a224347963496c9bf8d683832b291fb4d",
+        "before": "30acb5e7a43049b9392647c09cdd746738103b6e663c117c2d26f1b9ab7b43a2",
+        "path": "templates/scripts/test_smoke_template.py",
+        "reason": "Reviewed control-plane change (security advisories, the SyneHQ OOS template, the advisory signing key and release preparation; chain the alpha.68 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      }
+    ],
+    "current_sha256": "43eab4d25d3604487954e654c29fb0f9d19c71aad54cfefffabdc740e922406b"
+  },
+  "predecessor": {
+    "commit": "cd26c751c310d909dd5bc43d75a08b857e495a21",
+    "review_sha256": "e24aef2c2b7f5f69b2a7d8ffe88155193e6501561f0d8b48b6d3f40b42b85a45",
+    "tag": "v0.1.0-alpha.67"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestVerify",
+      "TestVerifyEmbeddedKeyParses",
+      "TestMatch",
+      "TestSecurityAdvisoriesHandlers",
+      "TestSecurityAdvisoriesStore",
+      "TestSecurityNotificationGating",
+      "TestSecurityAutoPatchEligibility",
+      "TestCatalogRequirementsAndPersistentConstraints",
+      "TestSharedCatalogPlansContainNoTemplateMarkers"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40683679764"
+  },
+  "reviewed_release": "v0.1.0-alpha.68",
+  "runtime": "myduck",
+  "schema_version": 2
+}
