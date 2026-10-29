@@ -41,7 +41,7 @@ import { Dialog } from './ui/dialog'
 import { SelectField } from './ui/select'
 import { Tooltip } from './ui/surfaces'
 import { ParentBackLink } from './parent-navigation'
-import { Bot, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Bot, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { AuthScreen } from './auth-screen'
 import { NotificationButton } from './notification-button'
@@ -265,7 +265,32 @@ function Workspace({
   const [projectOpen, setProjectOpen] = useState(false)
   const [environmentOpen, setEnvironmentOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // Cloud rail: 'auto' collapses at <=1100px; an explicit choice is remembered.
+  const [sidebarChoice, setSidebarChoice] = useState<'auto' | 'collapsed' | 'expanded'>('auto')
+  const [sidebarNarrow, setSidebarNarrow] = useState(false)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('hakopod-sidebar')
+      if (saved === 'collapsed' || saved === 'expanded') setSidebarChoice(saved)
+    } catch {}
+    const narrow = window.matchMedia('(max-width: 1100px)')
+    const sync = () => setSidebarNarrow(narrow.matches)
+    sync()
+    narrow.addEventListener('change', sync)
+    return () => narrow.removeEventListener('change', sync)
+  }, [])
+  const sidebarCollapsed =
+    sidebarChoice === 'collapsed' || (sidebarChoice === 'auto' && sidebarNarrow)
+  const toggleSidebar = () => {
+    const next = sidebarCollapsed ? 'expanded' : 'collapsed'
+    // Matching the viewport default stores 'auto' so auto-collapse keeps working.
+    const choice = (next === 'collapsed') === sidebarNarrow ? 'auto' : next
+    setSidebarChoice(choice)
+    try {
+      if (choice === 'auto') localStorage.removeItem('hakopod-sidebar')
+      else localStorage.setItem('hakopod-sidebar', choice)
+    } catch {}
+  }
   const [commandOpen, setCommandOpen] = useState(false)
   const [preferencesOpen, setPreferencesOpen] = useState(false)
   const [assistantOpen, setAssistantOpen] = useState(false)
@@ -457,8 +482,8 @@ function Workspace({
         {dashboardEdition.cloud && (
           <aside className="hako-cloud-sidebar" aria-label="Workspace navigation">
             <div className="hako-cloud-sidebar-brand">
-              <Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="cloud-sidebar-navigation" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-                {sidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+              <Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="cloud-sidebar-navigation" onClick={toggleSidebar}>
+                {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
               </Button>
               <Link to={dashboardEdition.home} aria-label="Hakopod workspaces">
                 {sidebarCollapsed ? <Logo size={24} /> : <Brand />}
@@ -484,7 +509,7 @@ function Workspace({
               aria-expanded={mobileOpen}
               onClick={() => setMobileOpen(true)}
             >
-              <Icon name="menu" />
+              {dashboardEdition.cloud ? <ChevronRight size={16} /> : <Icon name="menu" />}
             </Button>
             <Link
               to={dashboardEdition.home}
