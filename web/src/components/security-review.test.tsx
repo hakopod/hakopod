@@ -70,6 +70,7 @@ test('security review lists each affected app once with a clear summary', () => 
   assert.match(html, />1 high</)
   assert.match(html, /Runtime update available/)
   assert.match(html, /aria-expanded="false"/)
+  assert.doesNotMatch(html, /aria-controls=/)
   assert.match(html, /Copy fix prompt/)
   assert.match(html, /Check again/)
   assert.doesNotMatch(html, /<table/)
@@ -84,6 +85,7 @@ test('an expanded row shows each advisory once with its services', () => {
   assert.equal(html.match(/Node.js request smuggling/g)?.length, 1)
   assert.match(html, /web, api/)
   assert.match(html, /node 20.1.0/)
+  assert.match(html, /aria-controls=/)
   assert.match(html, />Update web</)
   assert.match(html, />Update api</)
 })
@@ -155,4 +157,20 @@ test('sources show as one line with an edit action for managers', () => {
   assert.match(html, /Sources: Hakopod feed, OSV.dev/)
   assert.match(html, />Edit sources</)
   assert.doesNotMatch(html, /type="checkbox"/)
+})
+
+test('a fix shared by every advisory is stated once', () => {
+  const html = render(
+    [
+      app({
+        findings: [
+          finding({ fix: 'manual', fix_reason: 'Change the pinned digest.' }),
+          finding({ advisory_id: 'HKP-2', fix: 'manual', fix_reason: 'Change the pinned digest.' }),
+        ],
+      }),
+    ],
+    'app-1',
+  )
+  assert.equal(html.match(/Change the pinned digest\./g)?.length, 1)
+  assert.doesNotMatch(html, /<th scope="col">Fix<\/th>/)
 })

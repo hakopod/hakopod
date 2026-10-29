@@ -44,11 +44,11 @@ function Templates() {
   })
   const items = templates.data?.items || []
   const categories = [...new Set(items.map((item) => item.category))]
-  const matches = items.filter(
-    (item) =>
-      (!category || item.category === category) &&
-      `${item.name} ${item.description} ${item.category}`.toLowerCase().includes(q.toLowerCase()),
+  // Category counts follow the search so a chip never leads to an empty list.
+  const searched = items.filter((item) =>
+    `${item.name} ${item.description} ${item.category}`.toLowerCase().includes(q.toLowerCase()),
   )
+  const matches = searched.filter((item) => !category || item.category === category)
   const filter = (next: { q?: string; category?: string }, replace = false) =>
     void navigate({
       search: {
@@ -98,7 +98,9 @@ function Templates() {
               >
                 {label}{' '}
                 <span className="catalog-category-count">
-                  {value ? items.filter((item) => item.category === value).length : items.length}
+                  {value
+                    ? searched.filter((item) => item.category === value).length
+                    : searched.length}
                 </span>
               </Button>
             ),
@@ -153,7 +155,7 @@ function Templates() {
                 </h2>
                 {template.id === 'managed-actions' && <Badge>Pro</Badge>}
               </div>
-              <p className="template-card-description" title={template.description}>
+              <p className="template-card-description">
                 {template.description}
               </p>
               <p className="template-card-meta">

@@ -18,6 +18,7 @@
 .templates-search {
   position: relative;
   display: flex;
+  height: 40px;
   flex: 0 1 320px;
   align-items: center;
   min-width: min(100%, 240px);
@@ -33,6 +34,9 @@ html[data-edition] .templates-search input {
   height: 40px;
   min-height: 40px;
   padding-left: 36px;
+}
+.templates-toolbar .catalog-category-count {
+  opacity: 1;
 }
 .templates-count {
   margin-left: auto;
@@ -108,6 +112,14 @@ html[data-edition] .template-card h2 {
   color: var(--muted);
   font-size: var(--type-meta-size);
   line-height: var(--type-meta-line);
+}
+/* Two lines keep most descriptions whole; the subgrid keeps card rows aligned. */
+.template-card-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.template-card-meta {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -119,17 +131,21 @@ html[data-edition] .template-card h2 {
 @media (max-width: 639px) {
   .templates-search {
     flex-basis: 100%;
+    height: 44px;
   }
+  /* 16px input text stops mobile browsers zooming on focus. */
   html[data-edition] .templates-search input {
     height: 44px;
     min-height: 44px;
+    font-size: 16px;
   }
-  /* One scrollable row of filters instead of several 44px rows. */
+  /* One scrollable row of filters that bleeds to both viewport edges; the first label sits on the inset. */
   .templates-toolbar .catalog-categories {
     flex-wrap: nowrap;
-    max-width: 100%;
+    width: calc(100% + 2 * var(--space-4));
+    max-width: none;
     margin-inline: calc(-1 * var(--space-4));
-    padding-inline: var(--space-4);
+    padding-inline: calc(var(--space-4) - 10px) var(--space-4);
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -188,4 +204,38 @@ html[data-edition] .template-card h2 {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+}
+.template-guide-blockers summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+.template-guide-blockers ul {
+  margin-top: var(--space-2);
+  font-size: var(--type-meta-size);
+}
+
+/* Below the two-column layout, say what the template creates before asking for input. */
+@media (max-width: 1023px) {
+  .hako-form-page:has(.template-summary) .form-page-help {
+    order: -1;
+    margin: 0 0 var(--section-gap);
+    padding: 0;
+    border-top: 0;
+  }
+  .template-summary {
+    grid-column: 1 / -1;
+  }
+  .template-summary dl {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+@media (max-width: 639px) {
+  .template-summary-links a {
+    min-height: 44px;
+  }
+  .template-guide-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
 }
