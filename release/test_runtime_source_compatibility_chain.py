@@ -95,13 +95,22 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
                                      "source-compatibility-alpha68.json", "source-compatibility-alpha69.json"])
 
     def test_alpha71_preserves_exact_anchors_and_rejects_tampering(self):
-        self.check_published_review("ALPHA71_CHAIN_PREDECESSORS", "source-compatibility.json",
+        self.check_published_review("ALPHA71_CHAIN_PREDECESSORS", "source-compatibility-alpha71.json",
                                     ["source-compatibility-alpha59.json", "source-compatibility-alpha61.json",
                                      "source-compatibility-alpha62.json", "source-compatibility-alpha63.json",
                                      "source-compatibility-alpha64.json", "source-compatibility-alpha65.json",
                                      "source-compatibility-alpha66.json", "source-compatibility-alpha67.json",
                                      "source-compatibility-alpha68.json", "source-compatibility-alpha69.json",
                                      "source-compatibility-alpha70.json"])
+
+    def test_alpha72_preserves_exact_anchors_and_rejects_tampering(self):
+        self.check_published_review("ALPHA72_CHAIN_PREDECESSORS", "source-compatibility.json",
+                                    ["source-compatibility-alpha59.json", "source-compatibility-alpha61.json",
+                                     "source-compatibility-alpha62.json", "source-compatibility-alpha63.json",
+                                     "source-compatibility-alpha64.json", "source-compatibility-alpha65.json",
+                                     "source-compatibility-alpha66.json", "source-compatibility-alpha67.json",
+                                     "source-compatibility-alpha68.json", "source-compatibility-alpha69.json",
+                                     "source-compatibility-alpha70.json", "source-compatibility-alpha71.json"])
 
     def check_published_review(self, anchors, record_file, chain_files):
         for runtime, anchor in CHAIN[anchors].items():
