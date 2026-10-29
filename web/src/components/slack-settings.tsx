@@ -57,7 +57,11 @@ const fallbackEventLabels: Record<string, string> = {
 }
 
 function eventLabel(event: string, catalog: SlackEventCatalogEntry[] = []) {
-  return catalog.find((candidate) => candidate.id === event)?.label || fallbackEventLabels[event] || event
+  return (
+    catalog.find((candidate) => candidate.id === event)?.label ||
+    fallbackEventLabels[event] ||
+    event
+  )
 }
 
 function useSlackIntegration() {
@@ -459,9 +463,7 @@ function DeliveryList({
                   ? 'Test delivery'
                   : eventLabel(delivery.event, eventCatalog)
               }
-              detail={
-                delivery.last_error || plural(delivery.attempts, 'attempt')
-              }
+              detail={delivery.last_error || plural(delivery.attempts, 'attempt')}
               status={<Status value={delivery.status} small />}
               meta={timestamp(delivery.created_at)}
             />
@@ -491,11 +493,7 @@ export function SlackIntegrationPage() {
   }, [cache, connected, query, workspace.id])
   if (denied)
     return (
-      <FormPage
-        title="Slack notifications"
-        brandMark={<SlackLogo className="size-6 shrink-0" />}
-        breadcrumbs={[]}
-      >
+      <FormPage title="Slack notifications" breadcrumbs={[]}>
         {denied}
       </FormPage>
     )
@@ -505,21 +503,13 @@ export function SlackIntegrationPage() {
   const state = query.data as SlackIntegration
   const configuring = hasSearchMarker(search.configure)
   return !state.available && !state.configured ? (
-    <FormPage
-      title="Slack notifications"
-      brandMark={<SlackLogo className="size-6 shrink-0" />}
-      breadcrumbs={[]}
-    >
+    <FormPage title="Slack notifications" breadcrumbs={[]}>
       <SlackUnavailable state={state} />
     </FormPage>
   ) : !state.configured || (state.available && configuring) ? (
     <SlackConfiguration state={state} />
   ) : (
-    <FormPage
-      title="Slack notifications"
-      brandMark={<SlackLogo className="size-6 shrink-0" />}
-      breadcrumbs={[]}
-    >
+    <FormPage title="Slack notifications" breadcrumbs={[]}>
       <SlackOverview state={state} />
     </FormPage>
   )
@@ -590,8 +580,8 @@ function SlackEventSelector({
               Unavailable saved events
             </h3>
             <p className="field-help m-0 mt-1">
-              These saved events are not in the current catalog. Clear them before saving any
-              Slack changes.
+              These saved events are not in the current catalog. Clear them before saving any Slack
+              changes.
             </p>
           </div>
           <div className="grid gap-2">
@@ -725,13 +715,14 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
   })
   const listedChannels = useMemo(() => {
     const seen = new Set<string>()
-    return [...(channels.data?.items || []), ...additionalChannelPages.flatMap((page) => page.items)].filter(
-      (channel) => {
-        if (seen.has(channel.id)) return false
-        seen.add(channel.id)
-        return true
-      },
-    )
+    return [
+      ...(channels.data?.items || []),
+      ...additionalChannelPages.flatMap((page) => page.items),
+    ].filter((channel) => {
+      if (seen.has(channel.id)) return false
+      seen.add(channel.id)
+      return true
+    })
   }, [additionalChannelPages, channels.data?.items])
   const channelPageCount = (channels.data ? 1 : 0) + additionalChannelPages.length
   const nextChannelBefore = additionalChannelPages.length
@@ -933,7 +924,9 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
       cache.setQueryData(['slack-integration', workspace.id || 'installation'], latest)
       setConflict(false)
       setError('')
-      setNotice('The latest Slack revision is loaded. Your channel and event choices are still here.')
+      setNotice(
+        'The latest Slack revision is loaded. Your channel and event choices are still here.',
+      )
     } catch (cause) {
       setNotice('')
       setError(message(cause))
@@ -947,7 +940,9 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
       if (!checked) return current.filter((value) => value !== event)
       if (current.includes(event)) return current
       if (current.length >= 64) {
-        setError('You can select up to 64 notification events. Clear an event before selecting more.')
+        setError(
+          'You can select up to 64 notification events. Clear an event before selecting more.',
+        )
         return current
       }
       return [...current, event]
@@ -958,7 +953,9 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
     setEvents((current) => {
       const additions = selected.filter((event) => !current.includes(event))
       if (current.length + additions.length > 64) {
-        setError('You can select up to 64 notification events. Clear an event before selecting more.')
+        setError(
+          'You can select up to 64 notification events. Clear an event before selecting more.',
+        )
         return current
       }
       return [...current, ...additions]
@@ -981,7 +978,6 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
     return (
       <FormPage
         title="Connect Slack"
-        brandMark={<SlackLogo className="size-6 shrink-0" />}
         description={
           cloud
             ? 'Authorize the Hakopod Cloud Slack app for this workspace.'
@@ -1087,7 +1083,6 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
   return (
     <FormPage
       title="Configure Slack"
-      brandMark={<SlackLogo className="size-6 shrink-0" />}
       breadcrumbs={[]}
       keepFocusedControlsVisible
       help={
@@ -1105,14 +1100,19 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
         onSubmit={(event) => {
           event.preventDefault()
           if (review) {
-            if (!catalogAvailable) setError('Notification events are unavailable. Refresh before saving.')
+            if (!catalogAvailable)
+              setError('Notification events are unavailable. Refresh before saving.')
             else void save()
           } else if (!catalogAvailable)
-            setError('Notification events are unavailable. Refresh before changing this configuration.')
+            setError(
+              'Notification events are unavailable. Refresh before changing this configuration.',
+            )
           else if (unknownEvents.length > 0)
             setError('Clear unavailable saved events before reviewing Slack notifications.')
           else if (events.length > 64)
-            setError('You can select up to 64 notification events. Clear an event before reviewing.')
+            setError(
+              'You can select up to 64 notification events. Clear an event before reviewing.',
+            )
           else if (!channelID || events.length === 0)
             setError('Choose a channel and at least one event.')
           else {
@@ -1221,7 +1221,8 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
                 </div>
               )}
               <p className="field-help">
-                Invite the Hakopod app to the Slack channel you want to use. Hakopod verifies the selected channel with Slack before saving it.
+                Invite the Hakopod app to the Slack channel you want to use. Hakopod verifies the
+                selected channel with Slack before saving it.
               </p>
             </FormSection>
             <FormSection title="Notification events">

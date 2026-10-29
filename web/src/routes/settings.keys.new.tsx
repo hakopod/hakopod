@@ -11,6 +11,7 @@ export const Route = createFileRoute('/settings/keys/new')({
 })
 function NewKey() {
   const scope = Route.useSearch()
+  const navigate = Route.useNavigate()
   const projects = useProjects()
   const selected = resolveProjectRouteScope(projects.data?.items, scope.project, scope.environment)
   if (
@@ -24,19 +25,24 @@ function NewKey() {
       </div>
     )
   if (projects.isPending || (selected.status !== 'ready' && projects.isFetching)) return <Loading />
-  if (projects.error) return <ErrorState error={projects.error} retry={() => void projects.refetch()} />
-  if (selected.status !== 'ready') return (
-    <div>
-      <PageHeader title="Create API key" />
-      <Note>This project or environment is unavailable. Choose an accessible scope from API keys before creating a key.</Note>
-    </div>
-  )
+  if (projects.error)
+    return <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+  if (selected.status !== 'ready')
+    return (
+      <div>
+        <PageHeader title="Create API key" />
+        <Note>
+          This project or environment is unavailable. Choose an accessible scope from API keys
+          before creating a key.
+        </Note>
+      </div>
+    )
   return (
     <CreateKey
       page
       open
       onOpenChange={(open) => {
-        if (!open) window.location.assign('/settings?tab=keys')
+        if (!open) void navigate({ to: '/settings', search: { tab: 'keys' } })
       }}
       project={scope.project}
       environment={scope.environment}

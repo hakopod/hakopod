@@ -17,28 +17,33 @@
 .settings-hub-group:first-child {
   @apply pt-0;
 }
-.settings-hub-panel {
-  @apply gap-6 pb-6;
+.app-settings > .settings-hub-panel {
+  gap: var(--section-gap);
+  @apply pb-6;
 }
-.settings-section {
+.hako-settings-section {
   @apply grid min-w-0 content-start;
 }
-.settings-section > * {
+.hako-settings-section > * {
   @apply m-0;
 }
-.settings-section > * + * {
+.hako-settings-section > * + * {
   @apply mt-3;
 }
-.settings-section > .settings-section-head + * {
-  @apply mt-0;
+/* Header to content is the shared toolbar's 8px. */
+.hako-settings-section > .settings-section-head {
+  @apply mb-0 items-start;
 }
-.settings-section-head {
-  @apply items-start;
+.hako-settings-section > .settings-section-head + * {
+  @apply mt-2;
+}
+.settings-section-head :is(h2, h3) {
+  @apply m-0;
 }
 .settings-section-title {
   @apply grid min-w-0 gap-1;
 }
-.settings-section .settings-section-state {
+.hako-settings-section .settings-section-state {
   @apply m-0;
   color: var(--muted);
   font-size: var(--type-meta-size);
@@ -46,8 +51,7 @@
   overflow-wrap: anywhere;
 }
 .settings-section-3 + .settings-section-3 {
-  @apply border-t pt-6;
-  border-color: var(--hairline);
+  @apply mt-6;
 }
 .settings-empty {
   @apply flex flex-wrap items-center justify-between gap-x-4 gap-y-3 py-3;
@@ -81,6 +85,7 @@
 }
 .settings-row-audit .settings-row-status {
   @apply justify-self-end;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   font-size: var(--type-meta-size);
 }
@@ -110,19 +115,6 @@
     @apply -mx-6 px-6;
   }
 }
-.hako-settings-header {
-  display: flex;
-  align-items: center;
-  min-height: 56px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--hairline);
-}
-.hako-settings-header h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: -0.025em;
-}
 .hako-preferences .settings-nav {
   @apply p-6;
 
@@ -147,28 +139,6 @@
   @variant pointer-coarse {
     @apply min-h-11;
   }
-}
-.security-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  border: 1px solid var(--hairline);
-  margin-bottom: 32px;
-}
-.security-grid > .panel {
-  border: 0;
-  border-radius: 0;
-  border-bottom: 1px solid var(--hairline);
-  padding: 24px;
-}
-.security-grid > .panel:last-child {
-  border-bottom: 0;
-}
-.security-grid .service-summary-panel > p {
-  margin: 8px 0 20px;
-}
-.security-grid .section-toolbar {
-  margin-bottom: var(--space-3);
 }
 .settings-list-row {
   min-height: 72px;
@@ -223,35 +193,6 @@
 }
 .provider-section-title h2 {
   margin-bottom: 6px;
-}
-.settings-content .integration-card h2 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.settings-content .integration-grid {
-  gap: 0;
-  border: 1px solid var(--hairline);
-}
-.settings-content .integration-card {
-  gap: 12px;
-  padding: 14px 16px;
-  margin: 0;
-  border: 0;
-  border-bottom: 1px solid var(--hairline);
-}
-.settings-content .integration-card:last-child {
-  border-bottom: 0;
-}
-.settings-content .integration-card > div {
-  min-width: 0;
-}
-.settings-content .integration-card h2 {
-  margin-bottom: 4px;
-}
-.settings-content .integration-card p {
-  font-size: 13px;
-  line-height: 1.4;
 }
 .git-connection-panel .auth-form {
   margin-top: 28px;
@@ -439,20 +380,6 @@
 .backup-config-table code {
   white-space: nowrap;
 }
-.settings-content .license-card {
-  border: 1px solid var(--hairline);
-  padding: 24px;
-}
-.settings-content .license-feature-grid {
-  gap: 1px;
-  background: var(--hairline);
-  border: 1px solid var(--hairline);
-}
-.settings-content .license-feature-grid > * {
-  border: 0;
-  border-radius: 0;
-  background: var(--card);
-}
 .avatar-options > button {
   position: relative;
   border-radius: 3px;
@@ -460,8 +387,6 @@
 .avatar-options > button[aria-pressed='true'] {
   border-color: var(--state);
   background: var(--hatch-base);
-}
-@media (max-width: 1023px) {
 }
 @media (max-width: 600px) {
   .catalog-search {
@@ -477,25 +402,17 @@
   }
 }
 
-
-/* fork1: personal, teams, people */
-/* Member-style rows have no metadata slot; an empty one must not add a grid track. */
-.settings-row-member > .settings-row-meta:empty {
-  @apply hidden;
-}
+/* Personal, teams and people sections. */
 .settings-row-member .settings-row-identity > .profile-avatar {
   @apply mt-0 shrink-0;
 }
 /* Appearance keeps its theme cards inside the shared section anatomy. */
-.settings-section.hako-appearance,
-.settings-section.hako-accent-settings {
+.hako-settings-section.hako-appearance,
+.hako-settings-section.hako-accent-settings {
   @apply gap-0;
 }
 .hako-appearance > .hako-accent-settings {
   @apply mt-6 pt-6;
-}
-.hako-appearance .settings-section-head :is(h2, h3) {
-  @apply mb-0;
 }
 
 /* Feature rows keep fixed state and plan columns so they align down the list. */
@@ -515,10 +432,30 @@
   }
 }
 
-/* fork3: installation providers */
+/* Installation providers, email and logs. */
 .settings-log-form {
-  @apply grid max-w-2xl gap-3;
+  @apply grid gap-3;
 }
-.settings-section .review-facts + .note {
+.hako-settings-section .review-facts + .note {
   @apply mt-3;
+}
+/* Task page forms: one 16px rhythm; notes and the footer add no margin of their own. */
+.settings-task-form {
+  @apply grid gap-4;
+}
+.settings-task-form > :is(.note, .form-footer) {
+  @apply mt-0;
+}
+/* Inside a task-page card the card already frames the empty state. */
+.form-card-content > .settings-empty {
+  @apply border-0 py-0;
+}
+/* The section nav scrolls sideways on phones; the active item is scrolled into view. */
+.settings-hub-nav {
+  scrollbar-width: none;
+}
+.hako-accent-option {
+  @variant pointer-coarse {
+    @apply min-h-11;
+  }
 }

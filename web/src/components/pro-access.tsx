@@ -50,7 +50,7 @@ export function CustomRoles() {
       state={
         enabled
           ? !!roles.data?.items.length && plural(roles.data.items.length, 'custom role')
-          : 'Requires Pro. Fixed roles remain available; existing custom assignments grant no access while the entitlement is inactive.'
+          : 'Requires Pro · existing custom role assignments grant no access until it is active'
       }
       actions={!!roles.data?.items.length && createRole}
     >
@@ -301,10 +301,11 @@ export function OrganizationSecurity() {
         `${data.require_mfa ? 'Required' : 'Optional'} · ${data.ready_members} of ${data.members} people have a factor enrolled${!enabled && !data.require_mfa ? ' · Requires Pro to enable' : ''}`
       }
       actions={
-        data && (
+        // Only offer the review when it can be completed; the state line names the blocker.
+        data &&
+        (data.require_mfa || (enabled && scope.identity.mfa_verified)) && (
           <Button
             variant="outline"
-            disabled={!data.require_mfa && (!enabled || !scope.identity.mfa_verified)}
             onClick={() => {
               setError('')
               setReview(true)
@@ -322,9 +323,12 @@ export function OrganizationSecurity() {
       ) : (
         query.data && (
           <>
-            {!scope.identity.mfa_verified && !query.data.require_mfa && (
+            {enabled && !scope.identity.mfa_verified && !query.data.require_mfa && (
               <Note>
-                Verify your own MFA session in <Link to="/settings" search={{ tab: 'account' }}>Account security</Link>{' '}
+                Verify your own MFA session in{' '}
+                <Link to="/settings" search={{ tab: 'account' }}>
+                  Account security
+                </Link>{' '}
                 before enabling this policy.
               </Note>
             )}
@@ -344,7 +348,10 @@ export function OrganizationSecurity() {
               <div className="dialog-body">
                 <ReviewFacts
                   facts={[
-                    ['Policy', query.data.require_mfa ? 'Required → optional' : 'Optional → required'],
+                    [
+                      'Policy',
+                      query.data.require_mfa ? 'Required → optional' : 'Optional → required',
+                    ],
                     ['Enrolled', `${query.data.ready_members} of ${query.data.members} people`],
                   ]}
                 />

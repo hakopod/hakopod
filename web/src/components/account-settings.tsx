@@ -88,7 +88,9 @@ export default function AccountSettings() {
           />
         </SettingsRows>
         {data?.organization_mfa_required && (
-          <Note>MFA is required by your organization. Keep at least one authenticator or passkey.</Note>
+          <Note>
+            MFA is required by your organization. Keep at least one authenticator or passkey.
+          </Note>
         )}
         {data && !data.mfa_verified && data.totp_enabled && (
           <form
@@ -159,7 +161,9 @@ export default function AccountSettings() {
                 <Button
                   disabled={
                     !data.password_enabled ||
-                    Boolean(data.organization_mfa_required && data.totp_enabled && !data.passkeys.length)
+                    Boolean(
+                      data.organization_mfa_required && data.totp_enabled && !data.passkeys.length,
+                    )
                   }
                   onClick={() => setAction(data.totp_enabled ? 'disable' : 'totp')}
                 >
@@ -182,7 +186,9 @@ export default function AccountSettings() {
                       mark={<Icon name="key" size={16} />}
                       name={key.name}
                       detail={`Added ${timestamp(key.created_at)}`}
-                      meta={key.last_used_at ? `Last used ${timestamp(key.last_used_at)}` : 'Never used'}
+                      meta={
+                        key.last_used_at ? `Last used ${timestamp(key.last_used_at)}` : 'Never used'
+                      }
                       actions={
                         <Button
                           size="sm"
@@ -244,7 +250,11 @@ export default function AccountSettings() {
                 name={<span className="capitalize">{session.kind}</span>}
                 detail={`Created ${timestamp(session.created_at)} · Expires ${timestamp(session.expires_at)}`}
                 status={session.current && <SettingsState tone="ok">This session</SettingsState>}
-                meta={session.last_used_at ? `Last used ${timestamp(session.last_used_at)}` : 'Never used'}
+                meta={
+                  session.last_used_at
+                    ? `Last used ${timestamp(session.last_used_at)}`
+                    : 'Never used'
+                }
                 actions={
                   <Button
                     size="sm"

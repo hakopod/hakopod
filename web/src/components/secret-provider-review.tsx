@@ -50,17 +50,20 @@ export function SecretProviderReview({
       <FormSection title="Review provider">
         <ReviewFacts
           label="Provider configuration"
-          facts={rows.map(([label = '', value]) => [
-            label,
-            label === 'Provider' ? (
-              <span className="secret-provider-kind">
-                <SecretProviderIcon kind={configuration.kind} />
-                {value}
-              </span>
-            ) : (
-              value
-            ),
-          ] as const)}
+          facts={rows.map(
+            ([label = '', value]) =>
+              [
+                label,
+                label === 'Provider' ? (
+                  <span className="secret-provider-kind">
+                    <SecretProviderIcon kind={configuration.kind} />
+                    {value}
+                  </span>
+                ) : (
+                  value
+                ),
+              ] as const,
+          )}
         />
       </FormSection>
       <FormSection title="Review access">

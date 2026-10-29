@@ -66,7 +66,7 @@ export function GitConnectionsPanel() {
         query.data
           ? items.length
             ? `${plural(items.length, 'connection')}${attention ? `, ${attention} need${attention === 1 ? 's' : ''} attention` : ''}`
-            : 'No repository connections'
+            : undefined
           : undefined
       }
       actions={items.length > 0 && add}
@@ -198,10 +198,7 @@ function NewGitConnection({ initialProvider }: { initialProvider: GitProvider })
     </FormSection>
   )
   return provider === 'github' ? (
-    <FormPage
-      title="Add Git connection"
-      breadcrumbs={[]}
-    >
+    <FormPage title="Add Git connection" breadcrumbs={[]}>
       {picker}
       <GitHubAppSetup />
     </FormPage>
@@ -724,8 +721,8 @@ function GitConnectionForm({
                   )}
                   {current && replaceWebhook && (
                     <p className="field-help">
-                      Update the provider webhook with the new secret after saving. Deliveries signed
-                      with the old secret are rejected.
+                      Update the provider webhook with the new secret after saving. Deliveries
+                      signed with the old secret are rejected.
                     </p>
                   )}
                   {current && <GitWebhookAddress path={current.webhook_path} />}
