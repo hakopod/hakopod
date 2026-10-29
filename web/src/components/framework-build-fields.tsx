@@ -11,6 +11,7 @@ import {
   type FrameworkPlan,
 } from '../lib/framework-recipes'
 import { Button } from './ui/button'
+import { Icon } from './icons'
 export { frameworkLabel, type FrameworkPlan } from '../lib/framework-recipes'
 export const defaultFrameworkPlan = frameworkRecipe('node')
 
@@ -33,19 +34,16 @@ export function FrameworkBuildFields({
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div role="group" aria-label="Framework categories" className="flex flex-wrap gap-1">
+        <div role="group" aria-label="Show frameworks" className="framework-filter">
           {['All', 'Frontend', 'Fullstack', 'Backend', 'Static'].map((item) => (
-            <Button
+            <button
               key={item}
               type="button"
-              variant="ghost"
-              size="sm"
               aria-pressed={category === item}
-              className={`bg-transparent! border-transparent! ${category === item ? 'text-[var(--navigation-active)]!' : ''}`}
               onClick={() => setCategory(item)}
             >
               {item}
-            </Button>
+            </button>
           ))}
         </div>
         {detected && (
@@ -63,7 +61,7 @@ export function FrameworkBuildFields({
           </Button>
         )}
       </div>
-      <fieldset className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+      <fieldset className="framework-tiles">
         <legend className="sr-only">Framework</legend>
         {frameworkRecipes
           .filter(
@@ -71,16 +69,13 @@ export function FrameworkBuildFields({
               category === 'All' || item.category === category || item.id === value.framework,
           )
           .map((item) => (
-            <label
-              key={item.id}
-              className={`relative flex! min-w-0 cursor-pointer flex-col items-start gap-2 rounded-lg border p-3 ${item.id === value.framework ? 'border-[var(--navigation-active)] text-[var(--navigation-active)]!' : 'border-[var(--border)]'}`}
-            >
+            <label key={item.id} className="framework-tile">
               <input
                 type="radio"
                 name="framework-recipe"
                 value={item.id}
                 checked={value.framework === item.id}
-                className="peer sr-only"
+                className="sr-only"
                 onChange={() => {
                   drafts.current.set(value.framework, { ...value })
                   const next =
@@ -91,27 +86,26 @@ export function FrameworkBuildFields({
                   onChange({ ...next })
                 }}
               />
-              <span className="pointer-events-none absolute inset-0 rounded-lg peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--navigation-active)]" />
               <span
                 aria-hidden="true"
-                className="block h-6 w-6 bg-current"
-                style={{
-                  maskImage: `url(/icons/${item.icon}.svg)`,
-                  maskSize: 'contain',
-                  maskRepeat: 'no-repeat',
-                  maskPosition: 'center',
-                }}
+                className="framework-tile-mark"
+                style={{ maskImage: `url(/icons/${item.icon}.svg)` }}
               />
-              <span className="text-sm font-medium">{item.label}</span>
-              <span className="text-xs text-[var(--muted)]">
-                {item.id === value.framework ? 'Selected' : item.category}
+              <span className="framework-tile-check" aria-hidden="true">
+                <Icon name="check" size={14} />
+              </span>
+              <strong>{item.label}</strong>
+              <span>
+                {item.category}
                 {detected?.framework === item.id ? ' · Detected' : ''}
               </span>
             </label>
           ))}
       </fieldset>
       {fieldError(error, 'framework.framework') && (
-        <p role="alert">{fieldError(error, 'framework.framework')}</p>
+        <p className="field-error" role="alert">
+          {fieldError(error, 'framework.framework')}
+        </p>
       )}
       <p className="field-help">
         {frameworkRecipes.find((item) => item.id === value.framework)?.hint}. Switching frameworks
@@ -132,14 +126,14 @@ export function FrameworkBuildFields({
         className="form-disclosure"
         open={Boolean(error.includes('framework.')) || undefined}
       >
-        <summary className="flex flex-wrap items-center justify-between gap-2">
-          <span>Build settings</span>
+        <summary>
+          Build settings{' '}
           <span className="muted-text">
             {detected && !customized ? 'Detected' : 'Review recipe'} · {value.package_manager} ·{' '}
             {value.runtime === 'static' ? 'Static files' : 'Node server'}
           </span>
         </summary>
-        <div className="grid gap-4 pt-4 sm:grid-cols-2">
+        <div className="create-fields pt-4">
           <label>
             Runtime
             <SelectField

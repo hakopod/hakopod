@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import BuildForm from '../components/build-form'
-import { Empty, ErrorState, Loading } from '../components/shared'
+import { ErrorState, Loading, PageHeader } from '../components/shared'
+import { ResourceEmpty } from '../components/resource-card'
 import { client, unwrap } from '../lib/client'
 import { useScope, useResourceScope } from '../lib/scope'
 
@@ -27,11 +28,14 @@ function NewBuild() {
   useResourceScope(application.data)
   if (!scope.can('deployments:write'))
     return (
-      <Empty
-        icon="lock"
-        title="Deployment access required"
-        description="Choose a project where you can configure builds."
-      />
+      <div className="ops-page builds-page">
+        <PageHeader title="New source build" />
+        <ResourceEmpty
+          icon="lock"
+          title="Deployment access required"
+          description="Your role in this project does not allow build configuration. Choose a project where you can deploy, or ask a project administrator for access."
+        />
+      </div>
     )
   if (applicationId && application.isPending) return <Loading />
   if (application.error) return <ErrorState error={application.error} />
