@@ -6,7 +6,8 @@ import { message, timestamp } from '../lib/api'
 import { SelectField } from '../components/ui/select'
 import { dashboardEdition } from '../lib/dashboard-edition'
 import { Button } from '../components/ui/button'
-import { Empty, ErrorState, Loading, Note, PageHeader, RequestError } from '../components/shared'
+import { ErrorState, Loading, RequestError } from '../components/shared'
+import { Icon } from '../components/icons'
 
 export const Route = createFileRoute('/login/device')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -68,117 +69,136 @@ function DeviceConsent() {
       setBusy(false)
     }
   }
+  const permissions = request.data?.permissions || []
   return (
-    <>
-      <PageHeader
-        eyebrow="ACCOUNT / CLI ACCESS"
-        title="Connect your terminal"
-        description="Review the access requested by your Hakopod CLI."
-      />
+    <div className="device-consent">
       {done !== null ? (
-        <Empty
+        <DeviceMessage
           icon={done ? 'check' : 'lock'}
-          title={done ? 'Terminal authorized' : 'Request denied'}
+          title={done ? 'Terminal connected' : 'Request denied'}
           description="You can return to your terminal and close this page."
         />
       ) : !user_code ? (
-        <Empty
+        <DeviceMessage
+          icon="terminal"
           title="Missing device code"
-          description="Run hakopod login in your terminal and open its authorization link."
+          description="Run hakopod login in your terminal and open the link it prints."
         />
       ) : request.isPending ? (
-        <Loading />
+        <section className="device-card">
+          <Loading />
+        </section>
       ) : request.error ? (
-        <ErrorState error={request.error} />
+        <section className="device-card">
+          <ErrorState error={request.error} />
+        </section>
       ) : (
         request.data && (
-          <section className="panel service-summary-panel settings-narrow">
-            <h2>Authorize this request?</h2>
-            <dl className="service-definition-list">
-              <div>
-                <dt>Code</dt>
-                <dd>
-                  <code>{request.data.user_code}</code>
-                </dd>
-              </div>
-              <div>
-                <dt>Access scope</dt>
-                <dd>
-                  {selected
-                    ? installation || hostOnly ? selected.label : `${selected.project} / ${selected.environment}`
-                    : request.data.project
-                      ? `${request.data.project} / ${request.data.environment}`
-                      : 'Choose below'}
-                </dd>
-              </div>
-              {selected?.id && !installation && !hostOnly && (
-                <div>
-                  <dt>Workspace</dt>
-                  <dd className="break-words">{selected.label}</dd>
-                </div>
-              )}
-              <div>
-                <dt>Permissions</dt>
-                <dd>{request.data.permissions.join(', ')}</dd>
-              </div>
-              <div>
-                <dt>Expires</dt>
-                <dd>{timestamp(request.data.expires_at)}</dd>
-              </div>
-            </dl>
-            {installation && (
-              <Note>
-                This request grants installation administration, including projects, users and settings.
-                Pod commands and database queries require separate project connections.
-              </Note>
-            )}
-            {credentials && (
-              <Note>
-                Enabled agent tools can retrieve credentials. Retrieved secrets can enter the connected agent's context.
-              </Note>
-            )}
-            {hostTerminal && (
-              <Note>
-                This request permits host terminal commands on authorized nodes. Hakopod checks
-                your current host access for each request.
-              </Note>
-            )}
-            <SelectField
-              label={installation ? 'Installation' : hostOnly ? 'Host access' : 'Deployment destination'}
-              value={selection}
-              onValueChange={setSelection}
-              required
-              disabled={busy}
-              options={[
-                { value: '', label: installation ? 'Choose an installation' : hostOnly ? 'Choose host access' : 'Choose a destination' },
-                ...scopes.map((scope) => ({
-                  value: JSON.stringify([scope.id, scope.project, scope.environment]),
-                  label: scope.label,
-                })),
-              ]}
-            />
-            {scopes.length === 0 && (
-              <Note>
-                {installation
-                  ? 'No installation is available. Refresh the list or contact your administrator.'
-                  : hostOnly
-                    ? 'No host access is available. Ask your installation owner for a host grant, then refresh this list.'
-                  : `No deployment destination is ready. Set up a project${dashboardEdition.cloud ? ' and its compute' : ''}, then refresh this list.`}
-              </Note>
-            )}
-            <div className="toolbar-actions">
-              <Button asChild>
-                <a href="/" target="_blank" rel="noopener noreferrer">
-                  Open dashboard setup
-                </a>
-              </Button>
-              <Button disabled={request.isFetching || busy} onClick={() => void request.refetch()}>
-                Refresh scopes
-              </Button>
+          <section className="device-card" aria-labelledby="device-title">
+            <header className="device-head">
+              <span className="device-mark" aria-hidden="true">
+                <Icon name="terminal" size={18} />
+              </span>
+              <h1 id="device-title">Connect your terminal</h1>
+              <p>
+                Your Hakopod CLI is asking for access. Approve only if this code matches the one in
+                your terminal.
+              </p>
+            </header>
+            <div className="device-code">
+              <code aria-label="Device code">{request.data.user_code}</code>
+              <span>Expires {timestamp(request.data.expires_at)}</span>
             </div>
-            <Note>Approve only when this code matches the terminal where you started sign-in.</Note>
+            <div className="device-section">
+              <h2>It will be able to</h2>
+              <ul className="device-permissions">
+                {permissions.map((permission) => {
+                  const known = permissionLabels[permission]
+                  return (
+                    <li key={permission} data-risk={known?.risk || undefined}>
+                      <Icon name={known?.risk ? 'alert' : 'check'} size={14} />
+                      <span>{known?.label || permission}</span>
+                      {known && <code>{permission}</code>}
+                    </li>
+                  )
+                })}
+              </ul>
+              {installation && (
+                <p className="device-warning">
+                  This grants installation administration, including projects, users and settings.
+                  Pod commands and database queries require separate project connections.
+                </p>
+              )}
+              {credentials && (
+                <p className="device-warning">
+                  Enabled agent tools can retrieve credentials. Retrieved secrets can enter the
+                  connected agent&apos;s context.
+                </p>
+              )}
+              {hostTerminal && (
+                <p className="device-warning">
+                  Host terminal commands run on authorized nodes. Hakopod checks your current host
+                  access for each request.
+                </p>
+              )}
+            </div>
+            <div className="device-section">
+              <SelectField
+                label={
+                  installation
+                    ? 'Installation'
+                    : hostOnly
+                      ? 'Host access'
+                      : 'Deployment destination'
+                }
+                value={selection}
+                onValueChange={setSelection}
+                required
+                disabled={busy}
+                options={[
+                  {
+                    value: '',
+                    label: installation
+                      ? 'Choose an installation'
+                      : hostOnly
+                        ? 'Choose host access'
+                        : 'Choose a destination',
+                  },
+                  ...scopes.map((scope) => ({
+                    value: JSON.stringify([scope.id, scope.project, scope.environment]),
+                    label: scope.label,
+                  })),
+                ]}
+              />
+              {scopes.length === 0 && (
+                <p className="field-help">
+                  {installation
+                    ? 'No installation is available. Refresh the list or contact your administrator.'
+                    : hostOnly
+                      ? 'No host access is available. Ask your installation owner for a host grant, then refresh this list.'
+                      : `No deployment destination is ready. Set up a project${dashboardEdition.cloud ? ' and its compute' : ''}, then refresh this list.`}
+                </p>
+              )}
+              <div className="device-links">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={request.isFetching || busy}
+                  onClick={() => void request.refetch()}
+                >
+                  <Icon name="refresh" size={14} />
+                  Refresh list
+                </Button>
+                <Button asChild variant="ghost" size="sm">
+                  <a href="/" target="_blank" rel="noopener noreferrer">
+                    <Icon name="external" size={14} />
+                    Open dashboard setup
+                  </a>
+                </Button>
+              </div>
+            </div>
             {error && <RequestError error={error} />}
-            <div className="toolbar-actions">
+            <footer className="device-actions">
               <Button disabled={busy} onClick={() => void decide(false)}>
                 Deny
               </Button>
@@ -189,10 +209,45 @@ function DeviceConsent() {
               >
                 {busy ? 'Submitting…' : 'Authorize CLI'}
               </Button>
-            </div>
+            </footer>
           </section>
         )
       )}
-    </>
+    </div>
+  )
+}
+
+// Plain wording for the permissions a CLI can request; powerful ones are marked.
+const permissionLabels: Record<string, { label: string; risk?: boolean }> = {
+  'deployments:read': { label: 'See applications and deployments' },
+  'deployments:write': { label: 'Deploy and change applications' },
+  'logs:read': { label: 'Read logs' },
+  'jobs:read': { label: 'See jobs' },
+  'sessions:read': { label: 'See sign-in sessions' },
+  'networks:write': { label: 'Change private networks' },
+  'pods:exec': { label: 'Run commands in service containers', risk: true },
+  'databases:query': { label: 'Query databases', risk: true },
+  'agent:credentials': { label: 'Retrieve credentials', risk: true },
+  'agent:admin': { label: 'Administer the installation', risk: true },
+  'nodes:terminal': { label: 'Open a terminal on authorized hosts', risk: true },
+}
+
+function DeviceMessage({
+  icon,
+  title,
+  description,
+}: {
+  icon: string
+  title: string
+  description: string
+}) {
+  return (
+    <section className="device-card device-message" aria-labelledby="device-title">
+      <span className="device-mark" aria-hidden="true">
+        <Icon name={icon} size={18} />
+      </span>
+      <h1 id="device-title">{title}</h1>
+      <p>{description}</p>
+    </section>
   )
 }
