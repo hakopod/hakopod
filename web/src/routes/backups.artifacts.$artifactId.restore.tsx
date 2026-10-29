@@ -21,6 +21,7 @@ import {
   CompatibilityReport,
   type CompatibilityReportValue,
 } from '../components/compatibility-report'
+import { ReviewFacts, ReviewNotice } from '../components/operation-review'
 export const Route = createFileRoute('/backups/artifacts/$artifactId/restore')({
   component: RestoreBackup,
 })
@@ -191,11 +192,32 @@ function Restore({ artifactId }: { artifactId: string }) {
                 <dd>{plan.scope}</dd>
               </div>
             </dl>
+            <ReviewFacts
+              label="Consequences"
+              facts={[
+                ['Code', 'Unchanged. Applications keep using their current database.'],
+                [
+                  'Configuration',
+                  'Unchanged. Point your application at the new database only after checking it.',
+                ],
+                [
+                  'Data',
+                  <>
+                    A new database <code>{plan.confirmation}</code> is created from this recovery
+                    point. Existing databases are not overwritten.
+                  </>,
+                ],
+              ]}
+            />
             {Date.parse(plan.expires_at) <= Date.now() && (
-              <Note>This review expired. Choose the target again to refresh it.</Note>
+              <ReviewNotice tone="danger" title="This review expired">
+                Choose the target again to refresh it.
+              </ReviewNotice>
             )}
             {plan.warnings.map((warning) => (
-              <Note key={warning}>{warning}</Note>
+              <ReviewNotice key={warning} tone="warn" title="Plan warning">
+                {warning}
+              </ReviewNotice>
             ))}
             <label>
               Type the new database name to confirm
@@ -280,7 +302,12 @@ function Restore({ artifactId }: { artifactId: string }) {
         {error && <ErrorState error={error} />}
       </div>
       <div className="form-footer">
-        {plan ? (
+        <Button asChild>
+          <Link to="/backups" search={{ tab: 'artifacts' }}>
+            Cancel
+          </Link>
+        </Button>
+        {plan && (
           <Button
             disabled={busy}
             onClick={() => {
@@ -290,15 +317,10 @@ function Restore({ artifactId }: { artifactId: string }) {
           >
             Choose another target
           </Button>
-        ) : (
-          <Button asChild>
-            <Link to="/backups" search={{ tab: 'artifacts' }}>
-              Cancel
-            </Link>
-          </Button>
         )}
         <Button
           variant="primary"
+          aria-busy={busy || undefined}
           disabled={
             busy ||
             item.deletion_pending ||
@@ -356,7 +378,13 @@ function Restore({ artifactId }: { artifactId: string }) {
             }
           }}
         >
-          {busy ? 'Working…' : plan ? 'Restore to new database' : 'Review restore plan'}
+          {busy
+            ? plan
+              ? 'Restoring…'
+              : 'Planning…'
+            : plan
+              ? `Restore into ${plan.confirmation}`
+              : 'Review restore plan'}
         </Button>
       </div>
     </FormPage>
