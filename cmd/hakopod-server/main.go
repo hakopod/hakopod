@@ -43,6 +43,9 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "access-firewall-state" {
 		return runAccessFirewallState()
 	}
+	if len(os.Args) > 1 && os.Args[1] == "access-vpn-report" {
+		return runAccessVPNReport()
+	}
 	if err := loadOperatorConfig(); err != nil {
 		return err
 	}

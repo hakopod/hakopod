@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -70,12 +71,38 @@ func runAccessFirewallState() error {
 	if err = json.Unmarshal(record.Policy, &policy); err != nil {
 		return fmt.Errorf("the stored access policy is invalid")
 	}
-	state := struct {
+	type firewall struct {
 		Enabled    bool     `json:"enabled"`
 		AllowCIDRs []string `json:"allow_cidrs"`
-	}{policy.Enabled && policy.Firewall, []string{}}
-	if state.Enabled {
-		state.AllowCIDRs = policy.AllowCIDRs
+	}
+	state := struct {
+		Firewall firewall    `json:"firewall"`
+		VPN      *access.VPN `json:"vpn"`
+	}{firewall{policy.Enabled && policy.Firewall, []string{}}, policy.VPN}
+	if state.Firewall.Enabled {
+		state.Firewall.AllowCIDRs = policy.AllowCIDRs
 	}
 	return json.NewEncoder(os.Stdout).Encode(state)
+}
+
+// runAccessVPNReport stores what the host timer observed about the WireGuard
+// connector: the server's public key and the latest handshake.
+func runAccessVPNReport() error {
+	var report store.AccessVPNStatus
+	decoder := json.NewDecoder(io.LimitReader(os.Stdin, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&report); err != nil {
+		return fmt.Errorf("read the VPN report: %w", err)
+	}
+	if len(report.PublicKey) > 64 || len(report.Error) > 512 {
+		return fmt.Errorf("the VPN report exceeds its bounds")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := accessStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.ReportAccessVPN(ctx, report)
 }

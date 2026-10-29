@@ -14,6 +14,7 @@ import { GuidedEmpty } from './resource-card'
 
 type Access = components['schemas']['InstallationAccess']
 type Policy = components['schemas']['InstallationAccessPolicy']
+type VPNStatus = components['schemas']['InstallationAccessVPNStatus']
 
 const lines = (value: string) =>
   value
@@ -57,6 +58,16 @@ function AccessPolicyLoader() {
   return <AccessPolicyForm key={query.data.revision} current={query.data} />
 }
 
+function vpnState(status?: VPNStatus) {
+  if (!status) return 'Not connected'
+  if (status.error) return `Error · ${status.error}`
+  if (!status.latest_handshake) return 'Waiting for the first handshake'
+  const seconds = Math.round((Date.now() - new Date(status.latest_handshake).getTime()) / 1000)
+  return seconds < 180
+    ? `Connected · last handshake ${seconds}s ago`
+    : `Stale · last handshake ${Math.round(seconds / 60)} min ago`
+}
+
 function AccessPolicyForm({ current }: { current: Access }) {
   const cache = useQueryClient()
   const policy = current.policy
@@ -68,6 +79,11 @@ function AccessPolicyForm({ current }: { current: Access }) {
   const [proxies, setProxies] = useState(policy.trusted_proxy_cidrs.join('\n'))
   const [header, setHeader] = useState<Policy['client_ip_header']>(policy.client_ip_header || '')
   const [firewall, setFirewall] = useState(Boolean(policy.firewall))
+  const [vpnOn, setVPNOn] = useState(Boolean(policy.vpn))
+  const [vpnAddress, setVPNAddress] = useState(policy.vpn?.address || '')
+  const [vpnPeer, setVPNPeer] = useState(policy.vpn?.peer_public_key || '')
+  const [vpnEndpoint, setVPNEndpoint] = useState(policy.vpn?.peer_endpoint || '')
+  const [vpnAllowed, setVPNAllowed] = useState((policy.vpn?.allowed_ips || []).join('\n'))
   const [elsewhere, setElsewhere] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -101,6 +117,16 @@ function AccessPolicyForm({ current }: { current: Access }) {
               trusted_proxy_cidrs: source === 'trusted_proxy' ? lines(proxies) : [],
               client_ip_header: source === 'trusted_proxy' ? header : '',
               firewall: enabled && firewall,
+              ...(vpnOn
+                ? {
+                    vpn: {
+                      address: vpnAddress.trim(),
+                      peer_public_key: vpnPeer.trim(),
+                      peer_endpoint: vpnEndpoint.trim(),
+                      allowed_ips: lines(vpnAllowed),
+                    },
+                  }
+                : {}),
             },
           },
         }),
@@ -244,6 +270,57 @@ function AccessPolicyForm({ current }: { current: Access }) {
           Needs the private-access installer module on the server. Cluster nodes and the cluster
           network stay allowed; add the networks of any new agent nodes before they join.
         </p>
+        <SettingsSection
+          level={3}
+          title="WireGuard connector"
+          help="Connects this server to your WireGuard network as a client. The server's private key is generated on the server and never leaves it; add the public key below as a peer on your VPN. Only the networks you list are routed through the tunnel. Needs the private-access installer module."
+          state={vpnState(policy.vpn ? current.vpn_status : undefined)}
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={vpnOn}
+              onChange={(event) => setVPNOn(event.target.checked)}
+            />
+            Connect this server to a WireGuard network
+          </label>
+          {current.vpn_status?.public_key && (
+            <Field
+              label="Server public key"
+              readOnly
+              value={current.vpn_status.public_key}
+              help="Add this key as a peer on your WireGuard server."
+            />
+          )}
+          {vpnOn && (
+            <>
+              <Field
+                label="Server tunnel address"
+                value={vpnAddress}
+                placeholder="For example 10.99.0.2/32"
+                onChange={(event) => setVPNAddress(event.target.value)}
+              />
+              <Field
+                label="Peer public key"
+                value={vpnPeer}
+                onChange={(event) => setVPNPeer(event.target.value)}
+              />
+              <Field
+                label="Peer endpoint"
+                value={vpnEndpoint}
+                placeholder="For example vpn.example.com:51820"
+                onChange={(event) => setVPNEndpoint(event.target.value)}
+              />
+              <Field
+                label="Networks routed through the tunnel"
+                value={vpnAllowed}
+                placeholder="For example 10.99.0.0/24"
+                onChange={(event) => setVPNAllowed(event.target.value)}
+                help="Space or comma separated. Add the same networks to Allowed networks to admit people on the VPN."
+              />
+            </>
+          )}
+        </SettingsSection>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"

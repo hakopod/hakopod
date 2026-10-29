@@ -79,4 +79,25 @@ root timer that brings it in line with the saved policy every ten seconds:
   way out, run `sudo nft delete table inet hakopod_access`.
 - If the timer cannot read the policy, it keeps the current rules.
 
-VPN connectors are planned as a later phase.
+## WireGuard connector
+
+The same module can join this server to your WireGuard network as a client,
+so administrators reach the dashboard over the VPN. It needs
+`wireguard-tools` on the server.
+
+1. In **Settings → Network access**, tick **Connect this server to a WireGuard
+   network** and enter the server's tunnel address, your peer's public key
+   and endpoint, and the networks to route through the tunnel.
+2. Save. Within ten seconds the server generates its own key pair, creates the
+   `hakopod-wg` interface and shows its **Server public key**. The private key
+   stays in `/etc/hakopod/wireguard/private.key` (mode 0600) and is never sent
+   anywhere.
+3. Add that public key as a peer on your WireGuard server, with the tunnel
+   address as its allowed IP.
+4. Add the VPN's client networks to **Allowed networks** so people on the VPN
+   are admitted, then confirm from the VPN.
+
+The section shows the last handshake. Only the listed networks are routed
+through the tunnel; the default route and the cluster networks
+(`10.42.0.0/16`, `10.43.0.0/16`) are refused. Turning the connector off
+removes the interface on the next tick. Preshared keys are not supported yet.

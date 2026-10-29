@@ -160,8 +160,9 @@ func isLoopback(host string) bool {
 
 type accessPolicyView struct {
 	store.AccessPolicyRecord
-	ClientIP string `json:"client_ip"`
-	Licensed bool   `json:"licensed"`
+	ClientIP  string                 `json:"client_ip"`
+	Licensed  bool                   `json:"licensed"`
+	VPNStatus *store.AccessVPNStatus `json:"vpn_status,omitempty"`
 }
 
 func (s *Server) registerAccessRoutes(public, protected *http.ServeMux) {
@@ -195,6 +196,10 @@ func (s *Server) installationAccess(w http.ResponseWriter, r *http.Request) {
 	}
 	client, _ := clientAddress(r, policy)
 	view := accessPolicyView{AccessPolicyRecord: record, Licensed: s.Store.RequireFeatures(r.Context(), "private_access") == nil}
+	if view.VPNStatus, err = s.Store.AccessVPNStatus(r.Context()); err != nil {
+		failure(w, err)
+		return
+	}
 	if client.IsValid() {
 		view.ClientIP = client.String()
 	}
@@ -218,7 +223,7 @@ func (s *Server) putInstallationAccess(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_request", err.Error())
 		return
 	}
-	if policy.Enabled {
+	if policy.Enabled || policy.VPN != nil {
 		if err = s.Store.RequireFeatures(r.Context(), "private_access"); err != nil {
 			authFailure(w, err)
 			return

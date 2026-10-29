@@ -7486,6 +7486,27 @@ export interface components {
             allow_cidrs: string[];
             /** @description Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module. */
             firewall?: boolean;
+            vpn?: components["schemas"]["InstallationAccessVPN"];
+        };
+        InstallationAccessVPN: {
+            /** @description The server's tunnel address with its prefix, such as 10.99.0.2/32. */
+            address: string;
+            peer_public_key: string;
+            /** @description host:port of the WireGuard peer. */
+            peer_endpoint: string;
+            allowed_ips: string[];
+            keepalive?: number;
+        };
+        InstallationAccessVPNStatus: {
+            /** @description The server's WireGuard public key; add it as a peer. */
+            public_key: string;
+            /** Format: date-time */
+            latest_handshake?: string;
+            rx_bytes: number;
+            tx_bytes: number;
+            error: string;
+            /** Format: date-time */
+            reported_at: string;
         };
         InstallationAccess: {
             revision: number;
@@ -7498,6 +7519,7 @@ export interface components {
             /** @description The address the installation sees for this request. */
             client_ip: string;
             licensed: boolean;
+            vpn_status?: components["schemas"]["InstallationAccessVPNStatus"];
         };
         InstallationAccessInput: {
             expected_revision: number;

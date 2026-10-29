@@ -72,3 +72,27 @@ func TestAllowsKeepsRecoveryPathsOpen(t *testing.T) {
 		t.Fatal("an unknown client must be denied")
 	}
 }
+
+func TestVPNNormalizeRefusesRouteTakeover(t *testing.T) {
+	good := VPN{Address: "10.99.0.2/32", PeerPublicKey: "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=", PeerEndpoint: "vpn.example.com:51820", AllowedIPs: []string{"10.99.0.0/24", "10.99.0.0/24"}}
+	v, err := good.Normalize()
+	if err != nil || v.Keepalive != 25 || len(v.AllowedIPs) != 1 {
+		t.Fatalf("valid VPN = %+v, %v", v, err)
+	}
+	for name, change := range map[string]func(*VPN){
+		"default route":     func(v *VPN) { v.AllowedIPs = []string{"0.0.0.0/0"} },
+		"cluster network":   func(v *VPN) { v.AllowedIPs = []string{"10.42.0.0/24"} },
+		"service network":   func(v *VPN) { v.AllowedIPs = []string{"10.0.0.0/8"} },
+		"short key":         func(v *VPN) { v.PeerPublicKey = "AAAA" },
+		"no port":           func(v *VPN) { v.PeerEndpoint = "vpn.example.com" },
+		"bad host":          func(v *VPN) { v.PeerEndpoint = "vpn example;rm:51820" },
+		"address no prefix": func(v *VPN) { v.Address = "10.99.0.2" },
+		"no allowed ips":    func(v *VPN) { v.AllowedIPs = nil },
+	} {
+		bad := good
+		change(&bad)
+		if _, err := bad.Normalize(); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}

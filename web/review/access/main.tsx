@@ -7,6 +7,13 @@ import '../../src/styles.css'
 // Browser-only, synthetic test data for Settings → Network access. This module
 // never calls the original fetch.
 const scenario = new URLSearchParams(location.search).get('fixture') || 'off'
+const vpn = {
+  address: '10.99.0.2/32',
+  peer_public_key: 'xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=',
+  peer_endpoint: 'vpn.example.com:51820',
+  allowed_ips: ['10.99.0.0/24'],
+  keepalive: 25,
+}
 const policy = (enabled: boolean, firewall = false) => ({
   enabled,
   client_ip_source: 'connection',
@@ -14,10 +21,14 @@ const policy = (enabled: boolean, firewall = false) => ({
   client_ip_header: '',
   allow_cidrs: enabled ? ['10.8.0.0/24', '203.0.113.0/24'] : [],
   firewall,
+  ...(scenario === 'vpn' ? { vpn } : {}),
 })
 const access = {
   revision: scenario === 'off' || scenario === 'unlicensed' ? 0 : 3,
-  policy: policy(scenario === 'pending' || scenario === 'restricted', scenario === 'restricted'),
+  policy: policy(scenario !== 'off' && scenario !== 'unlicensed', scenario === 'restricted' || scenario === 'vpn'),
+  ...(scenario === 'vpn'
+    ? { vpn_status: { public_key: 'U0VSVkVSLVBVQkxJQy1LRVktRk9SLVJFVklFVy0wMD0=', latest_handshake: new Date(Date.now() - 42_000).toISOString(), rx_bytes: 18_204, tx_bytes: 40_996, error: '', reported_at: new Date().toISOString() } }
+    : {}),
   client_ip: '203.0.113.20',
   licensed: scenario !== 'unlicensed',
   ...(scenario === 'pending' ? { pending_until: new Date(Date.now() + 4 * 60_000).toISOString() } : {}),

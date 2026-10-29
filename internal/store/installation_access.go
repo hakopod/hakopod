@@ -157,3 +157,29 @@ func (s *Store) ResetAccessPolicy(ctx context.Context, actor string) (AccessPoli
 	}
 	return result, tx.Commit(ctx)
 }
+
+// AccessVPNStatus is reported by the host timer, never by an HTTP caller.
+type AccessVPNStatus struct {
+	PublicKey       string     `json:"public_key"`
+	LatestHandshake *time.Time `json:"latest_handshake,omitempty"`
+	RxBytes         int64      `json:"rx_bytes"`
+	TxBytes         int64      `json:"tx_bytes"`
+	Error           string     `json:"error"`
+	ReportedAt      time.Time  `json:"reported_at"`
+}
+
+func (s *Store) AccessVPNStatus(ctx context.Context) (*AccessVPNStatus, error) {
+	var v AccessVPNStatus
+	err := s.Pool.QueryRow(ctx, "SELECT public_key,latest_handshake,rx_bytes,tx_bytes,error,reported_at FROM installation_access_vpn WHERE singleton").Scan(&v.PublicKey, &v.LatestHandshake, &v.RxBytes, &v.TxBytes, &v.Error, &v.ReportedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return &v, err
+}
+
+func (s *Store) ReportAccessVPN(ctx context.Context, v AccessVPNStatus) error {
+	_, err := s.Pool.Exec(ctx, `INSERT INTO installation_access_vpn(singleton,public_key,latest_handshake,rx_bytes,tx_bytes,error,reported_at) VALUES(true,$1,$2,$3,$4,$5,now())
+		ON CONFLICT(singleton) DO UPDATE SET public_key=excluded.public_key,latest_handshake=excluded.latest_handshake,rx_bytes=excluded.rx_bytes,tx_bytes=excluded.tx_bytes,error=excluded.error,reported_at=now()`,
+		v.PublicKey, v.LatestHandshake, v.RxBytes, v.TxBytes, v.Error)
+	return err
+}
