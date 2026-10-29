@@ -23,6 +23,7 @@ import {
 } from '../components/resource-card'
 import { plural } from '../components/create-flow'
 import { ScopeLabel } from '../components/task-review'
+import { NetworkTopology } from '../components/network-topology'
 import { TOMLCode } from '../components/toml-code'
 import { VirtualNetworkForm } from '../components/virtual-network-form'
 import { Button } from '../components/ui/button'
@@ -142,6 +143,7 @@ function NetworkDetail() {
         Services connected to the same segment can reach each other at their private addresses,
         subject to each service’s peer restrictions. A service reaches only the segments it has joined.
       </p>
+      {segments.length > 0 && <NetworkTopology detail={detail} />}
       <div className="network-segments">
         {segments.map(([segment, grants]) => {
           const connected = detail.connections.filter((item) => item.segment === segment)
