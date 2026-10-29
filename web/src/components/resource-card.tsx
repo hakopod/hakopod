@@ -123,9 +123,17 @@ export function ExternalEndpoint({ url, label }: { url: string; label: string })
   )
 }
 
-export function ResourceRows({ label, children }: { label: string; children: ReactNode }) {
+export function ResourceRows({
+  label,
+  className = '',
+  children,
+}: {
+  label: string
+  className?: string
+  children: ReactNode
+}) {
   return (
-    <ul className="resource-rows" aria-label={label}>
+    <ul className={`resource-rows ${className}`} aria-label={label}>
       {children}
     </ul>
   )

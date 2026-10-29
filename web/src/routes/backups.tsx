@@ -30,6 +30,13 @@ import {
   PageHeader,
   Status,
 } from '../components/shared'
+import {
+  ResourceEmpty,
+  ResourceError,
+  ResourceRow,
+  ResourceRows,
+  StaleNotice,
+} from '../components/resource-card'
 
 export const Route = createFileRoute('/backups')({
   validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
@@ -181,109 +188,106 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
       </div>
       {active.isPending ? (
         <Loading />
-      ) : active.error ? (
-        <ErrorState error={active.error} />
+      ) : active.error && !active.data ? (
+        <ResourceError
+          error={active.error}
+          retry={() => void active.refetch()}
+          subject={artifacts ? 'stored backups' : 'backup jobs'}
+        />
       ) : !active.data?.items.length ? (
-        <Empty
+        <ResourceEmpty
           icon="archive"
           title={artifacts ? 'No stored backups' : 'No backup jobs yet'}
           description={
             artifacts
-              ? 'Completed backups appear here. Choose Restore to review a target and recover into a new database.'
+              ? 'Completed backups appear here, ready to restore into a new database.'
               : 'Run a backup after saving an object storage destination.'
           }
         />
       ) : (
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>{artifacts ? 'Stored at' : 'Job'}</th>
-                <th>Source</th>
-                <th>{artifacts ? 'Size' : 'Status'}</th>
-                <th>Created</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {artifacts
-                ? stored.data?.items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
+        <>
+          {active.error && (
+            <StaleNotice updatedAt={active.dataUpdatedAt} retry={() => void active.refetch()} />
+          )}
+          <ResourceRows label={artifacts ? 'Stored database backups' : 'Backup and restore jobs'}>
+            {artifacts
+              ? stored.data?.items.map((item) => (
+                  <ResourceRow
+                    key={item.id}
+                    identity={
+                      <>
                         <code title={item.object_key}>
                           {item.object_key.length > 48
                             ? `…${item.object_key.slice(-47)}`
                             : item.object_key}
                         </code>
                         <HeadingHelp title="Recovery scope">{item.scope}</HeadingHelp>
-                        {engineManaged(item) && <small className="field-help">Object prefix</small>}
-                        {item.deletion_pending && (
-                          <small className="field-help">Deletion pending</small>
-                        )}
-                      </td>
-                      <td>{sourceLabel(item.source)}</td>
-                      <td>
-                        {byteSize(item.bytes)}
+                      </>
+                    }
+                    detail={
+                      <>
+                        <span>{sourceLabel(item.source)}</span>
                         {engineManaged(item) && (
-                          <small className="field-help">Reported by the engine</small>
+                          <span>Object prefix · size reported by the engine</span>
                         )}
-                      </td>
-                      <td>{timestamp(item.created_at)}</td>
-                      <td>
-                        <div className="toolbar-actions">
-                          {item.deletion_pending ? (
-                            <Button size="sm" disabled>
-                              Restore
-                            </Button>
-                          ) : (
-                            <Button asChild size="sm">
-                              <Link
-                                to="/backups/artifacts/$artifactId/restore"
-                                params={{ artifactId: item.id }}
-                              >
-                                Restore
-                              </Link>
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={item.deletion_pending}
-                            onClick={() => setRemove(item)}
-                          >
-                            <Icon name="trash" />
-                            Delete
+                        {item.deletion_pending && <span>Deletion pending</span>}
+                      </>
+                    }
+                    status={<span className="resource-row-count">{byteSize(item.bytes)}</span>}
+                    meta={timestamp(item.created_at)}
+                    actions={
+                      <>
+                        {item.deletion_pending ? (
+                          <Button size="sm" disabled>
+                            Restore
                           </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                : jobs.data?.items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        <Link to="/backups/$jobId" params={{ jobId: item.id }}>
-                          {item.kind === 'restore' ? 'Restore database' : 'Database backup'}
-                        </Link>
-                        <code className="field-help">{item.id.slice(0, 12)}</code>
-                      </td>
-                      <td>{sourceLabel(item.source)}</td>
-                      <td>
-                        <Status value={item.status} small />
-                      </td>
-                      <td>{timestamp(item.created_at)}</td>
-                      <td>
-                        <Button asChild size="sm" variant="ghost">
-                          <Link to="/backups/$jobId" params={{ jobId: item.id }}>
-                            Inspect
-                            <Icon name="chevron" size={14} />
-                          </Link>
+                        ) : (
+                          <Button asChild size="sm">
+                            <Link
+                              to="/backups/artifacts/$artifactId/restore"
+                              params={{ artifactId: item.id }}
+                            >
+                              Restore
+                            </Link>
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={item.deletion_pending}
+                          onClick={() => setRemove(item)}
+                        >
+                          <Icon name="trash" />
+                          Delete
                         </Button>
-                      </td>
-                    </tr>
-                  ))}
-            </tbody>
-          </table>
-        </div>
+                      </>
+                    }
+                  />
+                ))
+              : jobs.data?.items.map((item) => (
+                  <ResourceRow
+                    key={item.id}
+                    identity={
+                      <Link
+                        className="resource-row-link"
+                        to="/backups/$jobId"
+                        params={{ jobId: item.id }}
+                      >
+                        {item.kind === 'restore' ? 'Restore database' : 'Database backup'}
+                      </Link>
+                    }
+                    detail={
+                      <>
+                        <code>{item.id.slice(0, 12)}</code>
+                        <span>{sourceLabel(item.source)}</span>
+                      </>
+                    }
+                    status={<Status value={item.status} small />}
+                    meta={timestamp(item.created_at)}
+                  />
+                ))}
+          </ResourceRows>
+        </>
       )}
       {(page.previous.length > 0 || next) && (
         <div className="table-pagination">
@@ -454,87 +458,87 @@ function Destinations() {
       </div>
       {destinations.isPending ? (
         <Loading />
-      ) : destinations.error ? (
-        <ErrorState error={destinations.error} />
+      ) : destinations.error && !destinations.data ? (
+        <ResourceError
+          error={destinations.error}
+          retry={() => void destinations.refetch()}
+          subject="backup destinations"
+        />
       ) : !destinations.data?.items.length ? (
-        <Empty
+        <ResourceEmpty
           icon="archive"
           title="No destinations configured"
-          description="Connect an S3-compatible bucket for encrypted database backups."
+          description="Backups need an S3-compatible bucket to store encrypted exports."
+          action={
+            <Button asChild>
+              <Link to="/backups/destinations/new">Add destination</Link>
+            </Button>
+          }
         />
       ) : (
-        <div className="table-container">
-          <table className="backup-config-table">
-            <thead>
-              <tr>
-                <th>Destination</th>
-                <th>Bucket / prefix</th>
-                <th>Region</th>
-                <th>Encryption recipient</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {destinations.data.items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <Link
-                      to="/backups/destinations/$destinationId/edit"
-                      params={{ destinationId: item.id }}
-                    >
-                      <strong>{item.name}</strong>
-                    </Link>
-                    <small>{item.endpoint}</small>
-                    <span className="copy-id">
-                      <code>{item.id.slice(0, 12)}</code>
-                      <Copy value={item.id} />
-                    </span>
-                  </td>
-                  <td>
-                    {item.bucket}
-                    <small>{item.prefix || 'Bucket root'}</small>
-                  </td>
-                  <td>{item.region}</td>
-                  <td>
-                    <span className="copy-id">
-                      <code title={item.encryption_recipient}>
-                        {item.encryption_recipient.slice(0, 18)}…
-                      </code>
-                      <Copy value={item.encryption_recipient} />
-                    </span>
-                  </td>
-                  <td>
-                    <RowActions
-                      label={item.name}
-                      actions={[
-                        {
-                          label: 'Edit destination',
-                          run: () =>
-                            void navigate({
-                              to: '/backups/destinations/$destinationId/edit',
-                              params: { destinationId: item.id },
-                            }),
-                        },
-                        {
-                          label: testing === item.id ? 'Testing connection…' : 'Test connection',
-                          run: () => void test(item),
-                          disabled: Boolean(testing),
-                        },
-                        {
-                          label: 'Remove destination',
-                          run: () => setRemove(item),
-                          destructive: true,
-                        },
-                      ]}
+        <ResourceRows label="Object storage destinations">
+          {destinations.data.items.map((item) => (
+            <ResourceRow
+              key={item.id}
+              identity={
+                <Link
+                  className="resource-row-link"
+                  to="/backups/destinations/$destinationId/edit"
+                  params={{ destinationId: item.id }}
+                >
+                  {item.name}
+                </Link>
+              }
+              detail={
+                <>
+                  <span>{item.endpoint}</span>
+                  <span>
+                    {item.bucket} / {item.prefix || 'bucket root'}
+                  </span>
+                  <span className="copy-id">
+                    <code>{item.id.slice(0, 12)}</code>
+                    <Copy value={item.id} label={`Copy destination ID ${item.id}`} />
+                  </span>
+                  <span className="copy-id">
+                    <code title={item.encryption_recipient}>
+                      {item.encryption_recipient.slice(0, 18)}…
+                    </code>
+                    <Copy
+                      value={item.encryption_recipient}
+                      label={`Copy encryption recipient for ${item.name}`}
                     />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </span>
+                </>
+              }
+              meta={item.region}
+              actions={
+                <RowActions
+                  label={item.name}
+                  actions={[
+                    {
+                      label: 'Edit destination',
+                      run: () =>
+                        void navigate({
+                          to: '/backups/destinations/$destinationId/edit',
+                          params: { destinationId: item.id },
+                        }),
+                    },
+                    {
+                      label: testing === item.id ? 'Testing connection…' : 'Test connection',
+                      run: () => void test(item),
+                      disabled: Boolean(testing),
+                    },
+                    {
+                      label: 'Remove destination',
+                      run: () => setRemove(item),
+                      destructive: true,
+                    },
+                  ]}
+                />
+              }
+            />
+          ))}
+        </ResourceRows>
       )}
       {result && (
         <div role="status">
@@ -572,66 +576,67 @@ function Schedules() {
       </div>
       {schedules.isPending ? (
         <Loading />
-      ) : schedules.error ? (
-        <ErrorState error={schedules.error} />
+      ) : schedules.error && !schedules.data ? (
+        <ResourceError
+          error={schedules.error}
+          retry={() => void schedules.refetch()}
+          subject="backup schedules"
+        />
       ) : !schedules.data?.items.length ? (
-        <Empty
+        <ResourceEmpty
           icon="clock"
           title="No schedules yet"
-          description="Choose a database, destination, interval, and retention count."
+          description="A schedule backs up one database at a fixed interval and keeps a set number."
+          action={
+            <Button asChild>
+              <Link to="/backups/schedules/new">Create schedule</Link>
+            </Button>
+          }
         />
       ) : (
-        <div className="table-container">
-          <table className="backup-config-table">
-            <thead>
-              <tr>
-                <th>Schedule</th>
-                <th>Source</th>
-                <th>Interval</th>
-                <th>Retention</th>
-                <th>Next run</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.data.items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <Status value={item.enabled ? 'active' : 'paused'} />
-                    <Link to="/backups/schedules/$scheduleId/edit" params={{ scheduleId: item.id }}>
-                      <strong>{item.name}</strong>
-                    </Link>
-                    <small>
-                      <code>{item.id.slice(0, 12)}</code>
-                    </small>
-                  </td>
-                  <td>{sourceLabel(item.source)}</td>
-                  <td>Every {item.interval_hours} hours</td>
-                  <td>{item.retention_count} backups</td>
-                  <td>{item.enabled ? timestamp(item.next_run_at) : 'Paused'}</td>
-                  <td>
-                    <RowActions
-                      label={item.name}
-                      actions={[
-                        {
-                          label: 'Edit schedule',
-                          run: () =>
-                            void navigate({
-                              to: '/backups/schedules/$scheduleId/edit',
-                              params: { scheduleId: item.id },
-                            }),
-                        },
-                        { label: 'Remove schedule', run: () => setRemove(item), destructive: true },
-                      ]}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ResourceRows label="Backup schedules">
+          {schedules.data.items.map((item) => (
+            <ResourceRow
+              key={item.id}
+              identity={
+                <Link
+                  className="resource-row-link"
+                  to="/backups/schedules/$scheduleId/edit"
+                  params={{ scheduleId: item.id }}
+                >
+                  {item.name}
+                </Link>
+              }
+              detail={
+                <>
+                  <code>{item.id.slice(0, 12)}</code>
+                  <span>{sourceLabel(item.source)}</span>
+                  <span>
+                    Every {item.interval_hours} hours · keeps {item.retention_count} backups
+                  </span>
+                </>
+              }
+              status={<Status value={item.enabled ? 'active' : 'paused'} small />}
+              meta={item.enabled ? `Next ${timestamp(item.next_run_at)}` : 'Paused'}
+              actions={
+                <RowActions
+                  label={item.name}
+                  actions={[
+                    {
+                      label: 'Edit schedule',
+                      run: () =>
+                        void navigate({
+                          to: '/backups/schedules/$scheduleId/edit',
+                          params: { scheduleId: item.id },
+                        }),
+                    },
+                    { label: 'Remove schedule', run: () => setRemove(item), destructive: true },
+                  ]}
+                />
+              }
+            />
+          ))}
+        </ResourceRows>
       )}
       {remove && (
         <RemoveBackupConfig

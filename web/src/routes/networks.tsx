@@ -1,15 +1,20 @@
 import { useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { client, unwrap } from '../lib/client'
 import { relative } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
-import { Empty, ErrorState, Loading, PageHeader } from '../components/shared'
+import { Loading, PageHeader } from '../components/shared'
+import {
+  ResourceEmpty,
+  ResourceError,
+  ResourceRow,
+  ResourceRows,
+  StaleNotice,
+} from '../components/resource-card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { Badge } from '../components/ui/surfaces'
 import { dashboardEdition } from '../lib/dashboard-edition'
 
 export const Route = createFileRoute('/networks')({ component: NetworkRoute })
@@ -44,14 +49,16 @@ function Networks() {
         description="Private connections between applications in this project and environment."
         action={
           networks.data?.can_manage && (
-            <Link to="/networks/new" className="button button-primary">
-              <Icon name="plus" size={14} />
-              New network
-            </Link>
+            <Button asChild variant="primary">
+              <Link to="/networks/new">
+                <Icon name="plus" size={14} />
+                New network
+              </Link>
+            </Button>
           )
         }
       />
-      <section className="ops-resource-list" aria-label="Virtual networks">
+      <section className="ops-resource-list resource-section" aria-label="Virtual networks">
         <div className="resource-toolbar">
           <div className="ops-search-input">
             <Icon name="search" size={15} />
@@ -75,74 +82,89 @@ function Networks() {
         </div>
         {networks.isPending ? (
           <Loading />
-        ) : networks.error ? (
-          <ErrorState error={networks.error} retry={() => void networks.refetch()} />
+        ) : networks.error && !networks.data ? (
+          <ResourceError
+            error={networks.error}
+            retry={() => void networks.refetch()}
+            subject="networks in this environment"
+          />
         ) : !items.length ? (
-          <Empty
+          <ResourceEmpty
             icon="network"
-            title="Connect applications privately"
+            title="No virtual networks"
             description={
               networks.data?.can_manage
-                ? 'Create a network, grant applications access to its segments, then connect their services.'
+                ? 'A network lets granted applications connect their services privately.'
                 : dashboardEdition.cloud
                   ? 'Your workspace owner can manage private networks. The connected node key must include networks:write, deployment read and write permissions.'
                   : 'A project administrator can create a network and grant applications access.'
             }
             action={
               networks.data?.can_manage && (
-                <Link to="/networks/new" className="button button-secondary">
-                  Create a network
-                </Link>
+                <Button asChild>
+                  <Link to="/networks/new">Create a network</Link>
+                </Button>
               )
             }
           />
         ) : !filtered.length ? (
-          <Empty
+          <ResourceEmpty
             icon="search"
             title="No matching networks"
             description="Try another name or description."
           />
         ) : (
-          <div className="ops-catalog-grid">
-            {filtered.map((network) => (
-              <article className="ops-catalog-card interactive" key={network.name}>
-                <Brackets />
-                <div className="ops-card-heading">
-                  <Icon name="network" size={23} />
-                  <Badge>r{network.revision}</Badge>
-                </div>
-                <h2>
-                  <Link
-                    to="/networks/$networkName"
-                    params={{ networkName: network.name }}
-                    className="ops-card-link"
-                    aria-label={`Open ${network.name} network`}
-                  >
-                    {network.name}
-                  </Link>
-                </h2>
-                <p className="virtual-network-description">
-                  {network.description || 'Private application network'}
-                </p>
-                <div className="virtual-network-segment-tags">
-                  {network.segments.slice(0, 4).map((segment) => (
-                    <span className="label-chip" key={segment}>
-                      {segment}
+          <>
+            {networks.error && (
+              <StaleNotice
+                updatedAt={networks.dataUpdatedAt}
+                retry={() => void networks.refetch()}
+              />
+            )}
+            <ResourceRows label="Virtual networks">
+              {filtered.map((network) => (
+                <ResourceRow
+                  key={network.name}
+                  identity={
+                    <Link
+                      to="/networks/$networkName"
+                      params={{ networkName: network.name }}
+                      className="resource-row-link"
+                      aria-label={`Open ${network.name} network`}
+                    >
+                      {network.name}
+                    </Link>
+                  }
+                  detail={
+                    <>
+                      <span>{network.description || 'Private application network'}</span>
+                      <span>r{network.revision}</span>
+                      {network.segments.slice(0, 4).map((segment) => (
+                        <code key={segment}>{segment}</code>
+                      ))}
+                      {network.segments.length > 4 && (
+                        <span>+{network.segments.length - 4} more</span>
+                      )}
+                    </>
+                  }
+                  status={
+                    <span className="resource-row-count">
+                      {network.segments.length}{' '}
+                      {network.segments.length === 1 ? 'segment' : 'segments'}
                     </span>
-                  ))}
-                  {network.segments.length > 4 && (
-                    <span className="label-chip">+{network.segments.length - 4} segments</span>
-                  )}
-                </div>
-                <div className="ops-card-footer">
-                  <time dateTime={network.updated_at} title={network.updated_at}>
-                    {relative(network.updated_at)}
-                  </time>
-                  <Icon name="arrow" size={15} />
-                </div>
-              </article>
-            ))}
-          </div>
+                  }
+                  meta={
+                    <>
+                      Updated{' '}
+                      <time dateTime={network.updated_at} title={network.updated_at}>
+                        {relative(network.updated_at).toLowerCase()}
+                      </time>
+                    </>
+                  }
+                />
+              ))}
+            </ResourceRows>
+          </>
         )}
         <div className="resource-footnote">
           <span>{items.length} networks</span>

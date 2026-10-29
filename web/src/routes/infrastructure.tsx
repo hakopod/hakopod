@@ -20,7 +20,14 @@ import { timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
-import { Copy, Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Copy, Loading, Note, PageHeader, Status } from '../components/shared'
+import {
+  ResourceEmpty,
+  ResourceError,
+  ResourceRow,
+  ResourceRows,
+  StaleNotice,
+} from '../components/resource-card'
 import { NodeMetrics } from '../components/node-metrics'
 
 const NodeEnrollments = lazy(() => import('../components/node-controls'))
@@ -257,7 +264,7 @@ function Nodes() {
           <small>After system reservations</small>
         </div>
       </dl>
-      <section className="ops-resource-list" aria-label="Cluster nodes">
+      <section className="ops-resource-list resource-section" aria-label="Cluster nodes">
         <div className="resource-toolbar">
           <div className="ops-search-input">
             <Icon name="search" size={15} />
@@ -281,134 +288,105 @@ function Nodes() {
         </div>
         {nodes.isPending ? (
           <Loading />
-        ) : nodes.error ? (
-          <ErrorState error={nodes.error} retry={probe} />
+        ) : nodes.error && !nodes.data ? (
+          <ResourceError error={nodes.error} retry={probe} subject="cluster nodes" />
         ) : !items.length ? (
-          <Empty
+          <ResourceEmpty
             icon="server"
             title="No nodes reported"
-            description="Check the management API’s Kubernetes context and cluster connectivity. Nodes appear when the cluster returns them."
+            description="Nodes appear when the cluster returns them. Check the management API’s Kubernetes context and connectivity."
           />
         ) : !filtered.length ? (
-          <Empty icon="search" title="No matching nodes" description="Try a different node name." />
+          <ResourceEmpty
+            icon="search"
+            title="No matching nodes"
+            description="Try a different node name."
+          />
         ) : (
-          <div
-            className="table-container ops-table focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--navigation-active)]"
-            tabIndex={0}
-            role="region"
-            aria-label="Node table. Use left and right arrow keys to view all columns."
-            onKeyDown={(event) => {
-              const scroll = event.currentTarget
-              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                event.preventDefault()
-                scroll.scrollBy({ left: event.key === 'ArrowRight' ? 80 : -80 })
-              } else if (event.key === 'Home' || event.key === 'End') {
-                event.preventDefault()
-                scroll.scrollTo({ left: event.key === 'Home' ? 0 : scroll.scrollWidth })
-              }
-            }}
-          >
-            <table>
-              <thead>
-                <tr>
-                  <th>Node / state</th>
-                  <th>CPU</th>
-                  <th>Memory</th>
-                  <th>Pods / GPUs</th>
-                  <th>Kubernetes</th>
-                  <th>
-                    <span className="sr-only">Node actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((node) => (
-                  <tr key={node.name}>
-                    <td>
-                      <div className="ops-object">
-                        <Status value={node.ready ? 'ready' : 'not ready'} small />
-                        <button
-                          type="button"
-                          className="ops-object-name"
-                          onClick={() => setSelectedNode(node.name)}
-                        >
-                          {node.name}
-                        </button>
-                      </div>
-                      <small className="ops-table-sub">
+          <>
+            {nodes.error && <StaleNotice updatedAt={nodes.dataUpdatedAt} retry={probe} />}
+            <ResourceRows label="Cluster nodes" className="node-rows">
+              {filtered.map((node) => (
+                <ResourceRow
+                  key={node.name}
+                  identity={
+                    <button
+                      type="button"
+                      className="resource-row-link"
+                      aria-haspopup="dialog"
+                      onClick={() => setSelectedNode(node.name)}
+                    >
+                      {node.name}
+                    </button>
+                  }
+                  detail={
+                    <>
+                      <span>
                         {node.control_plane ? 'Control plane' : 'Worker'} · {node.architecture} ·{' '}
                         {node.unschedulable ? 'Cordoned' : 'Schedulable'}
-                      </small>
-                    </td>
-                    <td>
-                      <span className="mono">
-                        {node.metrics.available && node.metrics.cpu_millicores !== undefined
-                          ? `${node.metrics.cpu_millicores.toFixed(0)} mCPU used`
-                          : 'Usage unavailable'}
                       </span>
-                      <small className="ops-table-sub mono">
-                        {cpu(node.allocatable_cpu)} cores allocatable
-                      </small>
-                    </td>
-                    <td>
-                      <span className="mono">
-                        {node.metrics.available && node.metrics.memory_bytes !== undefined
-                          ? `${gib(node.metrics.memory_bytes)} used`
-                          : 'Usage unavailable'}
+                      <span>
+                        {node.pods} pods · {node.allocatable_gpu} GPUs
                       </span>
-                      <small className="ops-table-sub mono">
-                        {gib(memory(node.allocatable_memory))} allocatable
-                      </small>
-                    </td>
-                    <td className="mono">
-                      {node.pods} pods
-                      <small className="ops-table-sub">{node.allocatable_gpu} GPUs</small>
-                    </td>
-                    <td>
                       <code>{node.kubelet_version}</code>
-                    </td>
-                    <td>
-                      <Menu
-                        trigger={
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label={`Actions for ${node.name}`}
+                    </>
+                  }
+                  status={<Status value={node.ready ? 'ready' : 'not ready'} small />}
+                  meta={
+                    <>
+                      <span className="block">
+                        CPU{' '}
+                        {node.metrics.available && node.metrics.cpu_millicores !== undefined
+                          ? `${node.metrics.cpu_millicores.toFixed(0)} mCPU`
+                          : 'unavailable'}{' '}
+                        / {cpu(node.allocatable_cpu)} cores
+                      </span>
+                      <span className="block">
+                        Memory{' '}
+                        {node.metrics.available && node.metrics.memory_bytes !== undefined
+                          ? gib(node.metrics.memory_bytes)
+                          : 'unavailable'}{' '}
+                        / {gib(memory(node.allocatable_memory))}
+                      </span>
+                    </>
+                  }
+                  actions={
+                    <Menu
+                      trigger={
+                        <Button size="icon" variant="ghost" aria-label={`Actions for ${node.name}`}>
+                          <span aria-hidden="true">···</span>
+                        </Button>
+                      }
+                    >
+                      <MenuItem onSelect={() => setSelectedNode(node.name)}>
+                        <Icon name="server" size={14} />
+                        Inspect node
+                      </MenuItem>
+                      {scope.identity.admin && !node.control_plane && (
+                        <>
+                          <MenuItem
+                            onSelect={() =>
+                              setAction({ node: structuredClone(node), action: 'cordon' })
+                            }
                           >
-                            <span aria-hidden="true">···</span>
-                          </Button>
-                        }
-                      >
-                        <MenuItem onSelect={() => setSelectedNode(node.name)}>
-                          <Icon name="server" size={14} />
-                          Inspect node
-                        </MenuItem>
-                        {scope.identity.admin && !node.control_plane && (
-                          <>
-                            <MenuItem
-                              onSelect={() =>
-                                setAction({ node: structuredClone(node), action: 'cordon' })
-                              }
-                            >
-                              {node.unschedulable ? 'Uncordon' : 'Cordon'}
-                            </MenuItem>
-                            <MenuItem
-                              destructive
-                              onSelect={() =>
-                                setAction({ node: structuredClone(node), action: 'drain' })
-                              }
-                            >
-                              Review drain
-                            </MenuItem>
-                          </>
-                        )}
-                      </Menu>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                            {node.unschedulable ? 'Uncordon' : 'Cordon'}
+                          </MenuItem>
+                          <MenuItem
+                            destructive
+                            onSelect={() =>
+                              setAction({ node: structuredClone(node), action: 'drain' })
+                            }
+                          >
+                            Review drain
+                          </MenuItem>
+                        </>
+                      )}
+                    </Menu>
+                  }
+                />
+              ))}
+            </ResourceRows>
+          </>
         )}
         <div className="resource-footnote">
           <span>

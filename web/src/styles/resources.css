@@ -194,7 +194,10 @@
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(112px, max-content) 144px 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, max-content) var(
+      --resource-row-meta,
+      144px
+    ) minmax(44px, max-content);
   grid-template-areas: 'identity status meta actions';
   align-items: center;
   gap: 4px 16px;
@@ -234,6 +237,23 @@
   text-decoration: none;
   overflow-wrap: anywhere;
 }
+.resource-row button.resource-row-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: var(--type-card-weight);
+  text-align: left;
+  cursor: pointer;
+}
+.resource-row-description {
+  flex-basis: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 /* The row draws the focus ring, so the link itself does not draw a second one. */
 html[data-edition] .resource-row .resource-row-link:focus-visible {
   outline: none;
@@ -265,6 +285,12 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
   grid-area: status;
   min-width: 0;
 }
+.resource-row-count {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  white-space: nowrap;
+}
 .resource-row-meta {
   grid-area: meta;
   min-width: 0;
@@ -278,6 +304,7 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
   grid-area: actions;
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 .resource-row :is(.resource-row-actions, .resource-row-detail) :is(a, button) {
   position: relative;
@@ -293,6 +320,10 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
   padding: 0 0 12px;
   border: 0;
   background: transparent;
+}
+
+.node-rows {
+  --resource-row-meta: 224px;
 }
 
 /* Compact empty and stale states replace the hero card inside resource sections. */
@@ -342,7 +373,7 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
 
 @media (max-width: 1023px) {
   .resource-row {
-    grid-template-columns: minmax(0, 1fr) minmax(96px, max-content) 44px;
+    grid-template-columns: minmax(0, 1fr) minmax(96px, max-content) minmax(44px, max-content);
     grid-template-areas:
       'identity status actions'
       'meta meta actions';
@@ -368,5 +399,13 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
   }
   .resource-row-actions {
     align-self: start;
+  }
+  /* Several visible actions take their own line instead of squeezing the identity. */
+  .resource-row:has(.resource-row-actions > :nth-child(2)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'identity' 'status' 'meta' 'actions';
+  }
+  .resource-row:has(.resource-row-actions > :nth-child(2)) .resource-row-actions {
+    justify-content: flex-start;
   }
 }
