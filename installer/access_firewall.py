@@ -108,6 +108,7 @@ def remove(run=subprocess.run, saved=SAVED):
 
 import access_vpn  # noqa: E402  (installed next to this file)
 import access_vpn_server  # noqa: E402
+import access_connectors  # noqa: E402
 
 STATE_COMMAND = ['systemd-run', '--wait', '--pipe', '--quiet', '--collect', '--uid=hakopod-api', '--gid=hakopod-api',
                  '--property=EnvironmentFile=/etc/hakopod/api.env', '/opt/hakopod/current/hakopod-server', 'access-firewall-state']
@@ -140,6 +141,11 @@ def sync():
         server = access_vpn_server.apply(state.get('vpn_server'), json.loads(Path('/etc/hakopod/config.json').read_text()))
     except (subprocess.SubprocessError, ValueError, OSError, KeyError) as error:
         server, code = {'server_public_key': '', 'error': str(error)[:500], 'peers': []}, 1
+    connector = access_connectors.apply(state)
+    subprocess.run([*STATE_COMMAND[:-1], 'access-connector-report'], timeout=60, text=True,
+                   input=json.dumps(connector or {'type': '', 'connected': False, 'address': '', 'error': ''}))
+    if connector and connector['error']:
+        code = 1
     if server is not None:
         subprocess.run([*STATE_COMMAND[:-1], 'access-vpn-server-report'], input=json.dumps(server), text=True, timeout=60)
     if status is not None or state.get('vpn') is None:
@@ -155,7 +161,7 @@ def install():
         if shutil.which(tool) is None:
             raise ValueError(f'{tool} is required: install the {package} package, then run this module again')
     HOME.mkdir(mode=0o755, parents=True, exist_ok=True)
-    for name in ('access_firewall.py', 'access_vpn.py', 'access_vpn_server.py'):
+    for name in ('access_firewall.py', 'access_vpn.py', 'access_vpn_server.py', 'access_connectors.py'):
         shutil.copyfile(Path(__file__).resolve().parent / name, HOME / name)
         os.chmod(HOME / name, 0o644)
     (UNITS / 'hakopod-access-firewall.service').write_text("""[Unit]

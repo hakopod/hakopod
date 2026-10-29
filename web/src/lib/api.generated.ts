@@ -7523,6 +7523,9 @@ export interface components {
             firewall?: boolean;
             vpn?: components["schemas"]["InstallationAccessVPN"];
             vpn_server?: components["schemas"]["InstallationAccessVPNServer"];
+            tailscale?: components["schemas"]["InstallationAccessTailscale"];
+            openvpn?: components["schemas"]["InstallationAccessOpenVPN"];
+            ipsec?: components["schemas"]["InstallationAccessIPsec"];
             /** @description Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on. */
             vpn_only?: boolean;
         };
@@ -7542,6 +7545,26 @@ export interface components {
             network: string;
             /** @description This server's public host:port written into device profiles. */
             endpoint: string;
+        };
+        InstallationAccessTailscale: {
+            hostname?: string;
+            tags?: string[];
+            /** @description Headscale or another coordination server; empty for Tailscale. */
+            login_server?: string;
+        };
+        InstallationAccessOpenVPN: {
+            routes: string[];
+        };
+        InstallationAccessIPsec: {
+            remote_address: string;
+            local_id: string;
+            remote_id: string;
+            remote_networks: string[];
+        };
+        InstallationAccessSecrets: {
+            tailscale_auth_key?: string;
+            openvpn_profile?: string;
+            ipsec_psk?: string;
         };
         InstallationAccessVPNPeer: {
             id: string;
@@ -7592,10 +7615,20 @@ export interface components {
             client_ip: string;
             licensed: boolean;
             vpn_status?: components["schemas"]["InstallationAccessVPNStatus"];
+            connector_secrets_set?: {
+                [key: string]: boolean;
+            };
+            connector_status?: {
+                type?: string;
+                connected?: boolean;
+                address?: string;
+                error?: string;
+            };
         };
         InstallationAccessInput: {
             expected_revision: number;
             policy: components["schemas"]["InstallationAccessPolicy"];
+            connector_secrets?: components["schemas"]["InstallationAccessSecrets"];
             /** @description Save even though the policy blocks this request's network; confirm from an allowed network within five minutes. */
             confirm_from_elsewhere?: boolean;
         };

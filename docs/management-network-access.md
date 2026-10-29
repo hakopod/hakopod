@@ -116,6 +116,31 @@ on only after a handshake in the last two minutes. With the server firewall:
 If the tunnel goes down while `vpn_only` is on, use SSH or the reset command
 above.
 
+## Tailscale, OpenVPN and IPsec connectors
+
+**VPN connector** also connects the server to Tailscale (or Headscale),
+OpenVPN or IPsec. Only one connector runs at a time; switching removes the
+previous one. Install the VPN's own client on the server first: `tailscale`,
+`openvpn`, or strongSwan's `swanctl`.
+
+- **Tailscale or Headscale:** an auth key, a hostname, optional tags and,
+  for Headscale, the login server. The server joins with
+  `--netfilter-mode=off --accept-dns=false --accept-routes=false`, so K3s
+  keeps its own firewall rules and DNS. Add your tailnet's addresses
+  (normally `100.64.0.0/10`) to **Allowed networks**.
+- **OpenVPN:** paste the client profile with inline certificates and keys,
+  and list the networks to route. Directives that run programs, load plugins,
+  read files or change the default route are refused; pushed routes are
+  ignored (`route-nopull`) and `script-security 1` is forced.
+- **IPsec:** IKEv2 with a pre-shared key: the remote gateway, local and remote
+  identities, and remote networks. Certificate authentication is not supported
+  yet.
+
+The auth key, profile and pre-shared key are sealed with the installation's
+authentication key, never shown again, and written on the host only to
+root-owned 0600 files. Leave the field empty to keep the stored value.
+`vpn_only` applies to WireGuard (connector or server) only.
+
 ## Hakopod VPN server
 
 If you have no VPN of your own, Hakopod can run one. The module above runs a

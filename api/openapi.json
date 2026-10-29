@@ -33216,6 +33216,15 @@
           "vpn_server": {
             "$ref": "#/components/schemas/InstallationAccessVPNServer"
           },
+          "tailscale": {
+            "$ref": "#/components/schemas/InstallationAccessTailscale"
+          },
+          "openvpn": {
+            "$ref": "#/components/schemas/InstallationAccessOpenVPN"
+          },
+          "ipsec": {
+            "$ref": "#/components/schemas/InstallationAccessIPsec"
+          },
           "vpn_only": {
             "type": "boolean",
             "description": "Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on."
@@ -33293,6 +33302,101 @@
           "network",
           "endpoint"
         ],
+        "additionalProperties": false
+      },
+      "InstallationAccessTailscale": {
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string",
+            "maxLength": 63
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "maxLength": 68
+            }
+          },
+          "login_server": {
+            "type": "string",
+            "maxLength": 256,
+            "description": "Headscale or another coordination server; empty for Tailscale."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "InstallationAccessOpenVPN": {
+        "type": "object",
+        "properties": {
+          "routes": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "maxLength": 43
+            }
+          }
+        },
+        "required": [
+          "routes"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessIPsec": {
+        "type": "object",
+        "properties": {
+          "remote_address": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "local_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "remote_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "remote_networks": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "maxLength": 43
+            }
+          }
+        },
+        "required": [
+          "remote_address",
+          "local_id",
+          "remote_id",
+          "remote_networks"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessSecrets": {
+        "type": "object",
+        "properties": {
+          "tailscale_auth_key": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 512
+          },
+          "openvpn_profile": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 65536
+          },
+          "ipsec_psk": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 256
+          }
+        },
+        "required": [],
         "additionalProperties": false
       },
       "InstallationAccessVPNPeer": {
@@ -33446,6 +33550,31 @@
           },
           "vpn_status": {
             "$ref": "#/components/schemas/InstallationAccessVPNStatus"
+          },
+          "connector_secrets_set": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "connector_status": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "connected": {
+                "type": "boolean"
+              },
+              "address": {
+                "type": "string"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -33465,6 +33594,9 @@
           },
           "policy": {
             "$ref": "#/components/schemas/InstallationAccessPolicy"
+          },
+          "connector_secrets": {
+            "$ref": "#/components/schemas/InstallationAccessSecrets"
           },
           "confirm_from_elsewhere": {
             "type": "boolean",

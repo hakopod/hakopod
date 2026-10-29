@@ -61,6 +61,9 @@ schemas["InstallationAccessPolicy"] = obj({
     "firewall": {**B, "description": "Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module."},
     "vpn": ref("InstallationAccessVPN"),
     "vpn_server": ref("InstallationAccessVPNServer"),
+    "tailscale": ref("InstallationAccessTailscale"),
+    "openvpn": ref("InstallationAccessOpenVPN"),
+    "ipsec": ref("InstallationAccessIPsec"),
     "vpn_only": {**B, "description": "Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on."},
 }, ["enabled", "client_ip_source", "trusted_proxy_cidrs", "client_ip_header", "allow_cidrs"])
 schemas["InstallationAccessVPN"] = obj({
@@ -75,6 +78,20 @@ schemas["InstallationAccessVPNServer"] = obj({
     "network": {**S, "maxLength": 18, "description": "IPv4 network for VPN devices, /16 to /29. The server takes the first address."},
     "endpoint": {**S, "maxLength": 260, "description": "This server's public host:port written into device profiles."},
 }, ["network", "endpoint"])
+schemas["InstallationAccessTailscale"] = obj({
+    "hostname": {**S, "maxLength": 63}, "tags": {"type": "array", "maxItems": 16, "items": {**S, "maxLength": 68}},
+    "login_server": {**S, "maxLength": 256, "description": "Headscale or another coordination server; empty for Tailscale."},
+}, [])
+schemas["InstallationAccessOpenVPN"] = obj({"routes": {"type": "array", "maxItems": 64, "items": {**S, "maxLength": 43}}}, ["routes"])
+schemas["InstallationAccessIPsec"] = obj({
+    "remote_address": {**S, "maxLength": 253}, "local_id": {**S, "maxLength": 128}, "remote_id": {**S, "maxLength": 128},
+    "remote_networks": {"type": "array", "maxItems": 64, "items": {**S, "maxLength": 43}},
+}, ["remote_address", "local_id", "remote_id", "remote_networks"])
+schemas["InstallationAccessSecrets"] = obj({
+    "tailscale_auth_key": {**S, "writeOnly": True, "maxLength": 512},
+    "openvpn_profile": {**S, "writeOnly": True, "maxLength": 65536},
+    "ipsec_psk": {**S, "writeOnly": True, "maxLength": 256},
+}, [])
 schemas["InstallationAccessVPNPeer"] = obj({
     "id": S, "identity_id": S, "name": S, "public_key": S, "address": S,
     "latest_handshake": {**S, "format": "date-time"}, "created_at": {**S, "format": "date-time"},
@@ -99,13 +116,16 @@ schemas["InstallationAccess"] = obj({
     "client_ip": {**S, "description": "The address the installation sees for this request."},
     "licensed": B,
     "vpn_status": ref("InstallationAccessVPNStatus"),
+    "connector_secrets_set": {"type": "object", "additionalProperties": B},
+    "connector_status": obj({"type": S, "connected": B, "address": S, "error": S}, []),
 }, ["revision", "policy", "client_ip", "licensed"])
 schemas["InstallationAccessInput"] = obj({
     "expected_revision": revision, "policy": ref("InstallationAccessPolicy"),
+    "connector_secrets": ref("InstallationAccessSecrets"),
     "confirm_from_elsewhere": {**B, "description": "Save even though the policy blocks this request's network; confirm from an allowed network within five minutes."},
 }, ["expected_revision", "policy"])
 schemas["InstallationAccessConfirmInput"] = obj({"revision": revision}, ["revision"])
-for name in ["InstallationAccessPolicy", "InstallationAccessVPN", "InstallationAccessVPNServer", "InstallationAccessVPNPeer", "InstallationAccessVPNPeerList", "InstallationAccessVPNPeerInput", "InstallationAccessVPNStatus", "InstallationAccess", "InstallationAccessInput", "InstallationAccessConfirmInput"]:
+for name in ["InstallationAccessTailscale", "InstallationAccessOpenVPN", "InstallationAccessIPsec", "InstallationAccessSecrets", "InstallationAccessPolicy", "InstallationAccessVPN", "InstallationAccessVPNServer", "InstallationAccessVPNPeer", "InstallationAccessVPNPeerList", "InstallationAccessVPNPeerInput", "InstallationAccessVPNStatus", "InstallationAccess", "InstallationAccessInput", "InstallationAccessConfirmInput"]:
     schemas[name]["additionalProperties"] = False
 for path, method, operation, response, request in [
     ("/installation/access", "get", "getInstallationAccess", "InstallationAccess", None),

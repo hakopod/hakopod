@@ -67,7 +67,9 @@ func (s *Store) AccessPolicy(ctx context.Context) (AccessPolicyRecord, error) {
 
 // PutAccessPolicy saves policy. Unless the new policy is off, the previous one
 // is kept and restored after AccessConfirmWindow unless ConfirmAccessPolicy runs.
-func (s *Store) PutAccessPolicy(ctx context.Context, p Principal, policy json.RawMessage, enabled bool, expected int64, metadata map[string]any) (AccessPolicyRecord, error) {
+// PutAccessPolicy saves policy. secrets, when not nil, replaces the sealed
+// connector secrets; nil keeps them.
+func (s *Store) PutAccessPolicy(ctx context.Context, p Principal, policy json.RawMessage, secrets []byte, enabled bool, expected int64, metadata map[string]any) (AccessPolicyRecord, error) {
 	if p.CredentialType != "browser" || !p.IsHuman() {
 		return AccessPolicyRecord{}, ErrForbidden
 	}
@@ -98,9 +100,10 @@ func (s *Store) PutAccessPolicy(ctx context.Context, p Principal, policy json.Ra
 		until := time.Now().Add(AccessConfirmWindow).UTC()
 		previous, pending = old, &until
 	}
-	result, err := scanAccess(tx.QueryRow(ctx, `INSERT INTO installation_access_policy(singleton,revision,policy,previous,pending_until) VALUES(true,$1,$2,$3,$4)
-		ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision,policy=excluded.policy,previous=excluded.previous,pending_until=excluded.pending_until,updated_at=now()
-		RETURNING `+accessColumns, expected+1, policy, previous, pending))
+	result, err := scanAccess(tx.QueryRow(ctx, `INSERT INTO installation_access_policy(singleton,revision,policy,previous,pending_until,secrets) VALUES(true,$1,$2,$3,$4,$5)
+		ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision,policy=excluded.policy,previous=excluded.previous,pending_until=excluded.pending_until,
+		secrets=COALESCE(excluded.secrets,installation_access_policy.secrets),updated_at=now()
+		RETURNING `+accessColumns, expected+1, policy, previous, pending, secrets))
 	if err != nil {
 		return AccessPolicyRecord{}, err
 	}
@@ -149,7 +152,7 @@ func (s *Store) ResetAccessPolicy(ctx context.Context, actor string) (AccessPoli
 		return AccessPolicyRecord{}, err
 	}
 	result, err := scanAccess(tx.QueryRow(ctx, `INSERT INTO installation_access_policy(singleton,revision,policy) VALUES(true,1,'{"enabled":false}')
-		ON CONFLICT(singleton) DO UPDATE SET revision=installation_access_policy.revision+1,policy=excluded.policy,previous=NULL,pending_until=NULL,updated_at=now()
+		ON CONFLICT(singleton) DO UPDATE SET revision=installation_access_policy.revision+1,policy=excluded.policy,previous=NULL,pending_until=NULL,secrets=NULL,updated_at=now()
 		RETURNING `+accessColumns))
 	if err != nil {
 		return AccessPolicyRecord{}, err
@@ -302,4 +305,31 @@ func (s *Store) ReportAccessVPNServer(ctx context.Context, publicKey, serverErro
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// AccessConnectorSecrets returns the sealed connector secrets, or nil.
+func (s *Store) AccessConnectorSecrets(ctx context.Context) ([]byte, error) {
+	var sealed []byte
+	err := s.Pool.QueryRow(ctx, "SELECT secrets FROM installation_access_policy WHERE singleton").Scan(&sealed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return sealed, err
+}
+
+// ReportAccessConnector stores what the host observed about the Tailscale,
+// OpenVPN or IPsec connector.
+func (s *Store) ReportAccessConnector(ctx context.Context, report json.RawMessage) error {
+	_, err := s.Pool.Exec(ctx, `INSERT INTO installation_access_vpn(singleton,connector) VALUES(true,$1)
+		ON CONFLICT(singleton) DO UPDATE SET connector=excluded.connector,reported_at=now()`, report)
+	return err
+}
+
+func (s *Store) AccessConnectorStatus(ctx context.Context) (json.RawMessage, error) {
+	var report json.RawMessage
+	err := s.Pool.QueryRow(ctx, "SELECT connector FROM installation_access_vpn WHERE singleton").Scan(&report)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return json.RawMessage(`{}`), nil
+	}
+	return report, err
 }

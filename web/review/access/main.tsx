@@ -22,11 +22,15 @@ const policy = (enabled: boolean, firewall = false) => ({
   allow_cidrs: enabled ? ['10.8.0.0/24', '203.0.113.0/24'] : [],
   firewall,
   ...(scenario === 'vpn' ? { vpn } : {}),
+  ...(scenario === 'connector' ? { tailscale: { hostname: 'hakopod', tags: ['tag:hakopod'], login_server: 'https://headscale.example.com' } } : {}),
   ...(scenario === 'server' ? { vpn_server: { network: '10.100.0.0/24', listen_port: 51820, endpoint: 'vpn.example.com:51820' } } : {}),
 })
 const access = {
   revision: scenario === 'off' || scenario === 'unlicensed' ? 0 : 3,
   policy: policy(scenario !== 'off' && scenario !== 'unlicensed', scenario === 'restricted' || scenario === 'vpn'),
+  ...(scenario === 'connector'
+    ? { connector_secrets_set: { tailscale_auth_key: true, openvpn_profile: false, ipsec_psk: false }, connector_status: { type: 'tailscale', connected: true, address: '100.101.1.2', error: '' } }
+    : {}),
   ...(scenario === 'server'
     ? { vpn_status: { public_key: '', server_public_key: 'U0VSVkVSLVBVQkxJQy1LRVktRk9SLVJFVklFVy0wMD0=', server_error: '', rx_bytes: 0, tx_bytes: 0, error: '', reported_at: new Date().toISOString() } }
     : {}),
