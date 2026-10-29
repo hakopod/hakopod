@@ -125,7 +125,8 @@ export function DeploymentLog({ release }: { release: components['schemas']['Dep
   const events = all.slice(-retainedEvents)
   const phases = deploymentPhases(release, events)
   const active = activeDeployment(release.status)
-  const [open, setOpen] = useState<Record<string, boolean>>(() => initiallyOpen(phases))
+  // Only the reader's own toggles are kept; untouched phases follow their current status.
+  const [open, setOpen] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
   const [wrap, setWrap] = useState(true)
   const [times, setTimes] = useState(true)
@@ -136,7 +137,6 @@ export function DeploymentLog({ release }: { release: components['schemas']['Dep
   const matches = (event: Event) =>
     !query || `${event.type} ${event.service} ${event.message}`.toLowerCase().includes(query)
   const found = query ? phases.reduce((n, phase) => n + phase.events.filter(matches).length, 0) : 0
-  // New phases (a service starting or failing) take their default state without closing others.
   const defaults = initiallyOpen(phases)
   const isOpen = (phase: Phase) =>
     (query && phase.events.some(matches)) || (open[phase.id] ?? defaults[phase.id])
