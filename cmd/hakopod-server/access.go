@@ -76,10 +76,30 @@ func runAccessFirewallState() error {
 		AllowCIDRs []string `json:"allow_cidrs"`
 		TunnelOnly bool     `json:"tunnel_only"`
 	}
+	type peer struct {
+		PublicKey string `json:"public_key"`
+		Address   string `json:"address"`
+	}
+	type server struct {
+		ListenPort int    `json:"listen_port"`
+		Address    string `json:"address"`
+		Peers      []peer `json:"peers"`
+	}
 	state := struct {
-		Firewall firewall    `json:"firewall"`
-		VPN      *access.VPN `json:"vpn"`
-	}{firewall{policy.Enabled && policy.Firewall, []string{}, policy.VPNOnly}, policy.VPN}
+		Firewall  firewall    `json:"firewall"`
+		VPN       *access.VPN `json:"vpn"`
+		VPNServer *server     `json:"vpn_server"`
+	}{Firewall: firewall{policy.Enabled && policy.Firewall, []string{}, policy.VPNOnly}, VPN: policy.VPN}
+	if policy.VPNServer != nil {
+		peers, err := db.AccessVPNPeers(ctx)
+		if err != nil {
+			return fmt.Errorf("read VPN peers: %w", err)
+		}
+		state.VPNServer = &server{ListenPort: policy.VPNServer.ListenPort, Address: policy.VPNServer.Address().String(), Peers: []peer{}}
+		for _, p := range peers {
+			state.VPNServer.Peers = append(state.VPNServer.Peers, peer{p.PublicKey, p.Address})
+		}
+	}
 	if state.Firewall.Enabled {
 		state.Firewall.AllowCIDRs = policy.AllowCIDRs
 	}
@@ -106,4 +126,39 @@ func runAccessVPNReport() error {
 	}
 	defer db.Close()
 	return db.ReportAccessVPN(ctx, report)
+}
+
+// runAccessVPNServerReport stores the server's public key and each peer's
+// latest handshake, as observed by the host timer.
+func runAccessVPNServerReport() error {
+	var report struct {
+		ServerPublicKey string `json:"server_public_key"`
+		Error           string `json:"error"`
+		Peers           []struct {
+			PublicKey       string     `json:"public_key"`
+			LatestHandshake *time.Time `json:"latest_handshake"`
+		} `json:"peers"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(os.Stdin, 256<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&report); err != nil {
+		return fmt.Errorf("read the VPN server report: %w", err)
+	}
+	if len(report.ServerPublicKey) > 64 || len(report.Error) > 512 || len(report.Peers) > 1024 {
+		return fmt.Errorf("the VPN server report exceeds its bounds")
+	}
+	handshakes := map[string]time.Time{}
+	for _, p := range report.Peers {
+		if p.LatestHandshake != nil {
+			handshakes[p.PublicKey] = *p.LatestHandshake
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := accessStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.ReportAccessVPNServer(ctx, report.ServerPublicKey, report.Error, handshakes)
 }

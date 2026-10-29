@@ -113,3 +113,26 @@ func TestVPNOnlyAdmitsOnlyTunnelNetworks(t *testing.T) {
 		}
 	}
 }
+
+func TestVPNServerNetworkStaysOffClusterAndConnector(t *testing.T) {
+	server, err := VPNServer{Network: "10.100.0.0/24", Endpoint: "vpn.example.com:51820"}.Normalize(nil)
+	if err != nil || server.ListenPort != 51820 || server.Address().String() != "10.100.0.1/24" {
+		t.Fatalf("server = %+v %v", server, err)
+	}
+	client := &VPN{Address: "10.99.0.2/32", AllowedIPs: []string{"10.100.0.0/16"}}
+	for name, c := range map[string]struct {
+		v      VPNServer
+		client *VPN
+	}{
+		"cluster":       {VPNServer{Network: "10.42.0.0/24", Endpoint: "vpn.example.com:51820"}, nil},
+		"connector":     {VPNServer{Network: "10.100.0.0/24", Endpoint: "vpn.example.com:51820"}, client},
+		"ipv6":          {VPNServer{Network: "fd00::/64", Endpoint: "vpn.example.com:51820"}, nil},
+		"too small":     {VPNServer{Network: "10.100.0.0/30", Endpoint: "vpn.example.com:51820"}, nil},
+		"not canonical": {VPNServer{Network: "10.100.0.1/24", Endpoint: "vpn.example.com:51820"}, nil},
+		"no endpoint":   {VPNServer{Network: "10.100.0.0/24"}, nil},
+	} {
+		if _, err := c.v.Normalize(c.client); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}

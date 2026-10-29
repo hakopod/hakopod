@@ -60,6 +60,7 @@ schemas["InstallationAccessPolicy"] = obj({
     "allow_cidrs": cidrs,
     "firewall": {**B, "description": "Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module."},
     "vpn": ref("InstallationAccessVPN"),
+    "vpn_server": ref("InstallationAccessVPNServer"),
     "vpn_only": {**B, "description": "Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on."},
 }, ["enabled", "client_ip_source", "trusted_proxy_cidrs", "client_ip_header", "allow_cidrs"])
 schemas["InstallationAccessVPN"] = obj({
@@ -69,12 +70,29 @@ schemas["InstallationAccessVPN"] = obj({
     "allowed_ips": {"type": "array", "maxItems": 64, "items": {**S, "maxLength": 43}},
     "keepalive": {"type": "integer", "minimum": 0, "maximum": 3600},
 }, ["address", "peer_public_key", "peer_endpoint", "allowed_ips"])
+schemas["InstallationAccessVPNServer"] = obj({
+    "listen_port": {"type": "integer", "minimum": 0, "maximum": 65535, "description": "UDP port; 0 means 51820."},
+    "network": {**S, "maxLength": 18, "description": "IPv4 network for VPN devices, /16 to /29. The server takes the first address."},
+    "endpoint": {**S, "maxLength": 260, "description": "This server's public host:port written into device profiles."},
+}, ["network", "endpoint"])
+schemas["InstallationAccessVPNPeer"] = obj({
+    "id": S, "identity_id": S, "name": S, "public_key": S, "address": S,
+    "latest_handshake": {**S, "format": "date-time"}, "created_at": {**S, "format": "date-time"},
+    "server_public_key": S, "endpoint": S, "server_address": S, "network": S,
+}, ["id", "identity_id", "name", "public_key", "address", "created_at"])
+schemas["InstallationAccessVPNPeerList"] = obj({"items": {"type": "array", "items": ref("InstallationAccessVPNPeer")}}, ["items"])
+schemas["InstallationAccessVPNPeerInput"] = obj({
+    "name": {**S, "minLength": 1, "maxLength": 64},
+    "public_key": {**S, "maxLength": 44, "description": "The device's WireGuard public key. Generate the key pair on the device or in the browser; never send a private key."},
+}, ["name", "public_key"])
 schemas["InstallationAccessVPNStatus"] = obj({
     "public_key": {**S, "description": "The server's WireGuard public key; add it as a peer."},
+    "server_public_key": {**S, "description": "The built-in VPN server's public key."},
+    "server_error": S,
     "latest_handshake": {**S, "format": "date-time"},
     "rx_bytes": {"type": "integer"}, "tx_bytes": {"type": "integer"},
     "error": S, "reported_at": {**S, "format": "date-time"},
-}, ["public_key", "rx_bytes", "tx_bytes", "error", "reported_at"])
+}, ["public_key", "server_public_key", "server_error", "rx_bytes", "tx_bytes", "error", "reported_at"])
 schemas["InstallationAccess"] = obj({
     "revision": revision, "policy": ref("InstallationAccessPolicy"),
     "pending_until": {**S, "format": "date-time", "description": "Set while a saved policy waits for confirmation; it reverts after this time."},
@@ -87,15 +105,19 @@ schemas["InstallationAccessInput"] = obj({
     "confirm_from_elsewhere": {**B, "description": "Save even though the policy blocks this request's network; confirm from an allowed network within five minutes."},
 }, ["expected_revision", "policy"])
 schemas["InstallationAccessConfirmInput"] = obj({"revision": revision}, ["revision"])
-for name in ["InstallationAccessPolicy", "InstallationAccessVPN", "InstallationAccessVPNStatus", "InstallationAccess", "InstallationAccessInput", "InstallationAccessConfirmInput"]:
+for name in ["InstallationAccessPolicy", "InstallationAccessVPN", "InstallationAccessVPNServer", "InstallationAccessVPNPeer", "InstallationAccessVPNPeerList", "InstallationAccessVPNPeerInput", "InstallationAccessVPNStatus", "InstallationAccess", "InstallationAccessInput", "InstallationAccessConfirmInput"]:
     schemas[name]["additionalProperties"] = False
 for path, method, operation, response, request in [
     ("/installation/access", "get", "getInstallationAccess", "InstallationAccess", None),
     ("/installation/access", "put", "putInstallationAccess", "InstallationAccess", "InstallationAccessInput"),
     ("/installation/access/confirm", "post", "confirmInstallationAccess", "InstallationAccess", "InstallationAccessConfirmInput"),
+    ("/installation/access/vpn-peers", "get", "listInstallationVPNPeers", "InstallationAccessVPNPeerList", None),
+    ("/installation/access/vpn-peers", "post", "createInstallationVPNPeer", "InstallationAccessVPNPeer", "InstallationAccessVPNPeerInput"),
 ]:
     route(path, method, operation, ref(response), ref(request) if request else None)
     item = paths[path][method]
     item["responses"]["403"] = {"description": "Self-hosted installation owner in a browser session required"}
     if method != "get":
         item["responses"]["409"] = {"description": "Revision changed, the confirmation window ended, or the policy would block this network"}
+route("/installation/access/vpn-peers/{id}", "delete", "revokeInstallationVPNPeer", None, None)
+paths["/installation/access/vpn-peers/{id}"]["delete"]["responses"]["403"] = {"description": "Installation administrator in a browser session required"}

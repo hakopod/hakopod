@@ -115,3 +115,32 @@ on only after a handshake in the last two minutes. With the server firewall:
 
 If the tunnel goes down while `vpn_only` is on, use SSH or the reset command
 above.
+
+## Hakopod VPN server
+
+If you have no VPN of your own, Hakopod can run one. The module above runs a
+WireGuard server on this host:
+
+1. In **Settings → Network access**, tick **Run a WireGuard server on this
+   host**, enter the public endpoint devices dial (for example
+   `vpn.example.com:51820`), the UDP port and the VPN network (for example
+   `10.100.0.0/24`). Open that UDP port in any cloud or network firewall in
+   front of the server.
+2. Save. Within ten seconds the server generates its key in
+   `/etc/hakopod/wireguard/server.key` (0600) and starts `hakopod-wgs`.
+3. Under **VPN profiles**, name a device and press **Create and download
+   profile**. The browser generates the device's key pair; only the public key
+   is sent, so the profile can be downloaded once. Import it into the
+   WireGuard app.
+4. On VPN devices, point the dashboard host name at the server's VPN address
+   (the network's first address, for example `10.100.0.1`) with split DNS or
+   the hosts file. The server forwards the dashboard port and the K3s API from
+   that address, so profiles route only the VPN network and never the
+   server's public address.
+5. Add the VPN network to **Allowed networks**, or turn on **Admit only people
+   on the VPN**, and confirm from the VPN.
+
+**Revoke** removes a device on the next tick. Profiles are for installation
+administrators in a browser session; agent keys and CLI sessions cannot create
+or list them. QR codes for phones are not available yet: send the profile file
+to the phone instead.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/netip"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -161,6 +163,8 @@ func (s *Store) ResetAccessPolicy(ctx context.Context, actor string) (AccessPoli
 // AccessVPNStatus is reported by the host timer, never by an HTTP caller.
 type AccessVPNStatus struct {
 	PublicKey       string     `json:"public_key"`
+	ServerPublicKey string     `json:"server_public_key"`
+	ServerError     string     `json:"server_error"`
 	LatestHandshake *time.Time `json:"latest_handshake,omitempty"`
 	RxBytes         int64      `json:"rx_bytes"`
 	TxBytes         int64      `json:"tx_bytes"`
@@ -170,7 +174,7 @@ type AccessVPNStatus struct {
 
 func (s *Store) AccessVPNStatus(ctx context.Context) (*AccessVPNStatus, error) {
 	var v AccessVPNStatus
-	err := s.Pool.QueryRow(ctx, "SELECT public_key,latest_handshake,rx_bytes,tx_bytes,error,reported_at FROM installation_access_vpn WHERE singleton").Scan(&v.PublicKey, &v.LatestHandshake, &v.RxBytes, &v.TxBytes, &v.Error, &v.ReportedAt)
+	err := s.Pool.QueryRow(ctx, "SELECT public_key,server_public_key,server_error,latest_handshake,rx_bytes,tx_bytes,error,reported_at FROM installation_access_vpn WHERE singleton").Scan(&v.PublicKey, &v.ServerPublicKey, &v.ServerError, &v.LatestHandshake, &v.RxBytes, &v.TxBytes, &v.Error, &v.ReportedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -182,4 +186,120 @@ func (s *Store) ReportAccessVPN(ctx context.Context, v AccessVPNStatus) error {
 		ON CONFLICT(singleton) DO UPDATE SET public_key=excluded.public_key,latest_handshake=excluded.latest_handshake,rx_bytes=excluded.rx_bytes,tx_bytes=excluded.tx_bytes,error=excluded.error,reported_at=now()`,
 		v.PublicKey, v.LatestHandshake, v.RxBytes, v.TxBytes, v.Error)
 	return err
+}
+
+type AccessVPNPeer struct {
+	ID              string     `json:"id"`
+	IdentityID      string     `json:"identity_id"`
+	Name            string     `json:"name"`
+	PublicKey       string     `json:"public_key"`
+	Address         string     `json:"address"`
+	LatestHandshake *time.Time `json:"latest_handshake,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+const vpnPeerColumns = "id,identity_id,name,public_key,address,latest_handshake,created_at"
+
+func (s *Store) AccessVPNPeers(ctx context.Context) ([]AccessVPNPeer, error) {
+	rows, err := s.Pool.Query(ctx, "SELECT "+vpnPeerColumns+" FROM installation_access_vpn_peers WHERE revoked_at IS NULL ORDER BY created_at LIMIT 1024")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AccessVPNPeer{}
+	for rows.Next() {
+		var peer AccessVPNPeer
+		if err = rows.Scan(&peer.ID, &peer.IdentityID, &peer.Name, &peer.PublicKey, &peer.Address, &peer.LatestHandshake, &peer.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, peer)
+	}
+	return out, rows.Err()
+}
+
+// CreateAccessVPNPeer gives a device the lowest free address in network. The
+// network address, the server's address and the broadcast address are never
+// handed out.
+func (s *Store) CreateAccessVPNPeer(ctx context.Context, p Principal, name, publicKey string, network netip.Prefix) (AccessVPNPeer, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return AccessVPNPeer{}, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(793044246)"); err != nil {
+		return AccessVPNPeer{}, err
+	}
+	used := map[netip.Addr]bool{network.Addr(): true, network.Addr().Next(): true}
+	rows, err := tx.Query(ctx, "SELECT address FROM installation_access_vpn_peers WHERE revoked_at IS NULL")
+	if err != nil {
+		return AccessVPNPeer{}, err
+	}
+	for rows.Next() {
+		var raw string
+		if err = rows.Scan(&raw); err != nil {
+			rows.Close()
+			return AccessVPNPeer{}, err
+		}
+		if address, err := netip.ParseAddr(raw); err == nil {
+			used[address] = true
+		}
+	}
+	rows.Close()
+	var address netip.Addr
+	for candidate := network.Addr(); network.Contains(candidate); candidate = candidate.Next() {
+		if next := candidate.Next(); !used[candidate] && network.Contains(next) {
+			address = candidate
+			break
+		}
+	}
+	if !address.IsValid() {
+		return AccessVPNPeer{}, fmt.Errorf("%w: the VPN network has no free addresses", ErrConflict)
+	}
+	peer := AccessVPNPeer{ID: NewID(), IdentityID: p.ID, Name: name, PublicKey: publicKey, Address: address.String()}
+	err = tx.QueryRow(ctx, "INSERT INTO installation_access_vpn_peers(id,identity_id,name,public_key,address) VALUES($1,$2,$3,$4,$5) RETURNING created_at", peer.ID, peer.IdentityID, peer.Name, peer.PublicKey, peer.Address).Scan(&peer.CreatedAt)
+	if err != nil {
+		return AccessVPNPeer{}, fmt.Errorf("%w: this public key already has a live profile", ErrConflict)
+	}
+	if err = accessAudit(ctx, tx, p.ID, p.KeyID, "installation.access.vpn_peer.created", map[string]any{"peer": peer.ID, "name": name, "address": peer.Address}); err != nil {
+		return AccessVPNPeer{}, err
+	}
+	return peer, tx.Commit(ctx)
+}
+
+func (s *Store) RevokeAccessVPNPeer(ctx context.Context, p Principal, id string) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, "UPDATE installation_access_vpn_peers SET revoked_at=now() WHERE id=$1 AND revoked_at IS NULL", id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return pgx.ErrNoRows
+	}
+	if err = accessAudit(ctx, tx, p.ID, p.KeyID, "installation.access.vpn_peer.revoked", map[string]any{"peer": id}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// ReportAccessVPNServer is called by the host timer.
+func (s *Store) ReportAccessVPNServer(ctx context.Context, publicKey, serverError string, handshakes map[string]time.Time) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `INSERT INTO installation_access_vpn(singleton,server_public_key,server_error) VALUES(true,$1,$2)
+		ON CONFLICT(singleton) DO UPDATE SET server_public_key=excluded.server_public_key,server_error=excluded.server_error,reported_at=now()`, publicKey, serverError); err != nil {
+		return err
+	}
+	for key, at := range handshakes {
+		if _, err = tx.Exec(ctx, "UPDATE installation_access_vpn_peers SET latest_handshake=$2 WHERE public_key=$1 AND revoked_at IS NULL", key, at); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }

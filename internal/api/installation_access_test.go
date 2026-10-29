@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -197,5 +199,54 @@ func TestInstallationAccessPolicyRequiresBrowserOwner(t *testing.T) {
 	}
 	if code, _ := h.accessCall("PUT", "/api/v1/installation/access", owner, "", body); code != 200 {
 		t.Fatalf("browser owner could not save a disabled policy: %d", code)
+	}
+}
+
+func TestInstallationVPNServerProfiles(t *testing.T) {
+	h := newAuthHarness(t, nil)
+	ctx := context.Background()
+	owner := h.owner()
+	grantPrivateAccess(t, h)
+	peerKey := func(i byte) string { return base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{i}, 32)) }
+	if code, body := h.accessCall("POST", "/api/v1/installation/access/vpn-peers", owner, "", map[string]any{"name": "laptop", "public_key": peerKey(1)}); code != 409 || body["error"].(map[string]any)["code"] != "vpn_server_off" {
+		t.Fatalf("profile before server = %d %v", code, body)
+	}
+	policy := map[string]any{"enabled": false, "client_ip_source": "connection", "trusted_proxy_cidrs": []string{}, "client_ip_header": "", "allow_cidrs": []string{},
+		"vpn_server": map[string]any{"network": "10.100.0.0/29", "endpoint": "vpn.example.com:51820"}}
+	if code, body := h.accessCall("PUT", "/api/v1/installation/access", owner, "", map[string]any{"expected_revision": 0, "policy": policy}); code != 200 {
+		t.Fatalf("server save = %d %v", code, body)
+	}
+	if code, body := h.accessCall("POST", "/api/v1/installation/access/vpn-peers", owner, "", map[string]any{"name": "laptop", "public_key": peerKey(1)}); code != 409 || body["error"].(map[string]any)["code"] != "vpn_server_starting" {
+		t.Fatalf("profile before server key = %d %v", code, body)
+	}
+	if err := h.db.ReportAccessVPNServer(ctx, "U0VSVkVSLVBVQkxJQy1LRVktRk9SLVRFU1RTLTAwMDA9", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	// A /29 has eight addresses: network, server and broadcast are never handed out.
+	var ids []string
+	for i := byte(1); i <= 5; i++ {
+		code, peer := h.accessCall("POST", "/api/v1/installation/access/vpn-peers", owner, "", map[string]any{"name": "device", "public_key": peerKey(i)})
+		if code != 201 || peer["address"] != fmt.Sprintf("10.100.0.%d", i+1) || peer["server_public_key"] == "" || peer["network"] != "10.100.0.0/29" {
+			t.Fatalf("profile %d = %d %v", i, code, peer)
+		}
+		ids = append(ids, peer["id"].(string))
+	}
+	if code, _ := h.accessCall("POST", "/api/v1/installation/access/vpn-peers", owner, "", map[string]any{"name": "full", "public_key": peerKey(9)}); code != 409 {
+		t.Fatalf("full network = %d", code)
+	}
+	if code, _ := h.accessCall("POST", "/api/v1/installation/access/vpn-peers", owner, "", map[string]any{"name": "dup", "public_key": peerKey(2)}); code != 409 {
+		t.Fatalf("duplicate key = %d", code)
+	}
+	if code, _ := h.accessCall("DELETE", "/api/v1/installation/access/vpn-peers/"+ids[0], owner, "", nil); code != 204 {
+		t.Fatalf("revoke = %d", code)
+	}
+	if code, peer := h.accessCall("POST", "/api/v1/installation/access/vpn-peers", owner, "", map[string]any{"name": "again", "public_key": peerKey(1)}); code != 201 || peer["address"] != "10.100.0.2" {
+		t.Fatalf("reused address = %d %v", code, peer)
+	}
+	if code, list := h.accessCall("GET", "/api/v1/installation/access/vpn-peers", owner, "", nil); code != 200 || len(list["items"].([]any)) != 5 {
+		t.Fatalf("list = %d %v", code, list)
+	}
+	if code, _ := h.accessCall("POST", "/api/v1/installation/access/vpn-peers", owner, "", map[string]any{"name": "bad", "public_key": "c2hvcnQ="}); code != 400 {
+		t.Fatalf("short key = %d", code)
 	}
 }
