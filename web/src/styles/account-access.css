@@ -100,3 +100,296 @@
 .auth-provider-logo {
   @apply shrink-0 object-contain;
 }
+
+/* Self-hosted: the open-source split layout. Scoped to .hako-auth-split. */
+.hako-auth-page.hako-auth-split {
+  --font-display: 'Newsreader', 'Iowan Old Style', Charter, Georgia, serif;
+  --auth-ion: #d8ff45;
+  --auth-ink: var(--foreground);
+  --auth-muted: var(--muted-foreground);
+  --auth-line: #707070;
+  --auth-submit-bg: var(--auth-ion);
+  --auth-submit-fg: #12201b;
+  grid-template-rows: none;
+  grid-template-columns: minmax(0, 1.45fr) minmax(380px, 1fr);
+  min-height: 100dvh;
+  background: var(--background);
+  color: var(--foreground);
+}
+/* The approved study is light: warm stone, dark ink. */
+.light .hako-auth-split {
+  --auth-ink: #12201b;
+  --auth-muted: #545a54;
+  --auth-line: #3d433d;
+  --auth-submit-bg: #12201b;
+  --auth-submit-fg: var(--auth-ion);
+  --background: #d5cdc5;
+  --card: #d5cdc5;
+  --foreground: var(--auth-ink);
+  --muted: var(--auth-muted);
+  --muted-foreground: var(--auth-muted);
+  --muted-fg: var(--auth-muted);
+  --border: #a69d94;
+  --hairline: #a69d94;
+}
+
+/* Art panel */
+.hako-auth-art {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #0c1c16;
+  color: #c9f2a6;
+}
+.hako-auth-art canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+}
+.hako-auth-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.hako-auth-art-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 40px 48px 48px;
+}
+.hako-auth-art-top,
+.hako-auth-art-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+.hako-auth-art-top {
+  align-items: center;
+}
+.hako-auth-art-foot {
+  align-items: end;
+}
+.hako-auth-art-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.hako-auth-art-brand .brand-mark {
+  color: inherit;
+}
+.hako-auth-art-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 8px 12px;
+  border: 1px solid rgb(201 242 166 / 0.18);
+  border-radius: 999px;
+  background: rgb(20 40 30 / 0.38);
+  backdrop-filter: blur(14px) saturate(1.2);
+  color: #e9f5e3;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.hako-auth-art-pill i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--auth-ion);
+  box-shadow: 0 0 0 3px rgb(216 255 69 / 0.15);
+}
+.hako-auth-art-foot h2 {
+  max-width: 15ch;
+  margin: 0;
+  font: 300 clamp(40px, 5.4vw, 76px) / 1.02 var(--font-display);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.hako-auth-art-foot p {
+  margin: 0;
+  color: rgb(233 245 227 / 0.72);
+  font: 12px/1.6 var(--font-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Form panel */
+.hako-auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 100dvh;
+  padding: 24px 48px 32px;
+  background: var(--background);
+}
+.hako-auth-panel-top {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 44px;
+}
+.hako-auth-panel > h1 {
+  margin: 16px 0 -8px;
+  font: 300 48px/1.05 var(--font-display);
+  letter-spacing: -0.02em;
+}
+.hako-auth-split .hako-auth-description {
+  max-width: 40ch;
+  margin: 0;
+  color: var(--foreground);
+  opacity: 0.85;
+}
+.hako-auth-split .hako-auth-form {
+  margin-top: 12px;
+}
+
+/* Inputs read as a single underline. */
+.hako-auth-split .input-wrap {
+  border: 0;
+  border-bottom: 1px solid var(--auth-line);
+  border-radius: 0;
+  background: transparent;
+}
+.hako-auth-split .input-wrap:focus-within {
+  border-bottom-color: var(--foreground);
+  box-shadow: inset 0 -1px 0 var(--foreground);
+}
+.hako-auth-split .input-wrap input {
+  padding-inline: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 16px;
+}
+.hako-auth-split .input-wrap input:focus {
+  outline: none;
+}
+.hako-auth-split .field label {
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+/* Providers and passkey: square outline buttons. */
+.hako-auth-split .hako-auth-alternatives .button {
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  border-color: var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+}
+.hako-auth-split .hako-auth-alternatives .button:hover {
+  border-color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+.hako-auth-split .hako-auth-providers [data-provider='google'] .auth-provider-logo {
+  filter: none;
+}
+.hako-auth-split .hako-auth-divider {
+  margin: 0;
+}
+
+/* Links: underlined text, no fill. */
+.hako-auth-split .hako-auth-links a,
+.hako-auth-split .field-help a,
+.hako-auth-split [role='status'] a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.hako-auth-split a:not(.button):is(:hover, :focus-visible) {
+  color: var(--foreground);
+}
+.hako-auth-split a:focus-visible,
+.hako-auth-split .hako-auth-submit:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 3px;
+}
+
+/* Submit: text plus a small dark square with an Ion arrow, no hover fill. */
+.hako-auth-split .hako-auth-submit {
+  justify-self: end;
+  gap: 14px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--foreground);
+}
+.hako-auth-split .hako-auth-submit > span {
+  display: grid;
+  place-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--auth-submit-bg);
+  color: var(--auth-submit-fg);
+  transition: transform 0.2s ease;
+}
+.hako-auth-split .hako-auth-submit:is(:hover, :active) {
+  background: none;
+  filter: none;
+  transform: none;
+}
+.hako-auth-split .hako-auth-submit:hover > span {
+  transform: translateX(3px);
+}
+.hako-auth-split .hako-auth-submit > .brackets {
+  display: none;
+}
+.hako-auth-split .hako-auth-assurance {
+  margin-top: auto;
+}
+
+@media (max-width: 900px) {
+  .hako-auth-page.hako-auth-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hako-auth-art,
+  .hako-auth-art-inner {
+    min-height: 300px;
+  }
+  .hako-auth-art-inner {
+    padding: 56px 20px 24px;
+  }
+  .hako-auth-art-top {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .hako-auth-art-foot h2 {
+    font-size: clamp(32px, 9vw, 44px);
+  }
+  .hako-auth-art-foot p {
+    display: none;
+  }
+  .hako-auth-panel {
+    min-height: auto;
+    padding: 16px 20px 40px;
+  }
+  .hako-auth-panel > h1 {
+    margin-top: 0;
+    font-size: 38px;
+  }
+  .hako-auth-split .hako-auth-submit > span {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hako-auth-split .hako-auth-submit > span {
+    transition: none;
+  }
+}
