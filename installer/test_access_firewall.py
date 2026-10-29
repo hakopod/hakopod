@@ -35,6 +35,12 @@ class AccessFirewallTest(unittest.TestCase):
         self.assertNotIn(' 80', text.replace('8443', ''))
         self.assertEqual(self.saved.read_text(), text)
 
+    def test_unchanged_rules_are_not_reapplied(self):
+        body = {'enabled': True, 'allow_cidrs': ['203.0.113.0/24']}
+        self.apply(body)
+        self.apply(body)
+        self.assertEqual(len(self.calls), 1)
+
     def test_ssh_dashboard_mode_limits_only_kubernetes_api(self):
         self.apply({'enabled': True, 'allow_cidrs': ['203.0.113.0/24']}, {'dashboard_mode': 'ssh', 'dashboard_port': 3000})
         self.assertIn('tcp dport { 6443 } counter drop', self.calls[0][1])
