@@ -202,7 +202,7 @@
   grid-template-areas: 'identity status meta actions';
   align-items: center;
   gap: 4px 16px;
-  min-height: 56px;
+  min-height: 48px;
   /* Text sits on the content edge; the hover surface bleeds out by the same amount. */
   margin-inline: calc(-1 * var(--space-2));
   padding: var(--space-2);

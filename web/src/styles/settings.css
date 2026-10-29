@@ -92,7 +92,7 @@
   margin: 8px 0 20px;
 }
 .security-grid .section-toolbar {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-3);
 }
 .settings-list-row {
   min-height: 72px;

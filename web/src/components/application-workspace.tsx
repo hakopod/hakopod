@@ -100,7 +100,7 @@ export function NeedsAttention({
       return typeof result.data === 'string' ? lastErrorLine(result.data) : ''
     },
     enabled: Boolean(first) && scope.can('logs:read'),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   })
   const current = useDeployment(latestFailed ? latest.id : undefined)

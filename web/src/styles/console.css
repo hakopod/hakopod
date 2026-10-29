@@ -93,9 +93,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 15px;
-  margin-bottom: 19px;
-  min-height: 36px;
 }
 .section-toolbar h2 {
   display: flex;
@@ -342,9 +339,7 @@
 }
 .tab-list {
   display: flex;
-  gap: 26px;
   border-bottom: 1px solid var(--hairline);
-  margin-bottom: 25px;
   overflow: auto;
 }
 .tab-content {

@@ -116,6 +116,22 @@
     })
   })
 
+  // 8. Section headers sit 12px above their content, and blocks carry no padding holes.
+  document.querySelectorAll('.section-toolbar, .app-workspace-section-head').forEach((head) => {
+    const next = head.nextElementSibling
+    if (!visible(head) || !next || !visible(next)) return
+    const gap = Math.round(next.getBoundingClientRect().top - head.getBoundingClientRect().bottom)
+    if (gap > 12) add('header-to-content', head, `${gap}px between the section header and its content (want 8)`)
+  })
+  containers.forEach((container) =>
+    stacked(container).forEach((el) => {
+      const s = getComputedStyle(el)
+      const worst = Math.max(parseFloat(s.paddingTop), parseFloat(s.paddingBottom))
+      if (worst > 24 && !el.matches('.resource-card, .ui-card, .card, [role="dialog"]'))
+        add('padding-hole', el, `${worst}px of vertical padding inside the block`)
+    }),
+  )
+
   // 7. Document never scrolls sideways.
   if (document.documentElement.scrollWidth > innerWidth + 1)
     add('overflow', document.documentElement, `document is ${document.documentElement.scrollWidth - innerWidth}px wider than the viewport`)

@@ -200,7 +200,7 @@ function ApplicationDetail() {
             params: { path: { id: applicationId, service: name } },
           }),
         ),
-      refetchInterval: 15000,
+      refetchInterval: 30000,
       refetchIntervalInBackground: false,
       enabled: !selectedService,
     })),

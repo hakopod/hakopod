@@ -112,7 +112,7 @@ export function ApplicationSecurityView({
   return (
     <section
       id={embedded ? undefined : 'security'}
-      className="flex flex-col gap-2"
+      className="application-security flex flex-col gap-2"
       aria-labelledby={embedded ? undefined : headingId}
       aria-label={embedded ? `Security for ${security.application_name}` : undefined}
     >
@@ -151,7 +151,7 @@ export function ApplicationSecurityView({
       )}
       {security.findings.length > 0 && (
         <details className="group min-w-0 border-y border-border">
-          <summary className="flex min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 py-3 [&::-webkit-details-marker]:hidden">
+          <summary className="flex min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 py-2 [&::-webkit-details-marker]:hidden">
             <ChevronRight
               size={16}
               aria-hidden="true"
@@ -173,7 +173,7 @@ export function ApplicationSecurityView({
             {security.findings.map((f) => (
               <li
                 key={`${f.advisory_id}:${f.service}`}
-                className="flex min-w-0 items-start gap-3 border-t border-border py-3"
+                className="flex min-w-0 items-start gap-3 border-t border-border py-2"
               >
                 <span className="w-20 shrink-0">
                   <Badge tone={tone[f.severity]}>{capitalize(f.severity)}</Badge>
