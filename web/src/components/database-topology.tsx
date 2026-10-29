@@ -116,17 +116,6 @@ export function DatabaseTopology({
     observer.observe(viewport)
     return () => observer.disconnect()
   }, [activeID])
-  const reveal = (id: string) => {
-    setSelected(id)
-    const viewport = canvas.current
-    const element = viewport && revealInCanvas(viewport, id)
-    if (!element) return
-    requestAnimationFrame(() => {
-      const bounds = element.getBoundingClientRect()
-      if (bounds.top < 0 || bounds.bottom > window.innerHeight)
-        element.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-    })
-  }
   return (
     <section className="db-panel db-topology" aria-label="Database topology">
       <div className="db-panel-heading">
@@ -160,7 +149,7 @@ export function DatabaseTopology({
               setPage(0)
               setSelected('')
             }}
-            placeholder="Search connections"
+            placeholder="Application or service"
           />
         </label>
         {shardedDatabase(d.spec.engine) && d.spec.mode === 'cluster' && groups.length > 0 && (
@@ -186,7 +175,6 @@ export function DatabaseTopology({
           {pageCount > 1 && (
             <>
               <Button
-                size="sm"
                 disabled={activePage === 0}
                 onClick={() => {
                   setPage(activePage - 1)
@@ -196,7 +184,6 @@ export function DatabaseTopology({
                 Previous
               </Button>
               <Button
-                size="sm"
                 disabled={activePage === pageCount - 1}
                 onClick={() => {
                   setPage(activePage + 1)
@@ -390,7 +377,7 @@ export function DatabaseTopology({
                 className={`db-application-node ${activeID === id ? 'db-node-selected' : ''}`}
                 transform={`translate(${at.x} ${at.y})`}
                 onClick={() => setSelected(id)}
-                onFocus={() => reveal(id)}
+                onFocus={() => canvas.current && revealInCanvas(canvas.current, id)}
                 onKeyDown={(event) => activate(event, () => setSelected(id))}
               >
                 <title>{app.displayName}</title>
@@ -423,7 +410,7 @@ export function DatabaseTopology({
                 className={`db-endpoint-node ${activeID === id ? 'db-node-selected' : ''}`}
                 transform={`translate(${at.x} ${at.y})`}
                 onClick={() => setSelected(id)}
-                onFocus={() => reveal(id)}
+                onFocus={() => canvas.current && revealInCanvas(canvas.current, id)}
                 onKeyDown={(event) => activate(event, () => setSelected(id))}
               >
                 <rect className="db-application-box" width="155" height="70" rx="5" />
@@ -438,7 +425,7 @@ export function DatabaseTopology({
           })}
           {poolers.map((p, i) => {
             const at = layout.poolerPositions[i], id = `pooler:${p.uid}`
-            return <g key={id} data-node={id} role="button" tabIndex={0} aria-pressed={activeID === id} aria-label={`Inspect ${middleLabel.toLowerCase()} ${p.name}, ${current ? p.ready ? 'ready' : 'not ready' : 'last known state'}`} className={`db-application-node ${activeID === id ? 'db-node-selected' : ''}`} transform={`translate(${at.x} ${at.y})`} onClick={() => setSelected(id)} onFocus={() => reveal(id)} onKeyDown={(event) => activate(event, () => setSelected(id))}>
+            return <g key={id} data-node={id} role="button" tabIndex={0} aria-pressed={activeID === id} aria-label={`Inspect ${middleLabel.toLowerCase()} ${p.name}, ${current ? p.ready ? 'ready' : 'not ready' : 'last known state'}`} className={`db-application-node ${activeID === id ? 'db-node-selected' : ''}`} transform={`translate(${at.x} ${at.y})`} onClick={() => setSelected(id)} onFocus={() => canvas.current && revealInCanvas(canvas.current, id)} onKeyDown={(event) => activate(event, () => setSelected(id))}>
               <title>{p.name}</title><rect className="db-application-box" width="164" height="70" rx="5" />
               <text x="12" y="28" className="db-app-title">{vitess ? 'vtgate' : routed ? 'MySQL Router' : p.role === 'pooled_read_only' ? 'Read pooler' : 'Write pooler'} {poolers.slice(0, i + 1).filter((member) => member.role === p.role).length}</text>
               <text x="12" y="52" className="db-app-meta">{current ? p.ready ? 'Ready' : 'Not ready' : 'Last known'}{!routed && ` · ${d.spec.pooling?.mode}`}</text>
@@ -446,7 +433,7 @@ export function DatabaseTopology({
           })}
           {coordinators.map((m, i) => {
             const at = layout.coordinatorPositions[i], id = `keeper:${m.uid}`
-            return <g key={id} data-node={id} role="button" tabIndex={0} aria-pressed={activeID === id} aria-label={`Inspect ${coordinatorLabel} ${m.name}, ${m.role}, ${current ? m.ready ? 'ready' : 'not ready' : 'last known state'}`} className={`db-application-node ${activeID === id ? 'db-node-selected' : ''}`} transform={`translate(${at.x} ${at.y})`} onClick={() => setSelected(id)} onFocus={() => reveal(id)} onKeyDown={(event) => activate(event, () => setSelected(id))}>
+            return <g key={id} data-node={id} role="button" tabIndex={0} aria-pressed={activeID === id} aria-label={`Inspect ${coordinatorLabel} ${m.name}, ${m.role}, ${current ? m.ready ? 'ready' : 'not ready' : 'last known state'}`} className={`db-application-node ${activeID === id ? 'db-node-selected' : ''}`} transform={`translate(${at.x} ${at.y})`} onClick={() => setSelected(id)} onFocus={() => canvas.current && revealInCanvas(canvas.current, id)} onKeyDown={(event) => activate(event, () => setSelected(id))}>
               <title>{m.name}</title><rect className="db-application-box" width="164" height="70" rx="5" />
               <text x="12" y="28" className="db-app-title">{coordinatorLabel} {i + 1} · {m.role}</text>
               <text x="12" y="52" className="db-app-meta">{current ? m.ready ? 'Ready' : 'Not ready' : 'Last known'}</text>
@@ -465,7 +452,7 @@ export function DatabaseTopology({
                 aria-label={`Inspect ${m.name}, ${m.role}, ${current ? (m.ready ? 'ready' : 'not ready') : 'last known state'}`}
                 className={`db-topology-member ${activeID === id ? 'db-node-selected' : ''}`}
                 onClick={() => setSelected(id)}
-                onFocus={() => reveal(id)}
+                onFocus={() => canvas.current && revealInCanvas(canvas.current, id)}
                 onKeyDown={(event) => activate(event, () => setSelected(id))}
               >
                 <title>{m.name}</title>
@@ -520,7 +507,7 @@ export function DatabaseTopology({
       </div>
 
       {application && (
-        <div className="db-member-inspector" aria-label="Application connection inspector">
+        <div className="db-member-inspector" role="region" aria-label="Application connection inspector">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <strong className="break-all">{application.displayName}</strong>
             <Button asChild size="sm">
@@ -554,7 +541,7 @@ export function DatabaseTopology({
         </div>
       )}
       {endpoint && (
-        <div className="db-member-inspector" aria-label="Endpoint inspector">
+        <div className="db-member-inspector" role="region" aria-label="Endpoint inspector">
           <strong>{endpointName(endpoint.purpose, d.spec.engine)}</strong>
           <div className="flex min-w-0 items-center gap-2">
             <code className="break-all text-xs">
@@ -580,7 +567,7 @@ export function DatabaseTopology({
         </div>
       )}
       {inspectedMember && (
-        <div className="db-member-inspector" aria-label={pooler ? `${middleLabel} inspector` : coordinator ? `${coordinatorLabel} member inspector` : "Database member inspector"}>
+        <div className="db-member-inspector" role="region" aria-label={pooler ? `${middleLabel} inspector` : coordinator ? `${coordinatorLabel} member inspector` : "Database member inspector"}>
           <div className="flex flex-wrap items-center gap-3">
             <strong className="font-mono break-all">{inspectedMember.name}</strong>
             <Status value={current ? (inspectedMember.ready ? 'ready' : 'not ready') : 'stale'} />

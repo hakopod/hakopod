@@ -412,7 +412,6 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
       'identity actions'
       'status actions'
       'meta actions';
-    padding-inline: 0;
   }
   .resource-row-actions {
     align-self: start;

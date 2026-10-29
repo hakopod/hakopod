@@ -82,7 +82,13 @@ function Databases() {
         action={
           canManage &&
           scope.project &&
-          scope.environment && (
+          scope.environment &&
+          !(
+            query.data &&
+            !query.data.items.length &&
+            external.isSuccess &&
+            !external.data.items.length
+          ) && (
             <div className="flex flex-wrap gap-2">
               <Button asChild>
                 <Link to="/databases/import" search={scope}>

@@ -382,7 +382,7 @@ function ApplicationDomains() {
                   ]}
                   primary={
                     canWrite && (
-                      <Button asChild variant="primary">
+                      <Button asChild>
                         <a href="#add-domain">Add a domain</a>
                       </Button>
                     )

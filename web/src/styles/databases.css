@@ -95,8 +95,7 @@
 .db-member-ring {
   fill: none;
 }
-.db-member-ring,
-.db-topology-member:focus-visible .db-member-card {
+.db-member-ring {
   stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
   stroke-width: 2;
 }
@@ -414,11 +413,17 @@
   fill: var(--card);
   stroke: color-mix(in srgb, var(--foreground) 28%, var(--card));
 }
-.db-node-selected .db-application-box,
-.db-application-node:focus-visible .db-application-box,
-.db-endpoint-node:focus-visible .db-application-box {
+.db-node-selected .db-application-box {
   stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
   stroke-width: 2;
+}
+/* Keyboard focus is its own dashed ring, distinct from selection. */
+.db-application-node:focus-visible .db-application-box,
+.db-endpoint-node:focus-visible .db-application-box,
+.db-topology-member:focus-visible .db-member-card {
+  stroke: var(--foreground);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
 }
 .db-app-title {
   fill: var(--foreground);

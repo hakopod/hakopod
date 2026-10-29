@@ -80,6 +80,9 @@
 .choice-cards[data-compact] {
   @apply gap-2;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+  @variant max-sm {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .choice-card {
   @apply relative flex min-h-11 min-w-0 cursor-pointer items-start gap-3 p-4;

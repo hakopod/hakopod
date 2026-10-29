@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router'
-import { Button } from './ui/button'
 
 export function DatabaseResourceNavigation({
   active,
@@ -10,24 +9,22 @@ export function DatabaseResourceNavigation({
 }) {
   return (
     <nav className="tab-list db-resource-tabs" aria-label="Database resources">
-      <Button asChild variant="ghost" className="tab-trigger">
-        <Link
-          to="/databases"
-          search={scope}
-          aria-current={active === 'databases' ? 'page' : undefined}
-        >
-          Databases
-        </Link>
-      </Button>
-      <Button asChild variant="ghost" className="tab-trigger">
-        <Link
-          to="/platforms"
-          search={scope}
-          aria-current={active === 'platforms' ? 'page' : undefined}
-        >
-          Platforms
-        </Link>
-      </Button>
+      <Link
+        className="tab-trigger"
+        to="/databases"
+        search={scope}
+        aria-current={active === 'databases' ? 'page' : undefined}
+      >
+        Databases
+      </Link>
+      <Link
+        className="tab-trigger"
+        to="/platforms"
+        search={scope}
+        aria-current={active === 'platforms' ? 'page' : undefined}
+      >
+        Platforms
+      </Link>
     </nav>
   )
 }

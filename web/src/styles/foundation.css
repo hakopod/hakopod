@@ -408,6 +408,9 @@ input[type='radio']:focus-visible {
   padding: 10px 0;
   font-size: 15px;
   background: transparent;
+  /* A tab row scrolls sideways on phones instead of breaking labels. */
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .tab-trigger:is([data-state='active'], .selected, [aria-current='page']) {
   color: var(--navigation-active);
@@ -461,6 +464,10 @@ input[type='radio']:focus-visible {
   min-height: 40px;
   gap: var(--space-4);
   margin-bottom: var(--space-2);
+}
+/* A heading with no actions reserves no button height. */
+.section-toolbar:has(> :is(h2, h3):only-child) {
+  min-height: 0;
 }
 .section-toolbar h2 {
   font-size: 18px;

@@ -321,13 +321,6 @@ function ApplicationDetail() {
       )}
       <header className="app-workspace-head">
         <div className="app-workspace-identity">
-          <nav className="app-workspace-scope" aria-label="Application scope">
-            <Link to="/projects/$project" params={{ project: app.project }}>
-              {app.project}
-            </Link>
-            <span aria-hidden="true">/</span>
-            <span>{app.environment}</span>
-          </nav>
           <div className="app-workspace-title">
             <h1>{app.display_name || app.name}</h1>
             <RenameResource application={app} />

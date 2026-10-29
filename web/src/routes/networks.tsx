@@ -51,7 +51,8 @@ function Networks() {
         title="Virtual networks"
         description="Private paths between services of different applications. A network holds segments; applications granted a segment can connect services to it."
         action={
-          networks.data?.can_manage && (
+          networks.data?.can_manage &&
+          !(networks.data && !items.length) && (
             <Button asChild variant="primary">
               <Link to="/networks/new">
                 <Icon name="plus" size={14} />

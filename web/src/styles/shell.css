@@ -1021,6 +1021,22 @@ html[data-accent] .button-primary:hover {
 .hako-form-page .form-page-main > .form-body:has(.form-card) {
   background: transparent;
 }
+/* Phones: the form panel runs to the screen edges so its content sits on the 16px page inset
+   instead of a second inset inside a bordered box. */
+@media (max-width: 639px) {
+  .hako-form-page .form-page-main > .form-body {
+    margin-inline: -16px;
+    padding-inline: 16px;
+    border-inline: 0;
+    border-radius: 0;
+  }
+  .hako-form-page .deploy-footer-actions {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    width: 100%;
+  }
+}
 .hako-form-page .form-footer {
   border-radius: 3px;
   box-shadow: none;

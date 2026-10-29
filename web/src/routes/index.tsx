@@ -47,7 +47,9 @@ function Projects() {
         title="Projects"
         description="Choose a project to open its applications and environments."
         action={
-          scope.identity.admin && (
+          // While there are no projects, the guided empty state carries the one action.
+          scope.identity.admin &&
+          !(projects.data && !items.length) && (
             <Button variant="primary" onClick={() => setProjectOpen(true)}>
               <Icon name="plus" size={15} />
               New project
