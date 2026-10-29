@@ -799,6 +799,13 @@ export const agentRoutes = [
     "boundary": "installation"
   },
   {
+    "id": "getInstallationAccess",
+    "method": "GET",
+    "path": "/installation/access",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "getLicenseStatus",
     "method": "GET",
     "path": "/license",

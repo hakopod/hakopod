@@ -11425,11 +11425,15 @@
           }
         },
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
           "sensitive_fields": []
         },
         "summary": "Read the management access policy and the address seen for this request."
@@ -11476,11 +11480,15 @@
           }
         },
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "An installation owner changes network access from a browser session in Settings.",
+          "review": "canonical",
           "sensitive_fields": []
         },
         "summary": "Save the management access policy; it reverts unless confirmed within five minutes."
@@ -11529,11 +11537,15 @@
           }
         },
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "An installation owner confirms network access from a browser session in Settings.",
+          "review": "canonical",
           "sensitive_fields": []
         },
         "summary": "Confirm a pending management access policy from an allowed network."
