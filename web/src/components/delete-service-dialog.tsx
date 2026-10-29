@@ -12,6 +12,7 @@ import { Dialog } from './ui/dialog'
 import { Button } from './ui/button'
 import { Icon } from './icons'
 import { DiffTable } from './deploy-dialog'
+import { plural, ReviewFacts, ReviewNotice, reviewDialog } from './operation-review'
 
 export function DeleteServiceDialog({
   application,
@@ -95,29 +96,60 @@ export function DeleteServiceDialog({
       submitting.current = false
     }
   }
+  const label = snapshot.service_display_names?.[service] || service
+  const domains = Object.entries(snapshot.spec.domains || {})
+    .filter(([, target]) => target === service)
+    .map(([domain]) => domain)
+  const volumeChoice = removal.claims.length > 0 && (canDeleteVolumes || deleteVolumes)
+  const action = deleteServiceAction(label, plan ? (deleteVolumes ? removal.claims.length : 0) : -1)
   return (
     <Dialog
       open
+      className={reviewDialog}
       onOpenChange={(open) => {
         if (!open && !busy) onClose()
       }}
-      title={`Delete ${service}?`}
-      description={`Remove ${service} from ${snapshot.spec.name} and stop its traffic. ${removal.claims.length > 0 && (canDeleteVolumes || deleteVolumes) ? 'Volumes are kept unless you choose to delete them below. Backups are kept.' : 'Volumes and backups are kept.'} This creates a new application deployment.`}
+      title={`Delete ${label}?`}
+      description={
+        plan
+          ? 'Check the planned configuration change, then confirm.'
+          : 'Review what is removed and what is kept. Nothing changes until you confirm.'
+      }
     >
-      <div className="grid gap-4 p-4">
+      <div className="dialog-body">
+        <ReviewFacts
+          facts={[
+            ['Scope', `${snapshot.project} / ${snapshot.environment}`],
+            [
+              'Application',
+              <>
+                {snapshot.display_name || snapshot.name} · revision {snapshot.revision}
+              </>,
+            ],
+            ['Service', <code key="service">{service}</code>],
+            domains.length > 0 && ['Domains removed', domains.join(', ')],
+            [
+              'Code',
+              'The service stops and its traffic ends. Other services keep running and are not rebuilt.',
+            ],
+            ['Configuration', `A new deployment removes ${service} from the application.`],
+            [
+              'Data',
+              deleteVolumes
+                ? `Permanently erases ${removal.claims.join(', ')}. Shared volumes and backups are kept.`
+                : removal.claims.length > 0
+                  ? `Volumes are kept: ${removal.claims.join(', ')}. Backups are kept.`
+                  : 'No volumes are attached. Backups are kept.',
+            ],
+          ]}
+        />
         {snapshot.spec.services[service]?.actions && (
-          <p className="text-sm">
+          <ReviewNotice tone="warn" title="Managed workflows change">
             {actionsRemovalMessage(snapshot.spec.services[service].actions!)}
-          </p>
+          </ReviewNotice>
         )}
-        {!plan && (
-          <p className="text-sm text-muted-foreground">
-            Review the removal before confirming. References from other services must be resolved
-            before deletion can proceed.
-          </p>
-        )}
-        {removal.claims.length > 0 && (canDeleteVolumes || deleteVolumes) && (
-          <label className="flex items-start gap-2 text-sm">
+        {volumeChoice && (
+          <label className="review-option">
             <input
               type="checkbox"
               checked={deleteVolumes}
@@ -126,27 +158,33 @@ export function DeleteServiceDialog({
             />
             <span>
               Permanently delete unused volumes too
-              <span className="block break-all text-xs text-muted-foreground">
+              <small>
                 {removal.claims.join(', ')}. This erases their data after service removal succeeds.
                 Shared volumes and backups are kept.
-              </span>
+              </small>
             </span>
           </label>
         )}
-        {plan && <DiffTable changes={plan.changes} />}
-        {plan && deleteVolumes && (
-          <p className="text-sm">
-            Confirming deletes this service and permanently erases the listed volumes. Storage quota
-            stays reserved until reclamation completes.
+        {!plan && (
+          <p className="field-help">
+            The review plans the change first. References from other services must be resolved
+            before deletion can proceed.
           </p>
         )}
+        {plan && <DiffTable changes={plan.changes} />}
+        {plan && deleteVolumes && (
+          <ReviewNotice tone="danger" title="Volume data cannot be recovered">
+            Confirming deletes this service and permanently erases the listed volumes. Storage quota
+            stays reserved until reclamation completes.
+          </ReviewNotice>
+        )}
         {plan?.warnings?.map((warning) => (
-          <p key={warning} className="text-sm">
+          <ReviewNotice key={warning} tone="warn" title="Plan warning">
             {warning}
-          </p>
+          </ReviewNotice>
         ))}
         {deleteVolumes && !canDeleteVolumes && (
-          <p className="text-sm" role="status">
+          <p className="field-help" role="status">
             Permission to delete volumes is no longer available. Close this dialog and review the
             service again.
           </p>
@@ -158,20 +196,21 @@ export function DeleteServiceDialog({
           Cancel
         </Button>
         <Button
-          variant="danger"
+          variant={plan ? 'danger' : 'primary'}
+          aria-busy={busy || undefined}
           disabled={busy || conflict || (deleteVolumes && !canDeleteVolumes)}
           onClick={() => void submit()}
         >
-          <Icon name="trash" size={14} />
-          {busy
-            ? 'Working…'
-            : plan
-              ? deleteVolumes
-                ? 'Delete service and volumes'
-                : 'Delete service'
-              : 'Review deletion'}
+          {plan && <Icon name="trash" size={14} />}
+          {busy ? (plan ? 'Deleting…' : 'Planning…') : action}
         </Button>
       </div>
     </Dialog>
   )
+}
+
+/** volumes: -1 before the plan exists, otherwise the number of volumes erased. */
+export function deleteServiceAction(service: string, volumes: number) {
+  if (volumes < 0) return 'Review deletion'
+  return volumes ? `Delete ${service} and ${plural(volumes, 'volume')}` : `Delete ${service}`
 }

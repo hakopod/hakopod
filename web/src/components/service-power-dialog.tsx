@@ -7,6 +7,7 @@ import { client, unwrap } from '../lib/client'
 import { APIError, message } from '../lib/api'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
+import { focusedDialog, ReviewFacts, ReviewNotice } from './operation-review'
 export function ServicePowerDialog({
   application,
   service,
@@ -61,42 +62,74 @@ export function ServicePowerDialog({
       setBusy(false)
     }
   }
+  const label = snapshot.service_display_names?.[service] || service
+  const verb = resume ? 'Resume' : scheduled ? 'Pause' : 'Stop'
+  const action = `${verb} ${label}${scheduled ? ' schedule' : ''}`
   return (
     <Dialog
       open
+      className={focusedDialog}
       onOpenChange={(open) => {
         if (!open && !busy) onClose()
       }}
-      title={`${resume ? 'Resume' : scheduled ? 'Pause' : 'Stop'} ${service}${scheduled ? ' schedule' : ''}?`}
+      title={`${action}?`}
       description={
         scheduled
           ? resume
-            ? 'Enable future scheduled runs. Missed runs older than one minute are skipped.'
-            : 'Pause future scheduled runs. Any active job is allowed to finish; configuration and volumes are retained.'
+            ? 'Future scheduled runs start again.'
+            : 'Future scheduled runs stop until you resume them.'
           : resume
-            ? 'Restore the saved replica count and autoscaling configuration through a new deployment.'
-            : 'Scale this service to zero and suspend autoscaling. Configuration, domains, volumes and the saved replica count are retained. Dependent services may become unavailable.'
+            ? 'A new deployment brings the service back.'
+            : 'A new deployment scales the service to zero.'
       }
     >
-      {error && <RequestError error={error} />}
+      <div className="dialog-body">
+        <ReviewFacts
+          facts={[
+            ['Scope', `${snapshot.project} / ${snapshot.environment}`],
+            [
+              'Application',
+              <>
+                {snapshot.display_name || snapshot.name} · revision {snapshot.revision}
+              </>,
+            ],
+            ['Service', <code key="service">{service}</code>],
+            [
+              'Runtime',
+              scheduled
+                ? resume
+                  ? 'Future runs are enabled. Missed runs older than one minute are skipped.'
+                  : 'Future runs are paused. An active job is allowed to finish.'
+                : resume
+                  ? 'The saved replica count and autoscaling configuration are restored.'
+                  : 'Scaled to zero; autoscaling is suspended.',
+            ],
+            [
+              'Kept',
+              scheduled
+                ? 'Configuration and volumes.'
+                : 'Configuration, domains, volumes and the saved replica count.',
+            ],
+          ]}
+        />
+        {!scheduled && !resume && (
+          <ReviewNotice tone="warn" title="Dependent services may become unavailable">
+            Anything that calls this service gets no response until you resume it.
+          </ReviewNotice>
+        )}
+        {error && <RequestError error={error} />}
+      </div>
       <div className="dialog-footer">
         <Button disabled={busy} onClick={onClose}>
           Cancel
         </Button>
         <Button
           variant={resume ? 'primary' : 'danger'}
+          aria-busy={busy || undefined}
           disabled={busy || conflict}
           onClick={() => void submit()}
         >
-          {busy
-            ? 'Submitting…'
-            : scheduled
-              ? resume
-                ? 'Resume schedule'
-                : 'Pause schedule'
-              : resume
-                ? 'Resume service'
-                : 'Stop service'}
+          {busy ? 'Submitting…' : action}
         </Button>
       </div>
     </Dialog>

@@ -1,0 +1,234 @@
+/* Settings, integrations and consequential reviews (slice 6).
+   Dialog sizes: 480px for one short task, 720px for an impact review. Header and footer
+   stay put and only the body scrolls, with 16px clearance to the viewport. */
+.dialog-content:is(.focused-dialog, .review-dialog):not(.sheet) {
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.dialog-content.review-dialog:not(.sheet) {
+  width: 720px;
+}
+.dialog-content:is(.focused-dialog, .review-dialog) > form {
+  @apply flex min-h-0 flex-1 flex-col;
+}
+.dialog-content:is(.focused-dialog, .review-dialog) .dialog-header {
+  @apply shrink-0 p-6;
+}
+.dialog-content:is(.focused-dialog, .review-dialog) .dialog-header h2 {
+  font-size: var(--type-page-size);
+  line-height: var(--type-page-line);
+  font-weight: var(--type-page-weight);
+  overflow-wrap: anywhere;
+}
+.dialog-content:is(.focused-dialog, .review-dialog) .dialog-header p {
+  @apply mt-2;
+  color: var(--muted);
+}
+.dialog-content:is(.focused-dialog, .review-dialog) .dialog-body {
+  @apply grid min-h-0 flex-1 content-start gap-4 overflow-y-auto p-6;
+}
+.dialog-content:is(.focused-dialog, .review-dialog) .dialog-footer {
+  @apply flex shrink-0 flex-wrap items-center justify-end gap-3 px-6 py-4;
+}
+html[data-edition='cloud']
+  .dialog-content:is(.focused-dialog, .review-dialog)
+  :is(.dialog-header, .dialog-body) {
+  @apply p-4;
+}
+html[data-edition='cloud'] .dialog-content:is(.focused-dialog, .review-dialog) .dialog-footer {
+  @apply px-4 py-3;
+}
+@media (max-width: 479px) {
+  .dialog-content:is(.focused-dialog, .review-dialog)
+    :is(.dialog-header, .dialog-body, .dialog-footer) {
+    @apply p-4;
+  }
+  .dialog-content:is(.focused-dialog, .review-dialog) .dialog-footer > .button {
+    @apply flex-1 whitespace-normal;
+  }
+}
+
+/* Review facts: term and value rows with fine separators. */
+.review-facts {
+  @apply m-0 grid;
+}
+.review-facts > div {
+  @apply grid gap-3 py-3;
+  grid-template-columns: minmax(0, 10rem) minmax(0, 1fr);
+  border-top: 1px solid var(--hairline);
+}
+.review-facts > div:last-child {
+  border-bottom: 1px solid var(--hairline);
+}
+.review-facts dt {
+  color: var(--muted);
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+}
+.review-facts dd {
+  @apply m-0 min-w-0;
+  overflow-wrap: anywhere;
+}
+.review-facts dd code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 479px) {
+  .review-facts > div {
+    @apply grid-cols-1 gap-1;
+  }
+}
+
+.review-notice {
+  @apply flex items-start gap-3 px-4 py-3;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+}
+.review-notice > svg {
+  @apply mt-0.5 shrink-0;
+}
+.review-notice > div {
+  @apply min-w-0;
+  overflow-wrap: anywhere;
+}
+.review-notice strong {
+  @apply block;
+}
+.review-notice-body {
+  @apply mt-1;
+  color: var(--muted);
+}
+.review-notice-warn {
+  border-color: var(--warn);
+  background: var(--warning-surface);
+}
+.review-notice-warn > svg {
+  color: var(--warn);
+}
+.review-notice-danger {
+  border-color: var(--destructive);
+  background: var(--error-surface);
+}
+.review-notice-danger :is(svg, strong) {
+  color: var(--destructive);
+}
+
+.review-option {
+  @apply flex min-h-11 items-start gap-3;
+}
+.review-option input {
+  @apply mt-1 size-4 shrink-0;
+}
+.review-option small {
+  @apply mt-1 block;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.review-discard {
+  @apply justify-between;
+}
+.review-discard > p {
+  @apply m-0 min-w-0 flex-1;
+  min-width: min(100%, 16rem);
+}
+.review-discard-actions {
+  @apply flex flex-wrap gap-3;
+}
+
+.copy-value {
+  @apply inline-flex items-center;
+}
+.copy-value-status {
+  @apply sr-only;
+}
+
+/* Inventory rows: identity grows, status fits, metadata keeps a stable slot, actions align. */
+.settings-rows {
+  @apply m-0 grid p-0;
+  list-style: none;
+}
+.settings-row {
+  @apply grid items-center gap-x-4 gap-y-1 py-3;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 16rem) auto;
+  grid-template-areas: 'identity status meta actions';
+  border-top: 1px solid var(--hairline);
+}
+.settings-row:last-child {
+  border-bottom: 1px solid var(--hairline);
+}
+.settings-row-identity {
+  @apply flex min-w-0 items-start gap-3;
+  grid-area: identity;
+}
+.settings-row-identity > svg,
+.settings-row-identity > .settings-row-mark {
+  @apply mt-0.5 shrink-0;
+}
+.settings-row-identity > div {
+  @apply grid min-w-0 gap-0.5;
+}
+.settings-row-identity strong {
+  overflow-wrap: anywhere;
+}
+.settings-row-identity small,
+.settings-row-meta {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  overflow-wrap: anywhere;
+}
+.settings-row-status {
+  grid-area: status;
+  justify-self: start;
+}
+.settings-row-meta {
+  @apply grid min-w-0 gap-0.5;
+  grid-area: meta;
+}
+.settings-row-actions {
+  @apply flex flex-wrap items-center justify-end gap-2;
+  grid-area: actions;
+}
+.settings-row-revoked {
+  color: var(--muted);
+}
+.settings-state {
+  @apply inline-flex items-center gap-1.5 whitespace-nowrap;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.settings-state::before {
+  @apply size-1.5 shrink-0 rounded-full;
+  content: '';
+  background: currentColor;
+}
+.settings-state-ok {
+  color: var(--success);
+}
+.settings-state-warn {
+  color: var(--warn);
+}
+.settings-state-danger {
+  color: var(--destructive);
+}
+.settings-state-muted {
+  color: var(--muted);
+}
+@media (max-width: 767px) {
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity status'
+      'meta meta'
+      'actions actions';
+  }
+  .settings-row-meta {
+    @apply pl-7;
+  }
+  .settings-row-actions {
+    @apply justify-start pl-7;
+  }
+}

@@ -11,6 +11,7 @@ import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { DiffTable } from './deploy-dialog'
 import { ErrorState, Loading, Note, RequestError } from './shared'
+import { focusedDialog, plural, ReviewFacts, ReviewNotice, reviewDialog } from './operation-review'
 
 export function MoveServiceDialog({
   application,
@@ -97,6 +98,10 @@ export function MoveServiceDialog({
       lock.current = false
     }
   }
+  const target = appItems.find((app) => app.id === destination)
+  const targetName = target?.display_name || target?.name || destination
+  const sourceName = source.display_name || source.name
+  const label = source.service_display_names?.[service] || service
   return (
     <Dialog
       onCloseAutoFocus={(event) => {
@@ -106,38 +111,30 @@ export function MoveServiceDialog({
         }
       }}
       open
+      className={plan ? reviewDialog : focusedDialog}
       onOpenChange={(open) => {
         if (!open && !busy) onClose()
       }}
-      title={`Move ${source.service_display_names?.[service] || service}`}
-      description="Deploy a copy in another application, then confirm removal of the original after checking it works."
+      title={`Move ${label}`}
+      description={
+        deployment
+          ? 'The copy is deploying. The original keeps running.'
+          : plan
+            ? 'Check what changes in the destination, then deploy the copy.'
+            : 'Deploy a copy in another application, then remove the original after checking it works.'
+      }
     >
       <form
-        className="flex min-h-0 flex-1 flex-col overflow-hidden"
         onSubmit={(event) => {
           event.preventDefault()
           void submit()
         }}
       >
-        <div className="grid min-h-0 gap-4 overflow-y-auto p-4">
-          {destination && (
-            <p className="text-sm break-words">
-              <strong>
-                {source.display_name || source.name} / {service}
-              </strong>{' '}
-              →{' '}
-              <strong>
-                {appItems.find((app) => app.id === destination)?.display_name ||
-                  appItems.find((app) => app.id === destination)?.name ||
-                  destination}{' '}
-                / {name}
-              </strong>
-            </p>
-          )}
+        <div className="dialog-body">
           {deployment ? (
-            <Note>
-              The destination deployment is queued. The original is still running. Return to this
-              application's Services tab to finish the move after checking the destination.
+            <ReviewNotice title="Destination deployment queued">
+              The original is still running. Return to this application's Services tab to finish the
+              move after checking the destination.
               <div className="mt-3">
                 <Button asChild>
                   <Link to="/deployments/$deploymentId" params={{ deploymentId: deployment }}>
@@ -145,15 +142,34 @@ export function MoveServiceDialog({
                   </Link>
                 </Button>
               </div>
-            </Note>
+            </ReviewNotice>
           ) : plan ? (
             <>
+              <ReviewFacts
+                facts={[
+                  ['Scope', `${source.project} / ${source.environment}`],
+                  [
+                    'From',
+                    <>
+                      {sourceName} / <code>{service}</code> · revision {source.revision}
+                    </>,
+                  ],
+                  [
+                    'To',
+                    <>
+                      {targetName} / <code>{name}</code>
+                      {reviewed && <> · revision {reviewed.destination_revision}</>}
+                    </>,
+                  ],
+                  ['Secret bindings', `${plural(plan.secret_count, 'binding')} copied`],
+                  ['Original', 'Keeps running until you finish the move.'],
+                ]}
+              />
               {plan.warnings.map((warning) => (
-                <p key={warning} className="text-sm">
+                <ReviewNotice key={warning} tone="warn" title="Plan warning">
                   {warning}
-                </p>
+                </ReviewNotice>
               ))}
-              <p className="text-sm">{plan.secret_count} secret bindings will be copied.</p>
               <h3>Destination changes</h3>
               <DiffTable changes={plan.destination_changes} />
               <details>
@@ -168,7 +184,7 @@ export function MoveServiceDialog({
               ) : apps.error ? (
                 <ErrorState error={apps.error} />
               ) : (
-                <div className="grid gap-1">
+                <div className="grid gap-1.5">
                   <span>Destination application</span>
                   <SelectField
                     label="Destination application"
@@ -186,6 +202,10 @@ export function MoveServiceDialog({
                         })),
                     ]}
                   />
+                  <p className="field-help">
+                    Applications in {source.project} / {source.environment} with a successful
+                    deployment. Pause automatic deployments before moving.
+                  </p>
                 </div>
               )}
               {apps.data && !apps.hasNextPage && !appItems.some((app) => app.id !== source.id) && (
@@ -208,11 +228,7 @@ export function MoveServiceDialog({
                   {apps.isFetchingNextPage ? 'Loading…' : 'Load more applications'}
                 </Button>
               )}
-              <p className="text-sm text-muted-foreground">
-                Choose an application in {source.project} / {source.environment} with a successful
-                deployment. Pause automatic deployments before moving.
-              </p>
-              <label className="grid gap-1">
+              <label className="grid gap-1.5">
                 Destination service name
                 <Input
                   aria-describedby="move-service-name-help"
@@ -222,19 +238,19 @@ export function MoveServiceDialog({
                   maxLength={40}
                   required
                 />
+                <span id="move-service-name-help" className="field-help">
+                  Use a unique name with lowercase letters, digits and hyphens.
+                </span>
               </label>
-              <p id="move-service-name-help" className="text-sm text-muted-foreground">
-                Use a unique name with lowercase letters, digits and hyphens.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Volumes, custom domains, jobs and service dependencies require an explicit
-                migration. The review checks these before changing anything.
-              </p>
+              <ReviewNotice title="Some resources need an explicit migration">
+                Volumes, custom domains, jobs and service dependencies are not copied. The review
+                checks these before changing anything.
+              </ReviewNotice>
             </>
           )}
           {error && <RequestError error={error} />}
         </div>
-        <div className="dialog-footer shrink-0">
+        <div className="dialog-footer">
           <Button type="button" disabled={busy} onClick={onClose}>
             {deployment ? 'Close' : 'Cancel'}
           </Button>
@@ -252,8 +268,19 @@ export function MoveServiceDialog({
             </Button>
           )}
           {!deployment && (
-            <Button type="submit" variant="primary" disabled={busy || !destination || !name}>
-              {busy ? 'Working…' : plan ? 'Deploy in destination' : 'Review move'}
+            <Button
+              type="submit"
+              variant="primary"
+              aria-busy={busy || undefined}
+              disabled={busy || !destination || !name}
+            >
+              {busy
+                ? plan
+                  ? 'Deploying…'
+                  : 'Planning…'
+                : plan
+                  ? `Deploy ${name} in ${targetName}`
+                  : 'Review move'}
             </Button>
           )}
         </div>
@@ -355,22 +382,37 @@ export function ServiceMoves({ application }: { application: Application }) {
       {selected && (
         <Dialog
           open
+          className={focusedDialog}
           onOpenChange={(open) => {
             if (!open && !busy) setSelected(undefined)
           }}
           title={`Finish moving ${selected.service}?`}
-          description="Confirm that you checked the destination service and updated its clients. This stops and removes the original service in a new deployment. The destination stays running."
+          description="Confirm only after checking the destination service and updating its clients."
         >
-          <div className="grid gap-3 p-4">
-            <p className="text-sm">
-              If anything changed in either application, the server will keep the original and ask
-              you to review again.
+          <div className="dialog-body">
+            <ReviewFacts
+              facts={[
+                ['Scope', `${application.project} / ${application.environment}`],
+                [
+                  'Removed',
+                  <>
+                    <code>{selected.service}</code> from{' '}
+                    {application.display_name || application.name}
+                  </>,
+                ],
+                ['Kept running', <code key="destination">{selected.destination_service}</code>],
+                ['Configuration', 'A new deployment stops and removes the original service.'],
+              ]}
+            />
+            <p className="field-help">
+              If anything changed in either application, the server keeps the original and asks you
+              to review again.
             </p>
             {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button disabled={busy} onClick={() => setSelected(undefined)}>
-              Keep original for now
+              Cancel
             </Button>
             <Button
               variant="danger"
@@ -401,7 +443,7 @@ export function ServiceMoves({ application }: { application: Application }) {
                 }
               }}
             >
-              {busy ? 'Removing…' : 'Remove original service'}
+              {busy ? 'Removing…' : `Remove original ${selected.service}`}
             </Button>
           </div>
         </Dialog>

@@ -10,6 +10,7 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/input'
 import { Icon } from './icons'
+import { ReviewFacts, ReviewNotice, reviewDialog } from './operation-review'
 
 export function DeleteResource({
   project,
@@ -120,6 +121,7 @@ export function DeleteResource({
       )}
       <Dialog
         open={open}
+        className={reviewDialog}
         onCloseAutoFocus={onCloseAutoFocus}
         onOpenChange={(next) => {
           if (!busy) {
@@ -129,9 +131,9 @@ export function DeleteResource({
         }}
         title={`Delete ${name}?`}
         description={
-          application
-            ? `${reviewed?.project || project} / ${reviewed?.environment || application.environment} · Revision ${reviewed?.revision ?? application.revision}`
-            : `Project ID: ${project}`
+          empty
+            ? 'This cannot be undone. Review what is removed and what is kept.'
+            : 'This application still has services.'
         }
       >
         <form
@@ -140,32 +142,74 @@ export function DeleteResource({
             void remove()
           }}
         >
-          <div className="dialog-body field-stack">
+          <div className="dialog-body">
             {!empty && reviewed && (
-              <div className="field-stack">
-                <p className="field-help" role="status">
-                  Remove all services through a reviewed deployment before deleting this
-                  application.
-                </p>
-                <Button asChild size="sm">
-                  <Link
-                    to="/applications/$applicationId"
-                    params={{ applicationId: reviewed.id }}
-                    search={{ tab: 'services' }}
-                    onClick={close}
-                  >
-                    Open services
-                  </Link>
-                </Button>
-              </div>
+              <ReviewNotice tone="warn" title="Remove all services first">
+                Remove every service through a reviewed deployment before deleting this application.
+                <div className="mt-3">
+                  <Button asChild size="sm">
+                    <Link
+                      to="/applications/$applicationId"
+                      params={{ applicationId: reviewed.id }}
+                      search={{ tab: 'services' }}
+                      onClick={close}
+                    >
+                      Open services
+                    </Link>
+                  </Button>
+                </div>
+              </ReviewNotice>
             )}
-            <p>
+            <ReviewFacts
+              facts={
+                application
+                  ? [
+                      [
+                        'Scope',
+                        `${reviewed?.project || project} / ${reviewed?.environment || application.environment}`,
+                      ],
+                      [
+                        'Application',
+                        <>
+                          <code>{name}</code> · revision{' '}
+                          {reviewed?.revision ?? application.revision}
+                        </>,
+                      ],
+                      [
+                        'Removed',
+                        deleteData
+                          ? 'Deployment and build history, Git bindings, persistent volumes and native secrets.'
+                          : 'Deployment and build history and Git bindings.',
+                      ],
+                      [
+                        'Kept',
+                        deleteData
+                          ? 'Saved backups.'
+                          : 'Persistent volumes, native secrets and saved backups.',
+                      ],
+                      [
+                        'Name',
+                        'Stays reserved so old credentials and callbacks cannot reach a new resource.',
+                      ],
+                    ]
+                  : [
+                      ['Project', <code key="project">{project}</code>],
+                      ['Removed', 'The empty project and its environments.'],
+                      ['Kept', 'Personal projects stay linked to their accounts.'],
+                      [
+                        'Name',
+                        'Stays reserved so old credentials and callbacks cannot reach a new resource.',
+                      ],
+                    ]
+              }
+            />
+            <ReviewNotice title="Before deleting">
               {application
-                ? 'This removes the empty application, its deployment and build history, and Git bindings. Persistent data is retained unless you choose to delete it below. Saved backups are kept. Active work or enabled backup schedules must be stopped first.'
-                : 'Only an empty project can be deleted. Remove its resources, reclaim retained storage and remove scope grants across every environment first. Pending operations must finish. Personal projects stay linked to their accounts.'}
-            </p>
+                ? 'Active work must finish and enabled backup schedules must be stopped.'
+                : 'Remove its resources, reclaim retained storage and remove scope grants in every environment. Pending operations must finish.'}
+            </ReviewNotice>
             {application && (
-              <label className="flex items-start gap-2">
+              <label className="review-option">
                 <input
                   type="checkbox"
                   checked={deleteData}
@@ -173,22 +217,20 @@ export function DeleteResource({
                   disabled={busy}
                 />
                 <span>
-                  Permanently delete persistent volumes and native secrets too. Database files
-                  cannot be recovered without a backup.
+                  Permanently delete persistent volumes and native secrets too
+                  <small>Database files cannot be recovered without a backup.</small>
                 </span>
               </label>
             )}
-            <p className="field-help">
-              This cannot be undone. Its ID stays reserved to prevent old credentials or callbacks
-              reaching another resource.
-            </p>
-            <label>
-              Type the ID <strong>{name}</strong> to confirm
+            <label className="grid gap-1.5">
+              <span>
+                Type <strong className="break-all">{name}</strong> to confirm
+              </span>
               <Input
                 autoComplete="off"
                 value={confirmation}
                 onChange={(event) => setConfirmation(event.target.value)}
-                disabled={busy}
+                disabled={busy || !empty}
               />
             </label>
             {error && <RequestError error={error} />}
@@ -200,10 +242,11 @@ export function DeleteResource({
             <Button
               type="submit"
               variant="danger"
+              aria-busy={busy || undefined}
               disabled={busy || !empty || confirmation !== name}
             >
               <Icon name="trash" size={14} />
-              {busy ? 'Deleting…' : `Delete ${kind}`}
+              {busy ? 'Deleting…' : `Delete ${kind} ${name}`}
             </Button>
           </div>
         </form>
