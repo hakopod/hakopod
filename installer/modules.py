@@ -86,6 +86,9 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
                 publish_runtime_class(marker, KUBE, read)
             else:
                 install(config, marker, KUBE, read, workspace_profile)
+        elif module=='private-access':
+            from access_firewall import install as install_access_firewall
+            install_access_firewall()
         elif module=='storage':
             for item in read('get','storageclasses')['items']:
                 if item['metadata']['name']!='hakopod-local-path' and item['metadata'].get('annotations',{}).get('storageclass.kubernetes.io/is-default-class')=='true':
@@ -112,7 +115,7 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
     print(module+' module is ready. Original installer resume inputs are unchanged.')
 
 def cli(argv=None):
-    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions','managed-databases'])
+    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions','managed-databases','private-access'])
     parser.add_argument('--workspace-profile', choices=['vfs', 'shared-overlay2-v1'])
     parser.add_argument('--adopt-node', metavar='NODE', help='Managed Actions: mark a joined K3s agent as part of this installation')
     parser.add_argument('--runtime-class-only', action='store_true', help='Managed Actions: publish the RuntimeClass for adopted agents without preparing or restarting this server')

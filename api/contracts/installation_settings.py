@@ -58,6 +58,7 @@ schemas["InstallationAccessPolicy"] = obj({
     "trusted_proxy_cidrs": cidrs,
     "client_ip_header": {"type": "string", "enum": ["", "X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP"]},
     "allow_cidrs": cidrs,
+    "firewall": {**B, "description": "Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module."},
 }, ["enabled", "client_ip_source", "trusted_proxy_cidrs", "client_ip_header", "allow_cidrs"])
 schemas["InstallationAccess"] = obj({
     "revision": revision, "policy": ref("InstallationAccessPolicy"),

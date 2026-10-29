@@ -40,6 +40,9 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "access-reset" {
 		return runAccessReset()
 	}
+	if len(os.Args) > 1 && os.Args[1] == "access-firewall-state" {
+		return runAccessFirewallState()
+	}
 	if err := loadOperatorConfig(); err != nil {
 		return err
 	}

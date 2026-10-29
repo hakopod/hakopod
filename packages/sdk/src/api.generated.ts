@@ -7484,6 +7484,8 @@ export interface components {
             /** @enum {string} */
             client_ip_header: "" | "X-Forwarded-For" | "X-Real-IP" | "CF-Connecting-IP";
             allow_cidrs: string[];
+            /** @description Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module. */
+            firewall?: boolean;
         };
         InstallationAccess: {
             revision: number;

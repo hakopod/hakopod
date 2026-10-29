@@ -30,6 +30,9 @@ type Policy struct {
 	TrustedProxyCIDRs []string `json:"trusted_proxy_cidrs"`
 	ClientIPHeader    string   `json:"client_ip_header"`
 	AllowCIDRs        []string `json:"allow_cidrs"`
+	// Firewall also closes the dashboard port and the K3s API (6443) in the
+	// host firewall. It needs the private-access installer module.
+	Firewall bool `json:"firewall"`
 }
 
 func prefixes(values []string, field string) ([]netip.Prefix, error) {
@@ -64,6 +67,9 @@ func (p Policy) Normalize() (Policy, error) {
 		if prefix.Bits() == 0 {
 			return p, errors.New("allow_cidrs cannot contain 0.0.0.0/0 or ::/0; turn the policy off instead")
 		}
+	}
+	if p.Firewall && !p.Enabled {
+		return p, errors.New("the host firewall applies only to an enabled policy")
 	}
 	if p.Enabled && len(allow) == 0 {
 		return p, errors.New("an enabled policy needs at least one allowed CIDR")
