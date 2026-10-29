@@ -207,6 +207,7 @@ export default function TemplateForm({
     }
   }
   const unsupportedRequirements = unsupportedHostedTemplateRequirements(template, features)
+  const guide = template.upstream.startsWith('https://') ? template.upstream : template.sources[0]
   const brandMark = (
     <ServiceIcon
       background={template.logo_background}
@@ -224,9 +225,9 @@ export default function TemplateForm({
         project: scope.project,
         environment: scope.environment,
       }}
+      guide={template.deployable ? undefined : guide}
     />
   )
-  const guide = template.upstream.startsWith('https://') ? template.upstream : template.sources[0]
   if (template.deployable && features.hostedCompute && unsupportedRequirements.length)
     return (
       <FormPage
@@ -280,26 +281,29 @@ export default function TemplateForm({
         brandMark={brandMark}
         help={summary}
       >
-        <FormSection title="Deploy from the upstream guide">
+        <FormSection title="Deploy it yourself">
           <p>
-            Hakopod cannot deploy {template.name} directly yet. Resolve these prerequisites, then
-            follow the upstream guide.
+            Hakopod cannot deploy {template.name} for you yet. You can run it yourself by following
+            its upstream documentation.
           </p>
-          {template.requirements.length > 0 && (
-            <ul className="template-guide-steps">
-              {template.requirements.map((requirement) => (
-                <li key={requirement}>{requirement}</li>
-              ))}
-            </ul>
+          {(template.requirements.length > 0 || template.verification) && (
+            <details className="template-guide-blockers">
+              <summary>Why Hakopod cannot deploy it yet</summary>
+              <ul className="template-guide-steps">
+                {template.requirements.map((requirement) => (
+                  <li key={requirement}>{requirement}</li>
+                ))}
+                {template.verification && <li>{template.verification}</li>}
+              </ul>
+            </details>
           )}
-          {template.verification && <p className="field-help">{template.verification}</p>}
         </FormSection>
-        <div className="form-footer">
+        <div className="form-footer template-guide-footer">
           <Button onClick={onClose}>Back to catalog</Button>
           {guide && (
             <Button variant="primary" asChild>
               <a href={guide} target="_blank" rel="noreferrer">
-                Open the {template.name} guide
+                Open the {template.name} project
                 <Icon name="external" size={14} />
               </a>
             </Button>
@@ -428,6 +432,11 @@ export default function TemplateForm({
                 maxLength={40}
                 required
               />
+              {!application && (
+                <span className="field-help">
+                  Required to review. Use 1–40 lowercase letters, digits or hyphens.
+                </span>
+              )}
             </label>
             {application && !template.workload_requirements?.includes('multiple_services') && (
               <label>

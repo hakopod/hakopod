@@ -27,7 +27,8 @@ import '../styles/security.css'
 export const disclaimer = 'No findings does not mean an app is free of vulnerabilities.'
 const severities = ['critical', 'high', 'moderate', 'low'] as const
 type Severity = (typeof severities)[number]
-const tone = { critical: 'danger', high: 'danger', moderate: 'warning', low: 'neutral' } as const
+// Critical and high differ in colour as well as text; moderate and low stay quiet.
+const tone = { critical: 'danger', high: 'warning', moderate: 'neutral', low: 'neutral' } as const
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`
 
@@ -199,6 +200,9 @@ function SecurityAppRow({
   const advisories = groupAdvisories(app.findings)
   const counts = severityCounts(advisories)
   const fixable = app.can_write && app.findings.some((f) => f.fix !== 'manual')
+  const fixes = new Set(advisories.map((a) => fixText(a.findings[0])))
+  // When every advisory has the same fix, say it once instead of in every row.
+  const sharedFix = advisories.length > 1 && fixes.size === 1 ? [...fixes][0] : ''
 
   const check = async () => {
     setChecking(true)
@@ -226,7 +230,7 @@ function SecurityAppRow({
         type="button"
         className="security-row-toggle"
         aria-expanded={open}
-        aria-controls={panelId}
+        aria-controls={open ? panelId : undefined}
         aria-label={`${open ? 'Hide' : 'Show'} advisories for ${app.application_name}`}
         onClick={onToggle}
       >
@@ -244,7 +248,7 @@ function SecurityAppRow({
           {app.project} · {app.environment}
         </span>
       </div>
-      <div className="security-row-severity" aria-label="Advisories by severity">
+      <div className="security-row-severity" role="group" aria-label="Advisories by severity">
         {advisories.length ? (
           severities
             .filter((level) => counts[level])
@@ -298,6 +302,11 @@ function SecurityAppRow({
               still apply.
             </p>
           )}
+          {sharedFix && (
+            <p className="security-shared-fix">
+              <span className="security-muted">Fix for every advisory</span> {sharedFix}
+            </p>
+          )}
           {advisories.length > 0 && (
             <table className="security-advisories">
               <caption className="sr-only">Advisories for {app.application_name}</caption>
@@ -306,7 +315,7 @@ function SecurityAppRow({
                   <th scope="col">Severity</th>
                   <th scope="col">Advisory</th>
                   <th scope="col">Package</th>
-                  <th scope="col">Fix</th>
+                  {!sharedFix && <th scope="col">Fix</th>}
                   <th scope="col">Services</th>
                   {fixable && (
                     <th scope="col">
@@ -321,11 +330,19 @@ function SecurityAppRow({
                     key={advisory.id}
                     advisory={advisory}
                     actions={fixable}
+                    showFix={!sharedFix}
                     onFix={setFixing}
                   />
                 ))}
               </tbody>
             </table>
+          )}
+          {advisories.length > 3 && (
+            <div>
+              <Button type="button" variant="ghost" size="sm" onClick={onToggle}>
+                Hide advisories
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -334,13 +351,17 @@ function SecurityAppRow({
   )
 }
 
+const fixText = (f: SecurityFinding) => (f.fix === 'manual' ? f.fix_reason || fixLine(f) : fixLine(f))
+
 function AdvisoryRow({
   advisory,
   actions,
+  showFix,
   onFix,
 }: {
   advisory: Advisory
   actions: boolean
+  showFix: boolean
   onFix: (finding: SecurityFinding) => void
 }) {
   const f = advisory.findings[0]
@@ -371,14 +392,16 @@ function AdvisoryRow({
           <code key={value}>{value}</code>
         ))}
       </td>
-      <td data-label="Fix">
-        {f.fix === 'manual' ? f.fix_reason || fixLine(f) : fixLine(f)}
-        {digest && (
-          <span className="security-muted" title={digest}>
-            Fixed digest {digest.replace(/^sha256:/, '').slice(0, 12)}
-          </span>
-        )}
-      </td>
+      {showFix && (
+        <td data-label="Fix">
+          {fixText(f)}
+          {digest && (
+            <span className="security-muted" title={digest}>
+              Fixed digest {digest.replace(/^sha256:/, '').slice(0, 12)}
+            </span>
+          )}
+        </td>
+      )}
       <td data-label="Services">{services.join(', ')}</td>
       {actions && (
         <td className="security-advisory-actions">
@@ -437,6 +460,7 @@ function FixDialog({
   return (
     <Dialog
       open
+      className="security-dialog"
       onOpenChange={(value) => !value && !busy && onClose()}
       title={`${verb} ${finding.service} in ${app.application_name}?`}
       description={
@@ -501,6 +525,7 @@ function SourceSettings({
   return (
     <Dialog
       open
+      className="security-dialog"
       onOpenChange={(value) => !value && !busy && onClose()}
       title="Advisory sources"
       description="Choose where Hakopod looks up advisories for running apps."

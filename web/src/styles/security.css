@@ -124,6 +124,7 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius-control);
+  margin-left: calc(-1 * var(--space-2));
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -198,7 +199,9 @@
   line-height: var(--type-meta-line);
 }
 .security-advisories th {
+  height: auto;
   padding: 0 var(--space-3) var(--space-2) 0;
+  background: none;
   border-bottom: 1px solid var(--hairline);
   color: var(--muted);
   font-weight: 500;
@@ -216,17 +219,28 @@
 .security-advisories :is(th, td):last-child {
   padding-right: 0;
 }
-.security-advisories td:first-child {
+.security-advisories td[data-label='Severity'] {
   width: 88px;
 }
-.security-advisories td:nth-child(3) {
+.security-advisories td[data-label='Package'] {
   width: 132px;
 }
-.security-advisories td:nth-child(4) {
+.security-advisories td[data-label='Fix'] {
   width: 24%;
 }
-.security-advisories td:nth-child(5) {
+.security-advisories td[data-label='Services'] {
   width: 128px;
+}
+.security-shared-fix {
+  margin: 0;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.security-shared-fix .security-muted {
+  margin-right: var(--space-2);
+}
+html[data-edition] .security-dialog {
+  max-width: min(480px, calc(100vw - 32px));
 }
 .security-advisory-title a {
   color: var(--foreground);
@@ -268,24 +282,20 @@
     display: block;
   }
   .security-row {
-    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-columns: 32px minmax(0, 1fr) auto;
     grid-template-areas:
-      'toggle identity'
-      '. severity'
-      '. fix'
-      '. checked'
-      '. actions'
-      '. panel';
-    column-gap: var(--space-2);
+      'toggle identity actions'
+      '. severity severity'
+      '. fix checked'
+      'panel panel panel';
+    column-gap: var(--space-3);
     row-gap: var(--space-2);
-    align-items: start;
   }
   .security-row-toggle {
     grid-area: toggle;
   }
   .security-row-identity {
     grid-area: identity;
-    align-self: center;
   }
   .security-row-severity {
     grid-area: severity;
@@ -293,31 +303,26 @@
   .security-row-fix {
     grid-area: fix;
   }
-  .security-row-fix:empty {
-    display: none;
-  }
   .security-row-checked {
     grid-area: checked;
+    text-align: right;
   }
   .security-row-actions {
     grid-area: actions;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-  .security-row-actions > .button-ghost:first-child {
-    margin-left: calc(-1 * var(--space-3));
   }
   .security-row-panel {
     grid-area: panel;
+    grid-column: 2 / -1;
   }
 }
 @media (max-width: 639px) {
   .security-row-toggle {
     width: 44px;
     height: 44px;
-    margin: -6px;
+    margin: -6px -6px -6px -14px;
   }
   .security-row {
+    grid-template-columns: 32px minmax(0, 1fr);
     grid-template-areas:
       'toggle identity'
       '. severity'
@@ -325,6 +330,25 @@
       '. checked'
       '. actions'
       'panel panel';
+  }
+  .security-row-checked {
+    text-align: left;
+  }
+  .security-row-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .security-row-actions > .button-ghost:first-child {
+    margin-left: calc(-1 * var(--space-3));
+  }
+  .security-row-panel {
+    grid-column: 1 / -1;
+  }
+  .security-row-name a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin-block: -12px;
   }
   .security-sources > * + *::before {
     content: none;

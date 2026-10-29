@@ -9,10 +9,13 @@ type Template = components['schemas']['Template']
 export function TemplateSummary({
   template,
   target,
+  guide,
 }: {
   template: Template
   /** Where the template deploys: an existing application or a project / environment. */
   target: { application?: string; project: string; environment: string }
+  /** A link the page already offers as its primary action; not repeated here. */
+  guide?: string
 }) {
   const needs = (template.workload_requirements || []).map(
     (item) => workloadRequirementLabel[item] || item.replaceAll('_', ' '),
@@ -22,7 +25,7 @@ export function TemplateSummary({
     ...(template.upstream.startsWith('https://') && !template.sources.includes(template.upstream)
       ? [template.upstream]
       : []),
-  ].filter((url) => url.startsWith('https://'))
+  ].filter((url) => url.startsWith('https://') && url !== guide)
   const rows: [string, ReactNode][] = []
   if (template.deployable) {
     rows.push([
@@ -37,13 +40,13 @@ export function TemplateSummary({
     ])
     rows.push(['Resources', template.resource_summary])
   }
-  if (needs.length) rows.push(['Needs', <List items={needs} />])
-  // A guide-only template lists its prerequisites and verification in the main column.
+  // Written requirements are more specific than the workload labels, so show one or the other.
   if (template.deployable && template.requirements.length)
     rows.push(['Before you deploy', <List items={template.requirements} />])
+  else if (needs.length) rows.push(['Needs', <List items={needs} />])
   if (template.required_secrets.length)
     rows.push([
-      template.deployable ? 'Secrets you set in review' : 'Candidate credentials',
+      template.deployable ? 'Secrets you set in review' : 'Credentials it may need',
       <span className="template-summary-codes">
         {template.required_secrets.map((name) => (
           <code key={name}>{name}</code>
@@ -69,7 +72,7 @@ export function TemplateSummary({
           {links.map((url, index) => (
             <li key={url}>
               <a href={url} target="_blank" rel="noreferrer">
-                {index ? new URL(url).hostname : 'Upstream setup guide'}
+                {index || guide ? linkLabel(url) : 'Upstream setup guide'}
                 <Icon name="external" size={12} />
               </a>
             </li>
@@ -78,6 +81,12 @@ export function TemplateSummary({
       )}
     </section>
   )
+}
+
+// "github.com/Dokploy/templates" says more than a bare host name.
+function linkLabel(url: string) {
+  const { hostname, pathname } = new URL(url)
+  return [hostname.replace(/^www\./, ''), ...pathname.split('/').filter(Boolean).slice(0, 2)].join('/')
 }
 
 function List({ items }: { items: string[] }) {
