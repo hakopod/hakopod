@@ -438,7 +438,7 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
   display: grid;
   justify-items: center;
   gap: var(--space-3);
-  padding: var(--space-7) var(--space-5) var(--space-6);
+  padding: var(--space-5);
   text-align: center;
 }
 .guided-empty-body > h2 {
@@ -555,7 +555,7 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
 }
 @media (max-width: 639px) {
   .guided-empty-body {
-    padding: var(--space-6) var(--space-4) var(--space-5);
+    padding: var(--space-5) var(--space-4);
   }
   .guided-empty-steps li + li {
     border-left: 0;
