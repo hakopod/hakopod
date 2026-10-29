@@ -1158,13 +1158,10 @@ function SourceStep({
         </div>
       )}
       {source === 'image' && (
-        <div className="create-source-detail">
-          <p>
-            Next you add services and choose each image, placement and variables. Use a digest such
-            as <code>nginx@sha256:…</code> so every release runs the same bytes; tags are resolved
-            to a digest at deployment.
-          </p>
-        </div>
+        <p className="field-help m-0">
+          Next you add services and choose each image, placement and variables. Tags resolve to a
+          digest at deployment, so every release runs the same bytes.
+        </p>
       )}
       {source === 'file' && (
         <div className="create-source-detail">

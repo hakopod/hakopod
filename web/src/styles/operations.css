@@ -635,7 +635,7 @@ html.light .project-monogram {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-3);
 }
 .ops-section-description p {
   margin: 0;

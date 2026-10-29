@@ -1527,9 +1527,9 @@ a.resource-note:focus-visible {
 }
 .resource-toolbar {
   display: flex;
-  gap: 9px;
+  gap: var(--space-2);
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-3);
   flex-wrap: wrap;
 }
 .resource-toolbar .search-input {
