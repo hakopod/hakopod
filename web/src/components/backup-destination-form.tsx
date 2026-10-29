@@ -50,6 +50,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
   const [secret, setSecret] = useState('')
   const [session, setSession] = useState('')
   const [identity, setIdentity] = useState('')
+  const [keyMode, setKeyMode] = useState<'generate' | 'existing'>('generate')
   const [recovery, setRecovery] = useState('')
   const [saved, setSaved] = useState(false)
   const [issue, setIssue] = useState('')
@@ -79,7 +80,9 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               : destination && Boolean(access) !== Boolean(secret)
                 ? 'Enter both the access key ID and the secret access key to replace them.'
                 : ''
-          : ''
+          : step === 'encryption' && keyMode === 'existing' && !identity.trim()
+            ? 'Enter the age identity, or choose to generate a recovery key.'
+            : ''
     setIssue(problem)
     if (!problem) setStep(steps[steps.indexOf(step) + 1])
   }
@@ -368,6 +371,12 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               <span>Backups are encrypted with age before upload</span>
             </div>
             <ChoiceCardsEncryption
+              mode={keyMode}
+              onMode={(value) => {
+                setKeyMode(value)
+                setIssue('')
+                if (value === 'generate') setIdentity('')
+              }}
               identity={identity}
               onIdentity={setIdentity}
             />
@@ -411,7 +420,7 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
               ) : (
                 <>
                   <Consequence>
-                    Saves {name} for backups and schedules. Use Test connection in the list to
+                    Saves {name} for backups and schedules. Use Test in the Object storage list to
                     check the bucket and credentials.
                   </Consequence>
                   <Consequence tone="warning">
@@ -477,23 +486,23 @@ function BackupDestinationForm({ destination }: { destination?: BackupDestinatio
 
 // Generate a key (the default) or bring an existing age identity.
 function ChoiceCardsEncryption({
+  mode,
+  onMode,
   identity,
   onIdentity,
 }: {
+  mode: 'generate' | 'existing'
+  onMode: (value: 'generate' | 'existing') => void
   identity: string
   onIdentity: (value: string) => void
 }) {
-  const [mode, setMode] = useState<'generate' | 'existing'>(identity ? 'existing' : 'generate')
   return (
     <>
       <ChoiceCards
         label="Encryption key"
         compact
         value={mode}
-        onChange={(value) => {
-          setMode(value)
-          if (value === 'generate') onIdentity('')
-        }}
+        onChange={onMode}
         choices={[
           {
             value: 'generate',

@@ -52,7 +52,8 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
   const cache = useQueryClient()
   const names = useBackupNames()
   const [step, setStep] = useState<Step>(schedule ? 'when' : 'what')
-  const [name, setName] = useState(schedule?.name || '')
+  const [typedName, setName] = useState(schedule?.name || '')
+  const [nameTouched, setNameTouched] = useState(Boolean(schedule))
   const [source, setSource] = useState<BackupSource | null>(schedule?.source || null)
   const [destination, setDestination] = useState(schedule?.destination_id || '')
   const [hours, setHours] = useState(schedule?.interval_hours || 24)
@@ -65,13 +66,15 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const sourceName = source ? names.source(source) : ''
+  // Suggested from the database and interval until someone types a name.
+  const name = nameTouched ? typedName : `${sourceName} ${everyHours(hours)}`.slice(0, 80)
+  const history = retention * hours
   const steps: Step[] = ['what', 'when', 'review']
   const back = () => void navigate({ to: '/backups', search: { tab: 'schedules' } })
   function next() {
     setError('')
     if (step === 'what') {
       if (!source || !destination) return setIssue('Choose a database and object storage.')
-      if (!name) setName(`${sourceName} ${everyHours(hours)}`.slice(0, 80))
       setIssue('')
       return setStep('when')
     }
@@ -201,16 +204,28 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
                     aria-describedby="schedule-retention-help"
                   />
                   <span id="schedule-retention-help" className="field-help">
-                    Keeps the newest {retention || 'N'} backups this schedule made, about{' '}
-                    {retention && hours ? `${Math.round((retention * hours) / 24)} days` : 'N days'}{' '}
-                    of history. Older ones from this schedule are deleted from the bucket.
+                    Keeps the newest {retention || 'N'} backups this schedule made
+                    {history > 0
+                      ? `, about ${history < 48 ? `${history} hours` : `${Math.round(history / 24)} days`} of history`
+                      : ''}
+                    . Older ones from this schedule are deleted from the bucket.
                   </span>
                 </label>
+              </div>
+            </section>
+            <section className="create-section" aria-labelledby="schedule-name-heading">
+              <div className="create-section-heading">
+                <h2 id="schedule-name-heading">Name</h2>
+              </div>
+              <div className="create-fields backup-schedule-fields">
                 <label>
                   Schedule name
                   <Input
                     value={name}
-                    onChange={(event) => setName(event.target.value)}
+                    onChange={(event) => {
+                      setNameTouched(true)
+                      setName(event.target.value)
+                    }}
                     maxLength={80}
                   />
                 </label>
@@ -288,7 +303,7 @@ function BackupScheduleForm({ schedule }: { schedule?: BackupSchedule }) {
           <PendingButton
             variant="primary"
             pending={busy}
-            pendingLabel="Saving…"
+            pendingLabel={schedule ? 'Saving…' : 'Creating…'}
             onClick={() => (step === 'review' ? void save() : next())}
           >
             <span className="network-primary-label">

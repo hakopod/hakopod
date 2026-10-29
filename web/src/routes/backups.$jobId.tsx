@@ -59,19 +59,19 @@ function BackupJob() {
       <div className="backup-job">
         <header className="backup-job-outcome" data-status={item.status}>
           <Status value={status} />
-          <p>
+          <p role="status">
             {item.status === 'succeeded'
               ? restore
                 ? `Restored ${byteSize(item.bytes)} in ${duration(item.started_at, item.finished_at) || 'an unrecorded time'}.`
                 : `Stored ${byteSize(item.bytes)} in ${names.destination(item.destination_id)} in ${duration(item.started_at, item.finished_at) || 'an unrecorded time'}.`
               : item.status === 'failed'
-                ? `Failed${item.finished_at ? ` ${relative(item.finished_at).toLowerCase()}` : ''}${item.started_at && item.finished_at ? ` after ${duration(item.started_at, item.finished_at)}` : ''}. Nothing was ${restore ? 'restored' : 'stored'}.`
+                ? `Failed${item.finished_at ? ` ${relative(item.finished_at).toLowerCase()}` : ''}${item.started_at && item.finished_at ? ` after ${duration(item.started_at, item.finished_at)}` : ''}. ${restore ? 'The target database may contain partial data; inspect it before use.' : 'No backup was recorded.'}`
                 : item.status === 'cancelled'
                   ? 'Cancelled before it finished.'
                   : item.cancel_requested
                     ? 'Cancellation requested. The job stops at its next safe point.'
                     : item.status === 'queued'
-                      ? engineManagedSource(item.source)
+                      ? engineManagedSource(item.source) && item.started_at
                         ? 'Waiting on the database engine, which writes this backup to object storage itself. Hakopod checks until it finishes, for up to two hours.'
                         : 'Queued. It starts when a backup worker is free.'
                       : `Running for ${duration(item.started_at, new Date().toISOString()) || 'a moment'}. This page updates until it finishes.`}
@@ -140,7 +140,7 @@ function BackupJob() {
                 )}
               </span>,
             ],
-            ['Size', item.status === 'succeeded' ? byteSize(item.bytes) : active ? 'Not known until it finishes' : 'Nothing stored'],
+            ['Size', item.status === 'succeeded' ? byteSize(item.bytes) : active ? 'Not known until it finishes' : 'Not recorded'],
             ['Queued', timestamp(item.created_at)],
             ['Started', item.started_at ? timestamp(item.started_at) : 'Not started'],
             ['Finished', item.finished_at ? timestamp(item.finished_at) : active ? 'Still running' : 'Not recorded'],
@@ -155,6 +155,10 @@ function BackupJob() {
                   >
                     Schedule {schedule.name}
                   </Link>
+                ) : schedules.isPending ? (
+                  'Schedule (loading name…)'
+                ) : schedules.error ? (
+                  'Schedule (name unavailable)'
                 ) : (
                   'A removed schedule'
                 )
@@ -188,10 +192,12 @@ function BackupJob() {
       >
         <div className="dialog-body">
           {error && <ErrorState error={error} />}
-          <Note>
-            Cancellation does not guarantee that a partially restored fresh database has been
-            removed. Inspect the final job result.
-          </Note>
+          {restore && (
+            <Note>
+              Cancellation does not guarantee that a partially restored fresh database has been
+              removed. Inspect the final job result.
+            </Note>
+          )}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setCancel(false)}>

@@ -14,7 +14,7 @@ import {
 import { FlowSteps, PendingButton, plural } from './create-flow'
 import { FormError, FormPage } from './form-page'
 import { Icon } from './icons'
-import { Note, RequestError } from './shared'
+import { HeadingHelp, Note, RequestError } from './shared'
 import { Consequence, Consequences, ReviewFacts, ScopeLabel } from './task-review'
 import { TOMLCode } from './toml-code'
 import { Button } from './ui/button'
@@ -43,7 +43,7 @@ export function VirtualNetworkForm({
 }) {
   const navigate = useNavigate()
   const cache = useQueryClient()
-  const [step, setStep] = useState<Step>(existing ? 'segments' : 'details')
+  const [step, setStep] = useState<Step>('details')
   const [name, setName] = useState(existing?.spec.name || '')
   const [description, setDescription] = useState(existing?.spec.description || '')
   const [segments, setSegments] = useState(() => segmentDrafts(existing?.spec))
@@ -156,7 +156,7 @@ export function VirtualNetworkForm({
         setSegments(segmentDrafts(parsed.spec))
       }
       setMode(next)
-      setStep(next === 'toml' ? 'details' : existing ? 'segments' : 'details')
+      setStep('details')
     } catch (cause) {
       failed(cause)
     } finally {
@@ -165,8 +165,9 @@ export function VirtualNetworkForm({
   }
   function continueFromDetails() {
     if (mode === 'toml') return void review()
-    const issue =
-      name === 'new'
+    const issue = existing
+      ? ''
+      : name === 'new'
         ? 'The name "new" is reserved. Choose another network name.'
         : !validName.test(name)
           ? 'Use 1–40 lowercase letters, numbers or hyphens. Start with a letter and end with a letter or number.'
@@ -231,18 +232,11 @@ export function VirtualNetworkForm({
     setSegments((previous) =>
       previous.map((item) => (item.id === id ? { ...item, ...change } : item)),
     )
-  const stepKeys: Step[] =
-    mode === 'toml'
-      ? ['details', 'review']
-      : existing
-        ? ['segments', 'review']
-        : ['details', 'segments', 'review']
+  const stepKeys: Step[] = mode === 'toml' ? ['details', 'review'] : ['details', 'segments', 'review']
   const steps =
     mode === 'toml'
       ? ['Configuration', 'Review']
-      : existing
-        ? ['Segments and grants', 'Review']
-        : ['Name', 'Segments and grants', 'Review']
+      : [existing ? 'Description' : 'Name', 'Segments and grants', 'Review']
   const target = existing?.network.name || plan?.spec.name || name
   const primary =
     step === 'review'
@@ -319,7 +313,7 @@ export function VirtualNetworkForm({
         ) : step === 'details' ? (
           <section className="create-section" aria-labelledby="network-name-heading">
             <div className="create-section-heading">
-              <h2 id="network-name-heading">Name the network</h2>
+              <h2 id="network-name-heading">{existing ? 'Description' : 'Name the network'}</h2>
               <Button
                 size="sm"
                 variant="ghost"
@@ -338,8 +332,8 @@ export function VirtualNetworkForm({
                   maxLength={40}
                   autoComplete="off"
                   spellCheck={false}
-                  autoFocus
-                  disabled={busy}
+                  autoFocus={!existing}
+                  disabled={busy || Boolean(existing)}
                   error={nameIssue}
                   onChange={(event) => {
                     setName(event.target.value)
@@ -351,8 +345,9 @@ export function VirtualNetworkForm({
                   aria-describedby="network-name-help"
                 />
                 <span id="network-name-help" className="field-help">
-                  Lowercase letters, numbers and hyphens. Application TOML refers to the network by
-                  this name, and it cannot be changed later.
+                  {existing
+                    ? 'Application TOML refers to the network by this name, so it cannot change.'
+                    : 'Lowercase letters, numbers and hyphens. Application TOML refers to the network by this name, and it cannot be changed later.'}
                 </span>
               </label>
               <label>
@@ -373,13 +368,16 @@ export function VirtualNetworkForm({
         ) : (
           <section className="create-section" aria-labelledby="network-segments-heading">
             <div className="create-section-heading">
-              <h2 id="network-segments-heading">Segments and grants</h2>
+              <div className="hako-section-heading-title">
+                <h2 id="network-segments-heading">Segments and grants</h2>
+                <HeadingHelp title="Segments and grants">
+                  A segment is a group of applications allowed to connect services to each other.
+                  Granting an application lets it join; its services connect one at a time
+                  afterwards.
+                </HeadingHelp>
+              </div>
               <span>{plural(segments.length, 'segment')} · up to 16</span>
             </div>
-            <p className="network-flow-lead">
-              A segment is a group of applications allowed to connect services to each other.
-              Granting an application lets it join; its services connect one at a time afterwards.
-            </p>
             <ol className="network-segment-editor">
               {segments.map((segment, index) => (
                 <SegmentEditor
@@ -443,11 +441,11 @@ export function VirtualNetworkForm({
               if (step === 'review') {
                 setPlan(null)
                 setStep(mode === 'toml' ? 'details' : 'segments')
-              } else if (step === 'segments' && !existing) setStep('details')
+              } else if (step === 'segments') setStep('details')
               else close()
             }}
           >
-            {step === 'details' || (existing && step === 'segments') ? 'Cancel' : 'Back'}
+            {step === 'details' ? 'Cancel' : 'Back'}
           </Button>
           <PendingButton
             variant="primary"
@@ -631,7 +629,6 @@ function NetworkReview({
             return (
               <li key={segment} data-removed={!after || undefined}>
                 <header>
-                  <Icon name="network" size={14} />
                   <code>{segment}</code>
                   <span>
                     {!after ? 'Removed' : !before && existing ? 'New segment' : plural(after.length, 'application')}
@@ -686,8 +683,7 @@ function NetworkReview({
         {(removedGrants.length > 0 || removedSegments.length > 0) && (
           <Consequence tone="warning">
             Removes {[...removedSegments.map((item) => `segment ${item}`), ...removedGrants].join(', ')}.
-            Disconnect affected services first; their application revisions still reference this
-            network.
+            Those applications can no longer connect services there.
           </Consequence>
         )}
       </Consequences>

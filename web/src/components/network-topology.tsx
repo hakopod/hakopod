@@ -61,16 +61,22 @@ export function NetworkTopology({ detail }: { detail: VirtualNetworkDetail }) {
   const summary = `${detail.network.name}: ${laid
     .map(
       (segment) =>
-        `segment ${segment.name} allows ${segment.rows.filter((row) => row.granted).length} applications and has ${plural(segment.connected, 'connected service')}`,
+        `segment ${segment.name} allows ${plural(segment.rows.filter((row) => row.granted).length, 'application')} and has ${plural(segment.connected, 'connected service')}${detail.truncated ? ' or more' : ''}`,
     )
     .join('; ')}.`
   return (
     <figure className="network-topology">
-      <div className="network-topology-scroll" tabIndex={0} aria-label="Network topology, scrollable">
+      <div
+        className="network-topology-scroll"
+        role="region"
+        tabIndex={0}
+        aria-label="Network topology, scrollable"
+      >
         <svg
           viewBox={`-2 -2 ${viewWidth + 4} ${height + 4}`}
           width={viewWidth + 4}
           height={height + 4}
+          style={{ width: viewWidth + 4, height: height + 4 }}
           role="img"
           aria-label={summary}
         >
@@ -171,6 +177,9 @@ export function NetworkTopology({ detail }: { detail: VirtualNetworkDetail }) {
           ))}
         </svg>
       </div>
+      {detail.truncated && (
+        <p className="network-topology-note">Shows the first 256 connections only.</p>
+      )}
       <figcaption className="network-topology-legend">
         <span>
           <i data-state="connected" aria-hidden="true" /> Connected
@@ -178,7 +187,7 @@ export function NetworkTopology({ detail }: { detail: VirtualNetworkDetail }) {
         <span>
           <i data-state="granted" aria-hidden="true" /> Allowed, not connected
         </span>
-        <span>Services under the same segment can reach each other.</span>
+        <span>Services in one segment can reach each other, subject to peer restrictions.</span>
       </figcaption>
     </figure>
   )

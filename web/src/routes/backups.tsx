@@ -54,7 +54,7 @@ function BackupsRoute() {
   if (!scope.identity.admin && !scope.identity.can_manage_backups)
     return (
       <>
-        <PageHeader title="Backups & restores" />
+        <PageHeader title="Backups" />
         <Empty
           icon="lock"
           title="Write access required"
@@ -179,7 +179,10 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
   const next = active.data?.next_cursor
   const removal = stored.data?.items.find((item) => item.id === remove?.id)
   const scheduleName = (id?: string) =>
-    id ? schedules.data?.items.find((item) => item.id === id)?.name || 'a removed schedule' : ''
+    !id
+      ? ''
+      : schedules.data?.items.find((item) => item.id === id)?.name ||
+        (schedules.isPending ? '(loading)' : schedules.error ? '(name unavailable)' : '(removed)')
   const noStorage = names.destinations.data && !names.destinations.data.items.length
   const title = artifacts ? 'Stored backups' : 'Job history'
   return (
