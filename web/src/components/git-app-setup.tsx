@@ -314,7 +314,7 @@ export function GitHubAppCallback({ installed = false }: { installed?: boolean }
       <div className="form-footer">
         <Button asChild>
           <Link to="/settings" search={{ tab: 'github' }}>
-            Back to Git connections
+            Back to Git providers
           </Link>
         </Button>
       </div>

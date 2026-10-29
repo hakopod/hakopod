@@ -18,7 +18,17 @@ import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { SelectField } from './ui/select'
 import { Dialog } from './ui/dialog'
-import { Copy, Empty, ErrorState, HeadingHelp, Loading, Note, Status, RequestError } from './shared'
+import { Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
+import { Icon } from './icons'
+import { focusedDialog, plural } from './operation-review'
+import {
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRows,
+  SettingsSection,
+  SettingsState,
+} from './settings-section'
+import { ChoiceCards } from './create-flow'
 import { FormPage, FormHint, FormSection } from './form-page'
 import { InstallationReviewRows, useInstallationFormFocus } from './installation-form-fields'
 import { ServiceIcon } from './service-icon'
@@ -37,78 +47,93 @@ export function GitConnectionsPanel() {
   const scope = useScope()
   const query = useGitConnections()
   if (!(scope.identity.admin || scope.identity.can_manage_git)) return <AccessRequired />
+  // Unconfigured legacy entries are placeholders for "connect this provider", not connections.
+  const items = query.data?.items.filter((item) => !item.legacy || item.configured) || []
+  const attention = items.filter((item) => !item.legacy && item.status !== 'ready').length
+  const add = (
+    <Button asChild variant="primary">
+      <Link to="/settings/git/connections/new">
+        <Icon name="plus" size={15} />
+        Add connection
+      </Link>
+    </Button>
+  )
   return (
-    <>
-      <div className="section-toolbar">
-        <div className="hako-section-heading-title">
-          <h2>Git connections</h2>
-          <HeadingHelp title="Git connections">
-            Keep sign-in and repository access separate. Select a named connection for each
-            application source or build.
-          </HeadingHelp>
-        </div>
-        <Button asChild variant="primary">
-          <Link to="/settings/git/connections/new">Add connection</Link>
-        </Button>
-      </div>
+    <SettingsSection
+      title="Git providers"
+      help="Keep sign-in and repository access separate. Select a named connection for each application source or build."
+      state={
+        query.data
+          ? items.length
+            ? `${plural(items.length, 'connection')}${attention ? `, ${attention} need${attention === 1 ? 's' : ''} attention` : ''}`
+            : 'No repository connections'
+          : undefined
+      }
+      actions={items.length > 0 && add}
+    >
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
-        <ErrorState error={query.error} />
+        <ErrorState error={query.error} retry={() => void query.refetch()} />
+      ) : !items.length ? (
+        <SettingsEmpty title="No Git connections" action={add}>
+          Connect GitHub or GitLab to deploy from your repositories.
+        </SettingsEmpty>
       ) : (
-        <div className="integration-grid">
-          {query.data.items.map((item) => (
-            <Link
-              key={item.id}
-              to={
-                item.legacy
-                  ? '/settings/git/connections/new'
-                  : '/settings/git/connections/$connectionId'
-              }
-              params={item.legacy ? {} : { connectionId: item.id }}
-              search={item.legacy ? { provider: item.provider } : {}}
-              className="panel integration-card interactive"
-            >
-              <ServiceIcon name={item.provider} size={32} />
-              <div className="min-w-0">
-                <h3 className="break-words">{item.legacy ? gitNames[item.provider] : item.name}</h3>
-                <p>
-                  {item.legacy
-                    ? item.provider === 'github'
-                      ? 'GitHub App'
-                      : 'GitLab OAuth App'
-                    : `${gitNames[item.provider]} · ${authNames[item.auth_kind]}`}
-                </p>
-                <p>
-                  {item.legacy
-                    ? item.configured
-                      ? 'Set up an App connection. Your existing connection stays active.'
-                      : 'Connect an App owned by your account or organization.'
-                    : item.account || 'Select this connection in an application or build'}
-                </p>
-              </div>
-              <div className="integration-state">
-                {item.legacy ? (
-                  <span className="field-help shrink-0">Set up</span>
-                ) : (
-                  <Status
-                    value={
-                      item.status === 'ready' ? 'configured' : item.status.replaceAll('_', ' ')
-                    }
-                  />
-                )}
-              </div>
-            </Link>
-          ))}
-        </div>
+        <SettingsRows label="Git connections">
+          {items.map((item) =>
+            item.legacy ? (
+              <SettingsRow
+                key={item.id}
+                mark={<ServiceIcon name={item.provider} size={16} />}
+                name={gitNames[item.provider]}
+                detail="Existing connection, not an App"
+                status={<SettingsState tone="ok">Active</SettingsState>}
+                meta="Set up an App connection. This one stays active meanwhile."
+                actions={
+                  <Button asChild size="sm">
+                    <Link to="/settings/git/connections/new" search={{ provider: item.provider }}>
+                      Set up App
+                    </Link>
+                  </Button>
+                }
+              />
+            ) : (
+              <SettingsRow
+                key={item.id}
+                muted={!item.enabled}
+                mark={<ServiceIcon name={item.provider} size={16} />}
+                name={item.name}
+                detail={`${gitNames[item.provider]} · ${authNames[item.auth_kind]}`}
+                status={
+                  !item.enabled ? (
+                    <SettingsState tone="muted">Disabled</SettingsState>
+                  ) : (
+                    <SettingsState tone={item.status === 'ready' ? 'ok' : 'warn'}>
+                      {item.status === 'ready'
+                        ? 'Ready'
+                        : item.status.charAt(0).toUpperCase() +
+                          item.status.slice(1).replaceAll('_', ' ')}
+                    </SettingsState>
+                  )
+                }
+                meta={item.account || 'No account reported'}
+                actions={
+                  <Button asChild size="sm" aria-label={`Edit ${item.name}`}>
+                    <Link
+                      to="/settings/git/connections/$connectionId"
+                      params={{ connectionId: item.id }}
+                    >
+                      Edit
+                    </Link>
+                  </Button>
+                }
+              />
+            ),
+          )}
+        </SettingsRows>
       )}
-      {query.data?.items.length === 0 && (
-        <Empty
-          title="No Git connections"
-          description="Add a GitHub or GitLab connection to deploy from your repositories."
-        />
-      )}
-    </>
+    </SettingsSection>
   )
 }
 export function GitConnectionEditor({
@@ -150,23 +175,31 @@ function NewGitConnection({ initialProvider }: { initialProvider: GitProvider })
   const [provider, setProvider] = useState<GitProvider>(initialProvider)
   const picker = (
     <FormSection title="Provider">
-      <div className="max-w-64">
-        <SelectField
-          label="Git provider"
-          value={provider}
-          onValueChange={(v) => setProvider(v as GitProvider)}
-          options={[
-            { value: 'github', label: 'GitHub' },
-            { value: 'gitlab', label: 'GitLab' },
-          ]}
-        />
-      </div>
+      <ChoiceCards
+        label="Git provider"
+        value={provider}
+        onChange={setProvider}
+        compact
+        choices={[
+          {
+            value: 'github',
+            title: 'GitHub',
+            description: 'Install an App your account or organization owns',
+            icon: <ServiceIcon name="github" size={20} />,
+          },
+          {
+            value: 'gitlab',
+            title: 'GitLab',
+            description: 'Authorize an OAuth application you register',
+            icon: <ServiceIcon name="gitlab" size={20} />,
+          },
+        ]}
+      />
     </FormSection>
   )
   return provider === 'github' ? (
     <FormPage
       title="Add Git connection"
-      description="Install an App owned by your GitHub account."
       breadcrumbs={[]}
     >
       {picker}
@@ -339,6 +372,7 @@ function GitConnectionForm({
                 onClick={() => setDeleting(true)}
               >
                 <Trash2 size={16} aria-hidden="true" />
+                Delete
               </Button>
               <Button type="button" onClick={back}>
                 Cancel
@@ -649,8 +683,9 @@ function GitConnectionForm({
                       </label>
                     ))}
                   <p className="field-help">
-                    Stored credentials are never returned to the browser. Repository access is
-                    approved with your provider.
+                    {current && replaceCredential
+                      ? 'Credentials are write-only. Saving replaces the stored one for every application and build using this connection; the previous credential is no longer used.'
+                      : 'Credentials are write-only and never returned to the browser. Repository access is approved with your provider.'}
                   </p>
                 </FormSection>
               )}
@@ -683,8 +718,14 @@ function GitConnectionForm({
                   ) : (
                     <p className="field-help">
                       {current
-                        ? 'The stored webhook secret is retained.'
-                        : 'A secret is generated when you save. Copy it from the confirmation page.'}
+                        ? 'The stored webhook secret is write-only and is kept.'
+                        : 'A secret is generated when you save and shown once on the confirmation page.'}
+                    </p>
+                  )}
+                  {current && replaceWebhook && (
+                    <p className="field-help">
+                      Update the provider webhook with the new secret after saving. Deliveries signed
+                      with the old secret are rejected.
                     </p>
                   )}
                   {current && <GitWebhookAddress path={current.webhook_path} />}
@@ -727,6 +768,7 @@ function GitConnectionForm({
               onClick={() => setDeleting(true)}
             >
               <Trash2 size={16} aria-hidden="true" />
+              Delete
             </Button>
           )}
           <Button type="button" disabled={busy} onClick={review ? () => setReview(false) : back}>
@@ -741,6 +783,7 @@ function GitConnectionForm({
       </form>
       <Dialog
         open={deleting}
+        className={focusedDialog}
         onOpenChange={(value) => {
           if (!busy) setDeleting(value)
         }}
