@@ -130,7 +130,7 @@
       "TestRunnerPoliciesReachOnlyTheRegistryMirrorInTheCluster",
       "TestServicePolicyExcludesOnlyGitLabSlotsWithTheirOwnNetworkPolicy"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/40931316594"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40933820752"
   },
   "reviewed_release": "v0.1.0-alpha.72",
   "runtime": "myduck",
