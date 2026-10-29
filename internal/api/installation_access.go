@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -162,9 +163,11 @@ func isLoopback(host string) bool {
 
 type accessPolicyView struct {
 	store.AccessPolicyRecord
-	ClientIP  string                 `json:"client_ip"`
-	Licensed  bool                   `json:"licensed"`
-	VPNStatus *store.AccessVPNStatus `json:"vpn_status,omitempty"`
+	SecretsSet map[string]bool        `json:"connector_secrets_set,omitempty"`
+	Connector  json.RawMessage        `json:"connector_status,omitempty"`
+	ClientIP   string                 `json:"client_ip"`
+	Licensed   bool                   `json:"licensed"`
+	VPNStatus  *store.AccessVPNStatus `json:"vpn_status,omitempty"`
 }
 
 func (s *Server) registerAccessRoutes(public, protected *http.ServeMux) {
@@ -205,6 +208,13 @@ func (s *Server) installationAccess(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	if view.Connector, err = s.Store.AccessConnectorStatus(r.Context()); err != nil {
+		failure(w, err)
+		return
+	}
+	if current, err := s.openConnectorSecrets(r.Context()); err == nil {
+		view.SecretsSet = map[string]bool{"tailscale_auth_key": current.TailscaleAuthKey != "", "openvpn_profile": current.OpenVPNProfile != "", "ipsec_psk": current.IPsecPSK != ""}
+	}
 	if client.IsValid() {
 		view.ClientIP = client.String()
 	}
@@ -219,6 +229,7 @@ func (s *Server) putInstallationAccess(w http.ResponseWriter, r *http.Request) {
 		ExpectedRevision     int64         `json:"expected_revision"`
 		Policy               access.Policy `json:"policy"`
 		ConfirmFromElsewhere bool          `json:"confirm_from_elsewhere"`
+		ConnectorSecrets     AccessSecrets `json:"connector_secrets"`
 	}
 	if !decodeLimited(w, r, &body, 64<<10) {
 		return
@@ -259,7 +270,12 @@ func (s *Server) putInstallationAccess(w http.ResponseWriter, r *http.Request) {
 		view.ClientIP = client.String()
 	}
 	metadata := map[string]any{"allow_cidrs": len(policy.AllowCIDRs), "client_ip_source": policy.ClientIPSource, "client_ip": view.ClientIP}
-	view.AccessPolicyRecord, err = s.Store.PutAccessPolicy(r.Context(), who(r), raw, policy.Enabled, body.ExpectedRevision, metadata)
+	sealed, err := s.connectorSecrets(r.Context(), policy, body.ConnectorSecrets)
+	if err != nil {
+		authFailure(w, err)
+		return
+	}
+	view.AccessPolicyRecord, err = s.Store.PutAccessPolicy(r.Context(), who(r), raw, sealed, policy.Enabled, body.ExpectedRevision, metadata)
 	s.forgetAccessPolicy()
 	if err != nil {
 		failure(w, err)
@@ -405,4 +421,73 @@ func (s *Server) revokeVPNPeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// AccessSecrets are write-only: the API accepts them and the host timer reads
+// them, but no response ever contains them.
+type AccessSecrets struct {
+	TailscaleAuthKey string `json:"tailscale_auth_key,omitempty"`
+	OpenVPNProfile   string `json:"openvpn_profile,omitempty"`
+	IPsecPSK         string `json:"ipsec_psk,omitempty"`
+}
+
+func (s *Server) openConnectorSecrets(ctx context.Context) (AccessSecrets, error) {
+	var out AccessSecrets
+	sealed, err := s.Store.AccessConnectorSecrets(ctx)
+	if err != nil || len(sealed) == 0 {
+		return out, err
+	}
+	plain, err := s.decryptAuth(sealed)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(plain, &out)
+}
+
+// OpenAccessSecrets lets the host-side state command read the secrets with
+// the installation's authentication key.
+func OpenAccessSecrets(encryptionKey string, sealed []byte) (AccessSecrets, error) {
+	var out AccessSecrets
+	if len(sealed) == 0 {
+		return out, nil
+	}
+	plain, err := (&Server{Auth: AuthConfig{EncryptionKey: encryptionKey}}).decryptAuth(sealed)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(plain, &out)
+}
+
+// connectorSecrets merges new secrets over the stored ones, drops secrets for
+// connectors that are no longer configured, checks what each connector needs
+// and returns the sealed result.
+func (s *Server) connectorSecrets(ctx context.Context, policy access.Policy, in AccessSecrets) ([]byte, error) {
+	current, err := s.openConnectorSecrets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: stored connector secrets could not be read; check the installation authentication key", store.ErrInput)
+	}
+	for _, pair := range []struct{ next, old *string }{{&in.TailscaleAuthKey, &current.TailscaleAuthKey}, {&in.OpenVPNProfile, &current.OpenVPNProfile}, {&in.IPsecPSK, &current.IPsecPSK}} {
+		if *pair.next != "" {
+			*pair.old = *pair.next
+		}
+	}
+	if policy.Tailscale == nil {
+		current.TailscaleAuthKey = ""
+	} else if len(current.TailscaleAuthKey) < 16 || len(current.TailscaleAuthKey) > 512 || strings.ContainsAny(current.TailscaleAuthKey, " \n\t") {
+		return nil, fmt.Errorf("%w: Tailscale needs an auth key", store.ErrInput)
+	}
+	if policy.OpenVPN == nil {
+		current.OpenVPNProfile = ""
+	} else if err = access.ValidateOpenVPNProfile(current.OpenVPNProfile); err != nil {
+		return nil, fmt.Errorf("%w: %s", store.ErrInput, err.Error())
+	}
+	if policy.IPsec == nil {
+		current.IPsecPSK = ""
+	} else if len(current.IPsecPSK) < 20 || len(current.IPsecPSK) > 256 || strings.ContainsAny(current.IPsecPSK, "\"\n\r") {
+		return nil, fmt.Errorf("%w: IPsec needs a pre-shared key of 20 to 256 characters without quotes or line breaks", store.ErrInput)
+	}
+	if current == (AccessSecrets{}) {
+		return []byte{}, nil
+	}
+	return s.encryptAuth(store.JSON(current))
 }

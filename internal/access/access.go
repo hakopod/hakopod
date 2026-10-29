@@ -45,6 +45,10 @@ type Policy struct {
 	VPNOnly bool `json:"vpn_only"`
 	// VPNServer runs a WireGuard server on this host for administrators.
 	VPNServer *VPNServer `json:"vpn_server,omitempty"`
+	// Other client connectors. At most one client connector runs at a time.
+	Tailscale *Tailscale `json:"tailscale,omitempty"`
+	OpenVPN   *OpenVPN   `json:"openvpn,omitempty"`
+	IPsec     *IPsec     `json:"ipsec,omitempty"`
 }
 
 func prefixes(values []string, field string) ([]netip.Prefix, error) {
@@ -113,6 +117,36 @@ func (p Policy) Normalize() (Policy, error) {
 			return p, err
 		}
 		p.VPN = &vpn
+	}
+	clients := 0
+	for _, set := range []bool{p.VPN != nil, p.Tailscale != nil, p.OpenVPN != nil, p.IPsec != nil} {
+		if set {
+			clients++
+		}
+	}
+	if clients > 1 {
+		return p, errors.New("choose one client connector: WireGuard, Tailscale, OpenVPN or IPsec")
+	}
+	if p.Tailscale != nil {
+		value, err := p.Tailscale.Normalize()
+		if err != nil {
+			return p, err
+		}
+		p.Tailscale = &value
+	}
+	if p.OpenVPN != nil {
+		value, err := p.OpenVPN.Normalize()
+		if err != nil {
+			return p, err
+		}
+		p.OpenVPN = &value
+	}
+	if p.IPsec != nil {
+		value, err := p.IPsec.Normalize()
+		if err != nil {
+			return p, err
+		}
+		p.IPsec = &value
 	}
 	if p.VPNServer != nil {
 		server, err := p.VPNServer.Normalize(p.VPN)

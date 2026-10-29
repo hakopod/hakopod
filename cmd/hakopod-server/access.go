@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hakopod/hakopod/internal/access"
+	"github.com/hakopod/hakopod/internal/api"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -85,11 +86,49 @@ func runAccessFirewallState() error {
 		Address    string `json:"address"`
 		Peers      []peer `json:"peers"`
 	}
+	type tailscale struct {
+		access.Tailscale
+		AuthKey string `json:"auth_key"`
+	}
+	type openvpn struct {
+		access.OpenVPN
+		Profile string `json:"profile"`
+	}
+	type ipsec struct {
+		access.IPsec
+		PSK string `json:"psk"`
+	}
 	state := struct {
 		Firewall  firewall    `json:"firewall"`
 		VPN       *access.VPN `json:"vpn"`
 		VPNServer *server     `json:"vpn_server"`
+		Tailscale *tailscale  `json:"tailscale"`
+		OpenVPN   *openvpn    `json:"openvpn"`
+		IPsec     *ipsec      `json:"ipsec"`
 	}{Firewall: firewall{policy.Enabled && policy.Firewall, []string{}, policy.VPNOnly}, VPN: policy.VPN}
+	if policy.Tailscale != nil || policy.OpenVPN != nil || policy.IPsec != nil {
+		key, err := secretSetting("HAKOPOD_AUTH_ENCRYPTION_KEY")
+		if err != nil {
+			return err
+		}
+		sealed, err := db.AccessConnectorSecrets(ctx)
+		if err != nil {
+			return fmt.Errorf("read connector secrets: %w", err)
+		}
+		secrets, err := api.OpenAccessSecrets(key, sealed)
+		if err != nil {
+			return fmt.Errorf("connector secrets could not be opened with the installation authentication key")
+		}
+		if policy.Tailscale != nil {
+			state.Tailscale = &tailscale{*policy.Tailscale, secrets.TailscaleAuthKey}
+		}
+		if policy.OpenVPN != nil {
+			state.OpenVPN = &openvpn{*policy.OpenVPN, secrets.OpenVPNProfile}
+		}
+		if policy.IPsec != nil {
+			state.IPsec = &ipsec{*policy.IPsec, secrets.IPsecPSK}
+		}
+	}
 	if policy.VPNServer != nil {
 		peers, err := db.AccessVPNPeers(ctx)
 		if err != nil {
@@ -161,4 +200,32 @@ func runAccessVPNServerReport() error {
 	}
 	defer db.Close()
 	return db.ReportAccessVPNServer(ctx, report.ServerPublicKey, report.Error, handshakes)
+}
+
+// runAccessConnectorReport stores what the host observed about the Tailscale,
+// OpenVPN or IPsec connector: its type, address, whether it is up, and errors.
+func runAccessConnectorReport() error {
+	var report struct {
+		Type      string `json:"type"`
+		Connected bool   `json:"connected"`
+		Address   string `json:"address"`
+		Error     string `json:"error"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(os.Stdin, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&report); err != nil {
+		return fmt.Errorf("read the connector report: %w", err)
+	}
+	if len(report.Type) > 16 || len(report.Address) > 64 || len(report.Error) > 512 {
+		return fmt.Errorf("the connector report exceeds its bounds")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := accessStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	raw, _ := json.Marshal(report)
+	return db.ReportAccessConnector(ctx, raw)
 }

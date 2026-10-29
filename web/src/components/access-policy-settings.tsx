@@ -87,7 +87,30 @@ function AccessPolicyForm({ current }: { current: Access }) {
   const [proxies, setProxies] = useState(policy.trusted_proxy_cidrs.join('\n'))
   const [header, setHeader] = useState<Policy['client_ip_header']>(policy.client_ip_header || '')
   const [firewall, setFirewall] = useState(Boolean(policy.firewall))
-  const [vpnOn, setVPNOn] = useState(Boolean(policy.vpn))
+  type Connector = 'none' | 'wireguard' | 'tailscale' | 'openvpn' | 'ipsec'
+  const [connector, setConnector] = useState<Connector>(
+    policy.vpn
+      ? 'wireguard'
+      : policy.tailscale
+        ? 'tailscale'
+        : policy.openvpn
+          ? 'openvpn'
+          : policy.ipsec
+            ? 'ipsec'
+            : 'none',
+  )
+  const vpnOn = connector === 'wireguard'
+  const [tsHostname, setTSHostname] = useState(policy.tailscale?.hostname || 'hakopod')
+  const [tsTags, setTSTags] = useState((policy.tailscale?.tags || []).join(' '))
+  const [tsLogin, setTSLogin] = useState(policy.tailscale?.login_server || '')
+  const [ovpnRoutes, setOVPNRoutes] = useState((policy.openvpn?.routes || []).join(' '))
+  const [ipsecRemote, setIPsecRemote] = useState(policy.ipsec?.remote_address || '')
+  const [ipsecLocalID, setIPsecLocalID] = useState(policy.ipsec?.local_id || '')
+  const [ipsecRemoteID, setIPsecRemoteID] = useState(policy.ipsec?.remote_id || '')
+  const [ipsecNetworks, setIPsecNetworks] = useState(
+    (policy.ipsec?.remote_networks || []).join(' '),
+  )
+  const [secret, setSecret] = useState('')
   const [vpnAddress, setVPNAddress] = useState(policy.vpn?.address || '')
   const [vpnPeer, setVPNPeer] = useState(policy.vpn?.peer_public_key || '')
   const [vpnEndpoint, setVPNEndpoint] = useState(policy.vpn?.peer_endpoint || '')
@@ -123,6 +146,16 @@ function AccessPolicyForm({ current }: { current: Access }) {
           body: {
             expected_revision: current.revision,
             confirm_from_elsewhere: elsewhere,
+            connector_secrets:
+              secret === ''
+                ? {}
+                : connector === 'tailscale'
+                  ? { tailscale_auth_key: secret }
+                  : connector === 'openvpn'
+                    ? { openvpn_profile: secret }
+                    : connector === 'ipsec'
+                      ? { ipsec_psk: secret }
+                      : {},
             policy: {
               enabled,
               allow_cidrs: lines(allow),
@@ -131,6 +164,26 @@ function AccessPolicyForm({ current }: { current: Access }) {
               client_ip_header: source === 'trusted_proxy' ? header : '',
               firewall: enabled && firewall,
               vpn_only: enabled && (vpnOn || serverOn) && vpnOnly,
+              ...(connector === 'tailscale'
+                ? {
+                    tailscale: {
+                      hostname: tsHostname.trim(),
+                      tags: lines(tsTags),
+                      login_server: tsLogin.trim(),
+                    },
+                  }
+                : {}),
+              ...(connector === 'openvpn' ? { openvpn: { routes: lines(ovpnRoutes) } } : {}),
+              ...(connector === 'ipsec'
+                ? {
+                    ipsec: {
+                      remote_address: ipsecRemote.trim(),
+                      local_id: ipsecLocalID.trim(),
+                      remote_id: ipsecRemoteID.trim(),
+                      remote_networks: lines(ipsecNetworks),
+                    },
+                  }
+                : {}),
               ...(serverOn
                 ? {
                     vpn_server: {
@@ -295,18 +348,35 @@ function AccessPolicyForm({ current }: { current: Access }) {
         </p>
         <SettingsSection
           level={3}
-          title="WireGuard connector"
-          help="Connects this server to your WireGuard network as a client. The server's private key is generated on the server and never leaves it; add the public key below as a peer on your VPN. Only the networks you list are routed through the tunnel. Needs the private-access installer module."
-          state={vpnState(policy.vpn ? current.vpn_status : undefined)}
+          title="VPN connector"
+          help="Connects this server to your existing VPN as a client, so administrators reach the dashboard over it. Only the networks you list are routed through the tunnel, and secrets are stored encrypted and never shown again. Needs the private-access installer module and the VPN's own client on the server for Tailscale, OpenVPN or IPsec."
+          state={
+            policy.vpn
+              ? vpnState(current.vpn_status)
+              : current.connector_status?.type
+                ? current.connector_status.error
+                  ? `Error · ${current.connector_status.error}`
+                  : current.connector_status.connected
+                    ? `Connected · ${current.connector_status.address || current.connector_status.type}`
+                    : 'Connecting'
+                : 'Not connected'
+          }
         >
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={vpnOn}
-              onChange={(event) => setVPNOn(event.target.checked)}
-            />
-            Connect this server to a WireGuard network
-          </label>
+          <SelectField
+            label="Connect this server to"
+            value={connector}
+            onValueChange={(value) => {
+              setConnector(value as Connector)
+              setSecret('')
+            }}
+            options={[
+              { value: 'none', label: 'No VPN' },
+              { value: 'wireguard', label: 'WireGuard' },
+              { value: 'tailscale', label: 'Tailscale or Headscale' },
+              { value: 'openvpn', label: 'OpenVPN' },
+              { value: 'ipsec', label: 'IPsec (IKEv2, pre-shared key)' },
+            ]}
+          />
           {current.vpn_status?.public_key && (
             <Field
               label="Server public key"
@@ -357,6 +427,99 @@ function AccessPolicyForm({ current }: { current: Access }) {
                 webhooks and refuses everything else.
               </p>
             </>
+          )}
+          {connector === 'tailscale' && (
+            <>
+              <Field
+                label="Hostname"
+                value={tsHostname}
+                onChange={(event) => setTSHostname(event.target.value)}
+              />
+              <Field
+                label="Tags"
+                value={tsTags}
+                placeholder="For example tag:hakopod"
+                onChange={(event) => setTSTags(event.target.value)}
+              />
+              <Field
+                label="Login server"
+                value={tsLogin}
+                placeholder="Leave empty for Tailscale; https://... for Headscale"
+                onChange={(event) => setTSLogin(event.target.value)}
+              />
+            </>
+          )}
+          {connector === 'openvpn' && (
+            <Field
+              label="Networks routed through the tunnel"
+              value={ovpnRoutes}
+              placeholder="For example 10.20.0.0/16"
+              onChange={(event) => setOVPNRoutes(event.target.value)}
+              help="Routes pushed by the OpenVPN server are ignored."
+            />
+          )}
+          {connector === 'ipsec' && (
+            <>
+              <Field
+                label="Remote gateway"
+                value={ipsecRemote}
+                onChange={(event) => setIPsecRemote(event.target.value)}
+              />
+              <Field
+                label="Local identity"
+                value={ipsecLocalID}
+                onChange={(event) => setIPsecLocalID(event.target.value)}
+              />
+              <Field
+                label="Remote identity"
+                value={ipsecRemoteID}
+                onChange={(event) => setIPsecRemoteID(event.target.value)}
+              />
+              <Field
+                label="Remote networks"
+                value={ipsecNetworks}
+                placeholder="For example 10.30.0.0/16"
+                onChange={(event) => setIPsecNetworks(event.target.value)}
+              />
+            </>
+          )}
+          {(connector === 'tailscale' || connector === 'ipsec') && (
+            <Field
+              label={connector === 'tailscale' ? 'Auth key' : 'Pre-shared key'}
+              type="password"
+              autoComplete="off"
+              value={secret}
+              onChange={(event) => setSecret(event.target.value)}
+              help={
+                current.connector_secrets_set?.[
+                  connector === 'tailscale' ? 'tailscale_auth_key' : 'ipsec_psk'
+                ]
+                  ? 'Stored. Leave empty to keep it.'
+                  : 'Required. Stored encrypted and never shown again.'
+              }
+            />
+          )}
+          {connector === 'openvpn' && (
+            <div className="field">
+              <div className="field-heading">
+                <label htmlFor="access-ovpn">Client profile (.ovpn)</label>
+              </div>
+              <Textarea
+                id="access-ovpn"
+                rows={6}
+                value={secret}
+                placeholder={
+                  current.connector_secrets_set?.openvpn_profile
+                    ? 'Stored. Leave empty to keep it.'
+                    : 'Paste the profile with inline certificates and keys.'
+                }
+                onChange={(event) => setSecret(event.target.value)}
+              />
+              <div className="field-help">
+                Scripts, plugins and pushed default routes are refused. Stored encrypted and never
+                shown again.
+              </div>
+            </div>
           )}
         </SettingsSection>
         <SettingsSection

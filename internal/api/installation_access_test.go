@@ -250,3 +250,49 @@ func TestInstallationVPNServerProfiles(t *testing.T) {
 		t.Fatalf("short key = %d", code)
 	}
 }
+
+func TestInstallationAccessConnectorSecretsAreWriteOnly(t *testing.T) {
+	h := newAuthHarness(t, nil)
+	owner := h.owner()
+	grantPrivateAccess(t, h)
+	base := func(extra map[string]any) map[string]any {
+		policy := map[string]any{"enabled": false, "client_ip_source": "connection", "trusted_proxy_cidrs": []string{}, "client_ip_header": "", "allow_cidrs": []string{}}
+		for k, v := range extra {
+			policy[k] = v
+		}
+		return policy
+	}
+	openvpn := map[string]any{"openvpn": map[string]any{"routes": []string{"10.20.0.0/16"}}}
+	if code, _ := h.accessCall("PUT", "/api/v1/installation/access", owner, "", map[string]any{"expected_revision": 0, "policy": base(openvpn)}); code != 400 {
+		t.Fatalf("OpenVPN without a profile = %d", code)
+	}
+	bad := "client\nremote vpn.example.com 1194\nup /tmp/run.sh\n"
+	if code, _ := h.accessCall("PUT", "/api/v1/installation/access", owner, "", map[string]any{"expected_revision": 0, "policy": base(openvpn), "connector_secrets": map[string]any{"openvpn_profile": bad}}); code != 400 {
+		t.Fatalf("OpenVPN profile with a script = %d", code)
+	}
+	profile := "client\nremote vpn.example.com 1194\n<ca>\nsecret-certificate-material\n</ca>\n"
+	if code, body := h.accessCall("PUT", "/api/v1/installation/access", owner, "", map[string]any{"expected_revision": 0, "policy": base(openvpn), "connector_secrets": map[string]any{"openvpn_profile": profile}}); code != 200 {
+		t.Fatalf("OpenVPN save = %d %v", code, body)
+	}
+	// Saving again without the profile keeps it.
+	if code, body := h.accessCall("PUT", "/api/v1/installation/access", owner, "", map[string]any{"expected_revision": 1, "policy": base(openvpn)}); code != 200 {
+		t.Fatalf("OpenVPN resave = %d %v", code, body)
+	}
+	code, view := h.accessCall("GET", "/api/v1/installation/access", owner, "", nil)
+	raw, _ := json.Marshal(view)
+	if code != 200 || bytes.Contains(raw, []byte("secret-certificate-material")) || view["connector_secrets_set"].(map[string]any)["openvpn_profile"] != true {
+		t.Fatalf("view = %d %s", code, raw)
+	}
+	sealed, err := h.db.AccessConnectorSecrets(context.Background())
+	if err != nil || len(sealed) == 0 || bytes.Contains(sealed, []byte("secret-certificate-material")) {
+		t.Fatalf("secrets not sealed at rest: %v", err)
+	}
+	// Switching connector drops the old secret.
+	tailscale := map[string]any{"tailscale": map[string]any{"hostname": "hakopod", "tags": []string{}, "login_server": ""}}
+	if code, body := h.accessCall("PUT", "/api/v1/installation/access", owner, "", map[string]any{"expected_revision": 2, "policy": base(tailscale), "connector_secrets": map[string]any{"tailscale_auth_key": "tskey-auth-0123456789abcdef"}}); code != 200 {
+		t.Fatalf("Tailscale save = %d %v", code, body)
+	}
+	if _, view = h.accessCall("GET", "/api/v1/installation/access", owner, "", nil); view["connector_secrets_set"].(map[string]any)["openvpn_profile"] != false {
+		t.Fatalf("old OpenVPN profile kept: %v", view["connector_secrets_set"])
+	}
+}
