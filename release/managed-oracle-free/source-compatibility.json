@@ -1,0 +1,69 @@
+{
+  "bootstrap": {
+    "commit": "94ca091e9a5bdfda25e80e87561445054ff0660e",
+    "reviewed_release": "v0.1.0-alpha.72",
+    "tag": "v0.1.0-alpha.71",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "8b70c8d1681c670e4137b43062b9fabf10e3d380",
+  "delta": {
+    "baseline_sha256": "d9a2d8c6da03b0dc60d9bb1583714954fe6ffc14aa726d27436d46e8f6bd5a79",
+    "changes": [
+      {
+        "after": "2910848cd3548714c58d27ed21c8aa390ec538acb2a5e675ec6ac7726b4e8a90",
+        "before": "98d476ab4a6e495b1bf788878428d78e9404a4e46c7fd58e6ca3db0bd136f989",
+        "path": "internal/cluster/actions-daemon.sh",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a0241dfadded0eec6df0b131040ad16242ac5c30bf8397a166775bb0962225d9",
+        "before": "fc581a7f602521727edb56921521c67ae3c4aa70ff8be5d363d441d75b95099f",
+        "path": "internal/cluster/actions_gitlab_network.go",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "63d3e5d345142ff0a27155e5c54087506846f7329c86c88b2510af94c5c9e356",
+        "before": "ebb0efac0602ca01d5d0004080652da0fcbee8c79feab9aa4753dcea9a85172f",
+        "path": "internal/cluster/actions_provider_policy_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "bceccfeb7e7f18e1b03b87327dab2ccdafbdf0e030ae761f5e96d20ba9528de8",
+        "before": "f44604ebe2e885ad74bf3c04e7f2b757037699817b648d10570a87a08835569d",
+        "path": "internal/cluster/policies.go",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e9e70681a48830eec273915b6580ca1aa03174c6a4e05e5a3502256cdeee4e76",
+        "before": "a11d86addc7221b87251d43349fd53ca2c4dc67ffff03e026bdae27b0ecf3bc2",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      }
+    ],
+    "current_sha256": "09e5736e97f5c40ecb9837c01a6dfff5c2f146e34770470b5d3a286d3854f482"
+  },
+  "predecessor": {
+    "commit": "94ca091e9a5bdfda25e80e87561445054ff0660e",
+    "review_sha256": "fab439a11a8e2ab2784364d54f5c2f1ae96d3e474967dee124690ff79b7a8fe0",
+    "tag": "v0.1.0-alpha.71"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestActionsServicePullFixtureIsolation",
+      "TestRunnerPoliciesReachOnlyTheRegistryMirrorInTheCluster",
+      "TestServicePolicyExcludesOnlyGitLabSlotsWithTheirOwnNetworkPolicy"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40887183825"
+  },
+  "reviewed_release": "v0.1.0-alpha.72",
+  "runtime": "oracle-free",
+  "schema_version": 2
+}
