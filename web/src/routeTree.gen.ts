@@ -93,6 +93,8 @@ import { Route as SettingsKeysNewRouteImport } from './routes/settings.keys.new'
 import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/settings.login-providers.$provider'
 import { Route as SettingsRolesNewRouteImport } from './routes/settings.roles.new'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
+import { Route as SettingsVpnConnectorRouteImport } from './routes/settings.vpn.connector'
+import { Route as SettingsVpnServerRouteImport } from './routes/settings.vpn.server'
 import { Route as ApplicationsApplicationIdPreviewsNewRouteImport } from './routes/applications.$applicationId.previews.new'
 import { Route as ApplicationsApplicationIdServicesNewRouteImport } from './routes/applications.$applicationId.services.new'
 import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
@@ -109,6 +111,7 @@ import { Route as SettingsGitGithubCallbackRouteImport } from './routes/settings
 import { Route as SettingsGitGithubInstalledRouteImport } from './routes/settings.git.github.installed'
 import { Route as SettingsRolesRoleEditRouteImport } from './routes/settings.roles.$role.edit'
 import { Route as SettingsSecretProvidersProviderNameEditRouteImport } from './routes/settings.secret-providers.$providerName.edit'
+import { Route as SettingsVpnDevicesNewRouteImport } from './routes/settings.vpn.devices.new'
 import { Route as SynehqSScopeSplatRouteImport } from './routes/synehq.s.$scope.$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -560,6 +563,16 @@ const SettingsSecretProvidersNewRoute =
     path: '/new',
     getParentRoute: () => SettingsSecretProvidersRoute,
   } as any)
+const SettingsVpnConnectorRoute = SettingsVpnConnectorRouteImport.update({
+  id: '/vpn/connector',
+  path: '/vpn/connector',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsVpnServerRoute = SettingsVpnServerRouteImport.update({
+  id: '/vpn/server',
+  path: '/vpn/server',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const ApplicationsApplicationIdPreviewsNewRoute =
   ApplicationsApplicationIdPreviewsNewRouteImport.update({
     id: '/previews/new',
@@ -655,6 +668,11 @@ const SettingsSecretProvidersProviderNameEditRoute =
     path: '/$providerName/edit',
     getParentRoute: () => SettingsSecretProvidersRoute,
   } as any)
+const SettingsVpnDevicesNewRoute = SettingsVpnDevicesNewRouteImport.update({
+  id: '/vpn/devices/new',
+  path: '/vpn/devices/new',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SynehqSScopeSplatRoute = SynehqSScopeSplatRouteImport.update({
   id: '/synehq/s/$scope/$',
   path: '/synehq/s/$scope/$',
@@ -746,6 +764,8 @@ export interface FileRoutesByFullPath {
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
+  '/settings/vpn/connector': typeof SettingsVpnConnectorRoute
+  '/settings/vpn/server': typeof SettingsVpnServerRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
@@ -762,6 +782,7 @@ export interface FileRoutesByFullPath {
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
+  '/settings/vpn/devices/new': typeof SettingsVpnDevicesNewRoute
   '/synehq/s/$scope/$': typeof SynehqSScopeSplatRoute
 }
 export interface FileRoutesByTo {
@@ -849,6 +870,8 @@ export interface FileRoutesByTo {
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
+  '/settings/vpn/connector': typeof SettingsVpnConnectorRoute
+  '/settings/vpn/server': typeof SettingsVpnServerRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
@@ -865,6 +888,7 @@ export interface FileRoutesByTo {
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
+  '/settings/vpn/devices/new': typeof SettingsVpnDevicesNewRoute
   '/synehq/s/$scope/$': typeof SynehqSScopeSplatRoute
 }
 export interface FileRoutesById {
@@ -953,6 +977,8 @@ export interface FileRoutesById {
   '/settings/login-providers/$provider': typeof SettingsLoginProvidersProviderRoute
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
+  '/settings/vpn/connector': typeof SettingsVpnConnectorRoute
+  '/settings/vpn/server': typeof SettingsVpnServerRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
@@ -969,6 +995,7 @@ export interface FileRoutesById {
   '/settings/git/github/installed': typeof SettingsGitGithubInstalledRoute
   '/settings/roles/$role/edit': typeof SettingsRolesRoleEditRoute
   '/settings/secret-providers/$providerName/edit': typeof SettingsSecretProvidersProviderNameEditRoute
+  '/settings/vpn/devices/new': typeof SettingsVpnDevicesNewRoute
   '/synehq/s/$scope/$': typeof SynehqSScopeSplatRoute
 }
 export interface FileRouteTypes {
@@ -1058,6 +1085,8 @@ export interface FileRouteTypes {
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
+    | '/settings/vpn/connector'
+    | '/settings/vpn/server'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
@@ -1074,6 +1103,7 @@ export interface FileRouteTypes {
     | '/settings/git/github/installed'
     | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
+    | '/settings/vpn/devices/new'
     | '/synehq/s/$scope/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -1161,6 +1191,8 @@ export interface FileRouteTypes {
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
+    | '/settings/vpn/connector'
+    | '/settings/vpn/server'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
@@ -1177,6 +1209,7 @@ export interface FileRouteTypes {
     | '/settings/git/github/installed'
     | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
+    | '/settings/vpn/devices/new'
     | '/synehq/s/$scope/$'
   id:
     | '__root__'
@@ -1264,6 +1297,8 @@ export interface FileRouteTypes {
     | '/settings/login-providers/$provider'
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
+    | '/settings/vpn/connector'
+    | '/settings/vpn/server'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
@@ -1280,6 +1315,7 @@ export interface FileRouteTypes {
     | '/settings/git/github/installed'
     | '/settings/roles/$role/edit'
     | '/settings/secret-providers/$providerName/edit'
+    | '/settings/vpn/devices/new'
     | '/synehq/s/$scope/$'
   fileRoutesById: FileRoutesById
 }
@@ -1903,6 +1939,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSecretProvidersNewRouteImport
       parentRoute: typeof SettingsSecretProvidersRoute
     }
+    '/settings/vpn/connector': {
+      id: '/settings/vpn/connector'
+      path: '/vpn/connector'
+      fullPath: '/settings/vpn/connector'
+      preLoaderRoute: typeof SettingsVpnConnectorRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/vpn/server': {
+      id: '/settings/vpn/server'
+      path: '/vpn/server'
+      fullPath: '/settings/vpn/server'
+      preLoaderRoute: typeof SettingsVpnServerRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/applications/$applicationId/previews/new': {
       id: '/applications/$applicationId/previews/new'
       path: '/previews/new'
@@ -2014,6 +2064,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/secret-providers/$providerName/edit'
       preLoaderRoute: typeof SettingsSecretProvidersProviderNameEditRouteImport
       parentRoute: typeof SettingsSecretProvidersRoute
+    }
+    '/settings/vpn/devices/new': {
+      id: '/settings/vpn/devices/new'
+      path: '/vpn/devices/new'
+      fullPath: '/settings/vpn/devices/new'
+      preLoaderRoute: typeof SettingsVpnDevicesNewRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/synehq/s/$scope/$': {
       id: '/synehq/s/$scope/$'
@@ -2315,11 +2372,14 @@ interface SettingsRouteChildren {
   SettingsKeysNewRoute: typeof SettingsKeysNewRoute
   SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
   SettingsRolesNewRoute: typeof SettingsRolesNewRoute
+  SettingsVpnConnectorRoute: typeof SettingsVpnConnectorRoute
+  SettingsVpnServerRoute: typeof SettingsVpnServerRoute
   SettingsGitConnectionsConnectionIdRoute: typeof SettingsGitConnectionsConnectionIdRoute
   SettingsGitConnectionsNewRoute: typeof SettingsGitConnectionsNewRoute
   SettingsGitGithubCallbackRoute: typeof SettingsGitGithubCallbackRoute
   SettingsGitGithubInstalledRoute: typeof SettingsGitGithubInstalledRoute
   SettingsRolesRoleEditRoute: typeof SettingsRolesRoleEditRoute
+  SettingsVpnDevicesNewRoute: typeof SettingsVpnDevicesNewRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -2334,12 +2394,15 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeysNewRoute: SettingsKeysNewRoute,
   SettingsLoginProvidersProviderRoute: SettingsLoginProvidersProviderRoute,
   SettingsRolesNewRoute: SettingsRolesNewRoute,
+  SettingsVpnConnectorRoute: SettingsVpnConnectorRoute,
+  SettingsVpnServerRoute: SettingsVpnServerRoute,
   SettingsGitConnectionsConnectionIdRoute:
     SettingsGitConnectionsConnectionIdRoute,
   SettingsGitConnectionsNewRoute: SettingsGitConnectionsNewRoute,
   SettingsGitGithubCallbackRoute: SettingsGitGithubCallbackRoute,
   SettingsGitGithubInstalledRoute: SettingsGitGithubInstalledRoute,
   SettingsRolesRoleEditRoute: SettingsRolesRoleEditRoute,
+  SettingsVpnDevicesNewRoute: SettingsVpnDevicesNewRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

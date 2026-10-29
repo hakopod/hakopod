@@ -113,6 +113,7 @@ export function parentNavigation(
         'login-providers': 'login-providers',
         smtp: 'smtp',
         edge: 'edge',
+        vpn: 'vpn',
         keys: 'keys',
         roles: 'teams',
         'secret-providers': 'secret-providers',

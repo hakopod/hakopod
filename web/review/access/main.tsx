@@ -22,16 +22,17 @@ const policy = (enabled: boolean, firewall = false) => ({
   allow_cidrs: enabled ? ['10.8.0.0/24', '203.0.113.0/24'] : [],
   firewall,
   ...(scenario === 'vpn' ? { vpn } : {}),
-  ...(scenario === 'connector' ? { tailscale: { hostname: 'hakopod', tags: ['tag:hakopod'], login_server: 'https://headscale.example.com' } } : {}),
-  ...(scenario === 'server' ? { vpn_server: { network: '10.100.0.0/24', listen_port: 51820, endpoint: 'vpn.example.com:51820' } } : {}),
+  ...(scenario === 'connector' || scenario === 'full' ? { tailscale: { hostname: 'hakopod', tags: ['tag:hakopod'], login_server: 'https://headscale.example.com' } } : {}),
+  ...(scenario === 'server' || scenario === 'full' ? { vpn_server: { network: '10.100.0.0/24', listen_port: 51820, endpoint: 'vpn.example.com:51820' } } : {}),
 })
 const access = {
   revision: scenario === 'off' || scenario === 'unlicensed' ? 0 : 3,
   policy: policy(scenario !== 'off' && scenario !== 'unlicensed', scenario === 'restricted' || scenario === 'vpn'),
-  ...(scenario === 'connector'
+  agent: scenario === 'agentless' ? { version: '' } : { version: '0.1.0-alpha.72', seen_at: new Date().toISOString() },
+  ...(scenario === 'connector' || scenario === 'full'
     ? { connector_secrets_set: { tailscale_auth_key: true, openvpn_profile: false, ipsec_psk: false }, connector_status: { type: 'tailscale', connected: true, address: '100.101.1.2', error: '' } }
     : {}),
-  ...(scenario === 'server'
+  ...(scenario === 'server' || scenario === 'full'
     ? { vpn_status: { public_key: '', server_public_key: 'U0VSVkVSLVBVQkxJQy1LRVktRk9SLVJFVklFVy0wMD0=', server_error: '', rx_bytes: 0, tx_bytes: 0, error: '', reported_at: new Date().toISOString() } }
     : {}),
   ...(scenario === 'vpn'
@@ -66,7 +67,7 @@ const answers: Record<string, unknown> = {
   '/api/alarms': { items: [], next_cursor: '', summary: { active: 0, unread: 0 } },
   '/api/installation/access': access,
   '/api/installation/access/vpn-peers': {
-    items: scenario === 'server'
+    items: scenario === 'server' || scenario === 'full'
       ? [
           { id: 'peer-1', identity_id: 'synthetic-access-review-owner', name: 'Asha laptop', public_key: 'cGVlcg==', address: '10.100.0.2', latest_handshake: new Date(Date.now() - 30_000).toISOString(), created_at: new Date().toISOString() },
           { id: 'peer-2', identity_id: 'synthetic-access-review-owner', name: 'On-call phone', public_key: 'cGVlcjI=', address: '10.100.0.3', created_at: new Date().toISOString() },
@@ -89,12 +90,20 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return Response.json({ error: { code: 'not_found', message: 'Synthetic fixture: not part of this review.' } }, { status: 404 })
 }
 
-const [{ DashboardShell }, settings] = await Promise.all([
+const [{ DashboardShell }, settings, server, connector, device] = await Promise.all([
   import('../../src/components/shell'),
   import('../../src/routes/settings'),
+  import('../../src/routes/settings.vpn.server'),
+  import('../../src/routes/settings.vpn.connector'),
+  import('../../src/routes/settings.vpn.devices.new'),
 ])
 const root = createRootRoute({ component: () => <DashboardShell><Outlet /></DashboardShell> })
-const routes = [settings.Route.update({ id: '/settings', path: '/settings', getParentRoute: () => root } as never)]
+const routes = [
+  [settings.Route, '/settings'],
+  [server.Route, '/settings/vpn/server'],
+  [connector.Route, '/settings/vpn/connector'],
+  [device.Route, '/settings/vpn/devices/new'],
+].map(([route, path]) => (route as typeof settings.Route).update({ id: path, path, getParentRoute: () => root } as never))
 const router = createRouter({ routeTree: root.addChildren(routes), defaultPreload: false })
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } } })
 createRoot(document.getElementById('root')!).render(<QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider>)
