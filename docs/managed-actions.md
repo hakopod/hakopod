@@ -25,8 +25,11 @@ gVisor handler named `runsc`, are left alone as long as they do not use the
 Existing installations retain their original maintenance helpers on upgrade;
 use the new release's verified kit for this optional module.
 
-The optional shared workspace profile must be enabled explicitly from that
-same verified installer kit:
+A first-time server installation tries the shared workspace profile
+(`shared-overlay2-v1`), which runs Docker on overlay2 instead of VFS. If the
+node's qualification probe fails, the node keeps VFS and the next maintenance
+run qualifies it again. Existing installations keep their saved profile and
+can enable it explicitly from that same verified installer kit:
 
 ```sh
 sudo python3 ./installer/modules.py managed-actions --workspace-profile shared-overlay2-v1
@@ -49,7 +52,8 @@ sudo python3 ./installer/modules.py managed-actions --workspace-profile vfs
 
 Jobs already running keep their original workspace until they finish. Omitting
 `--workspace-profile` preserves the profile previously selected by the
-installer; a first-time installation defaults to VFS.
+installer; a first-time server installation tries `shared-overlay2-v1` and falls
+back to VFS. Agents use VFS.
 
 ## Additional runner nodes
 
