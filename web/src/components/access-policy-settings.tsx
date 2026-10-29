@@ -225,8 +225,8 @@ function AccessPolicyForm({ current }: { current: Access }) {
           </label>
           <p className="field-help m-0">
             A saved policy reverts after five minutes unless you confirm it. If you are locked out,
-            run <code>sudo python3 /opt/hakopod/maintenance/maintenance.py --access-reset</code> on
-            the server.
+            run <code>hakopod-server access-reset</code> on the server with the API environment; the
+            Management network access guide has the exact command.
           </p>
           {error && <RequestError error={error} />}
           <div>

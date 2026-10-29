@@ -760,17 +760,6 @@ def enable():
     command(['systemctl', 'enable', '--now', 'hakopod-maintenance'])
 
 
-def access_reset():
-    # Break-glass for a management access policy that locks every admin out.
-    # It runs the server binary as the API user with the API's own settings,
-    # so it needs no network path to the dashboard and no license.
-    if os.geteuid() != 0: raise SystemExit('Run the access reset as root')
-    actor = os.environ.get('SUDO_USER') or 'root'
-    subprocess.run(['systemd-run', '--wait', '--pipe', '--quiet', '--collect', '--uid=hakopod-api', '--gid=hakopod-api',
-                    '--working-directory=/opt/hakopod/current', '--property=EnvironmentFile=/etc/hakopod/api.env',
-                    '--setenv=SUDO_USER=' + actor, '/opt/hakopod/current/hakopod-server', 'access-reset'], check=True, timeout=120)
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--serve', action='store_true')
@@ -778,7 +767,6 @@ if __name__ == '__main__':
     parser.add_argument('--upgrade', metavar='VERSION')
     parser.add_argument('--check-upgrade', metavar='VERSION')
     parser.add_argument('--manifest', type=Path)
-    parser.add_argument('--access-reset', action='store_true', help='Turn the management access policy off (break-glass).')
     args = parser.parse_args()
     if args.check_upgrade:
         try:
@@ -786,8 +774,6 @@ if __name__ == '__main__':
             check_upgrade(host.read_json(args.manifest), args.check_upgrade)
         except ValueError as error:
             raise SystemExit('Hakopod upgrade: ' + str(error)) from None
-    elif args.access_reset:
-        access_reset()
     elif args.enable:
         enable()
     elif args.serve:

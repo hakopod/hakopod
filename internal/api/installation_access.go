@@ -118,7 +118,7 @@ func (s *Server) accessGate(w http.ResponseWriter, r *http.Request) bool {
 	}
 	policy, _, local, err := s.accessPolicy(r.Context())
 	if err != nil {
-		problem(w, 503, "access_policy_unavailable", "the installation access policy could not be read; run `sudo python3 /opt/hakopod/maintenance/maintenance.py --access-reset` on the server if this persists")
+		problem(w, 503, "access_policy_unavailable", "the installation access policy could not be read; run `hakopod-server access-reset` on the server with the API environment (see docs/management-network-access.md) if this persists")
 		return false
 	}
 	client, ok := clientAddress(r, policy)

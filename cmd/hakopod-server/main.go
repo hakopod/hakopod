@@ -37,6 +37,9 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "actions-workspace-probe" {
 		return runActionsWorkspaceProbe(os.Args[2:])
 	}
+	if len(os.Args) > 1 && os.Args[1] == "access-reset" {
+		return runAccessReset()
+	}
 	if err := loadOperatorConfig(); err != nil {
 		return err
 	}
@@ -76,20 +79,6 @@ func run() error {
 	db.ShowcaseEnabled = true
 	if err = db.Migrate(ctx); err != nil {
 		return fmt.Errorf("database migration failed: %w", err)
-	}
-	if len(os.Args) > 1 && os.Args[1] == "access-reset" {
-		// Break-glass: turn the management access policy off from the server
-		// itself. It needs the database credentials, so only root can run it.
-		actor := os.Getenv("SUDO_USER")
-		if actor == "" {
-			actor = "root"
-		}
-		record, err := db.ResetAccessPolicy(ctx, actor)
-		if err != nil {
-			return fmt.Errorf("reset the access policy: %w", err)
-		}
-		fmt.Printf("Management access policy is off (revision %d). Every network can reach the dashboard again.\n", record.Revision)
-		return nil
 	}
 	if len(os.Args) > 1 && os.Args[1] == "bootstrap" {
 		fs := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
