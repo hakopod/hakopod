@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { Badge } from '@hakopod/hatch-ui/components/badge'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
@@ -12,7 +11,13 @@ import { useEditionFeatures } from '../lib/dashboard-edition'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Dialog } from '../components/ui/dialog'
-import { Copy, Empty, ErrorState, Loading, Note, PageHeader } from '../components/shared'
+import { Copy, Loading, Note, PageHeader } from '../components/shared'
+import {
+  ResourceEmpty,
+  ResourceError,
+  ResourceRow,
+  ResourceRows,
+} from '../components/resource-card'
 
 export const Route = createFileRoute('/templates')({
   validateSearch: (
@@ -119,10 +124,14 @@ function Templates() {
       <ComputeNotice />
       {templates.isPending ? (
         <Loading rows={4} />
-      ) : templates.error ? (
-        <ErrorState error={templates.error} retry={() => void templates.refetch()} />
+      ) : templates.error && !templates.data ? (
+        <ResourceError
+          error={templates.error}
+          retry={() => void templates.refetch()}
+          subject="the template catalog"
+        />
       ) : !matches.length ? (
-        <Empty
+        <ResourceEmpty
           icon="search"
           title="No matching templates"
           description="Try a shorter search or choose another category."
@@ -133,39 +142,46 @@ function Templates() {
           }
         />
       ) : (
-        <div className="catalog-grid template-catalog">
+        <ResourceRows label="Templates">
           {matches.map((template) => (
-            <button
+            <ResourceRow
               key={template.id}
-              type="button"
-              className="catalog-card interactive"
-              onClick={() => setSelected(template.id)}
-            >
-              <Brackets />
-              <div className="catalog-card-header">
-                <ServiceIcon
-                  background={template.logo_background}
-                  src={template.logo || undefined}
-                  name={template.id}
-                  size={28}
-                />
-                <Badge>{labels[template.category] || template.category}</Badge>
-                {template.id === 'managed-actions' && <Badge>Pro</Badge>}
-              </div>
-              <h2>{template.name}</h2>
-              <span className="catalog-slug">{template.id}</span>
-              <p className="catalog-description">{template.description}</p>
-              <span className="catalog-card-meta">
-                {features.hostedCompute && template.workload_requirements?.length
+              identity={
+                <>
+                  <ServiceIcon
+                    background={template.logo_background}
+                    src={template.logo || undefined}
+                    name={template.id}
+                    size={20}
+                  />
+                  <button
+                    type="button"
+                    className="resource-row-link"
+                    aria-haspopup="dialog"
+                    onClick={() => setSelected(template.id)}
+                  >
+                    {template.name}
+                  </button>
+                  {template.id === 'managed-actions' && <Badge>Pro</Badge>}
+                </>
+              }
+              detail={
+                <>
+                  <code>{template.id}</code>
+                  <span className="resource-row-description">{template.description}</span>
+                </>
+              }
+              status={<Badge>{labels[template.category] || template.category}</Badge>}
+              meta={
+                features.hostedCompute && template.workload_requirements?.length
                   ? 'Requires your server'
                   : template.deployable
                     ? template.architectures.join(' / ')
-                    : 'Deployment guide'}
-                <Icon name="arrow" size={16} />
-              </span>
-            </button>
+                    : 'Deployment guide'
+              }
+            />
           ))}
-        </div>
+        </ResourceRows>
       )}
       <Dialog
         sheet
