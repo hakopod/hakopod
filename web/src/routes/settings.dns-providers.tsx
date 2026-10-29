@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
+import { createFileRoute, Link, Navigate, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { message, timestamp } from '../lib/api'
@@ -41,7 +41,8 @@ function DNSProvidersRoute() {
   const path = useLocation().pathname
   const { saved } = Route.useSearch()
   if (path !== '/settings/dns-providers') return <Outlet />
-  return <DNSProviders standalone saved={saved} />
+  // The provider list lives in the settings hub; task pages return there.
+  return <Navigate to="/settings" search={{ tab: 'dns-providers', saved }} replace />
 }
 
 export function DNSProviders({

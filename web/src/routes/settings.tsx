@@ -2,11 +2,10 @@ import { dashboardEdition, useEditionFeatures } from '../lib/dashboard-edition'
 import { AuditHistory } from '../components/audit-history'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
-import { lazy, Suspense, useState } from 'react'
+import { Fragment, lazy, Suspense, useState } from 'react'
 import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { SettingsLayout } from '@hakopod/hatch-ui/blocks/settings-layout'
-import { message, timestamp } from '../lib/api'
+import { message, relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { executionGrants, toggleGrant } from '../lib/agent-grants'
 import { keyLifetimeInput, keyLifetimeOptions } from '../lib/key-lifetime'
@@ -21,13 +20,19 @@ import {
   CopyValue,
   DiscardPrompt,
   focusedDialog,
+  plural,
   ReviewFacts,
   ReviewNotice,
 } from '../components/operation-review'
 import {
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRows,
+  SettingsSection,
+  SettingsState,
+} from '../components/settings-section'
+import {
   PageHeader,
-  HeadingHelp,
-  Empty,
   ErrorState,
   Loading,
   Note,
@@ -73,6 +78,9 @@ const DNSProviders = lazy(() =>
     default: module.DNSProviders,
   })),
 )
+const SlackSettingsPanel = lazy(() =>
+  import('../components/slack-settings').then((m) => ({ default: m.SlackSettingsPanel })),
+)
 const InstallationUsers = lazy(() =>
   import('../components/team-settings').then((m) => ({
     default: m.InstallationUsers,
@@ -80,7 +88,15 @@ const InstallationUsers = lazy(() =>
 )
 
 export const Route = createFileRoute('/settings')({
-  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { tab?: string; saved?: string } => ({
+    // A provider task page returns here with the saved name so the list can confirm it.
+    saved:
+      typeof search.saved === 'string' &&
+      search.saved.length > 0 &&
+      search.saved.length <= 80 &&
+      !/[\x00-\x1f]/.test(search.saved)
+        ? search.saved
+        : undefined,
     tab:
       typeof search.tab === 'string' &&
       [
@@ -98,6 +114,8 @@ export const Route = createFileRoute('/settings')({
         'smtp',
         'edge',
         'logs',
+        'integrations',
+        'private-destinations',
       ].includes(search.tab)
         ? search.tab
         : undefined,
@@ -111,8 +129,8 @@ function Administration() {
   const features = useEditionFeatures()
   const scope = useScope()
   const installation = useInstallationAccess()
-  const selected = Route.useSearch().tab || 'account'
-  const navigate = Route.useNavigate()
+  const search = Route.useSearch()
+  const selected = search.tab || 'account'
   const sections = [
     { id: 'account', label: 'Account security', group: 'Personal' },
     { id: 'appearance', label: 'Appearance', group: 'Personal' },
@@ -174,45 +192,55 @@ function Administration() {
     dashboardEdition.settings(section.id, features),
   )
   const tab = visibleSections.some((section) => section.id === selected) ? selected : 'account'
-  const navigationRoot = useActiveSection(tab)
+  const navigationRoot = useActiveSection(tab, '.app-settings-nav')
   return (
     <div className="settings-page" ref={navigationRoot}>
       <PageHeader title={features.operator ? 'Installation settings' : 'Settings'} />
-      <SettingsLayout
-        sections={visibleSections}
-        active={tab}
-        onSectionChange={(next) => {
-          if (next === 'integrations') {
-            void navigate({ to: '/settings/integrations' })
-            return
-          }
-          void navigate({ search: { tab: next } })
-        }}
-      >
-        <Suspense fallback={<Loading />}>
-          {tab === 'account' && <AccountSettings />}
-          {tab === 'appearance' && <AppearanceSettings />}
-          {tab === 'teams' && <TeamSettings />}
-          {tab === 'license' && <LicenseSettings />}
-          {(scope.identity.admin || scope.identity.can_manage_keys) && tab === 'keys' && <Keys />}
-          {(scope.identity.admin || scope.identity.can_manage_git) && tab === 'github' && (
-            <GitConnectionsPanel />
-          )}
-          {scope.identity.admin && (
-            <>
-              {tab === 'users' && <InstallationUsers />}
-              {tab === 'secret-providers' && <SecretProviders />}
-              {tab === 'private-destinations' && <PrivateDestinations />}
-              {tab === 'dns-providers' && <DNSProviders />}
-              {tab === 'audit' && <AuditLog />}
-              {tab === 'logs' && <AppLogSettings />}
-              {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
-              {installation.allowed && tab === 'smtp' && <SMTPSettings />}
-              {installation.allowed && tab === 'edge' && <ProxySettings />}
-            </>
-          )}
-        </Suspense>
-      </SettingsLayout>
+      <div className="app-settings settings-hub">
+        <nav className="app-settings-nav settings-hub-nav" aria-label="Settings sections">
+          {visibleSections.map((section, index) => (
+            <Fragment key={section.id}>
+              {section.group !== visibleSections[index - 1]?.group && (
+                <span className="settings-hub-group">{section.group}</span>
+              )}
+              <Link
+                to="/settings"
+                search={{ tab: section.id }}
+                className="app-settings-link interactive"
+                aria-current={tab === section.id ? 'page' : undefined}
+              >
+                {section.label}
+              </Link>
+            </Fragment>
+          ))}
+        </nav>
+        <div className="app-settings-panel settings-hub-panel">
+          <Suspense fallback={<Loading />}>
+            {tab === 'account' && <AccountSettings />}
+            {tab === 'appearance' && <AppearanceSettings />}
+            {tab === 'teams' && <TeamSettings />}
+            {tab === 'license' && <LicenseSettings />}
+            {tab === 'integrations' && <SlackSettingsPanel />}
+            {(scope.identity.admin || scope.identity.can_manage_keys) && tab === 'keys' && <Keys />}
+            {(scope.identity.admin || scope.identity.can_manage_git) && tab === 'github' && (
+              <GitConnectionsPanel />
+            )}
+            {scope.identity.admin && (
+              <>
+                {tab === 'users' && <InstallationUsers />}
+                {tab === 'secret-providers' && <SecretProviders saved={search.saved} />}
+                {tab === 'private-destinations' && <PrivateDestinations />}
+                {tab === 'dns-providers' && <DNSProviders saved={search.saved} />}
+                {tab === 'audit' && <AuditLog />}
+                {tab === 'logs' && <AppLogSettings />}
+                {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
+                {installation.allowed && tab === 'smtp' && <SMTPSettings />}
+                {installation.allowed && tab === 'edge' && <ProxySettings />}
+              </>
+            )}
+          </Suspense>
+        </div>
+      </div>
     </div>
   )
 }
@@ -230,84 +258,70 @@ function Keys() {
     queryFn: ({ signal }) => unwrap(client.GET('/keys', { signal })),
     staleTime: 30000,
   })
+  const items = keys.data?.items || []
+  const active = items.filter((key) => keyState(key).tone === 'ok').length
+  const create = (
+    <Button variant="primary" asChild>
+      <Link to="/settings/keys/new" search={{ project: scope.project, environment: scope.environment }}>
+        <Icon name="plus" size={15} />
+        Create API key
+      </Link>
+    </Button>
+  )
   return (
-    <>
-      <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>API keys</h2>
-            <HeadingHelp title="API keys">
-              Give each workflow its own identity, scope, and expiration.
-            </HeadingHelp>
-          </div>
-        </div>
-        <Button variant="primary" asChild>
-          <Link
-            to="/settings/keys/new"
-            search={{ project: scope.project, environment: scope.environment }}
-          >
-            <Icon name="plus" size={15} />
-            Create API key
-          </Link>
-        </Button>
-      </div>
+    <SettingsSection
+      title="API keys"
+      help="Give each CLI or CI workflow its own key, scope and expiry. Keys never receive Kubernetes credentials."
+      state={
+        keys.data
+          ? items.length
+            ? `${plural(active, 'active key')}${items.length > active ? `, ${items.length - active} revoked or expired` : ''}`
+            : 'No keys yet'
+          : undefined
+      }
+      actions={items.length > 0 && create}
+    >
       {keys.isPending ? (
         <Loading />
       ) : keys.error ? (
         <ErrorState error={keys.error} retry={() => void keys.refetch()} />
-      ) : !keys.data?.items.length ? (
-        <Empty
-          icon="key"
-          title="No API keys"
-          description="CLI and CI deployments need a scoped key."
-          action={
-            <Button variant="primary" asChild>
-              <Link
-                to="/settings/keys/new"
-                search={{ project: scope.project, environment: scope.environment }}
-              >
-                Create API key
-              </Link>
-            </Button>
-          }
-        />
+      ) : !items.length ? (
+        <SettingsEmpty title="No API keys" action={create}>
+          CLI and CI deployments need a scoped key.
+        </SettingsEmpty>
       ) : (
-        <ul className="settings-rows" aria-label="API keys">
-          {keys.data.items.map((key) => {
+        <SettingsRows label="API keys">
+          {items.map((key) => {
             const state = keyState(key)
             return (
-              <li
-                className={`settings-row${key.revoked_at ? ' settings-row-revoked' : ''}`}
+              <SettingsRow
                 key={key.id}
-              >
-                <div className="settings-row-identity">
-                  <Icon name="key" size={16} />
-                  <div>
-                    <strong>{key.name}</strong>
-                    <small>
-                      <code>{key.prefix || key.id.slice(0, 8)}…</code> ·{' '}
-                      {key.permissions.join(', ')}
-                    </small>
-                  </div>
-                </div>
-                <span className={`settings-row-status settings-state settings-state-${state.tone}`}>
-                  {state.label}
-                </span>
-                <div className="settings-row-meta">
-                  <span>{keyScope(key)}</span>
-                  <span>
-                    {key.revoked_at
-                      ? `Revoked ${timestamp(key.revoked_at)}`
-                      : key.never_expires && key.expires_at === null
-                        ? 'Never expires'
-                        : `Expires ${timestamp(key.expires_at)}`}
-                  </span>
-                  <span>
-                    {key.last_used_at ? `Last used ${timestamp(key.last_used_at)}` : 'Never used'}
-                  </span>
-                </div>
-                <div className="settings-row-actions">
-                  {!key.revoked_at && (
+                muted={Boolean(key.revoked_at)}
+                mark={<Icon name="key" size={16} />}
+                name={key.name}
+                detail={
+                  <>
+                    <code>{key.prefix || key.id.slice(0, 8)}…</code> · {keyScope(key)}
+                    <span className="block">{key.permissions.join(', ')}</span>
+                  </>
+                }
+                status={<SettingsState tone={state.tone}>{state.label}</SettingsState>}
+                meta={
+                  <>
+                    <span>
+                      {key.revoked_at
+                        ? `Revoked ${timestamp(key.revoked_at)}`
+                        : key.never_expires && key.expires_at === null
+                          ? 'Never expires'
+                          : `Expires ${timestamp(key.expires_at)}`}
+                    </span>
+                    <span>
+                      {key.last_used_at ? `Last used ${timestamp(key.last_used_at)}` : 'Never used'}
+                    </span>
+                  </>
+                }
+                actions={
+                  !key.revoked_at && (
                     <>
                       <Button
                         size="sm"
@@ -331,17 +345,13 @@ function Keys() {
                         Revoke
                       </Button>
                     </>
-                  )}
-                </div>
-              </li>
+                  )
+                }
+              />
             )
           })}
-        </ul>
+        </SettingsRows>
       )}
-      <Note>
-        API keys never receive Kubernetes credentials. Deployment access allows running code in
-        authorized services; treat it as a trusted capability.
-      </Note>
       <CreateKey
         key={`${scope.project}:${scope.environment}`}
         open={createOpen}
@@ -416,7 +426,7 @@ function Keys() {
           </Button>
         </div>
       </Dialog>
-    </>
+    </SettingsSection>
   )
 }
 
@@ -783,66 +793,65 @@ function AuditLog() {
     queryFn: ({ signal }) => unwrap(client.GET('/audit', { signal })),
     staleTime: 30000,
   })
+  // Audit is installation-admin only, so the user list is readable here.
+  const users = useQuery({
+    queryKey: ['users'],
+    queryFn: ({ signal }) => unwrap(client.GET('/users', { signal })),
+    staleTime: 30000,
+  })
+  const names = new Map(users.data?.items.map((user) => [user.id, user.name || user.email]))
+  const items = audit.data?.items || []
   return (
     <>
-      <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>Audit events</h2>
-            <HeadingHelp title="Audit events">
-              Recent management actions and their attribution.
-            </HeadingHelp>
-          </div>
-        </div>
-        <Button size="sm" onClick={() => void audit.refetch()}>
-          <Icon name="refresh" size={14} />
-          Refresh
-        </Button>
-      </div>
+      <SettingsSection
+        title="Audit events"
+        help="Recent management actions and who made them."
+        state={
+          audit.data
+            ? items.length
+              ? `${plural(items.length, 'recent event')}, latest ${relative(items[0].time).toLowerCase()}`
+              : 'Nothing recorded yet'
+            : undefined
+        }
+        actions={
+          <Button size="sm" onClick={() => void audit.refetch()} disabled={audit.isFetching}>
+            <Icon name="refresh" size={14} />
+            {audit.isFetching && !audit.isPending ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        }
+      >
+        {audit.isPending ? (
+          <Loading />
+        ) : audit.error ? (
+          <ErrorState error={audit.error} retry={() => void audit.refetch()} />
+        ) : !items.length ? (
+          <SettingsEmpty title="No audit events">
+            Management actions are recorded here as they happen.
+          </SettingsEmpty>
+        ) : (
+          <SettingsRows label="Audit events">
+            {items.map((event) => (
+              <SettingsRow
+                key={event.id}
+                className="settings-row-audit"
+                name={event.action}
+                detail={<code>{event.resource}</code>}
+                status={
+                  <time dateTime={event.time} title={timestamp(event.time)}>
+                    {relative(event.time)}
+                  </time>
+                }
+                meta={
+                  names.get(event.identity_id) || (
+                    <code title={event.identity_id}>{event.identity_id.slice(0, 12)}</code>
+                  )
+                }
+              />
+            ))}
+          </SettingsRows>
+        )}
+      </SettingsSection>
       <AuditHistory />
-      {audit.isPending ? (
-        <Loading />
-      ) : audit.error ? (
-        <ErrorState error={audit.error} retry={() => void audit.refetch()} />
-      ) : !audit.data?.items.length ? (
-        <Empty
-          icon="activity"
-          title="No audit events yet"
-          description="Recorded management actions will appear here."
-        />
-      ) : (
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Action</th>
-                <th>Resource</th>
-                <th>Identity</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {audit.data.items.map((event) => (
-                <tr key={event.id}>
-                  <td>
-                    <span className="table-name">
-                      <Icon name="activity" size={14} />
-                      {event.action}
-                    </span>
-                  </td>
-                  <td>
-                    <code>{event.resource}</code>
-                  </td>
-                  <td>
-                    <code>{event.identity_id.slice(0, 12)}</code>
-                  </td>
-                  <td>{timestamp(event.time)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </>
   )
 }

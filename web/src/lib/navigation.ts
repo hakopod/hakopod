@@ -107,31 +107,20 @@ export function parentNavigation(
     }
   if (parts[0] === 'settings' && parts[1]) {
     if (parts[1] === 'git')
-      return { to: '/settings', search: { tab: 'github' }, label: 'Back to Git connections' }
-    if (['login-providers', 'smtp', 'edge'].includes(parts[1]))
-      return { to: '/settings', search: { tab: parts[1] }, label: 'Back to settings' }
-    if (parts[1] === 'secret-providers' && parts[2])
-      return { to: '/settings/secret-providers', label: 'Back to providers' }
-    if (parts[1] === 'dns-providers' && parts[2])
-      return { to: '/settings/dns-providers', label: 'Back to DNS providers' }
-    if (parts[1] === 'integrations' && parts[2])
-      return { to: '/settings/integrations', label: 'Back to integrations' }
-    return {
-      to: '/settings',
-      search: {
-        tab:
-          parts[1] === 'secret-providers'
-            ? 'secret-providers'
-            : parts[1] === 'dns-providers'
-              ? 'dns-providers'
-              : parts[1] === 'integrations'
-                ? 'github'
-                : parts[1] === 'host-access'
-                  ? 'users'
-                  : 'account',
-      },
-      label: 'Back to settings',
-    }
+      return { to: '/settings', search: { tab: 'github' }, label: 'Back to Git providers' }
+    const tab =
+      {
+        'login-providers': 'login-providers',
+        smtp: 'smtp',
+        edge: 'edge',
+        keys: 'keys',
+        roles: 'teams',
+        'secret-providers': 'secret-providers',
+        'dns-providers': 'dns-providers',
+        integrations: parts[2] === 'slack' ? 'integrations' : 'github',
+        'host-access': 'users',
+      }[parts[1]] || 'account'
+    return { to: '/settings', search: { tab }, label: 'Back to settings' }
   }
   if (parts[0] === 'networks' && parts[1])
     return parts[2] === 'connect'

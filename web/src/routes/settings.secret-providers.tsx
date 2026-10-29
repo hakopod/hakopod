@@ -1,5 +1,4 @@
-import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
-import { SecretProviders } from '../components/secret-providers'
+import { createFileRoute, Navigate, Outlet, useLocation } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/settings/secret-providers')({
   validateSearch: (search: Record<string, unknown>): { saved?: string } => ({
@@ -14,5 +13,6 @@ function ProvidersRoute() {
   const path = useLocation().pathname
   const { saved } = Route.useSearch()
   if (path !== '/settings/secret-providers') return <Outlet />
-  return <SecretProviders standalone saved={saved} />
+  // The provider list lives in the settings hub; task pages return there.
+  return <Navigate to="/settings" search={{ tab: 'secret-providers', saved }} replace />
 }
