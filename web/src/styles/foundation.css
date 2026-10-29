@@ -1,8 +1,13 @@
-/* Keep the dashboard canvas black in dark mode; Paper retains its own palette. */
+/* Dark uses neutral black and charcoal (self-hosted); Cloud dark is graphite below.
+   canvas, card, raised, muted, selected, border. */
 :root:not(.light),
 .dark {
-  --background: #000;
-  --card: #141414;
+  --background: #080808;
+  --card: #111111;
+  --popover: #171717;
+  --surface-2: #1c1c1c;
+  --surface-3: #242424;
+  --hairline: #303030;
 }
 .light {
   --card: #fafafa;
@@ -19,8 +24,39 @@ html.light {
   --destructive: #9a3324;
   --warn: #6b4704;
 }
+/* Mirrors cloudSurfaces() dark, so the first paint matches before the accent script runs. */
 html[data-edition='cloud']:not(.light) {
-  --background: #0f0004;
+  --background: #070709;
+  --card: #0e0c13;
+  --popover: #15111d;
+  --surface-2: #15111d;
+  --surface-3: #1c1629;
+  --hairline: #282133;
+}
+/* Corner radii and type roles. Self-hosted is the default; Cloud overrides below. */
+:root {
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-dialog: 12px;
+  --type-page-size: 24px; --type-page-line: 32px; --type-page-weight: 500;
+  --type-section-size: 18px; --type-section-line: 24px; --type-section-weight: 500;
+  --type-card-size: 16px; --type-card-line: 24px; --type-card-weight: 500;
+  --type-body-size: 14px; --type-body-line: 20px; --type-body-weight: 400;
+  --type-control-size: 14px; --type-control-line: 20px; --type-control-weight: 500;
+  --type-label-size: 13px; --type-label-line: 20px; --type-label-weight: 600;
+  --type-meta-size: 12px; --type-meta-line: 18px; --type-meta-weight: 400;
+}
+html[data-edition='cloud'] {
+  --radius-control: 0px;
+  --radius-card: 0px;
+  --radius-dialog: 0px;
+  --type-page-size: 18px; --type-page-line: 24px; --type-page-weight: 400;
+  --type-section-size: 14px; --type-section-line: 20px; --type-section-weight: 400;
+  --type-card-size: 14px; --type-card-line: 20px; --type-card-weight: 400;
+  --type-body-weight: 300;
+  --type-control-size: 13px; --type-control-weight: 400;
+  --type-label-weight: 400;
+  --type-meta-weight: 300;
 }
 :root,
 .dark,
@@ -32,8 +68,9 @@ html[data-edition='cloud']:not(.light) {
   --font-mono: 'Space Mono', ui-monospace, monospace;
 }
 body {
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-body-weight);
 }
 .sr-only {
   top: 0;
@@ -48,16 +85,43 @@ b {
   font-weight: 500;
 }
 h1 {
-  font-size: 28px;
   letter-spacing: -0.045em;
 }
 h2 {
-  font-size: 18px;
   letter-spacing: -0.025em;
 }
 h3 {
-  font-size: 16px;
   letter-spacing: -0.02em;
+}
+/* html[data-edition] lifts these over the page files imported after this one. */
+h1,
+html[data-edition] :is(.hako-page-heading.page-heading h1, .title-row h1) {
+  font-size: var(--type-page-size);
+  line-height: var(--type-page-line);
+  font-weight: var(--type-page-weight);
+}
+h2,
+html[data-edition] :is(.section-toolbar h2, .hako-section-heading-title > :is(h2, h3)) {
+  font-size: var(--type-section-size);
+  line-height: var(--type-section-line);
+  font-weight: var(--type-section-weight);
+}
+h3,
+html[data-edition] :is(.panel-heading h2, .ops-catalog-card h2, .ui-card-title) {
+  font-size: var(--type-card-size);
+  line-height: var(--type-card-line);
+  font-weight: var(--type-card-weight);
+}
+/* Buttons keep Hatch's mono uppercase label; the control role covers the other controls. */
+html[data-edition] :is(.select-trigger, .tab-trigger) {
+  font-size: var(--type-control-size);
+  line-height: var(--type-control-line);
+  font-weight: var(--type-control-weight);
+}
+html[data-edition] :is(small, .label-chip, .field-help) {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  font-weight: var(--type-meta-weight);
 }
 code,
 pre,
@@ -122,9 +186,16 @@ textarea {
 }
 label {
   @apply min-w-0;
-  font-size: 14px;
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
   color: var(--muted);
-  font-weight: 400;
+  font-weight: var(--type-label-weight);
+}
+/* Choice labels read as body text, and controls inside a label do not inherit its weight. */
+label:has(> input:is([type='checkbox'], [type='radio'])),
+.checkbox-label,
+label :is(input, textarea, .select-trigger) {
+  font-weight: var(--type-body-weight);
 }
 label:focus-within {
   color: var(--state);
@@ -260,10 +331,7 @@ input[type='radio']:focus-visible {
   color: var(--destructive);
 }
 .label-chip {
-  font-size: 12px;
-  line-height: 1.4;
   padding: 3px 8px;
-  border-radius: 3px;
 }
 .dialog-content:not(.sheet) {
   width: 760px;
@@ -353,7 +421,6 @@ input[type='radio']:focus-visible {
 .table-container,
 .settings-panel,
 .form-card {
-  border-radius: 3px;
   background: var(--card);
   border: 1px solid var(--hairline);
 }
@@ -437,7 +504,6 @@ table small {
 .note,
 .inline-error,
 .error-state {
-  border-radius: 3px;
   font-size: 13px;
   padding: 14px 16px;
 }
@@ -677,8 +743,66 @@ html[data-edition='cloud'] {
   --success: #77bdfb;
   --info: #b7ace6;
 }
-html[data-edition='cloud'] body { font-family: var(--font-sans); font-weight: 300; }
-html[data-edition='cloud'] :is(h1,h2,h3,h4,strong,b) { font-weight: 400; letter-spacing: normal; }
-html[data-edition='cloud'] h1 { font-size: 18px; line-height: 24px; }
-html[data-edition='cloud'] :is(h2,h3) { font-size: 14px; line-height: 20px; }
+html[data-edition='cloud'] body { font-family: var(--font-sans); }
+html[data-edition='cloud'] :is(h1,h2,h3,h4,strong,b) { letter-spacing: normal; }
+html[data-edition='cloud'] :is(h4,strong,b) { font-weight: 400; }
 html[data-edition='cloud'].light { --success: #125487; --info: #524a86; }
+
+/* Corners: controls, cards and panels, dialogs and popovers. Round shapes (radios, dots,
+   avatars, switches, spinners) and icon tiles keep their own geometry. */
+html[data-edition]
+  :is(.button, .input-wrap :is(input, textarea), .select-trigger, .badge, .label-chip, .checkbox,
+    .tooltip, .menu-item, .status, .current-label, .service-pills > span, .section-caption span,
+    .search-input, .catalog-search, .query-editor, .query-examples > button,
+    .catalog-categories button, .avatar-options > button, .segmented-control,
+    .segmented-control button, .view-switch, .view-switch .button, .skip-link,
+    .hako-scope-select .select-trigger, .hako-theme-option, .hako-accent-option,
+    .hako-accent-custom input[type='color'], .hako-release-badge, .db-engine-tags > span,
+    .catalog-secret-list code, .ops-object-name) {
+  border-radius: var(--radius-control);
+}
+html[data-edition]
+  :is(.panel, .table-container, .settings-panel, .form-card, .form-page-main > .form-body,
+    .form-footer, .empty-card, .hako-empty-card, .row-card, .ui-card, .ui-skeleton, .toast,
+    .hako-error-toast, .note, .hako-note.note, .inline-error, .error-state, .resource-note,
+    .service-detail-card, .application-context-strip, .code-panel, .event-service,
+    .deployment-failure, .permission-checkboxes, .created-key, .service-form, .diff-table,
+    .no-changes, .review-resources > div, .secret-once, .config-details, .inspector-facts > div,
+    .command-result, .hako-command-result, .topology-viewport, .topology-node, .log-query-form,
+    .log-results, .terminal-surface, .template-identity, .sample-banner, .ops-catalog-card,
+    .alarm-row, .advisory-banner, .advisory-card, .advisory-detail, .db-engine-card,
+    .db-layout-card, .db-security-card, .db-create-summary, .db-create-topology,
+    .db-create-member, .db-allocation-total, .db-create-confirm) {
+  border-radius: var(--radius-card);
+}
+html[data-edition] .log-window {
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+html[data-edition] .log-footer {
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+html[data-edition]
+  :is(.dialog-content:not(.sheet), .select-content, .dropdown-content, .dropdown-menu) {
+  border-radius: var(--radius-dialog);
+}
+/* Sheets sit on the right edge, so only the leading corners round. */
+html[data-edition] .sheet {
+  border-radius: var(--radius-dialog) 0 0 var(--radius-dialog);
+}
+
+/* Cloud density: 32px actions with 13px labels and 12px resource padding on desktop. */
+html[data-edition='cloud'] .button:not(.button-icon, .button-chip) {
+  @apply h-8 min-h-8 px-3 text-[13px];
+}
+html[data-edition='cloud'] :is(.ops-catalog-card, .row-card) {
+  @apply p-3;
+}
+/* Phone and touch: every action stays a 44px target in both editions. */
+@media (max-width: 639px), (pointer: coarse) {
+  html[data-edition] :is(.button, .select-trigger, .tab-trigger) {
+    @apply min-h-11;
+  }
+  html[data-edition='cloud'] .button:not(.button-icon, .button-chip) {
+    @apply h-auto;
+  }
+}

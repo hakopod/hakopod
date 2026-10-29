@@ -55,16 +55,11 @@ export function accentText(color: string, theme: 'dark' | 'light') {
 }
 
 
-// Cloud surface strength stays bounded so custom accents cannot obscure text.
-export function cloudSurfaces(color: string, theme: 'dark' | 'light') {
-  const accent = channels(validAccent(color) ? color : '#AC99FF')
-  const mix = (base: number, amount: number) =>
-    '#' + accent.map(value => Math.round(base * (1 - amount) + value * amount)
-      .toString(16).padStart(2, '0')).join('').toUpperCase()
+// Cloud surfaces are fixed graphite (dark) and warm stone (light); the accent stays on actions only.
+export function cloudSurfaces(_color: string, theme: 'dark' | 'light') {
   return theme === 'dark'
-    ? { background: mix(5, .015), card: mix(5, .04), popover: mix(7, .065),
-        surface2: mix(7, .065), surface3: mix(8, .10), hairline: mix(16, .14) }
-    // Light shares the warm stone set with self-hosted; the accent stays on actions only.
+    ? { background: '#070709', card: '#0E0C13', popover: '#15111D',
+        surface2: '#15111D', surface3: '#1C1629', hairline: '#282133' }
     : { background: '#E9E4DD', card: '#F8F6F2', popover: '#F8F6F2',
         surface2: '#DFD8CF', surface3: '#D3CBC1', hairline: '#C4BAB0' }
 }
