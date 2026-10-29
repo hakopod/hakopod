@@ -1,0 +1,191 @@
+/* Template catalog: search with inline category filters, then a card grid. */
+.templates-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+.templates-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.templates-search {
+  position: relative;
+  display: flex;
+  flex: 0 1 320px;
+  align-items: center;
+  min-width: min(100%, 240px);
+}
+.templates-search > svg {
+  position: absolute;
+  left: var(--space-3);
+  color: var(--muted);
+  pointer-events: none;
+}
+html[data-edition] .templates-search input {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  padding-left: 36px;
+}
+.templates-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  white-space: nowrap;
+}
+
+/* At most four columns; each card keeps the same three slots so rows line up. */
+.templates-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, max(260px, calc((100% - 3 * var(--space-3)) / 4))), 1fr)
+  );
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.templates-grid > .template-card {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-2);
+  border-color: var(--hairline);
+}
+.templates-grid > .template-card:is(:hover, :focus-within) {
+  border-color: var(--muted);
+}
+.template-card:has(.template-card-link:focus-visible) {
+  outline: 2px solid var(--navigation-active);
+  outline-offset: 2px;
+}
+html[data-edition] .template-card-link:focus-visible {
+  outline: none;
+  background-image: none;
+}
+.template-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.template-card-top .service-brand-icon {
+  flex-shrink: 0;
+}
+html[data-edition] .template-card h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.template-card-link {
+  color: var(--foreground);
+  text-decoration: none;
+}
+.template-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.template-card-description,
+.template-card-meta {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.template-card-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+@media (max-width: 639px) {
+  .templates-search {
+    flex-basis: 100%;
+  }
+  html[data-edition] .templates-search input {
+    height: 44px;
+    min-height: 44px;
+  }
+  /* One scrollable row of filters instead of several 44px rows. */
+  .templates-toolbar .catalog-categories {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .templates-toolbar .catalog-categories > * {
+    flex-shrink: 0;
+  }
+}
+
+/* Template page: a factual summary beside the configuration. */
+.template-summary {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.template-summary dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+.template-summary dt {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.template-summary dd {
+  margin: 2px 0 0;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  overflow-wrap: anywhere;
+}
+.template-summary dd ul,
+.template-guide-steps {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+  list-style: disc;
+}
+.template-summary-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+.template-summary-codes code {
+  font-size: 12px;
+}
+.template-summary-links {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--type-meta-size);
+}
+.template-summary-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}

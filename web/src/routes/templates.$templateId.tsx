@@ -1,9 +1,11 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import TemplateForm from '../components/template-form'
 import { ManagedActionsForm } from '../components/managed-actions-form'
 import { FormPage } from '../components/form-page'
-import { Empty, ErrorState, Loading } from '../components/shared'
+import { Empty, ErrorState, Loading, PageHeader } from '../components/shared'
+import { ResourceEmpty } from '../components/resource-card'
+import { Button } from '../components/ui/button'
 import { client, unwrap } from '../lib/client'
 import { useScope, useResourceScope } from '../lib/scope'
 
@@ -33,10 +35,20 @@ function ConfigureTemplate() {
   const template = templates.data?.items.find((item) => item.id === templateId)
   if (!template)
     return (
-      <Empty
-        title="Template not found"
-        description="This template is absent from the current installation catalog."
-      />
+      <div className="ops-page">
+        <PageHeader title="Template not found" />
+        <ResourceEmpty
+          icon="search"
+          title="This template is not in this installation's catalog"
+          action={
+            <Button asChild>
+              <Link to="/templates" search={{ application: targetId }}>
+                Back to catalog
+              </Link>
+            </Button>
+          }
+        />
+      </div>
     )
   if (template.deployable && !scope.can('deployments:write'))
     return (
