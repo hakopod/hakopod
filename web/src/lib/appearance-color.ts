@@ -64,6 +64,7 @@ export function cloudSurfaces(color: string, theme: 'dark' | 'light') {
   return theme === 'dark'
     ? { background: mix(5, .015), card: mix(5, .04), popover: mix(7, .065),
         surface2: mix(7, .065), surface3: mix(8, .10), hairline: mix(16, .14) }
-    : { background: mix(247, .015), card: '#FFFFFF', popover: '#FFFFFF',
-        surface2: mix(242, .025), surface3: mix(242, .10), hairline: mix(220, .03) }
+    // Light shares the warm stone set with self-hosted; the accent stays on actions only.
+    : { background: '#D5CDC5', card: '#F3EFEA', popover: '#F3EFEA',
+        surface2: '#CBC2B9', surface3: '#C0B6AC', hairline: '#A69D94' }
 }
