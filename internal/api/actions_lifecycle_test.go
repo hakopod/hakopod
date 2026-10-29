@@ -481,6 +481,13 @@ func (f *actionsTerminatingFake) ActionsPodPhase(ctx context.Context, t cluster.
 	}
 	return f.actionsFake.ActionsPodPhase(ctx, t, id)
 }
+// Get answers 404 for a deleted runner, as GitHub does on a later pass.
+func (f *actionsTerminatingFake) Get(ctx context.Context, target actions.Target, id int64) (actions.Runner, error) {
+	if _, ok := f.runners[id]; !ok {
+		return actions.Runner{}, &actions.StatusError{Status: 404}
+	}
+	return f.actionsFake.Get(ctx, target, id)
+}
 func (f *actionsTerminatingFake) DeleteActionsPod(ctx context.Context, t cluster.Target, id string) (bool, error) {
 	if f.terminating {
 		return false, nil
@@ -496,6 +503,7 @@ func TestActionsFinishedSlotRequestsPromptRecheckWhilePodTerminates(t *testing.T
 	}
 	fake := &actionsTerminatingFake{actionsFake: f, terminating: true}
 	s.actionsTestRuntime = fake
+	s.actionsClient = func(string) (runnerProvider, error) { return fake, nil }
 	warm := &actionsWarmup{}
 	if err := s.reconcileActionsPool(context.WithValue(context.Background(), actionsWarmupKey{}, warm), target, p); err != nil {
 		t.Fatal(err)
