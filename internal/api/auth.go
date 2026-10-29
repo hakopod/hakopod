@@ -6,7 +6,6 @@ import (
 	"errors"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/store"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -68,7 +67,7 @@ func (s *Server) authenticateToken(r *http.Request) (string, error) {
 }
 func (s *Server) authPublic(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		ip := requestIP(r)
 		if !s.rate("auth:" + ip) {
 			w.Header().Set("Retry-After", "5")
 			problem(w, 429, "rate_limit", "too many authentication attempts")

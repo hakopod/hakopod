@@ -2566,6 +2566,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/installation/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the management access policy and the address seen for this request. */
+        get: operations["getInstallationAccess"];
+        /** Save the management access policy; it reverts unless confirmed within five minutes. */
+        put: operations["putInstallationAccess"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/access/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a pending management access policy from an allowed network. */
+        post: operations["confirmInstallationAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/license": {
         parameters: {
             query?: never;
@@ -7440,6 +7475,36 @@ export interface components {
         InstallationSMTPTestResult: {
             sent: boolean;
             recipient: string;
+        };
+        InstallationAccessPolicy: {
+            enabled: boolean;
+            /** @enum {string} */
+            client_ip_source: "connection" | "trusted_proxy";
+            trusted_proxy_cidrs: string[];
+            /** @enum {string} */
+            client_ip_header: "" | "X-Forwarded-For" | "X-Real-IP" | "CF-Connecting-IP";
+            allow_cidrs: string[];
+        };
+        InstallationAccess: {
+            revision: number;
+            policy: components["schemas"]["InstallationAccessPolicy"];
+            /**
+             * Format: date-time
+             * @description Set while a saved policy waits for confirmation; it reverts after this time.
+             */
+            pending_until?: string;
+            /** @description The address the installation sees for this request. */
+            client_ip: string;
+            licensed: boolean;
+        };
+        InstallationAccessInput: {
+            expected_revision: number;
+            policy: components["schemas"]["InstallationAccessPolicy"];
+            /** @description Save even though the policy blocks this request's network; confirm from an allowed network within five minutes. */
+            confirm_from_elsewhere?: boolean;
+        };
+        InstallationAccessConfirmInput: {
+            revision: number;
         };
         LicenseFeature: {
             /** @description Feature identifier. Paid capabilities include multi_team, oauth_login and enterprise_sso; availability comes from enabled. */
@@ -16268,6 +16333,136 @@ export interface operations {
                 content?: never;
             };
             /** @description Configuration revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getInstallationAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationAccess"];
+                };
+            };
+            /** @description Self-hosted installation owner in a browser session required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putInstallationAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationAccessInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationAccess"];
+                };
+            };
+            /** @description Self-hosted installation owner in a browser session required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Revision changed, the confirmation window ended, or the policy would block this network */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    confirmInstallationAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationAccessConfirmInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationAccess"];
+                };
+            };
+            /** @description Self-hosted installation owner in a browser session required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Revision changed, the confirmation window ended, or the policy would block this network */
             409: {
                 headers: {
                     [name: string]: unknown;

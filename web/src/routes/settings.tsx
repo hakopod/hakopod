@@ -57,6 +57,11 @@ const SMTPSettings = lazy(() =>
     default: module.SMTPSettingsPanel,
   })),
 )
+const AccessPolicySettings = lazy(() =>
+  import('../components/access-policy-settings').then((module) => ({
+    default: module.AccessPolicyPanel,
+  })),
+)
 const AppLogSettings = lazy(() => import('../components/app-log-settings'))
 const ProxySettings = lazy(() => import('../components/proxy-settings'))
 const SecretProviders = lazy(() =>
@@ -109,6 +114,7 @@ export const Route = createFileRoute('/settings')({
         'login-providers',
         'smtp',
         'edge',
+        'access',
         'logs',
         'integrations',
         'private-destinations',
@@ -179,6 +185,7 @@ function Administration() {
                 },
                 { id: 'smtp', label: 'Email delivery', group: 'Installation' },
                 { id: 'edge', label: 'Hakopod Edge', group: 'Installation' },
+                { id: 'access', label: 'Network access', group: 'Installation' },
               ]
             : []),
         ]
@@ -239,6 +246,7 @@ function Administration() {
                   {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
                   {installation.allowed && tab === 'smtp' && <SMTPSettings />}
                   {installation.allowed && tab === 'edge' && <ProxySettings />}
+                  {installation.allowed && tab === 'access' && <AccessPolicySettings />}
                 </>
               )}
             </Suspense>
