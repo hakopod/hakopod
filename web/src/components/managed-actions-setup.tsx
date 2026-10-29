@@ -1,13 +1,14 @@
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronRight, Minus, Plus, X } from 'lucide-react'
 import { Badge } from '@hakopod/hatch-ui/components/badge'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { HeadingHelp } from './shared'
 import type { RunnerResources } from '../lib/runner-resources'
 
-export const runnerSteps = ['Connect', 'Compute', 'Workflow', 'Review']
+export const runnerSteps = ['Source', 'Image', 'Capacity', 'Cache', 'Review']
 
 export function RunnerSteps({
   step,
@@ -20,19 +21,17 @@ export function RunnerSteps({
   busy: boolean
   onStep: (step: number) => void
 }) {
+  const review = runnerSteps.length - 1
   return (
-    <nav
-      aria-label="Runner pool setup steps"
-      className="hako-page-steps grid grid-cols-4 gap-1 border-b border-[var(--hairline)] pb-3 sm:flex sm:gap-6"
-    >
+    <nav aria-label="Runner pool setup steps" className="runner-steps hako-page-steps">
       {runnerSteps.map((label, index) => (
         <button
           key={label}
           type="button"
           aria-current={step === index ? 'step' : undefined}
-          disabled={busy || index > visited || (index === 3 && step !== 3)}
+          disabled={busy || index > visited || (index === review && step !== review)}
           onClick={() => onStep(index)}
-          className={`flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-sm px-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 bg-transparent! disabled:bg-transparent! disabled:opacity-45! ${step === index ? 'text-[var(--navigation-active)]!' : 'muted-text'}`}
+          className={step === index ? 'text-[var(--navigation-active)]!' : 'muted-text'}
         >
           <span className="hidden font-mono text-xs sm:inline" aria-hidden="true">
             {index + 1}
@@ -48,6 +47,7 @@ type Choice = {
   value: string
   label: string
   detail?: string
+  icon?: ReactNode
   facts?: { label: string; value: string; detail?: string }[]
   disabled?: boolean
 }
@@ -59,6 +59,7 @@ export function RunnerChoices({
   disabled,
   onChange,
   compact = false,
+  legendHidden = false,
 }: {
   label: string
   value: string
@@ -66,18 +67,19 @@ export function RunnerChoices({
   disabled?: boolean
   onChange: (value: string) => void
   compact?: boolean
+  legendHidden?: boolean
 }) {
   const name = useId()
   return (
     <fieldset className="grid min-w-0 gap-2" disabled={disabled}>
-      <legend className="mb-2 text-sm font-medium">{label}</legend>
+      <legend className={legendHidden ? 'sr-only' : 'mb-2 text-sm font-medium'}>{label}</legend>
       <div
         className={compact ? 'flex flex-wrap gap-2' : 'grid gap-2 sm:grid-cols-2 xl:grid-cols-3'}
       >
         {options.map((option) => (
           <label
             key={option.value}
-            className={`relative min-w-0 ${compact ? 'self-start' : ''} ${option.disabled || disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+            className={`runner-choice relative min-w-0 ${compact ? 'self-start' : ''} ${option.disabled || disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           >
             <input
               className="peer sr-only"
@@ -89,8 +91,10 @@ export function RunnerChoices({
               onChange={() => onChange(option.value)}
             />
             <span
-              className={`flex min-h-11 items-start gap-2 border border-[var(--hairline)] text-sm transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)] peer-checked:border-[var(--accent)] peer-checked:bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] ${compact ? 'h-auto items-center rounded-full px-4 py-2' : 'h-full rounded-md px-3 py-2.5'}`}
+              className={`runner-choice-card flex min-h-11 items-start gap-2 border border-[var(--hairline)] text-sm transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--accent)] peer-checked:border-[var(--accent)] peer-checked:bg-[color-mix(in_srgb,var(--accent)_6%,transparent)] ${compact ? 'runner-chip h-auto items-center px-4 py-2' : 'h-full px-3 py-2.5'}`}
             >
+              <Brackets />
+              {option.icon}
               <span className="min-w-0 flex-1">
                 <span className="block font-medium wrap-anywhere">{option.label}</span>
                 {option.detail && (
@@ -130,15 +134,19 @@ export function RunnerCapacity({
   value,
   maximum,
   reservationLabel,
+  providerName,
   disabled,
   onChange,
 }: {
   value: string
   maximum: number
   reservationLabel: string
+  providerName: string
   disabled: boolean
   onChange: (value: string) => void
 }) {
+  const slots = Number(value)
+  const valid = Number.isInteger(slots) && slots >= 1 && slots <= maximum
   return (
     <div className="grid min-w-0 content-start gap-3 lg:row-span-3 lg:grid-rows-subgrid">
       <div className="flex min-h-8 items-center gap-2 text-sm font-medium">
@@ -180,9 +188,15 @@ export function RunnerCapacity({
           <Plus size={16} />
         </Button>
       </div>
-      <p className="text-sm muted-text" role="status">
-        {reservationLabel}
-      </p>
+      <ul className="grid gap-1 text-sm muted-text" aria-label="Capacity implications">
+        <li>Minimum 1 · maximum {maximum} job slots.</li>
+        <li>
+          {valid
+            ? `Keeps ${slots} ${slots === 1 ? 'runner' : 'runners'} registered. Job ${slots + 1} waits in the ${providerName} queue until a slot is free.`
+            : `Choose between 1 and ${maximum} job slots.`}
+        </li>
+        <li role="status">{reservationLabel}</li>
+      </ul>
     </div>
   )
 }
@@ -254,18 +268,18 @@ export function RunnerLabels({
   return (
     <div className="grid gap-2">
       <span className="text-sm font-medium">{label}</span>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-[var(--hairline)] p-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-[var(--radius-card)] border border-[var(--hairline)] p-2">
         {labels.map((item) => (
           <span
             key={item}
-            className="inline-flex max-w-full items-center gap-1 rounded-full bg-[var(--surface-2)] pl-3 text-sm"
+            className="inline-flex max-w-full items-center gap-1 rounded-[var(--radius-control)] bg-[var(--surface-2)] pl-3 text-sm"
           >
             <span className="break-all">{item}</span>
             <button
               type="button"
               disabled={disabled}
               aria-label={`Remove ${item}`}
-              className="flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:outline-2"
+              className="flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] focus-visible:outline-2"
               onClick={() => {
                 onChange(labels.filter((existing) => existing !== item).join(', '))
                 setError('')
@@ -358,7 +372,7 @@ export function runnerCustomLabels(labels: string[] | undefined, provider: strin
 
 export function RunnerFact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 rounded-lg bg-[var(--surface-2)] p-3">
+    <div className="min-w-0 rounded-[var(--radius-card)] bg-[var(--surface-2)] p-3">
       <div className="text-xs muted-text">{label}</div>
       <div className="mt-1 text-sm font-medium wrap-anywhere">{children}</div>
     </div>
@@ -448,7 +462,7 @@ function RunnerPoolSummaryBody({
 export function RunnerPoolSummary(props: RunnerPoolSummaryProps) {
   if (props.mode === 'mobile')
     return (
-      <details className="group rounded-md border border-[var(--hairline)] lg:hidden">
+      <details className="group rounded-[var(--radius-card)] border border-[var(--hairline)] lg:hidden">
         <RunnerDisclosureSummary inset>Pool summary</RunnerDisclosureSummary>
         <div className="border-t border-[var(--hairline)] px-3 py-3">
           <RunnerPoolSummaryBody {...props} />
@@ -457,7 +471,7 @@ export function RunnerPoolSummary(props: RunnerPoolSummaryProps) {
     )
   return (
     <aside
-      className="sticky top-4 hidden min-w-0 rounded-md border border-[var(--hairline)] p-4 lg:grid lg:gap-4"
+      className="sticky top-4 hidden min-w-0 rounded-[var(--radius-card)] border border-[var(--hairline)] p-4 lg:grid lg:gap-4"
       aria-label="Pool summary"
     >
       <h2 className="text-sm font-semibold">Pool summary</h2>
@@ -499,7 +513,7 @@ export function RunnerResourceFields({
   return (
     <details
       open={expanded || undefined}
-      className="group rounded border border-[var(--hairline)]"
+      className="group rounded-[var(--radius-card)] border border-[var(--hairline)]"
       onInvalidCapture={(event) => {
         event.currentTarget.open = true
       }}
@@ -590,30 +604,52 @@ export function RunnerPlacement({
           environment and prepared for Managed Actions can run these jobs.
         </HeadingHelp>
       </div>
-      <SelectField
-        label="Run on node"
-        value={value}
-        onValueChange={onChange}
-        disabled={disabled || loading || failed}
-        options={[
-          { value: '', label: 'Automatic · any eligible runner node' },
+      {(() => {
+        const options = [
+          { value: '', label: 'Automatic', detail: 'Any eligible runner node' },
           ...(missing
             ? [
                 {
                   value,
-                  label: `${value} · ${nodes ? 'unavailable' : 'saved selection'}`,
+                  label: value,
+                  detail: nodes ? 'Unavailable' : 'Saved selection',
                   disabled: true,
                 },
               ]
             : []),
           ...(nodes || []).map((node) => ({
             value: node.name,
-            label: `${node.name} · ${node.architecture}${!node.available ? ` · ${node.reason}` : architecture && node.architecture !== architecture ? ' · architecture mismatch' : ''}`,
+            label: node.name,
+            detail: `${node.architecture.toUpperCase()}${!node.available ? ` · ${node.reason}` : architecture && node.architecture !== architecture ? ' · architecture mismatch' : ''}`,
             disabled:
               !node.available || Boolean(architecture && node.architecture !== architecture),
           })),
-        ]}
-      />
+        ]
+        // Chips suit a short list; larger installations need the searchable select.
+        return options.length <= 6 ? (
+          <RunnerChoices
+            compact
+            legendHidden
+            label="Run on node"
+            value={value}
+            options={options}
+            disabled={disabled || loading || failed}
+            onChange={onChange}
+          />
+        ) : (
+          <SelectField
+            label="Run on node"
+            value={value}
+            onValueChange={onChange}
+            disabled={disabled || loading || failed}
+            options={options.map((option) => ({
+              value: option.value,
+              label: `${option.label} · ${option.detail}`,
+              disabled: option.disabled,
+            }))}
+          />
+        )
+      })()}
       <div className="grid min-w-0 content-start gap-2">
         {value && (
           <p className="field-help">
@@ -669,7 +705,7 @@ export function RunnerWorkflowGuide({
       <details className="group border-y border-[var(--hairline)]">
         <RunnerDisclosureSummary>Workflow example</RunnerDisclosureSummary>
         <pre
-          className="mb-3 min-w-0 overflow-x-auto rounded border border-[var(--hairline)] p-3 text-xs"
+          className="mb-3 min-w-0 overflow-x-auto rounded-[var(--radius-control)] border border-[var(--hairline)] p-3 text-xs"
           aria-label="Workflow runner selection"
         >
           <code>
@@ -681,17 +717,25 @@ export function RunnerWorkflowGuide({
           </code>
         </pre>
       </details>
-      <div className="flex items-center gap-2 text-sm">
-        Dependency and build caches
-        <HeadingHelp title="Caching between jobs">
-          {provider === 'github'
-            ? 'Use actions/cache or your language setup action. Include architecture and the dependency lockfile hash in each cache key. Docker build layers can use a registry cache.'
-            : provider === 'gitlab'
-              ? 'Use a registry cache for Docker build layers. GitLab cache persistence depends on the runner cache backend configured by your operator; a fresh runner does not retain its local disk.'
-              : 'Configure dependency caches in bitbucket-pipelines.yml and use a registry cache for Docker build layers. This repository-dedicated runner reuses its sandbox; local disk is not a durable cache.'}{' '}
-          Creating a pool does not enable caching in the workflow.
-        </HeadingHelp>
-      </div>
     </div>
+  )
+}
+
+export function RunnerPolicyRows({
+  label,
+  rows,
+}: {
+  label: string
+  rows: { label: string; value: ReactNode }[]
+}) {
+  return (
+    <dl className="runner-policy" aria-label={label}>
+      {rows.map((row) => (
+        <div key={row.label}>
+          <dt>{row.label}</dt>
+          <dd>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
