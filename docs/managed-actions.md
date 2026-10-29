@@ -294,8 +294,8 @@ Workspaces default to 2 GiB of temporary disk. Set `actions.workspace_size_gib`
 to 2–16 GiB for larger jobs. Source, tools, Docker images and build files share
 this disk allowance. The node reserves it plus container/log headroom before
 scheduling each slot; all workspace and Docker data is deleted after every job.
-VFS remains the default Docker storage driver. On a node that has passed the
-optional `shared-overlay2-v1` qualification, fresh GitHub job pods use the same
+VFS is the fallback Docker storage driver. On a node that has passed the
+`shared-overlay2-v1` qualification, fresh GitHub job pods use the same
 bounded workspace for overlay2 data. Each job still receives a clean workspace;
 the profile does not persist Docker layers or files between jobs. The maximum
 lifetime includes startup and waiting for a job. Jobs requiring more disk or a
