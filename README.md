@@ -1,5 +1,7 @@
 # Hakopod
 
+English · [简体中文](docs/i18n/README.zh.md) · [日本語](docs/i18n/README.ja.md) · [Español](docs/i18n/README.es.md) · [Português](docs/i18n/README.pt-BR.md) · [Deutsch](docs/i18n/README.de.md)
+
 Your apps. Your rules. Hakopod is an open-source platform for deploying and
 running your apps on servers you own: push from Git, import a `docker-compose.yml`
 or pick a template, review what will change, then deploy with TLS on your domain.
