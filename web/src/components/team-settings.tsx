@@ -24,6 +24,7 @@ import {
   SettingsSection,
   SettingsState,
 } from './settings-section'
+import { GuidedEmpty } from './resource-card'
 
 export default function TeamSettings() {
   const scope = useScope()
@@ -210,9 +211,18 @@ export default function TeamSettings() {
         ) : teams.error ? (
           <ErrorState error={teams.error} retry={() => void teams.refetch()} />
         ) : !teams.data?.items.length ? (
-          <SettingsEmpty title="No teams" action={createTeam}>
-            Create a team to invite collaborators and share projects with them.
-          </SettingsEmpty>
+          <GuidedEmpty
+            compact
+            icon="user"
+            title="Work with your team"
+            description="Create a team to invite collaborators and share projects with them."
+            steps={[
+              { title: 'Create a team', detail: 'Name it for the people in it.' },
+              { title: 'Invite members', detail: 'Each with the role they need.' },
+              { title: 'Share projects', detail: 'Give the team access in one step.' },
+            ]}
+            primary={createTeam}
+          />
         ) : members.isPending ? (
           <Loading rows={2} />
         ) : members.error ? (

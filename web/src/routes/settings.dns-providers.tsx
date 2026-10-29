@@ -22,6 +22,7 @@ import {
   SettingsSection,
   SettingsState,
 } from '../components/settings-section'
+import { GuidedEmpty } from '../components/resource-card'
 
 export const Route = createFileRoute('/settings/dns-providers')({
   validateSearch: (search: Record<string, unknown>): { saved?: string } => ({
@@ -100,9 +101,13 @@ export function DNSProviders({ saved }: { saved?: string }) {
       ) : providers.error ? (
         <ErrorState error={providers.error} retry={() => void providers.refetch()} />
       ) : items.length === 0 ? (
-        <SettingsEmpty title="No DNS provider credentials" action={add}>
-          Add a credential to create custom domain records without leaving Hakopod.
-        </SettingsEmpty>
+        <GuidedEmpty
+          compact
+          icon="globe"
+          title="Create domain records for you"
+          description="Add a DNS provider credential, such as Cloudflare, to create custom domain records without leaving Hakopod."
+          primary={add}
+        />
       ) : (
         <SettingsRows label="DNS provider credentials">
           {items.map((provider) => (

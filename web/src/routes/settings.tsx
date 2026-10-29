@@ -33,6 +33,7 @@ import {
   SettingsState,
 } from '../components/settings-section'
 import { PageHeader, ErrorState, Loading, RequestError } from '../components/shared'
+import { GuidedEmpty } from '../components/resource-card'
 const AppearanceSettings = lazy(() =>
   import('../components/appearance-settings').then((m) => ({
     default: m.AppearanceSettings,
@@ -292,9 +293,18 @@ function Keys() {
       ) : keys.error ? (
         <ErrorState error={keys.error} retry={() => void keys.refetch()} />
       ) : !items.length ? (
-        <SettingsEmpty title="No API keys" action={create}>
-          CLI and CI deployments need a scoped key.
-        </SettingsEmpty>
+        <GuidedEmpty
+          compact
+          icon="key"
+          title="Deploy from the CLI and CI"
+          description="CLI and CI deployments need a scoped key. Give each key only the permissions it needs."
+          steps={[
+            { title: 'Choose its scope', detail: 'Project, environment and permissions.' },
+            { title: 'Copy it once', detail: 'The key is not shown again.' },
+            { title: 'Use it in CI', detail: 'Store it as a secret in your pipeline.' },
+          ]}
+          primary={create}
+        />
       ) : (
         <SettingsRows label="API keys">
           {items.map((key) => {

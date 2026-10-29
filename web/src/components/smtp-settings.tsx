@@ -20,7 +20,8 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { ErrorState, Loading, Note, RequestError } from './shared'
-import { SettingsEmpty, SettingsSection } from './settings-section'
+import { SettingsSection } from './settings-section'
+import { GuidedEmpty } from './resource-card'
 
 function useSMTP() {
   return useQuery({
@@ -117,9 +118,13 @@ function SMTPOverview() {
       )}
       {error && <RequestError error={error} />}
       {!configured ? (
-        <SettingsEmpty title="No SMTP server" action={configure || undefined}>
-          Invitations, password recovery and alarm email need one.
-        </SettingsEmpty>
+        <GuidedEmpty
+          compact
+          icon="info"
+          title="Send email from this installation"
+          description="Invitations, password recovery and alarm email need an SMTP server."
+          primary={configure || undefined}
+        />
       ) : (
         <InstallationReviewRows
           rows={[

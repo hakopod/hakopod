@@ -12,6 +12,7 @@ import { SecretProviderIcon } from './secret-provider-icon'
 import { focusedDialog, plural, ReviewFacts, ReviewNotice } from './operation-review'
 import { ErrorState, Loading, Note, RequestError } from './shared'
 import { SettingsEmpty, SettingsRow, SettingsRows, SettingsSection } from './settings-section'
+import { GuidedEmpty } from './resource-card'
 
 export function SecretProviders({ saved }: { saved?: string }) {
   const scope = useScope()
@@ -71,9 +72,18 @@ export function SecretProviders({ saved }: { saved?: string }) {
       ) : providers.error ? (
         <ErrorState error={providers.error} retry={() => void providers.refetch()} />
       ) : items.length === 0 ? (
-        <SettingsEmpty title="No external secret providers" action={add}>
-          Applications can only use native secrets until a provider is connected.
-        </SettingsEmpty>
+        <GuidedEmpty
+          compact
+          icon="shield"
+          title="Use secrets you already manage"
+          description="Connect Vault or Infisical so applications can reference its secrets. Until then, applications use native secrets only."
+          steps={[
+            { title: 'Connect a provider', detail: 'Vault or Infisical.' },
+            { title: 'Choose where it applies', detail: 'The projects that may use it.' },
+            { title: 'Reference its secrets', detail: 'From service configuration.' },
+          ]}
+          primary={add}
+        />
       ) : (
         <SettingsRows label="Secret providers">
           {items.map((provider) => (
