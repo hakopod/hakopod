@@ -93,3 +93,97 @@
 .inspector-image {
   overflow-wrap: anywhere;
 }
+
+/* Overview: facts grid, one usage line, then pods, latest logs and events. */
+.service-inspector-overview {
+  display: grid;
+  gap: var(--space-5);
+}
+.service-inspector-overview > *,
+.service-inspector-overview h3 {
+  margin: 0;
+}
+.service-inspector-overview section {
+  display: grid;
+  gap: var(--space-2);
+}
+.service-inspector-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin: 0;
+}
+.service-inspector-facts dt {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.service-inspector-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.service-inspector-facts small {
+  color: var(--muted);
+}
+.service-inspector-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+}
+.service-inspector-copy code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.service-inspector-usage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+  padding-block: var(--space-2);
+  border-block: 1px solid var(--hairline);
+  color: var(--muted);
+}
+.service-inspector-usage strong {
+  margin-left: var(--space-1);
+  color: var(--foreground);
+  font-weight: var(--type-card-weight);
+}
+.service-inspector-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.service-inspector-log {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  max-height: 168px;
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.service-inspector-log-error {
+  color: var(--destructive);
+}
+.service-inspector-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+@media (max-width: 639px) {
+  .service-inspector-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .service-inspector-footer > * {
+    min-height: 44px;
+  }
+}

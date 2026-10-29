@@ -11,9 +11,10 @@ import { serviceRuntimeHealth } from '../lib/runtime-health'
 import { serviceProfileLabel } from '../lib/service-resources'
 import { InspectorSheet } from './inspector-sheet'
 import { ObservedState } from './resource-card'
-import { ErrorState, Loading, Status } from './shared'
+import { Copy, ErrorState, Loading, Status } from './shared'
 import { Button } from './ui/button'
 import { Logs } from './logs'
+import { lastErrorLine } from '../lib/app-attention'
 
 const PodTerminal = lazy(() => import('./pod-terminal'))
 
@@ -89,6 +90,41 @@ export function ServiceInspector({
       onOpenChange={(open) => !open && onClose()}
       wide
       kind="service"
+      footer={
+        <div className="service-inspector-footer">
+          <Button asChild variant="primary">
+            <Link
+              to="/applications/$applicationId"
+              params={{ applicationId: application.id }}
+              search={{ service: serviceName, tab: 'overview' }}
+            >
+              Open service page
+            </Link>
+          </Button>
+          {scope.can('deployments:write') && service && (
+            <>
+              <Button asChild>
+                <Link
+                  to="/applications/$applicationId/environment"
+                  params={{ applicationId: application.id }}
+                  search={{ service: serviceName }}
+                >
+                  Environment variables
+                </Link>
+              </Button>
+              <Button asChild variant="ghost">
+                <Link
+                  to="/applications/$applicationId/configure"
+                  params={{ applicationId: application.id }}
+                  search={{ mode: 'form' }}
+                >
+                  Edit configuration
+                </Link>
+              </Button>
+            </>
+          )}
+        </div>
+      }
       title={application.service_display_names?.[serviceName] || serviceName}
       state={
         <ObservedState status={health.status} observedAt={health.observedAt} note={health.note} />
@@ -135,7 +171,13 @@ export function ServiceInspector({
           ) : runtime.error ? (
             <ErrorState error={runtime.error} />
           ) : runtime.data ? (
-            <RuntimeOverview runtime={runtime.data} />
+            <RuntimeOverview
+              application={application}
+              serviceName={serviceName}
+              runtime={runtime.data}
+              canLogs={canLogs}
+              onOpenLogs={() => onTabChange('logs')}
+            />
           ) : null}
         </Tabs.Content>
         {canLogs && (
@@ -159,92 +201,161 @@ export function ServiceInspector({
           </Tabs.Content>
         )}
         <Tabs.Content className="tab-content" value="config">
-          {service && (
-            <ServiceConfig
-              applicationId={application.id}
-              serviceName={serviceName}
-              service={service}
-              canEdit={scope.can('deployments:write')}
-            />
-          )}
+          {service && <ServiceConfig service={service} />}
         </Tabs.Content>
       </Tabs.Root>
     </InspectorSheet>
   )
 }
 
-function RuntimeOverview({ runtime }: { runtime: Runtime }) {
+function RuntimeOverview({
+  application,
+  serviceName,
+  runtime,
+  canLogs,
+  onOpenLogs,
+}: {
+  application: Application
+  serviceName: string
+  runtime: Runtime
+  canLogs: boolean
+  onOpenLogs: () => void
+}) {
+  const service = application.spec.services[serviceName]
+  const observed = application.observed?.services?.find((item) => item.name === serviceName)
   const metrics = runtime.metrics
-  const window = metrics.window_seconds ? `${metrics.window_seconds}s window` : undefined
+  const window = metrics.window_seconds ? `${metrics.window_seconds}s window` : ''
+  const restarts = runtime.pods.reduce(
+    (total, pod) => total + pod.containers.reduce((n, c) => n + c.restarts, 0),
+    0,
+  )
+  const nodes = [...new Set(runtime.pods.map((pod) => pod.node_name).filter(Boolean))]
+  const latest = [...(application.deployments || [])].sort((a, b) => b.revision - a.revision)[0]
+  const address =
+    observed?.url && /^https?:\/\//.test(observed.url)
+      ? observed.url
+      : observed?.internal_address || (service?.port ? `${serviceName}:${service.port}` : '')
   const events = runtime.pods
     .flatMap((pod) => pod.events)
     .sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen))
-    .slice(0, 10)
-  return (
-    <>
-      <dl className="service-inspector-metrics">
-        <Metric
-          label="CPU"
-          value={
-            metrics.available && metrics.cpu_millicores !== undefined
-              ? `${metrics.cpu_millicores.toFixed(1)} mCPU`
-              : undefined
-          }
-          window={window}
-          reason={metrics.reason}
-        />
-        <Metric
-          label="Memory"
-          value={
-            metrics.available && metrics.memory_bytes !== undefined
-              ? memory(metrics.memory_bytes)
-              : undefined
-          }
-          window={window}
-          reason={metrics.reason}
-        />
-      </dl>
-      <h3>Pods</h3>
-      {runtime.pods.length ? (
-        <ul className="service-inspector-pods">
-          {runtime.pods.map((pod) => {
-            const restarts = pod.containers.reduce((n, container) => n + container.restarts, 0)
-            const waiting = pod.containers.find(
-              (container) => container.reason === 'CrashLoopBackOff',
-            )
-            return (
-              <li key={pod.name}>
-                <div className="service-inspector-pod">
-                  <span className="mono service-inspector-pod-name" title={pod.name}>
-                    {pod.name}
-                  </span>
-                  <Status value={waiting ? 'CrashLoop' : pod.ready ? 'ready' : pod.phase} small />
-                  {restarts > 0 && (
-                    <span className="service-inspector-restarts">
-                      {restarts} {restarts === 1 ? 'restart' : 'restarts'}
-                    </span>
-                  )}
-                  <span className="mono service-inspector-meta" title="Node">
-                    {pod.node_name || 'Not assigned'}
-                  </span>
-                </div>
-                {waiting && (
-                  <p className="service-inspector-waiting">
-                    {waiting.name}: {waiting.reason}
-                    {waiting.message && ` · ${waiting.message}`}
-                  </p>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+    .slice(0, 6)
+  const facts: [string, ReactNode][] = [
+    ['Replicas', observed ? `${observed.ready} / ${observed.desired} ready` : 'Not observed'],
+    [
+      'Endpoint',
+      address ? (
+        <span className="service-inspector-copy">
+          <code title={address}>{address}</code>
+          <Copy value={address} label={`Copy ${serviceName} address`} iconOnly />
+        </span>
       ) : (
-        <p className="service-inspector-meta">No pods observed.</p>
-      )}
-      {runtime.truncated && <p className="service-inspector-meta">Showing the first pods only.</p>}
-      {events.length > 0 && (
+        'No endpoint'
+      ),
+    ],
+    [
+      'Image',
+      service ? (
+        <span title={service.image}>
+          {shortImage(service.image).name}
+          {shortImage(service.image).pinned && <small> · pinned</small>}
+        </span>
+      ) : (
+        '—'
+      ),
+    ],
+    [
+      'Deployed',
+      latest ? (
         <>
-          <h3>Recent events</h3>
+          Revision {application.revision} · {relative(latest.created_at)}
+        </>
+      ) : (
+        'Not deployed'
+      ),
+    ],
+    ['Node', nodes.length ? nodes.join(', ') : 'Not scheduled'],
+    [
+      'Restarts',
+      restarts > 0 ? <span className="service-inspector-restarts">{restarts}</span> : 'None',
+    ],
+  ]
+  return (
+    <div className="service-inspector-overview">
+      <dl className="service-inspector-facts">
+        {facts.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="service-inspector-usage">
+        <span>
+          CPU{' '}
+          <strong className="mono">
+            {metrics.available && metrics.cpu_millicores !== undefined
+              ? `${Math.round(metrics.cpu_millicores)} mCPU`
+              : 'Unavailable'}
+          </strong>
+        </span>
+        <span>
+          Memory{' '}
+          <strong className="mono">
+            {metrics.available && metrics.memory_bytes !== undefined
+              ? memory(metrics.memory_bytes)
+              : 'Unavailable'}
+          </strong>
+        </span>
+        <span className="service-inspector-meta">
+          {metrics.available ? window : metrics.reason}
+        </span>
+      </p>
+      <section aria-labelledby="inspector-pods">
+        <h3 id="inspector-pods">Pods</h3>
+        {runtime.pods.length ? (
+          <ul className="service-inspector-pods">
+            {runtime.pods.map((pod) => {
+              const podRestarts = pod.containers.reduce((n, c) => n + c.restarts, 0)
+              const waiting = pod.containers.find((c) => c.reason === 'CrashLoopBackOff')
+              return (
+                <li key={pod.name}>
+                  <div className="service-inspector-pod">
+                    <span className="mono service-inspector-pod-name" title={pod.name}>
+                      {pod.name}
+                    </span>
+                    <Status value={waiting ? 'CrashLoop' : pod.ready ? 'ready' : pod.phase} small />
+                    {podRestarts > 0 && (
+                      <span className="service-inspector-restarts">
+                        {podRestarts} {podRestarts === 1 ? 'restart' : 'restarts'}
+                      </span>
+                    )}
+                    <span className="service-inspector-meta">
+                      {pod.node_name || 'Not assigned'} · {relative(pod.created_at)}
+                    </span>
+                  </div>
+                  {waiting && (
+                    <p className="service-inspector-waiting">
+                      {waiting.name}: {waiting.reason}
+                      {waiting.message && ` · ${waiting.message}`}
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <p className="service-inspector-meta">No pods observed.</p>
+        )}
+        {runtime.truncated && (
+          <p className="service-inspector-meta">Showing the first pods only.</p>
+        )}
+      </section>
+      {canLogs && (
+        <LogPreview applicationId={application.id} serviceName={serviceName} onOpen={onOpenLogs} />
+      )}
+      {events.length > 0 && (
+        <section aria-labelledby="inspector-events">
+          <h3 id="inspector-events">Recent events</h3>
           <ul className="service-inspector-events">
             {events.map((event, index) => (
               <li key={`${event.reason}-${event.last_seen}-${index}`}>
@@ -263,45 +374,75 @@ function RuntimeOverview({ runtime }: { runtime: Runtime }) {
               </li>
             ))}
           </ul>
-        </>
+        </section>
       )}
-    </>
-  )
-}
-
-function Metric({
-  label,
-  value,
-  window,
-  reason,
-}: {
-  label: string
-  value?: string
-  window?: string
-  reason?: string
-}) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>
-        <strong className="mono">{value ?? 'Unavailable'}</strong>
-        <span className="service-inspector-meta">{value ? window : reason}</span>
-      </dd>
     </div>
   )
 }
 
-function ServiceConfig({
+/** The last few log lines, error first, so the overview answers "what is it doing?". */
+function LogPreview({
   applicationId,
   serviceName,
-  service,
-  canEdit,
+  onOpen,
 }: {
   applicationId: string
   serviceName: string
-  service: Service
-  canEdit: boolean
+  onOpen: () => void
 }) {
+  const logs = useQuery({
+    queryKey: ['inspector-log-preview', applicationId, serviceName],
+    queryFn: async ({ signal }) => {
+      const result = await client.GET('/applications/{id}/logs', {
+        signal,
+        params: { path: { id: applicationId }, query: { service: serviceName, tail: 8 } },
+        parseAs: 'text',
+      })
+      return typeof result.data === 'string' ? result.data : ''
+    },
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  })
+  const lines = (logs.data || '')
+    .split('\n')
+    .map((line) => line.replace(/^\d{4}-\d\d-\d\dT[\d:.]+Z\s+/, ''))
+    .filter((line) => line.trim() && !/^\[[^\]]*\]$/.test(line.trim()))
+    .slice(-6)
+  // Only a line that reads like a failure is highlighted, never just the last line.
+  const error = lastErrorLine(logs.data || '')
+  const failing =
+    /error|exception|fatal|panic|traceback|refused|denied|not set|failed|cannot|unable/i.test(error)
+  return (
+    <section aria-labelledby="inspector-logs">
+      <div className="service-inspector-section-head">
+        <h3 id="inspector-logs">Latest logs</h3>
+        <Button size="sm" variant="ghost" onClick={onOpen}>
+          Open logs
+        </Button>
+      </div>
+      {logs.isPending ? (
+        <Loading rows={1} />
+      ) : lines.length ? (
+        <pre className="service-inspector-log">
+          {lines.map((line, index) => (
+            <span
+              key={index}
+              className={failing && line.trim() === error ? 'service-inspector-log-error' : ''}
+            >
+              {line}
+              {'\n'}
+            </span>
+          ))}
+        </pre>
+      ) : (
+        <p className="service-inspector-meta">No recent log lines.</p>
+      )}
+    </section>
+  )
+}
+
+function ServiceConfig({ service }: { service: Service }) {
   const resources = Object.entries(service.resources || {})
     .filter(([, value]) => value)
     .map(([key, value]) => `${key} ${value}`)
@@ -337,39 +478,6 @@ function ServiceConfig({
           </div>
         ))}
       </dl>
-      <div className="service-inspector-actions">
-        {canEdit && (
-          <>
-            <Button asChild variant="outline">
-              <Link
-                to="/applications/$applicationId/environment"
-                params={{ applicationId }}
-                search={{ service: serviceName }}
-              >
-                Edit environment variables
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link
-                to="/applications/$applicationId/configure"
-                params={{ applicationId }}
-                search={{ mode: 'form' }}
-              >
-                Edit service configuration
-              </Link>
-            </Button>
-          </>
-        )}
-        <Button asChild variant="ghost">
-          <Link
-            to="/applications/$applicationId"
-            params={{ applicationId }}
-            search={{ service: serviceName, tab: 'overview' }}
-          >
-            Open full service page
-          </Link>
-        </Button>
-      </div>
     </>
   )
 }
