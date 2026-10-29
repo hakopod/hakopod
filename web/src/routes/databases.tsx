@@ -1,10 +1,12 @@
 import { DatabaseExplorerLink } from '../components/database-explorer-link'
 import { useScope, canAccess } from '../lib/scope'
 import { useState } from 'react'
-import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
-import { databaseSearch, databaseHealth, useDatabases } from '../lib/databases'
+import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
+import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
+import { databaseState, readyMembers } from '../components/database-workspace'
+import { databaseSearch, useDatabases } from '../lib/databases'
 import { useExternalDatabases, externalDatabaseHealth } from '../lib/external-databases'
-import { Empty, Loading, PageHeader } from '../components/shared'
+import { Copy, Loading, PageHeader } from '../components/shared'
 import {
   CardMetric,
   ObservedState,
@@ -18,7 +20,7 @@ import { Input } from '../components/ui/input'
 import { ServiceIcon } from '../components/service-icon'
 import { Icon } from '../components/icons'
 import { SelectField } from '../components/ui/select'
-import { engineName, expectedMembers, shardedDatabase } from '../lib/database-view'
+import { databaseLayoutSummary, endpointAddress, engineName, expectedMembers } from '../lib/database-view'
 import { projectRouteScopeMatches } from '../lib/projects'
 import { DatabaseResourceNavigation } from '../components/database-resource-navigation'
 import { databaseEngines } from '../lib/database-create'
@@ -47,6 +49,11 @@ function Databases() {
       d.spec.name.toLowerCase().includes(filter.toLowerCase()) &&
       (engine === 'all' || d.spec.engine === engine),
   )
+  // Databases that need attention come first; the API order is kept within each group.
+  const ranked = [...filtered].sort(
+    (a, b) => Number(databaseState(a) === 'ready') - Number(databaseState(b) === 'ready'),
+  )
+  const navigate = useNavigate()
   const externalFiltered = (external.data?.items || []).filter(
     (d) =>
       d.spec.name.toLowerCase().includes(filter.toLowerCase()) &&
@@ -78,14 +85,16 @@ function Databases() {
       />
       <DatabaseResourceNavigation active="databases" scope={scope} />
       {!scopeMatches ? (
-        <Empty
+        <ResourceEmpty
+          icon="lock"
           title="Workspace unavailable"
           description="Choose an accessible project and environment above."
         />
       ) : !scope.project || !scope.environment ? (
-        <Empty
+        <ResourceEmpty
+          icon="database"
           title="Choose a project and environment"
-          description="Select a project above, then open Databases to manage its resources."
+          description="Databases belong to one project environment."
         />
       ) : (
         <>
@@ -153,20 +162,28 @@ function Databases() {
               {query.error && (
                 <StaleNotice updatedAt={query.dataUpdatedAt} retry={() => void query.refetch()} />
               )}
-              <div className="flex flex-wrap gap-x-5 gap-y-2 pb-4 text-xs text-muted-foreground">
+              <div className="db-list-summary" role="status">
                 <span>{filtered.length} managed databases</span>
-                <span>{filtered.filter((d) => databaseHealth(d) === 'ready').length} healthy</span>
+                <span>{filtered.filter((d) => databaseState(d) === 'ready').length} ready</span>
                 <span>
-                  {filtered.filter((d) => databaseHealth(d) !== 'ready').length} need attention
+                  {filtered.filter((d) => databaseState(d) !== 'ready').length} need attention
                 </span>
                 <span>
                   {filtered.reduce((n, d) => n + expectedMembers(d.spec), 0)} configured members
                 </span>
               </div>
               <div className="resource-grid" aria-label="Managed databases">
-                {filtered.map((d) => {
-                  const health = databaseHealth(d)
-                  const sharded = shardedDatabase(d.spec.engine) && d.spec.mode === 'cluster'
+                {ranked.map((d) => {
+                  const state = databaseState(d)
+                  const endpoint = d.observation.endpoints?.[0]
+                  const address = endpoint ? endpointAddress(endpoint, d.spec.engine) : ''
+                  const search = { project: d.project, environment: d.environment }
+                  const open = (tab?: 'connections' | 'backups' | 'settings') =>
+                    void navigate({
+                      to: '/databases/$databaseId',
+                      params: { databaseId: d.id },
+                      search: { ...search, tab },
+                    })
                   return (
                     <ResourceCard
                       key={d.id}
@@ -176,36 +193,68 @@ function Databases() {
                           className="ops-card-link"
                           to="/databases/$databaseId"
                           params={{ databaseId: d.id }}
-                          search={{ project: d.project, environment: d.environment }}
+                          search={search}
                         >
                           {d.spec.name}
                         </Link>
                       }
+                      menu={
+                        <Menu
+                          trigger={
+                            <Button variant="ghost" size="icon" aria-label={`Actions for ${d.spec.name}`}>
+                              <span aria-hidden="true">···</span>
+                            </Button>
+                          }
+                        >
+                          {canManage && d.status === 'ready' && (
+                            <MenuItem
+                              onSelect={() =>
+                                void navigate({
+                                  to: '/databases/$databaseId/connect',
+                                  params: { databaseId: d.id },
+                                  search,
+                                })
+                              }
+                            >
+                              <Icon name="plus" size={14} />
+                              Connect application
+                            </MenuItem>
+                          )}
+                          <MenuItem onSelect={() => open('connections')}>
+                            <Icon name="key" size={14} />
+                            Connections and credentials
+                          </MenuItem>
+                          <MenuItem onSelect={() => open('backups')}>
+                            <Icon name="archive" size={14} />
+                            Backups
+                          </MenuItem>
+                          <MenuItem onSelect={() => open('settings')}>
+                            <Icon name="settings" size={14} />
+                            Operations
+                          </MenuItem>
+                        </Menu>
+                      }
                       meta={
                         <>
-                          {engineName(d.spec.engine)} {d.spec.version} ·{' '}
-                          {d.spec.mode === 'standalone' ? 'Standalone' : 'Cluster'} · {d.spec.cpu}{' '}
-                          CPU / {d.spec.memory} · {d.spec.storage_gib} GiB
-                          {d.spec.engine === 'mongodb' ? ' data + 1 GiB logs' : ''} per member · r
-                          {d.revision}
+                          {engineName(d.spec.engine)} {d.spec.version} · {databaseLayoutSummary(d.spec)} ·{' '}
+                          {d.spec.cpu} CPU · {d.spec.memory} · {d.spec.storage_gib} GiB per member
                         </>
                       }
                       endpoint={
-                        <span>
-                          {sharded ? `${d.spec.shards} shards · ` : ''}
-                          {d.spec.replicas} {d.spec.replicas === 1 ? 'replica' : 'replicas'}
-                          {sharded ? ' per shard' : ''}
-                        </span>
+                        address ? (
+                          <>
+                            <code title={address}>{address}</code>
+                            <Copy value={address} label={`Copy ${d.spec.name} endpoint`} iconOnly />
+                          </>
+                        ) : (
+                          <span className="resource-card-absent">
+                            {d.status === 'ready' ? 'No verified endpoint' : 'No endpoint yet'}
+                          </span>
+                        )
                       }
                       state={
                         <ObservedState
-                          status={
-                            d.status === 'ready'
-                              ? health === 'Observation stale'
-                                ? 'stale'
-                                : health
-                              : d.status
-                          }
+                          status={state}
                           observedAt={
                             d.observation.observed_at?.startsWith('0001-')
                               ? undefined
@@ -217,12 +266,8 @@ function Databases() {
                       metric={
                         <CardMetric
                           label="Ready members"
-                          window="now"
-                          value={
-                            health === 'Not observed' || health === 'Observation stale'
-                              ? undefined
-                              : `${d.observation.members?.filter((m) => m.ready).length || 0} / ${expectedMembers(d.spec)}`
-                          }
+                          window={state === 'stale' ? 'last known' : 'now'}
+                          value={readyMembers(d)}
                         />
                       }
                     />

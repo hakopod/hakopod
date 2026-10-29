@@ -1,3 +1,4 @@
+import './database-workspace.test'
 import '../lib/security.test'
 import '../lib/sql-language.test'
 import '../lib/toml-language.test'
