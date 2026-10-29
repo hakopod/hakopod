@@ -238,6 +238,11 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 	}
 	gone, err := s.actionRuntime().DeleteActionsPod(ctx, t, v.ID)
 	if err != nil || !gone {
+		// The provider registration is gone and only pod termination remains.
+		// Check again soon so the replacement slot is not held for a full pass.
+		if err == nil {
+			requestActionsWarmup(ctx)
+		}
 		return false, err
 	}
 	if err = s.actionRuntime().DeleteActionsConfig(ctx, t, v.ID); err != nil {

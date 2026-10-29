@@ -467,3 +467,50 @@ func TestActionsObservationUsesSlotImageInsteadOfSavedRevision(t *testing.T) {
 		t.Fatalf("overview retained saved image: %s", observed.Image)
 	}
 }
+
+// actionsTerminatingFake reports a finished job pod whose deletion is still in
+// progress, as Kubernetes does during its termination grace period.
+type actionsTerminatingFake struct {
+	*actionsFake
+	terminating bool
+}
+
+func (f *actionsTerminatingFake) ActionsPodPhase(ctx context.Context, t cluster.Target, id string) (string, error) {
+	if f.pods[id] {
+		return "Succeeded", nil
+	}
+	return f.actionsFake.ActionsPodPhase(ctx, t, id)
+}
+func (f *actionsTerminatingFake) DeleteActionsPod(ctx context.Context, t cluster.Target, id string) (bool, error) {
+	if f.terminating {
+		return false, nil
+	}
+	return f.actionsFake.DeleteActionsPod(ctx, t, id)
+}
+
+func TestActionsFinishedSlotRequestsPromptRecheckWhilePodTerminates(t *testing.T) {
+	s, f, p, _ := actionsHarness(t)
+	target := actionsTarget(p)
+	if err := s.reconcileActionsPool(context.Background(), target, p); err != nil || len(f.pods) != 1 {
+		t.Fatal("pool not created", err)
+	}
+	fake := &actionsTerminatingFake{actionsFake: f, terminating: true}
+	s.actionsTestRuntime = fake
+	warm := &actionsWarmup{}
+	if err := s.reconcileActionsPool(context.WithValue(context.Background(), actionsWarmupKey{}, warm), target, p); err != nil {
+		t.Fatal(err)
+	}
+	if !warm.pending {
+		t.Fatal("terminating finished pod waited for a full scheduling pass")
+	}
+	if len(f.runners) != 0 || f.next != 1 {
+		t.Fatal("replacement registered before the finished pod was gone", len(f.runners), f.next)
+	}
+	fake.terminating = false
+	if err := s.reconcileActionsPool(context.Background(), target, p); err != nil {
+		t.Fatal(err)
+	}
+	if f.next != 2 || len(f.runners) != 1 {
+		t.Fatal("finished slot was not replaced once its pod was gone", f.next, len(f.runners))
+	}
+}
