@@ -41,7 +41,7 @@ test('ready members are unknown, not zero, before the first observation', () => 
   const html = renderToStaticMarkup(
     <DatabaseHealthLine database={database({ observed_at: '0001-01-01T00:00:00Z', members: [] })} now={now} />,
   )
-  assert.match(html, /none observed/)
+  assert.match(html, /3 members desired/)
   assert.match(html, /Not observed yet/)
   assert.equal(/0 of 3/.test(html), false)
 })

@@ -30,7 +30,9 @@ export function DatabaseSecurity({ database: d, now }: { database: ManagedDataba
         ? 'warning'
         : 'verified'
       : required
-        ? 'pending'
+        ? tls?.checked_at && !fresh
+          ? 'stale'
+          : 'pending'
         : 'unenforced'
   const notice = !required
     ? 'Client TLS is not enforced. Recover into a database with required TLS and review application connections before cutover.'
@@ -58,8 +60,7 @@ export function DatabaseSecurity({ database: d, now }: { database: ManagedDataba
           <h2 id="db-security-heading">Connection security</h2>
           <HeadingHelp title="connection security">
             Verification checks the certificate issuer, endpoint hostname and validity, then tests
-            an encrypted connection and rejects plaintext. Download contains only the public CA.{' '}
-            {clientGuidance(d)}
+            an encrypted connection and rejects plaintext. Download contains only the public CA.
           </HeadingHelp>
           <Status value={status} small />
         </div>
@@ -110,6 +111,7 @@ export function DatabaseSecurity({ database: d, now }: { database: ManagedDataba
           {notice}
         </p>
       )}
+      {required && clientGuidance(d) && <p className="db-section-note db-requirement">{clientGuidance(d)}</p>}
       {error && <RequestError error={error} />}
       <dl className="app-workspace-details">
         {facts.map(([term, value]) => (

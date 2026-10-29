@@ -173,7 +173,7 @@ function Detail() {
             </MenuItem>
             <MenuItem onSelect={() => openTab('settings')}>
               <Icon name="settings" size={14} />
-              All operations
+              Change database
             </MenuItem>
           </Menu>
         </div>
@@ -210,15 +210,15 @@ function Detail() {
             <div className="app-workspace-overview">
               <section className="app-workspace-section" aria-labelledby="db-endpoints-heading">
                 <div className="app-workspace-section-head">
-                  <div className="db-section-title">
-                    <h2 id="db-endpoints-heading">Connect</h2>
-                    <DriverHelp database={d} />
-                  </div>
+                  <h2 id="db-endpoints-heading">Connect</h2>
                   <Button size="sm" variant="ghost" className="app-workspace-link" onClick={() => openTab('connections')}>
                     Credentials and TLS
                   </Button>
                 </div>
                 <DatabaseEndpoints database={d} />
+                {d.observation.endpoints?.length > 0 && (
+                  <p className="db-section-note db-requirement">{driverGuidance(d)}</p>
+                )}
               </section>
               <section className="app-workspace-section" aria-labelledby="db-members-heading">
                 <div className="app-workspace-section-head">
@@ -328,7 +328,7 @@ function Detail() {
         <Tabs.Content value="activity" className="tab-content app-workspace-overview">
           <section className="app-workspace-section" aria-labelledby="db-activity-heading">
             <div className="app-workspace-section-head">
-              <h2 id="db-activity-heading">Operations</h2>
+              <h2 id="db-activity-heading">Operation history</h2>
               <span className="app-workspace-count">
                 {operations.isPending
                   ? 'Loading'
@@ -381,9 +381,6 @@ function driverGuidance(d: ManagedDatabase) {
       return 'Application bindings receive these endpoints privately. External clients need a private connection and the public CA.'
   }
 }
-function DriverHelp({ database: d }: { database: ManagedDatabase }) {
-  return <HeadingHelp title="connecting clients">{driverGuidance(d)}</HeadingHelp>
-}
 
 function DatabaseConnections({
   database: d,
@@ -404,10 +401,7 @@ function DatabaseConnections({
     <>
       <section className="app-workspace-section" aria-labelledby="db-private-heading">
         <div className="app-workspace-section-head">
-          <div className="db-section-title">
-            <h2 id="db-private-heading">Private endpoints</h2>
-            <DriverHelp database={d} />
-          </div>
+          <h2 id="db-private-heading">Private endpoints</h2>
           <Button asChild size="sm">
             <Link to="/databases/$databaseId/private-access" params={{ databaseId: d.id }} search={search}>
               Private connection
@@ -415,9 +409,7 @@ function DatabaseConnections({
           </Button>
         </div>
         <DatabaseEndpoints database={d} />
-        {d.spec.engine === 'redis' && d.spec.mode === 'cluster' && (
-          <p className="db-section-note">Clients must be cluster-aware.</p>
-        )}
+        <p className="db-section-note db-requirement">{driverGuidance(d)}</p>
       </section>
       <section className="app-workspace-section" aria-labelledby="db-credentials-heading">
         <div className="app-workspace-section-head">
@@ -484,14 +476,14 @@ function DatabaseConnections({
         <section className="app-workspace-section" aria-labelledby="db-pooling-heading">
           <div className="app-workspace-section-head">
             <h2 id="db-pooling-heading">PgBouncer pooling</h2>
-            <HeadingHelp title="connection pooling">
-              Write and replica routes are explicit. Existing sessions must reconnect after
-              failover. Replica reads may lag.
-              {d.spec.pooling.mode === 'transaction'
-                ? ' Transaction pooling does not preserve session state between transactions.'
-                : ' Session pooling retains the server connection for each client session.'}
-            </HeadingHelp>
           </div>
+          <p className="db-section-note db-requirement">
+            Write and replica routes are explicit. Existing sessions must reconnect after failover.
+            Replica reads may lag.
+            {d.spec.pooling.mode === 'transaction'
+              ? ' Transaction pooling does not preserve session state between transactions.'
+              : ' Session pooling retains the server connection for each client session.'}
+          </p>
           <dl className="app-workspace-details">
             <div>
               <dt>Pooling mode</dt>

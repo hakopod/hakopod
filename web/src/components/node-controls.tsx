@@ -230,6 +230,10 @@ export default function NodeEnrollments() {
           Create enrollment token
         </Button>
       </div>
+      <p className="db-section-note">
+        Workers add workload capacity. They do not make the control plane, database or public
+        ingress highly available.
+      </p>
       {list.isPending ? (
         <Loading />
       ) : list.error ? (

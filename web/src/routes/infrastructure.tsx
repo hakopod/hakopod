@@ -263,9 +263,14 @@ function Nodes() {
           <small>
             {!nodes.data
               ? 'Not observed yet'
-              : cordoned
-                ? `${cordoned} cordoned · not scheduling`
-                : 'All nodes accept workloads'}
+              : ready === items.length && !cordoned
+                ? 'All nodes accept workloads'
+                : [
+                    ready < items.length && `${items.length - ready} not ready`,
+                    cordoned && `${cordoned} cordoned`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
           </small>
         </div>
         <div>
@@ -275,7 +280,11 @@ function Nodes() {
               ? `${totalCPU.toLocaleString(undefined, { maximumFractionDigits: 2 })} cores`
               : 'Unavailable'}
           </dd>
-          <small>{nodes.data ? `${gib(totalMemory)} memory after reservations` : 'Not observed yet'}</small>
+          <small>
+            {nodes.data
+              ? `${gib(totalMemory)} memory · all ${items.length} ${items.length === 1 ? 'node' : 'nodes'}, after reservations`
+              : 'Not observed yet'}
+          </small>
         </div>
         <UsageSummary
           label="CPU in use"
@@ -304,8 +313,7 @@ function Nodes() {
             <HeadingHelp title="nodes">
               Allocatable values describe workload capacity after system reservations. Usage comes
               from the latest cluster sample for each node; service pages show pod CPU, memory,
-              allocations and events. Adding workers expands workload capacity. It does not make the
-              control plane, database or public ingress highly available.
+              allocations and events.
             </HeadingHelp>
           </div>
           <span className="infra-freshness" role="status">
@@ -397,19 +405,27 @@ function Nodes() {
                       <div>
                         <dt>CPU</dt>
                         <dd>
-                          {node.metrics.available && node.metrics.cpu_millicores !== undefined
-                            ? `${Math.round(node.metrics.cpu_millicores)}m`
-                            : 'Unavailable'}{' '}
-                          <span>of {cpu(node.allocatable_cpu)} cores</span>
+                          {node.metrics.available && node.metrics.cpu_millicores !== undefined ? (
+                            <>
+                              {Math.round(node.metrics.cpu_millicores)}m{' '}
+                              <span>of {cpu(node.allocatable_cpu)} cores</span>
+                            </>
+                          ) : (
+                            <span>No sample · {cpu(node.allocatable_cpu)} cores</span>
+                          )}
                         </dd>
                       </div>
                       <div>
                         <dt>Memory</dt>
                         <dd>
-                          {node.metrics.available && node.metrics.memory_bytes !== undefined
-                            ? gib(node.metrics.memory_bytes)
-                            : 'Unavailable'}{' '}
-                          <span>of {gib(memory(node.allocatable_memory))}</span>
+                          {node.metrics.available && node.metrics.memory_bytes !== undefined ? (
+                            <>
+                              {gib(node.metrics.memory_bytes)}{' '}
+                              <span>of {gib(memory(node.allocatable_memory))}</span>
+                            </>
+                          ) : (
+                            <span>No sample · {gib(memory(node.allocatable_memory))}</span>
+                          )}
                         </dd>
                       </div>
                     </dl>
@@ -594,7 +610,9 @@ function UsageSummary({
           ? 'Not observed yet'
           : used === undefined
             ? 'No node reported a usage sample'
-            : `${share ?? '—'}% of allocatable${sampled < total ? ` · ${sampled} of ${total} nodes sampled` : ''}`}
+            : sampled < total
+              ? `${share ?? '—'}% of the ${sampled} sampled ${sampled === 1 ? 'node' : 'nodes'} · ${total - sampled} not sampled`
+              : `${share ?? '—'}% of allocatable`}
       </small>
     </div>
   )
