@@ -1,0 +1,233 @@
+/* Application workspace: scope and state first, service cards, then deployments
+   beside environment details. Spacing comes only from the --space scale. */
+.app-workspace-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'scope scope'
+    'title actions'
+    'meta meta'
+    'endpoints endpoints';
+  column-gap: var(--space-4);
+  padding-block: var(--space-4);
+}
+.app-workspace-identity {
+  display: contents;
+}
+.app-workspace-scope {
+  grid-area: scope;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.app-workspace-scope a {
+  color: inherit;
+  text-decoration: none;
+}
+.app-workspace-scope a:is(:hover, :focus-visible) {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+.app-workspace-title {
+  grid-area: title;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-1);
+}
+.app-workspace-title h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.app-workspace-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: center;
+  margin-top: var(--space-1);
+}
+.app-workspace-actions > .button-icon {
+  width: 40px;
+  height: 40px;
+}
+.app-workspace-meta {
+  grid-area: meta;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.app-workspace-head > .app-workspace-identity > :last-child:not(.app-workspace-meta) {
+  grid-area: endpoints;
+  margin-top: var(--space-2);
+  min-width: 0;
+}
+
+.app-workspace-overview {
+  display: grid;
+  gap: var(--section-gap);
+}
+.app-workspace-overview > * {
+  min-width: 0;
+  margin: 0;
+}
+.app-workspace-section {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.app-workspace-section > * {
+  margin: 0;
+}
+.app-workspace-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 32px;
+}
+.app-workspace-section-head h2 {
+  margin: 0;
+  font-size: var(--type-section-size);
+  line-height: var(--type-section-line);
+  font-weight: var(--type-section-weight);
+}
+.app-workspace-section-head h2 + .app-workspace-count {
+  margin-right: auto;
+}
+.app-workspace-count {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+.app-workspace-image small {
+  color: var(--muted);
+}
+.app-workspace-empty {
+  color: var(--muted);
+}
+.app-workspace-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: var(--space-6);
+}
+@media (max-width: 899px) {
+  .app-workspace-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--section-gap);
+  }
+  .app-workspace-head {
+    grid-template-areas:
+      'scope'
+      'title'
+      'meta'
+      'endpoints'
+      'actions';
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-workspace-actions {
+    margin-top: var(--space-4);
+    flex-wrap: wrap;
+  }
+}
+.app-workspace-details {
+  margin: 0;
+}
+.app-workspace-details > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 44px;
+  padding-block: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}
+.app-workspace-details dt {
+  color: var(--muted);
+}
+.app-workspace-details dd {
+  margin: 0;
+  justify-self: end;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+/* Text-style actions: the label, not the hit area, sits on the edge. */
+.app-workspace .button.app-workspace-link {
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.app-workspace .button.app-workspace-link:hover {
+  background: none;
+  color: var(--foreground);
+}
+
+.app-settings {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+.app-settings-nav {
+  display: grid;
+  gap: var(--space-1);
+}
+.app-settings-link {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.app-settings-link:hover {
+  color: var(--foreground);
+}
+.app-settings-link[aria-current='page'] {
+  color: var(--navigation-active);
+}
+.app-settings-panel {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.app-settings-panel > * {
+  margin: 0;
+}
+.app-settings-danger {
+  margin-top: var(--space-4);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--hairline);
+}
+@media (max-width: 767px) {
+  .app-settings {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  .app-settings-nav {
+    grid-auto-flow: column;
+    grid-auto-columns: max-content;
+    gap: var(--space-5);
+    overflow-x: auto;
+  }
+  .app-settings-link {
+    min-height: 44px;
+  }
+}
