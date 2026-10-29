@@ -19,7 +19,7 @@ function Security() {
     <div className="ops-page security-page">
       <PageHeader
         title="Security"
-        description={`Hakopod checks running applications against the signed Hakopod advisory feed and OSV.dev, using runtime versions from image configuration. ${disclaimer}`}
+        description={`Hakopod checks the runtime and image versions each running app uses against its advisory sources. ${disclaimer} Advisories also go to app notification channels that include them. Automatic patching is off by default and is set per app.`}
       />
       {overview.isPending ? (
         <Loading />
