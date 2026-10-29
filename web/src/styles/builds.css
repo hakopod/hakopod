@@ -515,10 +515,6 @@ code.build-attention-log {
   .build-flow .deploy-footer-actions > .button {
     @apply h-auto min-h-11 w-full whitespace-normal;
   }
-  /* resources.css drops the row padding here but keeps the bleed margin. */
-  .builds-rows .resource-row {
-    margin-inline: 0;
-  }
 }
 @media (max-width: 639px), (pointer: coarse) {
   .build-detail .app-workspace-scope a {

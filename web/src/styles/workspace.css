@@ -134,9 +134,19 @@
       'actions';
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Both actions share one row; the menu keeps a fixed 44px. */
   .app-workspace-actions {
+    flex-wrap: nowrap;
     margin-top: var(--space-4);
-    flex-wrap: wrap;
+  }
+  .app-workspace-actions > * {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .app-workspace-actions > .button-icon {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
   }
 }
 .app-workspace-details {

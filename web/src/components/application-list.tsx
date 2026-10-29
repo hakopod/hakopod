@@ -156,15 +156,17 @@ export function ApplicationList({
                     </Link>
                   </Button>
                 )}
-                <Button
-                  variant="primary"
-                  aria-label="New application"
-                  onClick={() => void navigate({ to: '/applications/new' })}
-                >
-                  <Icon name="plus" size={15} />
-                  <span className="app-action-label">New application</span>
-                  <span className="app-action-short-label">New</span>
-                </Button>
+                {!(applications.data && !items.length && !currentPage.cursor) && (
+                  <Button
+                    variant="primary"
+                    aria-label="New application"
+                    onClick={() => void navigate({ to: '/applications/new' })}
+                  >
+                    <Icon name="plus" size={15} />
+                    <span className="app-action-label">New application</span>
+                    <span className="app-action-short-label">New</span>
+                  </Button>
+                )}
               </div>
             )
           }

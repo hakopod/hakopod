@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Application } from '../lib/types'
@@ -34,6 +34,12 @@ export function DraftReview({
   const [error, setError] = useState('')
   // One idempotency key per review, so a lost response never creates a second release.
   const key = useRef(crypto.randomUUID())
+  // Focus starts on Cancel, and returns there once discard is armed, so Enter never
+  // reaches the destructive button by accident.
+  const cancel = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (confirmDiscard) cancel.current?.focus()
+  }, [confirmDiscard])
   const conflicted = draft.conflicts.length > 0
   const plan = useQuery({
     queryKey: ['draft-plan', app.id, draft.revision],
@@ -105,6 +111,10 @@ export function DraftReview({
       open
       className={reviewDialog}
       onOpenChange={(open) => !open && !busy && onClose()}
+      onOpenAutoFocus={(event) => {
+        event.preventDefault()
+        cancel.current?.focus()
+      }}
       title={`Review ${plural(count, 'staged change')}`}
       description="Staged changes go live together when you deploy them. Nothing changes until then."
     >
@@ -166,7 +176,7 @@ export function DraftReview({
             Discard all
           </Button>
         )}
-        <Button disabled={Boolean(busy)} onClick={onClose}>
+        <Button ref={cancel} disabled={Boolean(busy)} onClick={onClose}>
           Cancel
         </Button>
         <Button

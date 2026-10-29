@@ -68,6 +68,9 @@ function Backups() {
   const { tab = 'jobs' } = Route.useSearch()
   const navigationRoot = useActiveSection(tab, '.tab-list')
   const navigate = Route.useNavigate()
+  // Without object storage nothing can run or restore; the empty state adds storage first.
+  const destinations = useBackupDestinations()
+  const noStorage = Boolean(destinations.data && !destinations.data.items.length)
   return (
     <>
       <PageHeader
@@ -89,7 +92,7 @@ function Backups() {
                 Create schedule
               </Link>
             </Button>
-          ) : (
+          ) : noStorage ? null : (
             <div className="flex flex-wrap items-center gap-2">
               {tab !== 'artifacts' && (
                 <Button asChild>
@@ -257,13 +260,8 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
                 : 'Run a backup by hand now, or let a schedule back up a database on an interval.'
             }
             secondary={
-              <Button asChild variant="ghost">
+              <Button asChild>
                 <Link to="/backups/schedules/new">Create schedule</Link>
-              </Button>
-            }
-            primary={
-              <Button asChild variant="primary">
-                <Link to="/backups/new">Run backup</Link>
               </Button>
             }
           />
@@ -574,11 +572,6 @@ function Destinations() {
             { title: 'Enter the endpoint and bucket', detail: 'Any S3-compatible service.' },
             { title: 'Add credentials', detail: 'Stored on the server, never shown again.' },
           ]}
-          primary={
-            <Button asChild variant="primary">
-              <Link to="/backups/destinations/new">Add object storage</Link>
-            </Button>
-          }
         />
       ) : (
         <ResourceRows label="Object storage destinations" className="backup-rows">
@@ -720,11 +713,6 @@ function Schedules() {
             { title: 'Set the interval', detail: 'How often to back up.' },
             { title: 'Set retention', detail: 'How many copies to keep.' },
           ]}
-          primary={
-            <Button asChild variant="primary">
-              <Link to="/backups/schedules/new">Create schedule</Link>
-            </Button>
-          }
         />
       ) : (
         <ResourceRows label="Backup schedules" className="backup-rows">
