@@ -98,6 +98,8 @@ def remove(run=subprocess.run, saved=SAVED):
     saved.unlink(missing_ok=True)
 
 
+import access_vpn  # noqa: E402  (installed next to this file)
+
 STATE_COMMAND = ['systemd-run', '--wait', '--pipe', '--quiet', '--collect', '--uid=hakopod-api', '--gid=hakopod-api',
                  '--property=EnvironmentFile=/etc/hakopod/api.env', '/opt/hakopod/current/hakopod-server', 'access-firewall-state']
 HOME = Path('/opt/hakopod/access')
@@ -114,18 +116,33 @@ def sync():
     except (subprocess.SubprocessError, ValueError) as error:
         print('Access firewall state is unavailable; keeping the current rules: ' + str(error), file=sys.stderr)
         return 1
-    apply(state, json.loads(Path('/etc/hakopod/config.json').read_text()))
-    return 0
+    code = 0
+    try:
+        apply(state['firewall'], json.loads(Path('/etc/hakopod/config.json').read_text()))
+    except (subprocess.SubprocessError, ValueError, KeyError) as error:
+        print('Access firewall could not be applied: ' + str(error), file=sys.stderr)
+        code = 1
+    # The tunnel is independent of the firewall: one failing must not stop the other.
+    try:
+        status = access_vpn.apply(state.get('vpn'))
+    except (subprocess.SubprocessError, ValueError, OSError) as error:
+        status, code = {'public_key': '', 'latest_handshake': None, 'rx_bytes': 0, 'tx_bytes': 0, 'error': str(error)[:500]}, 1
+    if status is not None or state.get('vpn') is None:
+        report = status or {'public_key': '', 'latest_handshake': None, 'rx_bytes': 0, 'tx_bytes': 0, 'error': ''}
+        subprocess.run([*STATE_COMMAND[:-1], 'access-vpn-report'], input=json.dumps(report), text=True, timeout=60)
+    return code
 
 
 def install():
     if os.geteuid() != 0:
         raise ValueError('Install the private-access module as root')
-    if shutil.which('nft') is None:
-        raise ValueError('nftables is required: install the nftables package, then run this module again')
+    for tool, package in (('nft', 'nftables'), ('wg', 'wireguard-tools')):
+        if shutil.which(tool) is None:
+            raise ValueError(f'{tool} is required: install the {package} package, then run this module again')
     HOME.mkdir(mode=0o755, parents=True, exist_ok=True)
-    shutil.copyfile(Path(__file__).resolve(), HOME / 'access_firewall.py')
-    os.chmod(HOME / 'access_firewall.py', 0o644)
+    for name in ('access_firewall.py', 'access_vpn.py'):
+        shutil.copyfile(Path(__file__).resolve().parent / name, HOME / name)
+        os.chmod(HOME / name, 0o644)
     (UNITS / 'hakopod-access-firewall.service').write_text("""[Unit]
 Description=Hakopod management access firewall
 After=network-online.target hakopod-k3s.service

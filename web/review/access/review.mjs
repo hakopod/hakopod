@@ -10,7 +10,7 @@ const browser = await chromium.launch()
 let failed = false
 for (const theme of ['dark', 'light'])
   for (const [width, height] of [[1440, 1000], [390, 900]])
-    for (const fixture of ['off', 'pending', 'restricted', 'unlicensed']) {
+    for (const fixture of ['off', 'pending', 'restricted', 'unlicensed', 'vpn']) {
       const name = `${fixture}-${theme}-${width}`
       const page = await browser.newPage({ viewport: { width, height } })
       await page.addInitScript((value) => localStorage.setItem('hakopod-theme', value), theme)

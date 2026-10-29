@@ -115,6 +115,19 @@ func TestInstallationAccessPolicyGatesConfirmsRevertsAndResets(t *testing.T) {
 		t.Fatalf("confirm = %d %v", code, body)
 	}
 
+	// The host reports the VPN connector; an invalid tunnel is refused.
+	if err := h.db.ReportAccessVPN(ctx, store.AccessVPNStatus{PublicKey: "U0VSVkVSLVBVQkxJQy1LRVktRk9SLVRFU1RTLTAwMDA9", RxBytes: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if code, view := h.accessCall("GET", "/api/v1/installation/access", owner, office, nil); code != 200 || view["vpn_status"].(map[string]any)["public_key"] == "" {
+		t.Fatalf("vpn status = %d %v", code, view)
+	}
+	badVPN := map[string]any{"enabled": true, "client_ip_source": "connection", "trusted_proxy_cidrs": []string{}, "client_ip_header": "", "allow_cidrs": []string{"203.0.113.0/24"},
+		"vpn": map[string]any{"address": "10.99.0.2/32", "peer_public_key": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=", "peer_endpoint": "vpn.example.com:51820", "allowed_ips": []string{"0.0.0.0/0"}}}
+	if code, _ := h.accessCall("PUT", "/api/v1/installation/access", owner, office, map[string]any{"expected_revision": 2, "policy": badVPN}); code != 400 {
+		t.Fatalf("default-route VPN = %d", code)
+	}
+
 	// An unconfirmed narrowing reverts to the confirmed policy.
 	narrower := map[string]any{"enabled": true, "client_ip_source": "connection", "trusted_proxy_cidrs": []string{}, "client_ip_header": "", "allow_cidrs": []string{"192.0.2.0/24"}}
 	if code, body := h.accessCall("PUT", "/api/v1/installation/access", owner, office, map[string]any{"expected_revision": 1, "policy": narrower, "confirm_from_elsewhere": true}); code != 200 {

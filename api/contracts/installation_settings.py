@@ -59,19 +59,34 @@ schemas["InstallationAccessPolicy"] = obj({
     "client_ip_header": {"type": "string", "enum": ["", "X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP"]},
     "allow_cidrs": cidrs,
     "firewall": {**B, "description": "Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module."},
+    "vpn": ref("InstallationAccessVPN"),
 }, ["enabled", "client_ip_source", "trusted_proxy_cidrs", "client_ip_header", "allow_cidrs"])
+schemas["InstallationAccessVPN"] = obj({
+    "address": {**S, "maxLength": 43, "description": "The server's tunnel address with its prefix, such as 10.99.0.2/32."},
+    "peer_public_key": {**S, "maxLength": 44},
+    "peer_endpoint": {**S, "maxLength": 260, "description": "host:port of the WireGuard peer."},
+    "allowed_ips": {"type": "array", "maxItems": 64, "items": {**S, "maxLength": 43}},
+    "keepalive": {"type": "integer", "minimum": 0, "maximum": 3600},
+}, ["address", "peer_public_key", "peer_endpoint", "allowed_ips"])
+schemas["InstallationAccessVPNStatus"] = obj({
+    "public_key": {**S, "description": "The server's WireGuard public key; add it as a peer."},
+    "latest_handshake": {**S, "format": "date-time"},
+    "rx_bytes": {"type": "integer"}, "tx_bytes": {"type": "integer"},
+    "error": S, "reported_at": {**S, "format": "date-time"},
+}, ["public_key", "rx_bytes", "tx_bytes", "error", "reported_at"])
 schemas["InstallationAccess"] = obj({
     "revision": revision, "policy": ref("InstallationAccessPolicy"),
     "pending_until": {**S, "format": "date-time", "description": "Set while a saved policy waits for confirmation; it reverts after this time."},
     "client_ip": {**S, "description": "The address the installation sees for this request."},
     "licensed": B,
+    "vpn_status": ref("InstallationAccessVPNStatus"),
 }, ["revision", "policy", "client_ip", "licensed"])
 schemas["InstallationAccessInput"] = obj({
     "expected_revision": revision, "policy": ref("InstallationAccessPolicy"),
     "confirm_from_elsewhere": {**B, "description": "Save even though the policy blocks this request's network; confirm from an allowed network within five minutes."},
 }, ["expected_revision", "policy"])
 schemas["InstallationAccessConfirmInput"] = obj({"revision": revision}, ["revision"])
-for name in ["InstallationAccessPolicy", "InstallationAccess", "InstallationAccessInput", "InstallationAccessConfirmInput"]:
+for name in ["InstallationAccessPolicy", "InstallationAccessVPN", "InstallationAccessVPNStatus", "InstallationAccess", "InstallationAccessInput", "InstallationAccessConfirmInput"]:
     schemas[name]["additionalProperties"] = False
 for path, method, operation, response, request in [
     ("/installation/access", "get", "getInstallationAccess", "InstallationAccess", None),

@@ -33059,6 +33059,9 @@
           "firewall": {
             "type": "boolean",
             "description": "Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module."
+          },
+          "vpn": {
+            "$ref": "#/components/schemas/InstallationAccessVPN"
           }
         },
         "required": [
@@ -33067,6 +33070,79 @@
           "trusted_proxy_cidrs",
           "client_ip_header",
           "allow_cidrs"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessVPN": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "maxLength": 43,
+            "description": "The server's tunnel address with its prefix, such as 10.99.0.2/32."
+          },
+          "peer_public_key": {
+            "type": "string",
+            "maxLength": 44
+          },
+          "peer_endpoint": {
+            "type": "string",
+            "maxLength": 260,
+            "description": "host:port of the WireGuard peer."
+          },
+          "allowed_ips": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "maxLength": 43
+            }
+          },
+          "keepalive": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600
+          }
+        },
+        "required": [
+          "address",
+          "peer_public_key",
+          "peer_endpoint",
+          "allowed_ips"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessVPNStatus": {
+        "type": "object",
+        "properties": {
+          "public_key": {
+            "type": "string",
+            "description": "The server's WireGuard public key; add it as a peer."
+          },
+          "latest_handshake": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rx_bytes": {
+            "type": "integer"
+          },
+          "tx_bytes": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "reported_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "public_key",
+          "rx_bytes",
+          "tx_bytes",
+          "error",
+          "reported_at"
         ],
         "additionalProperties": false
       },
@@ -33091,6 +33167,9 @@
           },
           "licensed": {
             "type": "boolean"
+          },
+          "vpn_status": {
+            "$ref": "#/components/schemas/InstallationAccessVPNStatus"
           }
         },
         "required": [
