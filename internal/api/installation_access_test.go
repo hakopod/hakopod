@@ -115,6 +115,13 @@ func TestInstallationAccessPolicyGatesConfirmsRevertsAndResets(t *testing.T) {
 		t.Fatalf("confirm = %d %v", code, body)
 	}
 
+	// vpn_only needs a recent handshake.
+	tunnelOnly := map[string]any{"enabled": true, "vpn_only": true, "client_ip_source": "connection", "trusted_proxy_cidrs": []string{}, "client_ip_header": "", "allow_cidrs": []string{"10.99.0.0/24"},
+		"vpn": map[string]any{"address": "10.99.0.2/32", "peer_public_key": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=", "peer_endpoint": "vpn.example.com:51820", "allowed_ips": []string{"10.99.0.0/24"}}}
+	if code, body := h.accessCall("PUT", "/api/v1/installation/access", owner, office, map[string]any{"expected_revision": 1, "policy": tunnelOnly}); code != 409 || body["error"].(map[string]any)["code"] != "vpn_not_connected" {
+		t.Fatalf("vpn_only without handshake = %d %v", code, body)
+	}
+
 	// The host reports the VPN connector; an invalid tunnel is refused.
 	if err := h.db.ReportAccessVPN(ctx, store.AccessVPNStatus{PublicKey: "U0VSVkVSLVBVQkxJQy1LRVktRk9SLVRFU1RTLTAwMDA9", RxBytes: 5}); err != nil {
 		t.Fatal(err)

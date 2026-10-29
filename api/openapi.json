@@ -33062,6 +33062,10 @@
           },
           "vpn": {
             "$ref": "#/components/schemas/InstallationAccessVPN"
+          },
+          "vpn_only": {
+            "type": "boolean",
+            "description": "Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on."
           }
         },
         "required": [

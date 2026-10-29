@@ -84,6 +84,7 @@ function AccessPolicyForm({ current }: { current: Access }) {
   const [vpnPeer, setVPNPeer] = useState(policy.vpn?.peer_public_key || '')
   const [vpnEndpoint, setVPNEndpoint] = useState(policy.vpn?.peer_endpoint || '')
   const [vpnAllowed, setVPNAllowed] = useState((policy.vpn?.allowed_ips || []).join('\n'))
+  const [vpnOnly, setVPNOnly] = useState(Boolean(policy.vpn_only))
   const [elsewhere, setElsewhere] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -117,6 +118,7 @@ function AccessPolicyForm({ current }: { current: Access }) {
               trusted_proxy_cidrs: source === 'trusted_proxy' ? lines(proxies) : [],
               client_ip_header: source === 'trusted_proxy' ? header : '',
               firewall: enabled && firewall,
+              vpn_only: enabled && vpnOn && vpnOnly,
               ...(vpnOn
                 ? {
                     vpn: {
@@ -318,6 +320,21 @@ function AccessPolicyForm({ current }: { current: Access }) {
                 onChange={(event) => setVPNAllowed(event.target.value)}
                 help="Space or comma separated. Add the same networks to Allowed networks to admit people on the VPN."
               />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={vpnOnly}
+                  disabled={!enabled}
+                  onChange={(event) => setVPNOnly(event.target.checked)}
+                />
+                Admit only people on the VPN
+              </label>
+              <p className="field-help m-0">
+                Every allowed network must be inside a routed network. It turns on only after a
+                handshake in the last two minutes. With the server firewall, the Kubernetes API is
+                then reachable only over the tunnel; the dashboard port stays open for signed
+                webhooks and refuses everything else.
+              </p>
             </>
           )}
         </SettingsSection>

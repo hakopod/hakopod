@@ -60,6 +60,7 @@ schemas["InstallationAccessPolicy"] = obj({
     "allow_cidrs": cidrs,
     "firewall": {**B, "description": "Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module."},
     "vpn": ref("InstallationAccessVPN"),
+    "vpn_only": {**B, "description": "Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on."},
 }, ["enabled", "client_ip_source", "trusted_proxy_cidrs", "client_ip_header", "allow_cidrs"])
 schemas["InstallationAccessVPN"] = obj({
     "address": {**S, "maxLength": 43, "description": "The server's tunnel address with its prefix, such as 10.99.0.2/32."},

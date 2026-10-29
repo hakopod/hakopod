@@ -101,3 +101,17 @@ The section shows the last handshake. Only the listed networks are routed
 through the tunnel; the default route and the cluster networks
 (`10.42.0.0/16`, `10.43.0.0/16`) are refused. Turning the connector off
 removes the interface on the next tick. Preshared keys are not supported yet.
+
+### VPN only
+
+**Admit only people on the VPN** turns on `vpn_only`. Every allowed network
+must then sit inside a network routed through the tunnel, and it can be turned
+on only after a handshake in the last two minutes. With the server firewall:
+
+- the K3s API (`6443`) accepts only the tunnel, cluster nodes and the cluster
+  networks;
+- the dashboard port stays open so signed Git provider webhooks still arrive,
+  and the dashboard refuses every other request from outside the VPN.
+
+If the tunnel goes down while `vpn_only` is on, use SSH or the reset command
+above.

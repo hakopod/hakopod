@@ -229,6 +229,18 @@ func (s *Server) putInstallationAccess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// vpn_only is safe only once the tunnel is up: require a recent handshake.
+	if policy.VPNOnly {
+		status, err := s.Store.AccessVPNStatus(r.Context())
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		if status == nil || status.LatestHandshake == nil || time.Since(*status.LatestHandshake) > 2*time.Minute {
+			problem(w, 409, "vpn_not_connected", "turn on vpn_only after the WireGuard connector has a handshake from the last two minutes")
+			return
+		}
+	}
 	// Refuse a save that would deny the network the owner is using now,
 	// unless they say they will confirm it from another allowed network.
 	client, ok := clientAddress(r, policy)

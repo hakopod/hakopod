@@ -96,3 +96,20 @@ func TestVPNNormalizeRefusesRouteTakeover(t *testing.T) {
 		}
 	}
 }
+
+func TestVPNOnlyAdmitsOnlyTunnelNetworks(t *testing.T) {
+	vpn := &VPN{Address: "10.99.0.2/32", PeerPublicKey: "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=", PeerEndpoint: "vpn.example.com:51820", AllowedIPs: []string{"10.99.0.0/24"}}
+	if _, err := (Policy{Enabled: true, VPNOnly: true, VPN: vpn, AllowCIDRs: []string{"10.99.0.0/25"}}).Normalize(); err != nil {
+		t.Fatalf("tunnel subnet refused: %v", err)
+	}
+	for name, p := range map[string]Policy{
+		"public network":    {Enabled: true, VPNOnly: true, VPN: vpn, AllowCIDRs: []string{"203.0.113.0/24"}},
+		"wider than tunnel": {Enabled: true, VPNOnly: true, VPN: vpn, AllowCIDRs: []string{"10.99.0.0/16"}},
+		"no connector":      {Enabled: true, VPNOnly: true, AllowCIDRs: []string{"10.99.0.0/24"}},
+		"policy off":        {VPNOnly: true, VPN: vpn},
+	} {
+		if _, err := p.Normalize(); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}

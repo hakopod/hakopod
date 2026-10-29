@@ -7487,6 +7487,8 @@ export interface components {
             /** @description Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module. */
             firewall?: boolean;
             vpn?: components["schemas"]["InstallationAccessVPN"];
+            /** @description Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on. */
+            vpn_only?: boolean;
         };
         InstallationAccessVPN: {
             /** @description The server's tunnel address with its prefix, such as 10.99.0.2/32. */

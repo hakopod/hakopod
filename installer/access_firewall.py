@@ -37,9 +37,10 @@ def networks(values):
     return out
 
 
-def ruleset(allow, ports):
+def ruleset(allow, ports, tunnel=None):
     """Render the table. Re-declaring and deleting it first makes `nft -f`
-    replace it in one transaction."""
+    replace it in one transaction. With tunnel, the ports also accept
+    anything arriving on that interface."""
     v4 = sorted({str(n) for n in allow if n.version == 4})
     v6 = sorted({str(n) for n in allow if n.version == 6})
     port_set = ', '.join(str(p) for p in sorted(set(ports)))
@@ -49,6 +50,7 @@ def ruleset(allow, ports):
              '  chain input {',
              '    type filter hook input priority filter - 10; policy accept;',
              f'    tcp dport {{ {port_set} }} iif "lo" accept',
+             *([f'    tcp dport {{ {port_set} }} iifname "{tunnel}" accept'] if tunnel else []),
              f'    tcp dport {{ {port_set} }} ip saddr @allow4 accept',
              f'    tcp dport {{ {port_set} }} ip6 saddr @allow6 accept',
              f'    tcp dport {{ {port_set} }} counter drop',
@@ -74,8 +76,8 @@ def ports(config):
 
 
 def apply(body, config, run=subprocess.run, addresses=cluster_addresses, saved=SAVED):
-    if not isinstance(body, dict) or set(body) != {'enabled', 'allow_cidrs'} or not isinstance(body['enabled'], bool):
-        raise ValueError('Send enabled and allow_cidrs only')
+    if not isinstance(body, dict) or set(body) != {'enabled', 'allow_cidrs', 'tunnel_only'} or not isinstance(body['enabled'], bool) or not isinstance(body['tunnel_only'], bool):
+        raise ValueError('Send enabled, allow_cidrs and tunnel_only only')
     allow = networks(body['allow_cidrs'])
     if not body['enabled']:
         if saved.exists():
@@ -83,7 +85,13 @@ def apply(body, config, run=subprocess.run, addresses=cluster_addresses, saved=S
         return {'applied': False}
     if not allow:
         raise ValueError('An enabled firewall needs at least one allowed CIDR')
-    text = ruleset(allow + addresses(), ports(config))
+    if body['tunnel_only']:
+        # The K3s API is reachable only over the tunnel, from nodes and from
+        # the cluster. The dashboard port stays open so signed webhooks
+        # arrive; the dashboard's own gate refuses every other request.
+        text = ruleset(addresses(), [6443], tunnel='hakopod-wg')
+    else:
+        text = ruleset(allow + addresses(), ports(config))
     if saved.is_file() and saved.read_text() == text:
         return {'applied': True}
     run(['nft', '-f', '-'], input=text, text=True, check=True, timeout=20)
