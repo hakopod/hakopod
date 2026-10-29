@@ -38,11 +38,12 @@ so a client cannot add its own address in front.
 - If you are locked out anyway, run this on the server:
 
   ```bash
-  sudo python3 /opt/hakopod/maintenance/maintenance.py --access-reset
+  sudo systemd-run --wait --pipe --quiet --collect --uid=hakopod-api --gid=hakopod-api --property=EnvironmentFile=/etc/hakopod/api.env --setenv=HAKOPOD_ACCESS_RESET_ACTOR="$USER" /opt/hakopod/current/hakopod-server access-reset
   ```
 
-  It turns the policy off, records the host user in the audit log, and works
-  without a license or a dashboard session.
+  It runs the release's own server binary as the API user with the API's
+  settings, turns the policy off, records your host user name in the audit
+  log, and works without a license or a dashboard session.
 
 Saves, confirmations, automatic reverts and resets are recorded in the audit log
 under `installation.access.*`, with the client address that made the change.

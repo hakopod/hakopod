@@ -55,7 +55,7 @@ async function privateAccess(request, next) {
     if (status === 403)
       return new Response('This network is not allowed to reach this Hakopod installation.\n', { status: 403, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } })
     if (status !== 204)
-      return new Response('The installation access policy could not be checked. Retry, or run `sudo python3 /opt/hakopod/maintenance/maintenance.py --access-reset` on the server.\n', { status: 503, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } })
+      return new Response('The installation access policy could not be checked. Retry, or run `hakopod-server access-reset` on the server as described in docs/management-network-access.md.\n', { status: 503, headers: { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } })
   }
   return peerContext.run(headers, next)
 }
