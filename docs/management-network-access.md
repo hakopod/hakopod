@@ -85,8 +85,7 @@ The same module can join this server to your WireGuard network as a client,
 so administrators reach the dashboard over the VPN. It needs
 `wireguard-tools` on the server.
 
-1. In **Settings → Network access**, tick **Connect this server to a WireGuard
-   network** and enter the server's tunnel address, your peer's public key
+1. In **Settings → VPN**, press **Connect**, choose **WireGuard** and enter the server's tunnel address, your peer's public key
    and endpoint, and the networks to route through the tunnel.
 2. Save. Within ten seconds the server generates its own key pair, creates the
    `hakopod-wg` interface and shows its **Server public key**. The private key
@@ -118,7 +117,7 @@ above.
 
 ## Tailscale, OpenVPN and IPsec connectors
 
-**VPN connector** also connects the server to Tailscale (or Headscale),
+**Settings → VPN → VPN connector** also connects the server to Tailscale (or Headscale),
 OpenVPN or IPsec. Only one connector runs at a time; switching removes the
 previous one. Install the VPN's own client on the server first: `tailscale`,
 `openvpn`, or strongSwan's `swanctl`.
@@ -146,15 +145,14 @@ root-owned 0600 files. Leave the field empty to keep the stored value.
 If you have no VPN of your own, Hakopod can run one. The module above runs a
 WireGuard server on this host:
 
-1. In **Settings → Network access**, tick **Run a WireGuard server on this
-   host**, enter the public endpoint devices dial (for example
+1. In **Settings → VPN**, press **Set up** under Hakopod VPN server and enter the public endpoint devices dial (for example
    `vpn.example.com:51820`), the UDP port and the VPN network (for example
    `10.100.0.0/24`). Open that UDP port in any cloud or network firewall in
    front of the server.
 2. Save. Within ten seconds the server generates its key in
    `/etc/hakopod/wireguard/server.key` (0600) and starts `hakopod-wgs`.
-3. Under **VPN profiles**, name a device and press **Create and download
-   profile**. The browser generates the device's key pair; only the public key
+3. Under **Devices**, press **Add device**, name it and press **Create
+   profile**, then **Download profile**. The browser generates the device's key pair; only the public key
    is sent, so the profile can be downloaded once. Import it into the
    WireGuard app.
 4. On VPN devices, point the dashboard host name at the server's VPN address
