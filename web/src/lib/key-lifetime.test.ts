@@ -7,12 +7,9 @@ test('Cloud no-expiry selection sends explicit consent without an expiry date', 
   assert.equal(keyLifetimeOptions(true).at(-1)?.label, 'Never expires')
 })
 
-test('self-hosted keys cannot select or submit an unlimited lifetime', () => {
-  assert.equal(
-    keyLifetimeOptions(false).some((option) => option.value === 'never'),
-    false,
-  )
-  assert.throws(() => keyLifetimeInput('never', false), /supported key lifetime/)
+test('self-hosted keys can also be created without an expiry date', () => {
+  assert.equal(keyLifetimeOptions(false).at(-1)?.value, 'never')
+  assert.deepEqual(keyLifetimeInput('never', false), { never_expires: true })
 })
 
 test('dated keys retain a bounded expiry and invalid selections fail before submission', () => {

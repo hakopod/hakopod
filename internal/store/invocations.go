@@ -378,7 +378,7 @@ func invocationCredential(ctx context.Context, q interface {
 	var valid bool
 	err := q.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM api_keys k JOIN identities i ON i.id=k.identity_id
  WHERE k.id=$1 AND i.id=$2 AND k.kind='machine' AND k.revoked_at IS NULL AND NOT i.disabled
- AND (k.expires_at>now() OR (k.never_expires AND EXISTS(SELECT 1 FROM automation_key_scopes s WHERE s.key_id=k.id)))
+ AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine'))
  AND k.project=$3 AND k.environment=$4 AND k.application=$5 AND 'jobs:invoke'=ANY(k.permissions)
  AND (i.project='' OR i.project=$3) AND (i.environment='' OR i.environment=$4)
  AND (i.admin OR (COALESCE(i.email,'')='' AND 'jobs:invoke'=ANY(i.permissions))))`, keyID, identityID, a.Project, a.Environment, a.Name).Scan(&valid)

@@ -60,6 +60,8 @@ CLI credentials also require explicit execution permissions. An administrator wi
 Database query keys cannot have an application restriction.
 SQL write grants require the SQL query grant.
 Users must request and consent to execution permissions during device login.
+`hakopod login --project P --environment E --allow-exec` requests `pods:exec`; `--allow-sql` and `--allow-sql-write` request the SQL grants. A session created without them cannot run `hakopod exec`: log in again with the flag.
+Administrators can create API keys that never expire for CI and other long-lived integrations: choose **Never expires** in Settings, or run `hakopod key-create --name NAME --permissions ... --never-expires` from a browser-approved session. Only a self-hosted administrator in a browser session can create them. Revoke them when the integration no longer needs them.
 Credential access can place secrets in an agent's context. Grant it only to trusted agents and integrations.
 The [connection guide](agent-parity/connection-workflows.md) describes host-only access, stored node grants and bounded terminal polling.
 

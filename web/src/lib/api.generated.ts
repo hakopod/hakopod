@@ -5866,7 +5866,7 @@ export interface components {
             /** Format: date-time */
             expires_at: string;
         };
-        /** @description Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer. */
+        /** @description Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available to self-hosted administrators in a browser session and to the trusted Cloud automation issuer. */
         AutomationKeyInput: {
             name: string;
             project?: string;
@@ -5887,7 +5887,7 @@ export interface components {
             /** @constant */
             never_expires: true;
         };
-        /** @description Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer. */
+        /** @description Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available to self-hosted administrators in a browser session and to the trusted Cloud automation issuer. */
         AutomationKeyLifetimeInput: {
             /** Format: date-time */
             expires_at: string;

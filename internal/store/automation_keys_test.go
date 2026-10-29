@@ -120,7 +120,7 @@ func TestNeverExpiringBoundKeysRequireTrustedIssuerAndRemainBound(t *testing.T) 
 	if principal, err := s.KeyPrincipal(ctx, k.ID); err != nil || principal.KeyID != k.ID || principal.CredentialType != "machine" {
 		t.Fatal("valid bound never-expiring key principal was rejected", err, principal)
 	}
-	if _, _, err = s.RotateKey(ctx, p, k.ID, time.Now().Add(time.Hour)); !errors.Is(err, pgx.ErrNoRows) {
+	if _, _, err = s.RotateKey(ctx, p, k.ID, time.Now().Add(time.Hour), false); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatal("generic rotation accepted a Cloud-bound key", err)
 	}
 	replacement, replacementRaw, err := s.CreateBoundKey(ctx, p, never, "workspace-never", "hosted", k.ID, true)

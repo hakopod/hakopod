@@ -1015,12 +1015,13 @@ func (s *Server) rotateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		ExpiresAt time.Time `json:"expires_at"`
+		ExpiresAt    time.Time `json:"expires_at"`
+		NeverExpires bool      `json:"never_expires"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	key, raw, err := s.Store.RotateKey(r.Context(), who(r), r.PathValue("id"), in.ExpiresAt)
+	key, raw, err := s.Store.RotateKey(r.Context(), who(r), r.PathValue("id"), in.ExpiresAt, in.NeverExpires)
 	if err != nil {
 		problem(w, 400, "invalid_key", err.Error())
 		return
