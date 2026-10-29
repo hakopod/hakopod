@@ -2,19 +2,27 @@ import { useEffect, useRef, useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
-import { APIError, message, relative } from '../lib/api'
+import { APIError, message, relative, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { downloadNetworkTOML } from '../lib/virtual-networks'
 import { Icon } from '../components/icons'
 import {
-  HeadingHelp,
   Copy,
   ErrorState,
   Loading,
   Note,
   PageHeader,
   RequestError,
+  Status,
 } from '../components/shared'
+import {
+  ResourceEmpty,
+  ResourceRow,
+  ResourceRows,
+  StaleNotice,
+} from '../components/resource-card'
+import { plural } from '../components/create-flow'
+import { ScopeLabel } from '../components/task-review'
 import { TOMLCode } from '../components/toml-code'
 import { VirtualNetworkForm } from '../components/virtual-network-form'
 import { Button } from '../components/ui/button'
@@ -67,7 +75,7 @@ function NetworkDetail() {
     refetchOnWindowFocus: false,
   })
   if (network.isPending) return <Loading />
-  if (network.error || !network.data)
+  if (!network.data)
     return <ErrorState error={network.error} retry={() => void network.refetch()} />
   const detail = network.data
   if (edit && detail.can_manage)
@@ -78,6 +86,8 @@ function NetworkDetail() {
         existing={detail}
       />
     )
+  const segments = Object.entries(detail.spec.segments)
+  const canConnect = scope.can('deployments:write')
   return (
     <div className="ops-page virtual-network-detail">
       <PageHeader
@@ -85,35 +95,36 @@ function NetworkDetail() {
         description={detail.spec.description || 'Private application network'}
         action={
           <div className="toolbar-actions">
-            {scope.can('deployments:write') && (
-              <Link
-                to="/networks/$networkName/connect"
-                params={{ networkName }}
-                className="button button-primary"
-              >
-                <Icon name="plus" size={14} />
-                Connect service
-              </Link>
-            )}
             {detail.can_manage && (
-              <Link
-                to="/networks/$networkName"
-                params={{ networkName }}
-                search={{ edit: true }}
-                className="button button-secondary"
-              >
-                <Icon name="settings" size={14} />
-                Configure
-              </Link>
+              <Button asChild>
+                <Link to="/networks/$networkName" params={{ networkName }} search={{ edit: true }}>
+                  <Icon name="settings" size={14} />
+                  Configure grants
+                </Link>
+              </Button>
+            )}
+            {canConnect && (
+              <Button asChild variant="primary">
+                <Link to="/networks/$networkName/connect" params={{ networkName }}>
+                  <Icon name="plus" size={14} />
+                  Connect service
+                </Link>
+              </Button>
             )}
           </div>
         }
       />
       <div className="network-detail-meta">
-        <span>Revision {detail.network.revision}</span>
-        <time dateTime={detail.network.updated_at}>
-          Updated {relative(detail.network.updated_at)}
+        <ScopeLabel project={scope.project} environment={scope.environment} />
+        <span className="mono">r{detail.network.revision}</span>
+        <time dateTime={detail.network.updated_at} title={timestamp(detail.network.updated_at)}>
+          Updated {relative(detail.network.updated_at).toLowerCase()}
         </time>
+        <span>
+          {plural(segments.length, 'segment')} ·{' '}
+          {plural(detail.connections.length, 'connected service')}
+          {detail.truncated ? ' (first 256 shown)' : ''}
+        </span>
         <Button
           variant="ghost"
           size="sm"
@@ -124,111 +135,173 @@ function NetworkDetail() {
           Refresh
         </Button>
       </div>
-      <section aria-label="Segments" className="network-segment-grid">
-        {Object.entries(detail.spec.segments).map(([segment, grants]) => (
-          <div className="network-segment-card" key={segment}>
-            <h2>
-              <Icon name="network" size={15} />
-              {segment}
-            </h2>
-            <span className="muted-text">{grants.applications.length} allowed applications</span>
-            <div className="virtual-network-segment-tags">
-              {grants.applications.map((application) => (
-                <code className="label-chip" key={application}>
-                  {application}
-                </code>
-              ))}
-              {!grants.applications.length && <p>No application can join this segment yet.</p>}
-            </div>
-          </div>
-        ))}
-      </section>
-      <section className="network-connections" aria-labelledby="network-connections-title">
-        <div className="section-toolbar">
-          <div>
-            <div className="hako-section-heading-title">
-              <h2 id="network-connections-title">Declared connections</h2>
-              <HeadingHelp title="Declared connections">
-                Accepted application revisions. Open a service to inspect its live state.
-              </HeadingHelp>
-            </div>
-          </div>
-          <span className="label-chip">{detail.connections.length} connections</span>
-        </div>
-        {detail.connections.length ? (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Application / service</th>
-                  <th>Segment</th>
-                  <th>Private address</th>
-                  <th>Revision</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.connections.map((connection) => (
-                  <tr
-                    key={`${connection.application_id}:${connection.service}:${connection.network}`}
-                  >
-                    <td>
-                      <Link
-                        to="/applications/$applicationId"
-                        params={{ applicationId: connection.application_id }}
-                        search={{ service: connection.service }}
-                      >
-                        {connection.application} / {connection.service}
-                      </Link>
-                      <small className="ops-table-sub">Local network: {connection.network}</small>
-                    </td>
-                    <td>
-                      <code>{connection.segment}</code>
-                    </td>
-                    <td>
-                      <div className="copyable-address">
-                        <code>{connection.address}</code>
-                        <Copy value={connection.address} />
-                      </div>
-                      <small className="ops-table-sub">
-                        {connection.ports.length
-                          ? connection.ports
-                              .map((port) => `${port.port}/${port.protocol}`)
-                              .join(' · ')
-                          : 'No inbound port'}
-                      </small>
-                    </td>
-                    <td className="mono">r{connection.revision}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Note>
-            No service has declared a connection yet. Grant an application access, then connect one
-            of its services.
-          </Note>
-        )}
-        {detail.truncated && (
-          <Note>
-            Showing the first 256 declared connections. Inspect individual applications for the
-            remaining connections.
-          </Note>
-        )}
-      </section>
-      <section className="network-configuration">
-        <div className="section-toolbar">
-          <h2>Network configuration</h2>
+      {network.error && (
+        <StaleNotice updatedAt={network.dataUpdatedAt} retry={() => void network.refetch()} />
+      )}
+      <p className="network-reach-rule">
+        Services connected to the same segment can reach each other at their private addresses,
+        subject to each service’s peer restrictions. A service reaches only the segments it has joined.
+      </p>
+      <div className="network-segments">
+        {segments.map(([segment, grants]) => {
+          const connected = detail.connections.filter((item) => item.segment === segment)
+          const ungranted = connected.filter(
+            (item) => !grants.applications.includes(item.application),
+          )
+          return (
+            <section
+              key={segment}
+              className="network-segment"
+              aria-labelledby={`segment-${segment}`}
+            >
+              <header className="network-segment-heading">
+                <Icon name="network" size={15} />
+                <h2 id={`segment-${segment}`}>{segment}</h2>
+                <span>
+                  {plural(grants.applications.length, 'application')} allowed ·{' '}
+                  {plural(connected.length, 'service')} connected
+                </span>
+              </header>
+              {grants.applications.length || connected.length ? (
+                <ResourceRows label={`Applications in ${segment}`}>
+                  {[
+                    ...grants.applications,
+                    ...new Set(ungranted.map((item) => item.application)),
+                  ].map((application) => {
+                    const services = connected.filter((item) => item.application === application)
+                    const allowed = grants.applications.includes(application)
+                    return services.length ? (
+                      services.map((connection) => (
+                        <ResourceRow
+                          key={`${connection.application_id}:${connection.service}:${connection.network}`}
+                          identity={
+                            <Link
+                              className="resource-row-link"
+                              to="/applications/$applicationId"
+                              params={{ applicationId: connection.application_id }}
+                              search={{ service: connection.service }}
+                            >
+                              {connection.application} / {connection.service}
+                            </Link>
+                          }
+                          detail={
+                            <>
+                              <span className="copy-id">
+                                <code>{connection.address}</code>
+                                <Copy
+                                  value={connection.address}
+                                  label={`Copy private address of ${connection.application} / ${connection.service}`}
+                                  iconOnly
+                                />
+                              </span>
+                              <span>
+                                {connection.ports.length
+                                  ? connection.ports
+                                      .map((port) => `${port.port}/${port.protocol || 'TCP'}`)
+                                      .join(' · ')
+                                  : 'No inbound port'}
+                              </span>
+                              <span>Local network {connection.network}</span>
+                              {!allowed && (
+                                <span className="network-warning-text">
+                                  No longer granted in this segment
+                                </span>
+                              )}
+                            </>
+                          }
+                          status={<Status value={connection.status || 'unknown'} small />}
+                          meta={<span className="mono">r{connection.revision}</span>}
+                          actions={
+                            canConnect && (
+                              <Button asChild size="sm" variant="ghost">
+                                <Link
+                                  to="/networks/$networkName/connect"
+                                  params={{ networkName }}
+                                  search={{
+                                    disconnect: `${connection.application_id}/${connection.service}/${connection.network}`,
+                                  }}
+                                  aria-label={`Disconnect ${connection.application} / ${connection.service}`}
+                                >
+                                  Disconnect
+                                </Link>
+                              </Button>
+                            )
+                          }
+                        />
+                      ))
+                    ) : (
+                      <ResourceRow
+                        key={application}
+                        identity={<span>{application}</span>}
+                        detail={<span>Allowed to join · no service connected</span>}
+                        status={<span className="resource-row-count">Not connected</span>}
+                        actions={
+                          canConnect && (
+                            <Button asChild size="sm" variant="ghost">
+                              <Link
+                                to="/networks/$networkName/connect"
+                                params={{ networkName }}
+                                search={{ segment, application }}
+                                aria-label={`Connect a service of ${application} to ${segment}`}
+                              >
+                                Connect
+                              </Link>
+                            </Button>
+                          )
+                        }
+                      />
+                    )
+                  })}
+                </ResourceRows>
+              ) : (
+                <ResourceEmpty
+                  icon="lock"
+                  title="No application can join this segment"
+                  description={
+                    detail.can_manage
+                      ? 'Grant an application to let its services connect.'
+                      : 'A project administrator can grant applications access.'
+                  }
+                  action={
+                    detail.can_manage && (
+                      <Button asChild size="sm">
+                        <Link
+                          to="/networks/$networkName"
+                          params={{ networkName }}
+                          search={{ edit: true }}
+                        >
+                          Grant applications
+                        </Link>
+                      </Button>
+                    )
+                  }
+                />
+              )}
+            </section>
+          )
+        })}
+      </div>
+      <details className="network-configuration">
+        <summary>
+          <Icon name="chevron" size={14} />
+          <span>Network TOML</span>
+          <span className="muted-text">r{detail.network.revision}</span>
+        </summary>
+        <div className="network-configuration-body">
           <Button size="sm" onClick={() => downloadNetworkTOML(networkName, detail.toml)}>
             <Icon name="download" size={14} />
             Export TOML
           </Button>
+          <TOMLCode code={detail.toml} />
         </div>
-        <TOMLCode code={detail.toml} />
-      </section>
+      </details>
       {detail.can_manage && (
         <div className="network-delete-row">
-          <p>Disconnect services before deleting a network.</p>
+          <p>
+            {detail.connections.length
+              ? `Disconnect all ${plural(detail.connections.length, 'service')} before deleting this network.`
+              : 'No service is connected. Deleting removes the network and its grants.'}
+          </p>
           <Button
             variant="danger"
             size="sm"
@@ -248,7 +321,7 @@ function NetworkDetail() {
           if (!busy) setDeleteOpen(open)
         }}
         title={`Delete ${networkName}?`}
-        description="Remove this network and its grants from the current project and environment."
+        description={`Removes ${networkName} and the grants of its ${plural(Object.keys(detail.spec.segments).length, 'segment')} from ${scope.project} / ${scope.environment}. Applications are not changed.`}
       >
         <div className="dialog-body">
           <Note>
