@@ -74,11 +74,12 @@ func runAccessFirewallState() error {
 	type firewall struct {
 		Enabled    bool     `json:"enabled"`
 		AllowCIDRs []string `json:"allow_cidrs"`
+		TunnelOnly bool     `json:"tunnel_only"`
 	}
 	state := struct {
 		Firewall firewall    `json:"firewall"`
 		VPN      *access.VPN `json:"vpn"`
-	}{firewall{policy.Enabled && policy.Firewall, []string{}}, policy.VPN}
+	}{firewall{policy.Enabled && policy.Firewall, []string{}, policy.VPNOnly}, policy.VPN}
 	if state.Firewall.Enabled {
 		state.Firewall.AllowCIDRs = policy.AllowCIDRs
 	}

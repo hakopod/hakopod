@@ -39,6 +39,10 @@ type Policy struct {
 	Firewall bool `json:"firewall"`
 	// VPN, when set, connects the server to a WireGuard network.
 	VPN *VPN `json:"vpn,omitempty"`
+	// VPNOnly admits only networks routed through the tunnel. The K3s API is
+	// then reachable only over the tunnel in the host firewall; the dashboard
+	// port stays open for signed webhooks and the gate refuses everything else.
+	VPNOnly bool `json:"vpn_only"`
 }
 
 func prefixes(values []string, field string) ([]netip.Prefix, error) {
@@ -107,6 +111,21 @@ func (p Policy) Normalize() (Policy, error) {
 			return p, err
 		}
 		p.VPN = &vpn
+	}
+	if p.VPNOnly {
+		if !p.Enabled || p.VPN == nil {
+			return p, errors.New("vpn_only needs an enabled policy and a WireGuard connector")
+		}
+		for _, allowed := range allow {
+			inside := false
+			for _, raw := range p.VPN.AllowedIPs {
+				tunnel := netip.MustParsePrefix(raw)
+				inside = inside || (tunnel.Bits() <= allowed.Bits() && tunnel.Contains(allowed.Addr()))
+			}
+			if !inside {
+				return p, errors.New("with vpn_only, every allowed network must be inside a network routed through the tunnel")
+			}
+		}
 	}
 	return p, nil
 }
