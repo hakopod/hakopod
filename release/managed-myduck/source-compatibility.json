@@ -1,0 +1,117 @@
+{
+  "bootstrap": {
+    "commit": "69ea2ab8bea432ff2a9bea03a517c52d08cde7b3",
+    "reviewed_release": "v0.1.0-alpha.71",
+    "tag": "v0.1.0-alpha.70",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "ee78bd416dd962a6b1c1dfb06aca2ad7b29b538c",
+  "delta": {
+    "baseline_sha256": "a0c93c215dba94093560edda7c59b0bab6dd23077e074614b0ea32dbf844b071",
+    "changes": [
+      {
+        "after": "04894a1b1bb8c9b658aef016c744b8418105c8644fc47dec5a0350f8db0748eb",
+        "before": "612ffcb1210790efa17220be6123b9e95fcd30249eb55df1f8fd802d83ae54f2",
+        "path": "internal/api/actions.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "5f592dbbc325d3c0561984b5843c8e9c1a2bf42b4937ea3dd7bc8a873f3ba2f5",
+        "before": "5992f16cbdac8688c4169c20935fd0818b55ab9dca9bed6b2ce7731332fe389e",
+        "path": "internal/api/actions_lifecycle_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "fe765e4caf1295c5a3514da5f20ad46d30925871bfff56498ca1a1fc1117148e",
+        "before": "9900e3841acab471a4b154b884ead11250094eafb722ca4f4d221c7ccaa5622e",
+        "path": "internal/cluster/actions.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "89d61a97a1eb912720352a7ba2d40214cdf7f2aed5866dacf827232b66971885",
+        "before": "601959d04d869ef813879fce0617b181ff8e28568e7482aff114e684d6ff65df",
+        "path": "internal/cluster/actions_gitlab.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "c8ffa00d1712843a429940195c2fc8feae352e8ce8056cdef8919b8250f4a0ea",
+        "before": "7092fccd15d8efc9f4796e1ad7af2d39d672bce752c04b86e800219caa50e009",
+        "path": "internal/cluster/actions_gitlab_config.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "281cc3fa367b25e49a25725dad5de474e3a815802075a97e5294313aef2e51b9",
+        "before": "cf9acb656c847082d0cce2a845d88643ec6a27551475d901d91ee50139e1fb7a",
+        "path": "internal/cluster/actions_service_pull_fixture_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "19ded99c0be3f7ef74f809d62a84ba3014879fa5508de62e4c87f26b5222f131",
+        "before": "f53656f1f5f75aaa8dcb41c2a32cf83c0a6a2ae763274272b0e9ccfce9bd2ecf",
+        "path": "internal/cluster/actions_shared_workspace_fixture_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "ef42333acc265a4fb331761de27c80bee9a1f9427a1d8e01e24c13739f089ae2",
+        "before": "dd04df484df2e18672a2e67e2980d7a9453d41d71e8c3803fa5d82e88837de10",
+        "path": "internal/cluster/actions_workspace_probe_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a11d86addc7221b87251d43349fd53ca2c4dc67ffff03e026bdae27b0ecf3bc2",
+        "before": "08906a59bbe55f79ad4f01f6905a8c82789536b3ae1df5a1b34dc49039f5651e",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "53b7643ffa6c382b380463d4b48cb428fd319c4627927871de9b18501f31497f",
+        "before": null,
+        "path": "templates/blueprints/rivet-engine/README.md",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e18c925b3ca7a14aedc596c3f68af970e501ad65d05541e568d821fa12a3e214",
+        "before": null,
+        "path": "templates/blueprints/rivet-engine/hakopod.toml",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "010b3dfa47b726fce25f43d221a49b4310c5053051b7156c9b6a3ca4b9e0e67d",
+        "before": "f2e363f4f1893574909ad65d8ef057a43380b894debef190891b9c2c18278054",
+        "path": "templates/catalog.json",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "1eae966cba1175c5ce0a99c94afafc9d72e942dead7cd05b35fbf2a64114fa6e",
+        "before": "bf99b8a19f75f9f8b5915b62dedfac13a154f1a798d1acd5f8c449e33d05dcb1",
+        "path": "templates/images.lock.json",
+        "reason": "Reviewed control-plane change (Managed Actions speed: even runner and Docker split, prompt recheck of terminating slots, overlay2 on first installs, the Rivet Engine catalog template, and release preparation; chain the alpha.71 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      }
+    ],
+    "current_sha256": "097ade3b566eeb9c95f556aba3b5287ff7a585727213c0584f8b8760350586d8"
+  },
+  "predecessor": {
+    "commit": "69ea2ab8bea432ff2a9bea03a517c52d08cde7b3",
+    "review_sha256": "4f5e83d2a634ecf5379b06c43302378856f808bba1196f79bed11ba3f6f5301b",
+    "tag": "v0.1.0-alpha.70"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestActionsFinishedSlotRequestsPromptRecheckWhilePodTerminates",
+      "TestActionsServicePullFixtureIsolation",
+      "TestActionsWorkspaceProbeShapeSurvivesAPISerializationAndRejectsEnvelopeChanges"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40852858545"
+  },
+  "reviewed_release": "v0.1.0-alpha.71",
+  "runtime": "myduck",
+  "schema_version": 2
+}
