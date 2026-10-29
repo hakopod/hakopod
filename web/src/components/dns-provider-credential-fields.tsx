@@ -13,6 +13,7 @@ import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { Textarea } from './ui/textarea'
 import { Empty, ErrorState, Loading, Note, RequestError } from './shared'
+import { ReviewFacts } from './operation-review'
 
 // A stored DNS provider credential as the API returns it. The token is never
 // returned, so the form only ever sends a replacement.
@@ -159,8 +160,8 @@ export function DNSProviderCredentialFields({
           />
           <small className="field-help">
             {stored
-              ? 'Leave this blank to keep the stored token. Stored tokens are never shown again. Changing the permitted zones or the name requires entering the token again.'
-              : 'Use a token limited to editing DNS for the zones below.'}
+              ? 'Leave this blank to keep the stored token. A new token replaces it when you save, and record creation uses the new one from then on. Changing the permitted zones requires entering the token again.'
+              : 'Use a token limited to editing DNS for the zones below. Tokens are write-only and never shown again.'}
           </small>
         </label>
       </FormSection>
@@ -261,43 +262,28 @@ export function DNSProviderReview({
           ? 'The API token you entered replaces any stored token. hakopod cannot check what a token reaches, so the permitted zones below are the boundary it enforces.'
           : 'The stored API token is kept. hakopod cannot check what a token reaches, so the permitted zones below are the boundary it enforces.'}
       </Note>
-      <dl className="service-definition-list">
-        <div>
-          <dt>Name</dt>
-          <dd className="break-all">{input.name}</dd>
-        </div>
-        <div>
-          <dt>Provider</dt>
-          <dd>{dnsProviderKinds[input.kind as keyof typeof dnsProviderKinds] || input.kind}</dd>
-        </div>
-        <div>
-          <dt>Available to</dt>
-          <dd>{dnsProviderScope(input)}</dd>
-        </div>
-        <div>
-          <dt>Permitted zones</dt>
-          <dd className="break-all">{input.zone_filter.join(', ')}</dd>
-        </div>
-        <div>
-          <dt>Availability</dt>
-          <dd>{input.enabled ? 'Available for creating records' : 'Not available'}</dd>
-        </div>
-        <div>
-          <dt>API token</dt>
-          <dd>{input.credentials ? 'Replaced with the token you entered' : 'Stored token kept'}</dd>
-        </div>
-      </dl>
-      {stored && (
-        <dl className="service-definition-list">
-          <div>
-            <dt>Currently stored</dt>
-            <dd className="break-all">
-              {dnsProviderScope(stored)} · {stored.zone_filter.join(', ')} ·{' '}
-              {stored.enabled ? 'available' : 'not available'} · revision {stored.revision}
-            </dd>
-          </div>
-        </dl>
-      )}
+      <ReviewFacts
+        label="DNS credential"
+        facts={[
+          ['Name', input.name],
+          ['Provider', dnsProviderKinds[input.kind as keyof typeof dnsProviderKinds] || input.kind],
+          ['Available to', dnsProviderScope(input)],
+          ['Permitted zones', input.zone_filter.join(', ')],
+          ['Availability', input.enabled ? 'Available for creating records' : 'Not available'],
+          [
+            'API token',
+            input.credentials
+              ? stored
+                ? 'Replaced with the token you entered; the stored token is erased'
+                : 'The token you entered'
+              : 'Stored token kept',
+          ],
+          stored && [
+            'Currently stored',
+            `${dnsProviderScope(stored)} · ${stored.zone_filter.join(', ')} · ${stored.enabled ? 'available' : 'not available'} · revision ${stored.revision}`,
+          ],
+        ]}
+      />
     </FormSection>
   )
 }
@@ -377,7 +363,7 @@ export function DNSProviderEditor({
         }),
       )
       void cache.invalidateQueries({ queryKey: ['dns-providers'] })
-      await navigate({ to: '/settings/dns-providers', search: { saved: input.name } })
+      await navigate({ to: '/settings', search: { tab: 'dns-providers', saved: input.name } })
     } catch (cause) {
       setError(
         cause instanceof APIError && cause.status === 409
@@ -397,7 +383,7 @@ export function DNSProviderEditor({
       description="Store a provider token and the zones it may write records in."
       breadcrumbs={[
         { label: 'Settings', to: '/settings' },
-        { label: 'DNS providers', to: '/settings/dns-providers' },
+        { label: 'DNS providers', to: '/settings?tab=dns-providers' },
         { label: stored ? stored.name : 'Add credential' },
       ]}
     >
@@ -443,7 +429,7 @@ export function DNSProviderEditor({
             </Button>
           ) : (
             <Button asChild>
-              <Link to="/settings/dns-providers" search={{}}>
+              <Link to="/settings" search={{ tab: 'dns-providers' }}>
                 Cancel
               </Link>
             </Button>

@@ -18,6 +18,7 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
 import { ErrorState, Loading, Note } from '../components/shared'
+import { ReviewFacts, ReviewNotice } from '../components/operation-review'
 
 export const Route = createFileRoute('/alarms/settings')({
   validateSearch: alarmSearch,
@@ -264,29 +265,42 @@ function SettingsEditor({
       )}
       {review && (
         <FormSection title="Review changes">
-          <p>
-            Scope:{' '}
-            {[scope.project || 'Installation nodes', scope.environment, scope.application_id]
-              .filter(Boolean)
-              .join(' / ')}
-          </p>
-          <p>
-            Detection {draft.enabled ? 'enabled' : 'disabled'} · Hold {hold} seconds · Email{' '}
-            {draft.email_enabled ? 'enabled' : 'disabled'}
-          </p>
+          <ReviewFacts
+            facts={[
+              [
+                'Scope',
+                [scope.project || 'Installation nodes', scope.environment, scope.application_id]
+                  .filter(Boolean)
+                  .join(' / '),
+              ],
+              ['Detection', draft.enabled ? 'Enabled' : 'Disabled'],
+              ['Hold time', `${hold} seconds`],
+              ['Email', draft.email_enabled ? 'Alarm and recovery emails' : 'Off'],
+              [
+                'Applies as',
+                initial.inherited && !saved
+                  ? `A new override replacing the inherited ${source} settings`
+                  : `An update to the ${source} settings`,
+              ],
+            ]}
+          />
           {!draft.enabled && (
-            <Note>
-              New alarms will stop for this scope. Existing incidents remain in the inbox.
-            </Note>
+            <ReviewNotice tone="warn" title="New alarms stop for this scope">
+              Existing incidents remain in the inbox.
+            </ReviewNotice>
           )}
           {draft.email_enabled && (
-            <Note>
-              Future alarm and recovery transitions will email eligible accounts in this scope.
-            </Note>
+            <ReviewNotice title="Eligible accounts will be emailed">
+              Future alarm and recovery transitions email accounts that can read this scope.
+            </ReviewNotice>
           )}
         </FormSection>
       )}
-      {saved && <p role="status">Alarm settings saved.</p>}
+      {saved && (
+        <p role="status" className="m-0 text-sm">
+          Alarm settings saved.
+        </p>
+      )}
       {initial.can_manage && (
         <div className="form-footer alarm-settings-footer">
           <span className="dialog-footer-note">

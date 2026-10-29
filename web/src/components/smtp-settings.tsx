@@ -19,8 +19,8 @@ import {
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
-import { Card } from './ui/surfaces'
-import { ErrorState, HeadingHelp, Loading, Note, RequestError } from './shared'
+import { ErrorState, Loading, Note, RequestError } from './shared'
+import { SettingsSection } from './settings-section'
 
 function useSMTP() {
   return useQuery({
@@ -47,73 +47,82 @@ function SMTPOverview() {
   if (query.error || !query.data)
     return <ErrorState error={query.error} retry={() => void query.refetch()} />
   const current = query.data
+  const configured = Boolean(current.host && current.from_email)
   return (
-    <div className="grid gap-4">
-      <div className="hako-section-heading-title">
-        <h2>Email delivery</h2>
-        <HeadingHelp title="Email delivery">
-          Send invitations, password recovery messages and alarm notifications through your SMTP
-          server.
-        </HeadingHelp>
-      </div>
-      <Card className="grid gap-4 p-4">
-        <InstallationReviewRows
-          rows={[
-            ['Delivery', current.enabled ? 'Enabled' : 'Disabled'],
-            ['SMTP server', current.host ? `${current.host}:${current.port}` : 'Not configured'],
-            ['Connection', current.security === 'tls' ? 'TLS' : 'STARTTLS'],
-            ['Sender', current.from_email || 'Not configured'],
-            [
-              'Configuration',
-              current.source === 'operator' ? 'Operator settings' : 'Dashboard settings',
-            ],
-          ]}
-        />
-        {!current.encryption_ready && (
-          <Note>Configure the installation encryption key before changing SMTP settings.</Note>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="primary" asChild>
-            <Link to="/settings/smtp">Configure SMTP</Link>
+    <SettingsSection
+      title="Email delivery"
+      help="Send invitations, password recovery messages and alarm notifications through your SMTP server. The test email uses saved settings and goes to your administrator email address."
+      state={
+        !configured
+          ? 'Not configured · Hakopod sends no email'
+          : current.enabled
+            ? `Enabled · sends from ${current.from_email} through ${current.host}:${current.port}`
+            : `Disabled · ${current.host}:${current.port} is saved but not used`
+      }
+      actions={
+        <>
+          {current.enabled && (
+            <Button
+              disabled={busy}
+              aria-busy={busy || undefined}
+              onClick={async () => {
+                if (busy) return
+                setBusy(true)
+                setError('')
+                setSent('')
+                try {
+                  const result = await unwrap(
+                    client.POST('/installation/smtp/test', {
+                      body: { expected_revision: current.revision },
+                    }),
+                  )
+                  setSent(`Test email sent to ${result.recipient}.`)
+                } catch (cause) {
+                  setError(message(cause))
+                  if (cause instanceof APIError && cause.status === 409) void query.refetch()
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              {busy ? 'Sending…' : 'Send test email'}
+            </Button>
+          )}
+          <Button variant={configured ? 'outline' : 'primary'} asChild>
+            <Link to="/settings/smtp">{configured ? 'Edit SMTP' : 'Configure SMTP'}</Link>
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || !current.enabled}
-            onClick={async () => {
-              if (busy) return
-              setBusy(true)
-              setError('')
-              setSent('')
-              try {
-                const result = await unwrap(
-                  client.POST('/installation/smtp/test', {
-                    body: { expected_revision: current.revision },
-                  }),
-                )
-                setSent(`Test email sent to ${result.recipient}.`)
-              } catch (cause) {
-                setError(message(cause))
-                if (cause instanceof APIError && cause.status === 409) void query.refetch()
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            {busy ? 'Sending…' : 'Send test email'}
-          </Button>
-        </div>
-        <p className="field-help">
-          The test uses saved settings and goes to your administrator email address.
+        </>
+      }
+    >
+      {!current.encryption_ready && (
+        <Note>Configure the installation encryption key before changing SMTP settings.</Note>
+      )}
+      {sent && (
+        <p role="status" className="m-0 text-sm">
+          {sent}
         </p>
-        {sent && (
-          <p role="status" className="m-0 text-sm">
-            {sent}
-          </p>
-        )}
-        {error && <RequestError error={error} />}
-      </Card>
-    </div>
+      )}
+      {error && <RequestError error={error} />}
+      <InstallationReviewRows
+        rows={[
+          ['SMTP server', current.host ? `${current.host}:${current.port}` : 'Not configured'],
+          ...(current.host
+            ? [['Connection', current.security === 'tls' ? 'TLS' : 'STARTTLS'] as [string, string]]
+            : []),
+          ['Sender', current.from_email || 'Not configured'],
+          [
+            'Authentication',
+            current.username
+              ? `${current.username} · password ${current.password_set ? 'stored' : 'not set'}`
+              : 'None',
+          ],
+          [
+            'Configuration',
+            current.source === 'operator' ? 'Operator settings' : 'Dashboard settings',
+          ],
+        ]}
+      />
+    </SettingsSection>
   )
 }
 export function SMTPEditor() {

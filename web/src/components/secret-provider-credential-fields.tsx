@@ -32,10 +32,12 @@ export function SecretProviderCredentialFields({
       )}
       <p className="field-help">
         {readonly && !replaceCredentials
-          ? 'The stored credentials will be kept. Saved credential values are never returned.'
-          : configuration.kind === 'vault'
-            ? 'Use a token with read access only to the intended KV v2 subtree.'
-            : 'Use a machine identity with read access only to the intended project, environment and folders.'}
+          ? 'The stored credentials are kept. They are write-only and never shown again.'
+          : readonly
+            ? 'Saving replaces the stored credentials; deployments after that read secrets with the new ones. Revoke the old credentials in the provider once those deployments succeed.'
+            : configuration.kind === 'vault'
+              ? 'Use a token with read access only to the intended KV v2 subtree. Credentials are write-only and never shown again.'
+              : 'Use a machine identity with read access only to the intended project, environment and folders. Credentials are write-only and never shown again.'}
       </p>
       {replaceCredentials &&
         (configuration.kind === 'vault' ? (

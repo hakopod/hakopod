@@ -92,7 +92,7 @@ export function SecretProviderForm({
       setCredentials({ token: '', client_id: '', client_secret: '' })
       void cache.invalidateQueries({ queryKey: ['secret-providers'] })
       void cache.invalidateQueries({ queryKey: ['secret-provider', result.name] })
-      await navigate({ to: '/settings/secret-providers', search: { saved: result.name } })
+      await navigate({ to: '/settings', search: { tab: 'secret-providers', saved: result.name } })
     } catch (cause) {
       if (!request.signal.aborted) {
         setError(message(cause))
@@ -141,7 +141,7 @@ export function SecretProviderForm({
       description="Connect external secrets and choose the projects that can use them."
       breadcrumbs={[
         { label: 'Settings', to: '/settings' },
-        { label: 'Secret providers', to: '/settings/secret-providers' },
+        { label: 'Secret providers', to: '/settings?tab=secret-providers' },
         { label: provider ? provider.name : 'Add provider' },
       ]}
     >
@@ -235,7 +235,7 @@ export function SecretProviderForm({
             </Button>
           ) : (
             <Button asChild>
-              <Link to="/settings/secret-providers" search={{}}>
+              <Link to="/settings" search={{ tab: 'secret-providers' }}>
                 Cancel
               </Link>
             </Button>

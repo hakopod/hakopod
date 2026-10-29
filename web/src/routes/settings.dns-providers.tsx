@@ -11,18 +11,17 @@ import {
   type DNSProvider,
 } from '../components/dns-provider-credential-fields'
 import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
+import { ErrorState, Loading, Note, RequestError } from '../components/shared'
+import { focusedDialog, plural, ReviewFacts } from '../components/operation-review'
 import {
-  Empty,
-  ErrorState,
-  HeadingHelp,
-  Loading,
-  Note,
-  PageHeader,
-  RequestError,
-} from '../components/shared'
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRows,
+  SettingsSection,
+  SettingsState,
+} from '../components/settings-section'
 
 export const Route = createFileRoute('/settings/dns-providers')({
   validateSearch: (search: Record<string, unknown>): { saved?: string } => ({
@@ -45,13 +44,7 @@ function DNSProvidersRoute() {
   return <Navigate to="/settings" search={{ tab: 'dns-providers', saved }} replace />
 }
 
-export function DNSProviders({
-  saved,
-  standalone = false,
-}: {
-  saved?: string
-  standalone?: boolean
-}) {
+export function DNSProviders({ saved }: { saved?: string }) {
   const scope = useScope()
   const cache = useQueryClient()
   const providers = useQuery({
@@ -61,16 +54,15 @@ export function DNSProviders({
     gcTime: 0,
   })
   const [removing, setRemoving] = useState<DNSProvider | null>(null)
-  const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   if (!scope.identity.admin)
     return (
-      <Empty
-        icon="lock"
-        title="Administrator access required"
-        description="DNS provider credentials are configured by installation administrators."
-      />
+      <SettingsSection title="DNS providers" state="Administrator access required">
+        <SettingsEmpty title="Not available to your role">
+          DNS provider credentials are configured by installation administrators.
+        </SettingsEmpty>
+      </SettingsSection>
     )
   const items = storedDNSProviders(providers.data?.items || [])
   const add = (
@@ -81,28 +73,22 @@ export function DNSProviders({
       </Link>
     </Button>
   )
+  const unavailable = items.filter((provider) => !provider.enabled).length
   return (
-    <>
-      {standalone ? (
-        <PageHeader
-          title="DNS providers"
-          description="Store a DNS provider token so custom domain records can be created for you."
-          action={add}
-        />
-      ) : (
-        <div className="section-toolbar">
-          <div className="hako-section-heading-title">
-            <h2>DNS providers</h2>
-            <HeadingHelp title="DNS providers">
-              Store a DNS provider token so the ownership and routing records for a custom domain
-              can be created for you. Entering the records by hand stays available.
-            </HeadingHelp>
-          </div>
-          {add}
-        </div>
-      )}
+    <SettingsSection
+      title="DNS providers"
+      help="Store a DNS provider token so the ownership and routing records for a custom domain can be created for you. Entering the records by hand stays available."
+      state={
+        providers.data
+          ? items.length
+            ? `${plural(items.length, 'credential')}${unavailable ? ` · ${unavailable} not available for creating records` : ''}`
+            : 'Domain records are entered by hand'
+          : undefined
+      }
+      actions={items.length > 0 && add}
+    >
       {saved && (
-        <div role="status" className="mb-3">
+        <div role="status">
           <Note>
             <span className="break-all">{saved}</span> saved. Creating records is not verifying
             them; a domain stays awaiting DNS until its records have propagated and it is verified.
@@ -114,76 +100,76 @@ export function DNSProviders({
       ) : providers.error ? (
         <ErrorState error={providers.error} retry={() => void providers.refetch()} />
       ) : items.length === 0 ? (
-        <Empty
-          icon="globe"
-          title="No DNS provider credentials"
-          description="Add a credential to create custom domain records without leaving hakopod."
-        />
+        <SettingsEmpty title="No DNS provider credentials" action={add}>
+          Add a credential to create custom domain records without leaving Hakopod.
+        </SettingsEmpty>
       ) : (
-        <div className="grid gap-0">
+        <SettingsRows label="DNS provider credentials">
           {items.map((provider) => (
-            <div
-              className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--hairline)] py-4 last:border-b-0"
-              key={provider.name}
-            >
-              <div className="grid min-w-0 flex-1 gap-1">
-                <strong className="break-all">{provider.name}</strong>
-                <span className="text-sm">
-                  {dnsProviderKinds[provider.kind as keyof typeof dnsProviderKinds] ||
-                    provider.kind}
-                  {provider.enabled ? '' : ' · not available for creating records'}
-                </span>
-                <p className="m-0 break-words text-sm">{dnsProviderScope(provider)}</p>
-                <p className="muted-text m-0 break-all text-sm">
-                  Zones {provider.zone_filter.join(', ')}
-                </p>
-                <small className="muted-text">
-                  Revision {provider.revision}
-                  {provider.updated_at ? ` · updated ${timestamp(provider.updated_at)}` : ''}
-                </small>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Button asChild size="sm">
-                  <Link
-                    to="/settings/dns-providers/$providerName/edit"
-                    params={{ providerName: provider.name }}
-                    search={{
-                      project: provider.project || undefined,
-                      environment: provider.environment || undefined,
+            <SettingsRow
+              key={`${provider.project}/${provider.environment}/${provider.name}`}
+              mark={<Icon name="globe" size={16} />}
+              name={provider.name}
+              detail={`${dnsProviderKinds[provider.kind as keyof typeof dnsProviderKinds] || provider.kind} · ${dnsProviderScope(provider)}`}
+              status={
+                <SettingsState tone={provider.enabled ? 'ok' : 'muted'}>
+                  {provider.enabled ? 'Creates records' : 'Not available'}
+                </SettingsState>
+              }
+              meta={
+                <>
+                  <span>Zones {provider.zone_filter.join(', ')}</span>
+                  <span>
+                    Revision {provider.revision}
+                    {provider.updated_at ? ` · updated ${timestamp(provider.updated_at)}` : ''}
+                  </span>
+                </>
+              }
+              actions={
+                <>
+                  <Button asChild size="sm">
+                    <Link
+                      to="/settings/dns-providers/$providerName/edit"
+                      params={{ providerName: provider.name }}
+                      search={{
+                        project: provider.project || undefined,
+                        environment: provider.environment || undefined,
+                      }}
+                      aria-label={`Edit ${provider.name}`}
+                    >
+                      Edit
+                    </Link>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Delete ${provider.name}`}
+                    onClick={() => {
+                      setRemoving(provider)
+                      setError('')
                     }}
                   >
-                    Edit
-                  </Link>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Delete ${provider.name}`}
-                  onClick={() => {
-                    setRemoving(provider)
-                    setConfirmation('')
-                    setError('')
-                  }}
-                >
-                  <Icon name="trash" size={15} />
-                </Button>
-              </div>
-            </div>
+                    <Icon name="trash" size={15} />
+                  </Button>
+                </>
+              }
+            />
           ))}
-        </div>
+        </SettingsRows>
       )}
       <Dialog
         open={Boolean(removing)}
+        className={focusedDialog}
         onOpenChange={(open) => {
           if (!busy && !open) setRemoving(null)
         }}
         title={`Delete ${removing?.name || 'credential'}?`}
-        description="Remove the stored token. Records already created at the provider are left in place."
+        description="The stored token is erased and cannot be shown again."
       >
         <form
           onSubmit={async (event) => {
             event.preventDefault()
-            if (!removing || confirmation !== removing.name || busy) return
+            if (!removing || busy) return
             setBusy(true)
             setError('')
             try {
@@ -206,33 +192,30 @@ export function DNSProviders({
             }
           }}
         >
-          <div className="dialog-body field-stack">
-            <label className="min-w-0 break-all">
-              Type {removing?.name} to confirm
-              <Input
-                required
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                autoComplete="off"
+          <div className="dialog-body">
+            {removing && (
+              <ReviewFacts
+                facts={[
+                  ['Credential', `${removing.name} · revision ${removing.revision}`],
+                  ['Available to', dnsProviderScope(removing)],
+                  ['Removed', 'The stored token. New domains need their records entered by hand.'],
+                  ['Kept', 'Records already created at the provider, and existing domains.'],
+                ]}
               />
-            </label>
+            )}
             {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={() => setRemoving(null)}>
-              Keep credential
+              Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="danger"
-              disabled={busy || confirmation !== removing?.name}
-            >
+            <Button type="submit" variant="danger" aria-busy={busy || undefined} disabled={busy}>
               <Icon name="trash" size={15} />
-              {busy ? 'Deleting…' : 'Delete credential'}
+              {busy ? 'Deleting…' : `Delete ${removing?.name || 'credential'}`}
             </Button>
           </div>
         </form>
       </Dialog>
-    </>
+    </SettingsSection>
   )
 }
