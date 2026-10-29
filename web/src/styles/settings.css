@@ -2,6 +2,118 @@
 .catalog-page {
   @apply grid grid-cols-1 content-start;
 }
+/* Settings hub: the application page's settings nav (red text-only active state) on the
+   left, one section filling the rest. Sections share one header, row and empty anatomy. */
+.settings-hub {
+  @apply pt-4;
+}
+.settings-hub-group {
+  @apply pt-4 pb-1;
+  color: var(--muted);
+  font: 11px/16px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.settings-hub-group:first-child {
+  @apply pt-0;
+}
+.settings-hub-panel {
+  @apply gap-6 pb-6;
+}
+.settings-section {
+  @apply grid min-w-0 content-start;
+}
+.settings-section > * {
+  @apply m-0;
+}
+.settings-section > * + * {
+  @apply mt-3;
+}
+.settings-section > .settings-section-head + * {
+  @apply mt-0;
+}
+.settings-section-head {
+  @apply items-start;
+}
+.settings-section-title {
+  @apply grid min-w-0 gap-1;
+}
+.settings-section .settings-section-state {
+  @apply m-0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  overflow-wrap: anywhere;
+}
+.settings-section-3 + .settings-section-3,
+.settings-section-2 + .settings-section-2 {
+  @apply border-t pt-6;
+  border-color: var(--hairline);
+}
+.settings-hub-panel > .settings-section-2 + .settings-section-2 {
+  @apply border-0 pt-0;
+}
+.settings-empty {
+  @apply flex flex-wrap items-center justify-between gap-x-4 gap-y-3 py-3;
+  border-block: 1px solid var(--hairline);
+}
+.settings-empty > div {
+  @apply grid min-w-0 gap-0.5;
+  flex: 1 1 16rem;
+}
+.settings-empty p {
+  @apply m-0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.settings-inline-controls {
+  @apply flex flex-wrap items-end gap-2;
+}
+.settings-inline-controls > .select-field-wrap,
+.settings-inline-controls > label {
+  @apply min-w-0;
+  flex: 0 1 20rem;
+}
+/* Audit rows: action and resource grow, time fits, who made it keeps a slot. */
+.settings-row.settings-row-audit {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 12rem) auto;
+  grid-template-areas: 'identity meta status';
+}
+.settings-row-audit .settings-row-actions {
+  @apply hidden;
+}
+.settings-row-audit .settings-row-status {
+  @apply justify-self-end;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+@media (max-width: 767px) {
+  .settings-hub {
+    @apply pt-0;
+  }
+  .settings-hub-group {
+    @apply hidden;
+  }
+  .settings-hub-nav {
+    @apply -mx-4 px-4;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .settings-row.settings-row-audit {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity status'
+      'meta meta';
+  }
+  .settings-row-audit .settings-row-meta {
+    @apply pl-0;
+  }
+}
+@media (min-width: 640px) and (max-width: 767px) {
+  .settings-hub-nav {
+    @apply -mx-6 px-6;
+  }
+}
 .hako-settings-header {
   display: flex;
   align-items: center;
@@ -15,27 +127,6 @@
   font-weight: 500;
   letter-spacing: -0.025em;
 }
-.settings-page .settings-content h2 {
-  font-size: 16px;
-  font-weight: 500;
-}
-.settings-page .security-grid {
-  border: 0;
-}
-.settings-page .security-grid > .panel {
-  padding: 24px 0;
-  background: transparent;
-}
-.settings-page > .settings-layout {
-  grid-template-columns: 220px minmax(0, 1fr);
-  column-gap: 16px;
-  border: 0;
-  background: transparent;
-  min-height: calc(100dvh - var(--hako-header-height, 96px) - 96px);
-}
-.settings-page .settings-nav {
-  @apply px-0 py-3;
-}
 .hako-preferences .settings-nav {
   @apply p-6;
 
@@ -43,34 +134,23 @@
     @apply px-4 py-2;
   }
 }
-:is(.settings-page, .hako-preferences) .settings-nav .nav-group {
+.hako-preferences .settings-nav .nav-group {
   @apply m-0 px-0 pt-3 pb-1;
   color: var(--muted);
   font: 11px var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-:is(.settings-page, .hako-preferences) .settings-nav > div:first-child .nav-group {
+.hako-preferences .settings-nav > div:first-child .nav-group {
   @apply pt-0;
 }
-:is(.settings-page, .hako-preferences) .settings-nav button {
+.hako-preferences .settings-nav button {
   @apply min-h-9 px-0 py-1.5;
   font-size: 14px;
   width: 100%;
   @variant pointer-coarse {
     @apply min-h-11;
   }
-}
-.settings-page .settings-content {
-  max-width: none;
-  min-width: 0;
-  padding: 16px 0 24px;
-}
-.settings-page .settings-content > .section-toolbar:first-child {
-  margin-top: 0;
-}
-.settings-page .settings-content > .note {
-  margin-top: 24px;
 }
 .security-grid {
   display: grid;
@@ -386,42 +466,10 @@
   background: var(--hatch-base);
 }
 @media (max-width: 1023px) {
-  .settings-page .settings-nav {
-    @apply py-1;
-  }
-  .settings-page > .settings-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-  .settings-page .settings-nav {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow: auto;
-    @apply -mx-4 gap-4 px-4 py-1;
-
-    @variant sm {
-      @apply -mx-6 px-6;
-    }
-    border-right: 0;
-    border-bottom: 1px solid var(--hairline);
-  }
-  .settings-page .settings-nav .nav-group {
-    display: none;
-  }
-  .settings-page .settings-nav button {
-    white-space: nowrap;
-    @apply px-0 py-1.5;
-  }
-  .settings-page .settings-content {
-    padding: 16px 0 24px;
-  }
 }
 @media (max-width: 600px) {
   .catalog-search {
     width: 100%;
-  }
-  .settings-page .settings-content {
-    padding: 16px 0 24px;
   }
   .integration-card {
     grid-template-columns: auto minmax(0, 1fr);

@@ -3,10 +3,11 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { useLicense } from '../lib/license'
-import { message, timestamp } from '../lib/api'
+import { message, relative, timestamp } from '../lib/api'
 import { SelectField } from './ui/select'
 import { Button } from './ui/button'
-import { ErrorState, Loading, Note } from './shared'
+import { ErrorState, Loading } from './shared'
+import { SettingsEmpty, SettingsRow, SettingsRows, SettingsSection } from './settings-section'
 
 export function AuditHistory() {
   const license = useLicense()
@@ -59,11 +60,22 @@ export function AuditHistory() {
       setExporting(false)
     }
   }
+  const selected = users.data?.items.find((user) => user.id === identity)
   return (
-    <section aria-label="User audit history" className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
+    <SettingsSection
+      title="User history"
+      help="Every recorded action by one user, with CSV export in pages of 1,000 events."
+      state={
+        !enabled
+          ? 'Requires Pro. Recent events above stay available.'
+          : selected
+            ? `Showing ${selected.name || selected.email}`
+            : 'Choose a user to see their history'
+      }
+    >
+      <div className="settings-inline-controls">
         <SelectField
-          label={enabled ? 'User history' : 'User history · Pro'}
+          label="User"
           value={identity}
           disabled={!enabled || users.isPending}
           onValueChange={(value) => {
@@ -80,19 +92,10 @@ export function AuditHistory() {
             })) || []),
           ]}
         />
-        <Button
-          variant="outline"
-          disabled={!enabled || !identity || exporting}
-          onClick={() => void exportPage()}
-        >
+        <Button disabled={!enabled || !identity || exporting} onClick={() => void exportPage()}>
           {exporting ? 'Exporting…' : exportBefore ? 'Export next 1,000 events' : 'Export CSV'}
         </Button>
       </div>
-      {!enabled && (
-        <Note>
-          User history and CSV export require Pro. Recent security events remain available below.
-        </Note>
-      )}
       {users.error && <ErrorState error={users.error} />}
       {error && <ErrorState error={new Error(error)} />}
       {enabled &&
@@ -101,45 +104,37 @@ export function AuditHistory() {
           <Loading />
         ) : history.error ? (
           <ErrorState error={history.error} />
+        ) : !history.data?.items.length ? (
+          <SettingsEmpty title="No recorded activity">
+            This user has no audit events in the retained history.
+          </SettingsEmpty>
         ) : (
           <>
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Action</th>
-                    <th>Resource</th>
-                    <th>Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.data?.items.map((event) => (
-                    <tr key={event.id}>
-                      <td>{event.action}</td>
-                      <td>
-                        <code>{event.resource}</code>
-                      </td>
-                      <td>{timestamp(event.time)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!history.data?.items.length && <Note>No recorded activity for this user.</Note>}
-            <div className="flex gap-2">
-              {before && (
-                <Button variant="outline" onClick={() => setBefore(undefined)}>
-                  Latest events
-                </Button>
-              )}
-              {Boolean(history.data?.next_cursor) && (
-                <Button variant="outline" onClick={() => setBefore(history.data!.next_cursor)}>
-                  Older events
-                </Button>
-              )}
-            </div>
+            <SettingsRows label={`History for ${selected?.name || 'user'}`}>
+              {history.data.items.map((event) => (
+                <SettingsRow
+                  key={event.id}
+                  className="settings-row-audit"
+                  name={event.action}
+                  detail={<code>{event.resource}</code>}
+                  status={
+                    <time dateTime={event.time} title={timestamp(event.time)}>
+                      {relative(event.time)}
+                    </time>
+                  }
+                />
+              ))}
+            </SettingsRows>
+            {(before || Boolean(history.data.next_cursor)) && (
+              <div className="settings-inline-controls">
+                {before && <Button onClick={() => setBefore(undefined)}>Latest events</Button>}
+                {Boolean(history.data.next_cursor) && (
+                  <Button onClick={() => setBefore(history.data!.next_cursor)}>Older events</Button>
+                )}
+              </div>
+            )}
           </>
         ))}
-    </section>
+    </SettingsSection>
   )
 }

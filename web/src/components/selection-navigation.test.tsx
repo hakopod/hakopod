@@ -148,8 +148,9 @@ test('parent navigation uses route context without relying on browser history', 
     search: { tab: 'nodes' },
   })
   assert.deepEqual(parentNavigation('/settings/integrations/github'), {
-    to: '/settings/integrations',
-    label: 'Back to integrations',
+    to: '/settings',
+    label: 'Back to settings',
+    search: { tab: 'github' },
   })
   assert.deepEqual(
     parentNavigation('/alarms/settings', {

@@ -127,8 +127,9 @@ test('stale provider drafts can compare access but cannot rebase onto a replacem
   )
   assert.equal(sameProviderSource(input, { ...current, private_cidrs: ['10.0.0.0/8'] }), false)
   assert.deepEqual(parentNavigation('/settings/secret-providers/vault/edit'), {
-    to: '/settings/secret-providers',
-    label: 'Back to providers',
+    to: '/settings',
+    label: 'Back to settings',
+    search: { tab: 'secret-providers' },
   })
   assert.equal(parentNavigation('/settings/secret-providers')?.search?.tab, 'secret-providers')
 })
