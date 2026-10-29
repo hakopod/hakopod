@@ -130,7 +130,8 @@ func TestInstallationAccessPolicyGatesConfirmsRevertsAndResets(t *testing.T) {
 
 	// Break-glass turns the policy off without a session or license.
 	record, err = h.db.ResetAccessPolicy(ctx, "operator")
-	if err != nil || !bytes.Contains(record.Policy, []byte(`"enabled":false`)) {
+	var reset struct{ Enabled bool }
+	if err != nil || json.Unmarshal(record.Policy, &reset) != nil || reset.Enabled {
 		t.Fatalf("reset = %+v %v", record, err)
 	}
 	var actions []string
