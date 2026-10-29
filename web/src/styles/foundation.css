@@ -200,7 +200,8 @@ textarea {
     1px 10px;
   background-repeat: no-repeat;
 }
-label {
+label,
+.field-label {
   @apply min-w-0;
   font-size: var(--type-label-size);
   line-height: var(--type-label-line);
@@ -269,6 +270,7 @@ label > .select-field-wrap {
 }
 .select-field-value {
   @apply block flex-1;
+  text-align: left;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

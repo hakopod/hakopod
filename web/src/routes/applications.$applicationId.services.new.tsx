@@ -54,7 +54,7 @@ function AddService() {
   const [name, setName] = useState('')
   const [image, setImage] = useState('')
   const [reuse, setReuse] = useState('')
-  const [source, setSource] = useState<'' | 'catalog' | 'compose' | 'function' | 'image'>('')
+  const [source, setSource] = useState<'catalog' | 'compose' | 'function' | 'image'>('image')
   const [draft, setDraft] = useState<{ name: string; service: Service }>()
   if (app.isPending || staged.isPending) return <Loading />
   if (app.error || !app.data) return <ErrorState error={app.error} />
@@ -82,8 +82,8 @@ function AddService() {
   const functionAvailable = !placement.error && placement.data?.serverless_available === true
   return (
     <FormPage
-      description={`Add a service to ${application.display_name || application.name}.`}
-      title="Add service"
+      description="Choose how to define the service. You review every change before it goes live."
+      title={`Add a service to ${application.display_name || application.name}`}
       breadcrumbs={[
         {
           label: application.display_name || application.name,
@@ -132,7 +132,7 @@ function AddService() {
           />
         </section>
         {source === 'catalog' && (
-          <section className="grid gap-3" aria-labelledby="catalog-source-heading">
+          <section className="add-service-source" aria-labelledby="catalog-source-heading">
             <h2 id="catalog-source-heading" className="m-0 text-sm font-medium">
               Catalog template
             </h2>
@@ -150,7 +150,7 @@ function AddService() {
           </section>
         )}
         {source === 'compose' && (
-          <section className="grid gap-3" aria-labelledby="compose-source-heading">
+          <section className="add-service-source" aria-labelledby="compose-source-heading">
             <h2 id="compose-source-heading" className="m-0 text-sm font-medium">
               Import Docker Compose
             </h2>
@@ -173,7 +173,7 @@ function AddService() {
         {source === 'function' && (
           <form
             aria-label="Start an HTTP function"
-            className="grid gap-3"
+            className="add-service-source"
             onSubmit={(event) => {
               event.preventDefault()
               if (!functionAvailable || functionCollision) return
@@ -253,7 +253,7 @@ function AddService() {
         )}
         {source === 'image' && (
           <form
-            className="grid gap-4"
+            className="add-service-source"
             onSubmit={(event) => {
               event.preventDefault()
               if (collision) return
@@ -271,7 +271,7 @@ function AddService() {
               })
             }}
           >
-            <h2>Use a container image</h2>
+            <h2 className="m-0 text-sm font-medium">Use a container image</h2>
             <label className="grid gap-1">
               Service name
               <Input
@@ -286,12 +286,12 @@ function AddService() {
                   collision ? 'This application already has a service with this name.' : undefined
                 }
               />
+              <span id="service-name-help" className="field-help">
+                Lowercase letters, digits and hyphens; unique in this application.
+              </span>
             </label>
-            <p id="service-name-help" className="text-sm text-muted-foreground">
-              Use a unique name with lowercase letters, digits and hyphens.
-            </p>
             <div className="grid gap-1">
-              <span>Reuse an existing service image</span>
+              <span className="field-label">Reuse an existing service image</span>
               <SelectField
                 label="Reuse an existing service image"
                 value={reuse}
@@ -320,11 +320,10 @@ function AddService() {
                 placeholder="ghcr.io/owner/app:latest"
                 aria-describedby="service-image-help"
               />
+              <span id="service-image-help" className="field-help">
+                Reusing an image suits a worker; you set its command and variables on the next step.
+              </span>
             </label>
-            <p id="service-image-help" className="text-sm text-muted-foreground">
-              Reuse your API image for a worker, then choose its run command and variables on the
-              next step. Storage and commands are configured separately.
-            </p>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
