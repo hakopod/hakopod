@@ -14,6 +14,7 @@
 @import './styles/database-create.css';
 @import './styles/resources.css';
 @import './styles/inspect.css';
+@import './styles/create.css';
 
 /* Match the source set for browser and server builds. */
 @source './';

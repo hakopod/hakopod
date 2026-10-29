@@ -1,0 +1,485 @@
+/* Guided create and configure flows: source → services → review, and service variables.
+   Corners, type and surfaces come from foundation.css; Cloud brackets mark selected
+   choices and focused fields, and self-hosted hides them edition-wide. */
+
+/* Steps */
+.create-steps {
+  @apply m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-2 px-0 pt-0 pb-4;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  color: var(--muted);
+}
+.create-step > :is(span, button) {
+  @apply inline-flex min-h-8 items-center gap-2 border-0 bg-transparent p-0;
+  color: inherit;
+  font: inherit;
+}
+.create-step > button {
+  @apply cursor-pointer;
+}
+.create-step > button:hover {
+  color: var(--foreground);
+}
+.create-step b {
+  @apply grid size-5 place-items-center rounded-full font-normal;
+  border: 1px solid var(--hairline);
+}
+.create-step[data-state='current'] {
+  color: var(--navigation-active);
+}
+.create-step[data-state='current'] b {
+  border-color: currentColor;
+}
+.create-steps-rule {
+  @apply w-8;
+  border-top: 1px solid var(--hairline);
+}
+
+/* Field rhythm: label above, 6px to a 40px control, help and errors 6px below,
+   16px between fields. Scoped to these flows so other forms keep their spacing. */
+.create-flow :is(label, .field) > :is(.input-wrap, .select-field-wrap) {
+  margin-top: 6px;
+}
+.create-flow .input-wrap input:not([type='checkbox'], [type='radio']),
+.create-flow .select-trigger {
+  @apply h-10 min-h-10;
+}
+.create-flow :is(.field-help, .field-error) {
+  margin-top: 6px;
+}
+.create-flow label > .field-help {
+  @apply block;
+}
+.create-fields {
+  @apply grid min-w-0 grid-cols-1 gap-4;
+}
+.create-label {
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  font-weight: var(--type-label-weight);
+  color: var(--muted);
+}
+@media (max-width: 639px), (pointer: coarse) {
+  .create-flow .input-wrap input:not([type='checkbox'], [type='radio']),
+  .create-flow .select-trigger {
+    @apply h-11 min-h-11;
+  }
+  /* 16px text keeps phones from zooming into a focused field. */
+  .create-flow .input-wrap :is(input, textarea) {
+    @apply text-base;
+  }
+}
+
+/* Choice cards: a small exclusive set with a check and a Cloud bracket when selected. */
+.choice-cards {
+  @apply m-0 grid min-w-0 grid-cols-1 gap-3 border-0 p-0;
+  @variant md {
+    @apply grid-cols-3;
+  }
+}
+.choice-cards[data-compact] {
+  @apply gap-2;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+}
+.choice-card {
+  @apply relative flex min-h-11 min-w-0 cursor-pointer items-start gap-3 p-4;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  color: var(--foreground);
+  transition: border-color 120ms ease-out;
+}
+.choice-cards[data-compact] .choice-card {
+  @apply px-3 py-2.5;
+}
+.choice-card:hover {
+  border-color: var(--muted);
+}
+.choice-card:has(input:checked) {
+  border-color: var(--state);
+  background: var(--surface-2);
+}
+.choice-card:has(input:checked) > .brackets,
+.choice-card:has(input:focus-visible) > .brackets {
+  opacity: 1;
+}
+.choice-card:has(input:focus-visible) {
+  outline: 2px solid var(--navigation-active);
+  outline-offset: 2px;
+}
+.choice-card[data-disabled] {
+  @apply cursor-not-allowed;
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+}
+.choice-card[data-disabled] > .brackets {
+  @apply hidden;
+}
+.choice-card-icon {
+  @apply mt-0.5 shrink-0;
+  color: var(--muted);
+}
+.choice-card:has(input:checked) .choice-card-icon {
+  color: var(--state);
+}
+.choice-card-text {
+  @apply grid min-w-0 flex-1 gap-1;
+}
+.choice-card-text > strong {
+  font-size: var(--type-card-size);
+  line-height: var(--type-card-line);
+  font-weight: var(--type-card-weight);
+  overflow-wrap: anywhere;
+}
+.choice-cards[data-compact] .choice-card-text > strong {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+.choice-card-text > span {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  font-weight: var(--type-meta-weight);
+  color: var(--muted);
+}
+.choice-card-check {
+  @apply grid size-5 shrink-0 place-items-center rounded-full opacity-0;
+  background: var(--state);
+  color: var(--background);
+}
+.choice-card:has(input:checked) .choice-card-check {
+  @apply opacity-100;
+}
+
+/* Source step */
+.create-source {
+  @apply grid min-w-0 gap-4;
+}
+.create-source-detail {
+  @apply grid min-w-0 gap-3 p-4;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+.create-source-detail > p {
+  @apply m-0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Sections of the services step */
+.create-section {
+  @apply grid min-w-0 gap-3;
+}
+.create-section-heading {
+  @apply flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1;
+}
+.create-section-heading > h2 {
+  @apply m-0;
+  font-size: var(--type-section-size);
+  line-height: var(--type-section-line);
+  font-weight: var(--type-section-weight);
+}
+.create-section-heading > span {
+  font-size: var(--type-meta-size);
+  color: var(--muted);
+}
+
+/* Service picker: one card per service previews its type and key settings. */
+.service-picker {
+  @apply grid min-w-0 gap-2;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+}
+.service-card {
+  @apply relative flex min-h-11 min-w-0 cursor-pointer items-start gap-3 p-3 text-left;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+}
+.service-card:hover {
+  border-color: var(--muted);
+}
+.service-card[aria-pressed='true'] {
+  border-color: var(--state);
+  background: var(--surface-2);
+}
+.service-card[aria-pressed='true'] > .brackets {
+  opacity: 1;
+}
+.service-card-icon {
+  @apply mt-0.5 shrink-0;
+  color: var(--muted);
+}
+.service-card[aria-pressed='true'] .service-card-icon {
+  color: var(--state);
+}
+.service-card-text {
+  @apply grid min-w-0 flex-1 gap-0.5;
+}
+.service-card-text > strong {
+  font-family: var(--font-mono);
+  font-size: var(--type-body-size);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.service-card-text > :is(span, small) {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.service-presets {
+  @apply flex min-w-0 flex-wrap gap-2;
+}
+/* On phones, the picker becomes compact one-line rows so the editor stays close. */
+@media (max-width: 639px) {
+  .service-card {
+    @apply items-center py-2;
+  }
+  .service-card-text > small {
+    @apply hidden;
+  }
+}
+
+/* Focused service editor and its task switcher */
+.create-service-editor {
+  @apply min-w-0;
+  border-radius: var(--radius-card);
+}
+.create-service-editor .service-form-heading small {
+  font-size: var(--type-meta-size);
+}
+.service-tasks {
+  @apply flex min-w-0 gap-1 overflow-x-auto;
+  border-bottom: 1px solid var(--hairline);
+  scrollbar-width: thin;
+}
+.service-tasks > button {
+  @apply -mb-px inline-flex min-h-10 shrink-0 cursor-pointer items-center gap-2 px-3 whitespace-nowrap;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--type-control-size);
+  font-weight: var(--type-control-weight);
+}
+.service-tasks > button:hover {
+  color: var(--foreground);
+}
+.service-tasks > button[aria-pressed='true'] {
+  color: var(--navigation-active);
+}
+.service-tasks > button:focus-visible {
+  outline: 2px solid var(--navigation-active);
+  outline-offset: -2px;
+}
+@media (max-width: 639px), (pointer: coarse) {
+  .service-tasks > button {
+    @apply min-h-11;
+  }
+}
+
+/* Issue counts and the step-boundary summary */
+.issue-count {
+  @apply inline-flex shrink-0 items-center gap-1 px-1.5 whitespace-nowrap;
+  font-size: var(--type-meta-size);
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--error-text);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-control);
+}
+.create-issues {
+  @apply m-0 grid gap-1.5 p-3 text-sm;
+  border: 1px solid var(--error-accent);
+  border-radius: var(--radius-card);
+  color: var(--error-text);
+}
+.create-issues ul {
+  @apply m-0 grid gap-1 pl-5;
+}
+
+/* Pending actions keep the width of their longest label. */
+.pending-label {
+  @apply inline-grid;
+}
+.pending-label > span {
+  @apply inline-flex items-center justify-center gap-2;
+  grid-area: 1 / 1;
+}
+.pending-label > span:last-child,
+.pending-label[data-pending] > span:first-child {
+  visibility: hidden;
+}
+.pending-label[data-pending] > span:last-child {
+  visibility: visible;
+}
+
+/* Review */
+.review-services {
+  @apply mb-5 grid min-w-0 gap-3;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+}
+.review-service {
+  @apply grid min-w-0 content-start gap-3 p-4;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--card);
+}
+.review-service > header {
+  @apply flex min-w-0 flex-wrap items-center gap-2;
+}
+.review-service > header > svg {
+  color: var(--muted);
+}
+.review-service > header > span {
+  @apply ml-auto;
+  font-size: var(--type-meta-size);
+  color: var(--muted);
+}
+.review-service dl {
+  @apply m-0 grid gap-2;
+}
+.review-service dl > div {
+  @apply grid min-w-0 gap-x-3 gap-y-0.5;
+  grid-template-columns: minmax(0, 1fr);
+  @variant sm {
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+  }
+}
+.review-service dt {
+  font-size: var(--type-meta-size);
+  color: var(--muted);
+}
+.review-service dd {
+  @apply m-0;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  overflow-wrap: anywhere;
+}
+
+/* Environment variables: key/value rows, secrets visibly distinct and write-only. */
+.env-editor {
+  @apply grid min-w-0 gap-4;
+}
+.env-toolbar,
+.env-bulk-actions {
+  @apply flex min-w-0 flex-wrap items-center gap-2;
+}
+.env-bulk {
+  @apply grid min-w-0 gap-2 p-3;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+.env-section {
+  @apply grid min-w-0 gap-2;
+}
+.env-section > h3 {
+  @apply m-0 flex flex-wrap items-center gap-2;
+  font-size: var(--type-body-size);
+  font-weight: 600;
+}
+.env-count {
+  font-weight: 400;
+  font-size: var(--type-meta-size);
+  color: var(--muted);
+}
+.env-section > .field-help {
+  @apply mt-0;
+}
+.env-section-secret {
+  @apply p-3;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--state);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+}
+.env-section-secret > h3 > svg {
+  color: var(--state);
+}
+.env-columns,
+.env-row {
+  @apply grid min-w-0 gap-x-2;
+  grid-template-columns: minmax(8rem, 2fr) minmax(0, 3fr) auto;
+}
+.env-columns {
+  font-size: var(--type-meta-size);
+  color: var(--muted);
+}
+.env-columns::after {
+  content: '';
+  @apply w-[4.75rem];
+}
+.env-row {
+  @apply items-start gap-y-1.5;
+}
+.env-row-name,
+.env-row-value {
+  @apply min-w-0;
+}
+.env-row .input-wrap :is(input, textarea) {
+  @apply min-h-10;
+}
+.env-row .input-wrap input {
+  @apply h-10;
+}
+.env-row .input-wrap textarea.runtime-variable-value {
+  @apply min-h-10 py-2;
+}
+.env-row-actions {
+  @apply flex items-center gap-0.5;
+}
+.env-row-actions > .button-icon {
+  @apply size-10;
+}
+.env-row[data-protected] .env-row-value input {
+  letter-spacing: 0.08em;
+}
+/* Phones: name with its actions on one line, the value beneath; no repeated labels. */
+@media (max-width: 639px) {
+  .env-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .env-columns > span:last-child::before {
+    content: '/ ';
+  }
+  .env-columns {
+    @apply flex gap-1;
+  }
+  .env-columns::after {
+    @apply hidden;
+  }
+  .env-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'name actions' 'value value';
+    @apply border-b pb-2;
+    border-color: var(--hairline);
+  }
+  .env-row:last-child {
+    @apply border-b-0 pb-0;
+  }
+  .env-row-name {
+    grid-area: name;
+  }
+  .env-row-value {
+    grid-area: value;
+  }
+  .env-row-actions {
+    grid-area: actions;
+  }
+  .env-section-secret {
+    @apply px-2.5;
+  }
+}
+@media (max-width: 639px), (pointer: coarse) {
+  .env-row-actions > .button-icon {
+    @apply size-11;
+  }
+  .env-row .input-wrap input {
+    @apply h-11;
+  }
+}

@@ -21,6 +21,8 @@ import { Icon } from './icons'
 import { Note, RequestError } from './shared'
 import { Button } from './ui/button'
 import { EnvironmentFields } from './runtime-settings-fields'
+import { environmentIssues, PendingButton, plural } from './create-flow'
+import { FormError } from './form-page'
 
 export function ServiceEnvironmentForm({
   application,
@@ -44,6 +46,8 @@ export function ServiceEnvironmentForm({
   )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showIssues, setShowIssues] = useState(false)
+  const issueCount = environmentIssues(rows).size
   const request = useRef<AbortController | null>(null)
   const idempotency = useRef('')
   useEffect(() => () => request.current?.abort(), [])
@@ -54,6 +58,11 @@ export function ServiceEnvironmentForm({
       search: { service: serviceName, tab: serviceName ? 'environment' : 'services' },
     })
   async function review(keepDraft = false) {
+    // Duplicate and format problems stop here, next to their rows.
+    if (issueCount) {
+      setShowIssues(true)
+      return
+    }
     setBusy(true)
     setError('')
     const controller = new AbortController()
@@ -188,7 +197,7 @@ export function ServiceEnvironmentForm({
         { label: `${label} environment` },
       ]}
     >
-      <div className="form-body service-environment-form">
+      <div className="form-body service-environment-form create-flow">
         {reviewed ? (
           <>
             <div className="review-summary">
@@ -366,6 +375,7 @@ export function ServiceEnvironmentForm({
                 }}
                 label={label}
                 disabled={busy}
+                showIssues={showIssues}
               />
             </FormSection>
             {conflict && (
@@ -382,6 +392,12 @@ export function ServiceEnvironmentForm({
             )}
           </>
         )}
+        {showIssues && issueCount > 0 && !reviewed && (
+          <FormError className="create-issues">
+            Resolve {plural(issueCount, 'variable')} before review. Each problem is shown beside its
+            row.
+          </FormError>
+        )}
         {error && <RequestError error={error} />}
       </div>
       <div className="form-footer deploy-footer">
@@ -397,20 +413,20 @@ export function ServiceEnvironmentForm({
           <Button disabled={busy} onClick={() => (reviewed ? setReviewed(null) : close())}>
             {reviewed ? 'Back to variables' : 'Cancel'}
           </Button>
-          <Button
+          <PendingButton
             variant="primary"
-            disabled={busy || Boolean(reviewed && !changes.length && !secretChanges.length)}
+            pending={busy}
+            pendingLabel={reviewed ? 'Deploying…' : 'Checking variables…'}
+            disabled={Boolean(reviewed && !changes.length && !secretChanges.length)}
             onClick={() => void (reviewed ? deploy() : review())}
           >
-            {busy
-              ? reviewed
-                ? 'Submitting…'
-                : 'Validating…'
-              : reviewed
-                ? 'Deploy environment'
-                : 'Review changes'}
+            {reviewed
+              ? serviceName
+                ? `Deploy ${serviceName} variables`
+                : 'Deploy application variables'
+              : 'Review variables'}
             <Icon name="arrow" size={15} />
-          </Button>
+          </PendingButton>
         </div>
       </div>
     </FormPage>

@@ -9,12 +9,14 @@ import { environmentRows, type EnvironmentRow } from '../lib/service-environment
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
 import { ComposeImport, type ComposeDraft } from './compose-import'
 import { useEditionFeatures } from '../lib/dashboard-edition'
+import { useGitConnections } from '../lib/git-connections'
 import { withoutService } from '../lib/remove-service'
 import { Input } from './ui/input'
 import { TOMLEditor, type TOMLEditorHandle } from './toml-editor'
 import { SelectField } from './ui/select'
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { useEffect, useId, useRef, useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Application, Plan, Service, Spec } from '../lib/types'
 import { APIError, message } from '../lib/api'
@@ -22,7 +24,7 @@ import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
 import { actionsNeedTOML, actionsProviderName } from '../lib/actions-provider'
-import { FormPage } from './form-page'
+import { FormError, FormPage } from './form-page'
 import { ComputeNotice } from './compute-notice'
 import { hostedComputeIssues } from '../lib/compute-limits'
 import { fieldError } from '../lib/form-errors'
@@ -31,14 +33,39 @@ import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { Note, RequestError } from './shared'
 import { ServiceIcon } from './service-icon'
+import {
+  ChoiceCards,
+  FlowSteps,
+  IssueCount,
+  nameFromImage,
+  PendingButton,
+  plural,
+  serviceIssues,
+  serviceKind,
+  serviceKindLabel,
+  servicePresets,
+  type ServiceKind,
+} from './create-flow'
 
 const serviceSections = {
   source: 'Image and runtime',
-  compute: 'Compute',
+  compute: 'Placement and capacity',
   variables: 'Variables',
   access: 'Access',
 } as const
 type ServiceSection = keyof typeof serviceSections
+
+type Source = 'repository' | 'image' | 'file'
+
+const kindIcon: Record<ServiceKind, string> = {
+  web: 'globe',
+  private: 'lock',
+  worker: 'terminal',
+  job: 'clock',
+  function: 'activity',
+}
+
+const applicationNamePattern = /^[a-z](?:[a-z0-9-]{0,38}[a-z0-9])?$/
 
 type RuntimeDraft = { command: string; args: string; variables: EnvironmentRow[] }
 const runtimeDraft = (service: Service): RuntimeDraft => ({
@@ -50,13 +77,14 @@ const runtimeDraft = (service: Service): RuntimeDraft => ({
 const newSpec = (): Spec => ({
   schema_version: 1,
   name: '',
-  services: { web: { image: '', port: 80, public: true, size: 'small', replicas: 1 } },
+  services: { web: { ...servicePresets.web } },
 })
 
 export function DeploymentForm({
   onClose,
   application: incomingApplication,
   initialMode = 'form',
+  chooseSource = false,
   serviceName,
   removeService,
   addedService,
@@ -64,6 +92,8 @@ export function DeploymentForm({
   onClose: () => void
   application?: Application
   initialMode?: 'form' | 'toml' | 'compose'
+  // New applications start by choosing where the release comes from.
+  chooseSource?: boolean
   serviceName?: string
   removeService?: string
   addedService?: { name: string; service: Service }
@@ -83,6 +113,10 @@ export function DeploymentForm({
   const scope = useScope()
   const canBuildFromGit =
     !application && (scope.identity.admin || scope.identity.can_manage_git) && features.git
+  const connections = useGitConnections()
+  const buildConnection = connections.data?.items.some(
+    (item) => item.enabled && item.capabilities.builds,
+  )
   const project = application?.project || scope.project
   const environment = application?.environment || scope.environment
   const navigate = useNavigate()
@@ -101,6 +135,14 @@ export function DeploymentForm({
   const [mode, setMode] = useState<'form' | 'toml' | 'compose'>(
     tomlOnlyReason ? 'toml' : initialMode,
   )
+  const [step, setStep] = useState<'source' | 'configure'>(
+    chooseSource && !application ? 'source' : 'configure',
+  )
+  const [source, setSource] = useState<Source | ''>('')
+  const [fileFormat, setFileFormat] = useState<'compose' | 'toml'>('compose')
+  const [nameEdited, setNameEdited] = useState(false)
+  const [showIssues, setShowIssues] = useState(false)
+  const [issueAttempt, setIssueAttempt] = useState(0)
   const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null)
   const [plan, setPlan] = useState<Plan | null>(null)
   const [activeService, setActiveService] = useState(serviceName || addedService?.name || '')
@@ -113,6 +155,7 @@ export function DeploymentForm({
   const focusGeneratedTOML = useRef(false)
   const requestKey = useRef('')
   const editorBody = useRef<HTMLDivElement>(null)
+  const applicationHeading = useId()
   useEffect(() => {
     if (mode === 'toml' && focusGeneratedTOML.current) {
       focusGeneratedTOML.current = false
@@ -139,6 +182,7 @@ export function DeploymentForm({
       setEnvFiles([])
       setComposeDraft(null)
       setError('')
+      setShowIssues(false)
       setToml(application ? specToTOML(initial) : '')
       setMode(tomlOnlyReason ? 'toml' : initialMode)
     }
@@ -152,26 +196,57 @@ export function DeploymentForm({
     setServiceSection(
       ['env', 'secrets'].includes(field)
         ? 'variables'
-        : field === 'public'
+        : ['public', 'port'].includes(field)
           ? 'access'
           : ['image', 'registry_credential', 'command', 'args', 'function'].includes(field)
             ? 'source'
             : 'compute',
     )
   }, [error, mode, spec.services])
+  const focusInvalid = () =>
+    requestAnimationFrame(() =>
+      Array.from(editorBody.current?.querySelectorAll<HTMLElement>('[aria-invalid="true"]') || [])
+        .find((control) => control.getClientRects().length > 0)
+        ?.focus(),
+    )
   useEffect(() => {
     if (!error || mode !== 'form') return
-    const frame = requestAnimationFrame(() => {
-      const invalid = Array.from(
-        editorBody.current?.querySelectorAll<HTMLElement>('[aria-invalid="true"]') || [],
-      ).find((control) => control.getClientRects().length > 0)
-      invalid?.focus()
-    })
+    const frame = focusInvalid()
     return () => cancelAnimationFrame(frame)
   }, [error, mode, activeService, serviceSection])
+  // A failed step boundary focuses its first problem once; later service switches do not.
+  useEffect(() => {
+    if (!issueAttempt) return
+    const frame = focusInvalid()
+    return () => cancelAnimationFrame(frame)
+  }, [issueAttempt])
   const limitIssues = features.hostedCompute
     ? hostedComputeIssues(spec, features.hostedFree, features.hostedStorageGiB)
     : []
+  const serviceNames = Object.keys(spec.services)
+  const selectedService =
+    serviceName || (spec.services[activeService] ? activeService : serviceNames[0])
+  const draftOf = (name: string) => runtime[name] || runtimeDraft(spec.services[name])
+  const issues = Object.fromEntries(
+    serviceNames
+      .filter((name) => !serviceName || name === serviceName)
+      .map((name) => [name, serviceIssues(spec.services[name], draftOf(name))]),
+  )
+  const nameIssue =
+    !application && !applicationNamePattern.test(spec.name)
+      ? spec.name
+        ? 'Use 1–40 lowercase letters, numbers and hyphens, starting with a letter.'
+        : 'Enter an application name.'
+      : ''
+  const issueList = [
+    ...Object.entries(issues).flatMap(([name, found]) => [
+      ...found.source.map((text) => `${name}: ${text}`),
+      ...(found.variables
+        ? [`${name}: ${plural(found.variables, 'variable needs', 'variables need')} attention.`]
+        : []),
+    ]),
+    ...(nameIssue ? [`Application: ${nameIssue}`] : []),
+  ]
   const formSpec = async (): Promise<Spec> => {
     const next = structuredClone(spec)
     // Validate every environment and command draft before writing private
@@ -280,6 +355,17 @@ export function DeploymentForm({
     }
   }
   async function review() {
+    if (mode === 'form' && issueList.length) {
+      // Stop at the step boundary and open the first service task with a problem.
+      setShowIssues(true)
+      setIssueAttempt((count) => count + 1)
+      const [name, found] = Object.entries(issues).find(([, found]) => found.total > 0) || []
+      if (name && found) {
+        setActiveService(name)
+        setServiceSection(found.source.length ? 'source' : 'variables')
+      }
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -338,10 +424,79 @@ export function DeploymentForm({
     }
   }
   const updateService = (name: string, changes: Partial<Service>) =>
+    setSpec((previous) => {
+      const next = {
+        ...previous,
+        services: { ...previous.services, [name]: { ...previous.services[name], ...changes } },
+      }
+      // Suggest a name from the first image until the user types their own.
+      if (!application && !nameEdited && changes.image !== undefined)
+        next.name = nameFromImage(Object.values(next.services).find((s) => s.image)?.image || '')
+      return next
+    })
+  function addService(preset: keyof typeof servicePresets) {
+    let name = preset === 'web' ? 'web' : preset === 'private' ? 'api' : 'worker'
+    let n = 2
+    while (spec.services[name]) name = `${preset === 'private' ? 'api' : preset}-${n++}`
+    setActiveService(name)
+    setServiceSection('source')
+    setRuntime((previous) => {
+      const next = { ...previous }
+      delete next[name]
+      return next
+    })
     setSpec((previous) => ({
       ...previous,
-      services: { ...previous.services, [name]: { ...previous.services[name], ...changes } },
+      services: { ...previous.services, [name]: { ...servicePresets[preset] } },
     }))
+  }
+
+  const isNew = !application
+  const reviewCount = plan ? Object.keys(plan.spec.services).length : 0
+  const draftCount = serviceName ? 1 : serviceNames.length
+  const chosenSource: Source | '' =
+    source ||
+    (connections.isPending && canBuildFromGit ? '' : buildConnection ? 'repository' : 'image')
+  const steps = isNew ? ['Source', 'Services', 'Review'] : ['Configure', 'Review']
+  const currentStep = (isNew ? 1 : 0) + (step === 'source' ? -1 : plan ? 1 : 0)
+  const maxServices = features.hostedFree ? 1 : features.hostedCompute ? 10 : 20
+  const sizeError = selectedService
+    ? fieldError(error || limitIssues.join('\n'), `services.${selectedService}.size`)
+    : ''
+  function continueFromSource() {
+    if (chosenSource === 'repository') {
+      void navigate({ to: buildConnection ? '/builds/new' : '/applications/import' })
+      return
+    }
+    setMode(chosenSource === 'file' ? fileFormat : 'form')
+    setStep('configure')
+    setError('')
+  }
+  const primaryLabel =
+    step === 'source'
+      ? chosenSource === 'repository'
+        ? buildConnection
+          ? 'Choose repository'
+          : 'Import repository configuration'
+        : chosenSource === 'file'
+          ? fileFormat === 'compose'
+            ? 'Import Compose file'
+            : 'Write hakopod.toml'
+          : 'Configure services'
+      : plan
+        ? isNew
+          ? `Create ${plural(reviewCount, 'service')}`
+          : `Deploy ${serviceName || application.name}`
+        : mode === 'form'
+          ? `Review ${plural(draftCount, 'service')}`
+          : 'Review configuration'
+  const pendingLabel = plan
+    ? isNew
+      ? `Creating ${plural(reviewCount, 'service')}…`
+      : 'Deploying…'
+    : mode === 'form'
+      ? `Checking ${plural(draftCount, 'service')}…`
+      : 'Checking configuration…'
   return (
     <FormPage
       breadcrumbs={[
@@ -354,30 +509,38 @@ export function DeploymentForm({
       icon="box"
       title={
         plan
-          ? 'Review your deployment'
+          ? isNew
+            ? `Review ${plan.spec.name}`
+            : 'Review your deployment'
           : application
             ? `Configure ${serviceName ? `${application.name} / ${serviceName}` : application.name}`
-            : 'Deploy an application'
+            : step === 'source'
+              ? 'New application'
+              : mode === 'form'
+                ? 'Configure services'
+                : 'Import configuration'
       }
       description={
         plan
           ? 'Review the exact changes before creating a new application revision.'
-          : `Deploy container images to ${project} / ${environment}.`
+          : `${application ? 'Change' : 'Create'} an application in ${project} / ${environment}.`
       }
     >
-      <div className="deploy-steps">
-        <span className={!plan ? 'step-current' : ''}>
-          <b>{plan ? <Icon name="check" size={12} /> : '1'}</b>Configure
-        </span>
-        <i />
-        <span className={plan ? 'step-current' : ''}>
-          <b>2</b>Review & deploy
-        </span>
-      </div>
-      <div ref={editorBody} className="form-body deploy-body">
+      <FlowSteps
+        steps={steps}
+        current={currentStep}
+        disabled={busy}
+        onSelect={(index) => {
+          if (isNew && index === 0) {
+            setPlan(null)
+            setStep('source')
+          } else setPlan(null)
+        }}
+      />
+      <div ref={editorBody} className="form-body deploy-body create-flow">
         <ComputeNotice creatingApplication={!application} />
         {tomlOnlyReason && <Note>{tomlOnlyReason}</Note>}
-        {serviceName && (
+        {serviceName && !plan && (
           <Note>
             This revision stages changes to <strong>{serviceName}</strong> only. Other services and
             application networks and volumes retain their accepted configuration.
@@ -388,7 +551,28 @@ export function DeploymentForm({
           composeDraft.warnings.map((warning, index) => (
             <Note key={`compose-${index}`}>{warning}</Note>
           ))}
-        {plan ? (
+        {step === 'source' ? (
+          <SourceStep
+            source={chosenSource}
+            onSource={setSource}
+            fileFormat={fileFormat}
+            onFileFormat={setFileFormat}
+            repository={
+              !canBuildFromGit
+                ? features.git
+                  ? 'Needs Git management access. Ask an administrator, or deploy a container image.'
+                  : 'Git repositories are not available in this dashboard.'
+                : ''
+            }
+            buildConnection={
+              connections.isPending
+                ? undefined
+                : connections.error
+                  ? null
+                  : Boolean(buildConnection)
+            }
+          />
+        ) : plan ? (
           <>
             <div className="review-summary">
               <div>
@@ -404,50 +588,17 @@ export function DeploymentForm({
               </div>
               <div>
                 <span className="muted-text">SERVICES</span>
-                <strong>{Object.keys(plan.spec.services).length}</strong>
+                <strong>{reviewCount}</strong>
               </div>
             </div>
-            {Object.keys(plan.spec.services).length === 0 && (
+            {reviewCount === 0 && (
               <Note>
                 This removes every service and stops all application traffic. Persistent volumes and
                 backups are retained. Delete the empty application only after this deployment
                 succeeds.
               </Note>
             )}
-            <div className="review-resources">
-              {Object.entries(plan.spec.services).map(([name, service]) => {
-                const profile = serviceResources(service, plan.resource_profiles)
-                return profile ? (
-                  <div key={name}>
-                    <strong className="min-w-0 break-words">{name}</strong>
-                    <span>
-                      {service.job?.schedule
-                        ? 'Scheduled job'
-                        : service.job
-                          ? 'Deployment job'
-                          : service.serverless
-                            ? service.serverless.min_replicas === 1
-                              ? '1 always-warm replica'
-                              : '0–1 replicas'
-                            : `${service.replicas ?? 1} ${(service.replicas ?? 1) === 1 ? 'replica' : 'replicas'}`}{' '}
-                      · {profile.CPURequest} CPU / {profile.MemoryRequest} memory requested
-                    </span>
-                    <small>
-                      Node: {service.node_name || 'Automatic placement'}
-                      {service.serverless
-                        ? ` · Serverless HTTP · ${service.serverless.min_replicas === 1 ? 'Always warm · 1 replica' : `0–1 replicas · sleep after ${service.serverless.idle_seconds ?? 300}s idle`} · ${service.serverless.max_concurrency ?? 16} concurrent requests · startup wait ${service.serverless.startup_timeout_seconds ?? 60}s · request limit ${service.serverless.request_timeout_seconds ?? 60}s`
-                        : service.startup_timeout_seconds
-                          ? ` · startup wait ${service.startup_timeout_seconds}s`
-                          : ' · installation startup wait'}
-                    </small>
-                    <small>
-                      Limits: {profile.CPULimit} CPU / {profile.MemoryLimit} memory per{' '}
-                      {service.job ? 'attempt' : 'replica'}
-                    </small>
-                  </div>
-                ) : null
-              })}
-            </div>
+            <ReviewServices plan={plan} only={serviceName} />
             <div className="section-caption">
               CONFIGURATION CHANGES <span>{plan.changes.length}</span>
             </div>
@@ -466,6 +617,7 @@ export function DeploymentForm({
               <Note key={i}>{warning}</Note>
             ))}
             <Note>
+              {isNew ? 'Nothing is created until you choose Create. ' : ''}
               Readiness gates traffic to new replicas. Multi-service rollouts are not atomic;
               deployment details report each service’s result.
             </Note>
@@ -475,10 +627,14 @@ export function DeploymentForm({
             {!tomlOnlyReason && (
               <div
                 className="segmented-control deployment-methods"
-                data-method-count={canBuildFromGit ? (serviceName ? 4 : 5) : serviceName ? 2 : 3}
+                data-method-count={serviceName ? 2 : 3}
+                role="group"
+                aria-label="Edit as"
               >
                 <button
+                  type="button"
                   disabled={busy}
+                  aria-pressed={mode === 'form'}
                   className={mode === 'form' ? 'selected' : ''}
                   onClick={() => void changeMode('form')}
                 >
@@ -486,34 +642,26 @@ export function DeploymentForm({
                   Container images
                 </button>
                 <button
+                  type="button"
                   disabled={busy}
+                  aria-pressed={mode === 'toml'}
                   className={mode === 'toml' ? 'selected' : ''}
                   onClick={() => void changeMode('toml')}
                 >
                   <Icon name="code" size={15} />
-                  Import TOML
+                  TOML
                 </button>
                 {!serviceName && (
                   <button
+                    type="button"
                     disabled={busy}
+                    aria-pressed={mode === 'compose'}
                     className={mode === 'compose' ? 'selected' : ''}
                     onClick={() => void changeMode('compose')}
                   >
                     <Icon name="code" size={15} />
-                    Import Compose
+                    Compose import
                   </button>
-                )}
-                {canBuildFromGit && (
-                  <>
-                    <button onClick={() => void navigate({ to: '/builds/new' })}>
-                      <ServiceIcon name="github" size={15} />
-                      Build from Git
-                    </button>
-                    <button onClick={() => void navigate({ to: '/applications/import' })}>
-                      <Icon name="code" size={15} />
-                      Import Git configuration
-                    </button>
-                  </>
                 )}
               </div>
             )}
@@ -586,49 +734,7 @@ export function DeploymentForm({
               </div>
             ) : (
               <div className="field-stack">
-                {!serviceName && (
-                  <>
-                    <label>
-                      Application name
-                      <Input
-                        placeholder="my-application"
-                        value={spec.name}
-                        error={fieldError(error, 'name')}
-                        disabled={Boolean(application)}
-                        onChange={(event) =>
-                          setSpec((previous) => ({ ...previous, name: event.target.value }))
-                        }
-                        pattern="[a-z][a-z0-9\-]*"
-                        maxLength={40}
-                      />
-                    </label>
-                    <label>
-                      Automatic release recovery
-                      <SelectField
-                        disabled={busy}
-                        label="Automatic release recovery"
-                        aria-describedby="release-recovery-help"
-                        value={spec.recovery?.on_failure || 'safe'}
-                        onValueChange={(value) =>
-                          setSpec((previous) => ({
-                            ...previous,
-                            recovery: { on_failure: value as 'safe' | 'disabled' },
-                          }))
-                        }
-                        options={[
-                          { value: 'safe', label: 'Restore the last successful stateless release' },
-                          { value: 'disabled', label: 'Disabled' },
-                        ]}
-                      />
-                    </label>
-                    <p id="release-recovery-help" className="field-help">
-                      Automatic recovery skips jobs, volumes and service additions or removals. It
-                      restores workload configuration only; external data and secret values are
-                      unchanged.
-                    </p>
-                  </>
-                )}
-                {application && Object.keys(spec.services).length === 0 && (
+                {application && serviceNames.length === 0 && (
                   <Note>
                     Deploying this revision removes every service and stops application traffic.
                     Persistent volumes and backups are retained. Once deployment succeeds, you can
@@ -648,398 +754,238 @@ export function DeploymentForm({
                     </ul>
                   </div>
                 )}
-                <div className="form-section-heading">
-                  <span>Services</span>
-                  <span className="muted-text">Private network included</span>
-                </div>
                 {!serviceName && (
-                  <nav
-                    aria-label="Services in this draft"
-                    className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
-                  >
-                    {Object.entries(spec.services).map(([name, service]) => (
-                      <Button
-                        key={name}
-                        type="button"
-                        variant="ghost"
-                        aria-pressed={(activeService || Object.keys(spec.services)[0]) === name}
-                        className={`h-auto! min-h-16 min-w-0 w-full flex-col items-start! whitespace-normal! normal-case! font-sans! border border-border text-left ${(activeService || Object.keys(spec.services)[0]) === name ? 'text-[var(--navigation-active)]!' : ''}`}
-                        onClick={() => {
-                          setActiveService(name)
-                          setServiceSection('source')
-                        }}
-                      >
-                        <strong className="min-w-0 break-words">{name}</strong>
-                        <span className="min-w-0 break-words text-xs text-muted-foreground">
-                          {service.image ? service.image.split('@')[0] : 'Image needed'} ·{' '}
-                          {service.size || 'small'} · {service.public ? 'Public' : 'Private'}
-                        </span>
-                      </Button>
-                    ))}
-                  </nav>
-                )}
-                <nav aria-label="Service settings" className="flex flex-wrap gap-2">
-                  {(Object.keys(serviceSections) as ServiceSection[]).map((section) => (
-                    <Button
-                      key={section}
-                      type="button"
-                      variant="ghost"
-                      aria-pressed={serviceSection === section}
-                      onClick={() => setServiceSection(section)}
-                      className={
-                        serviceSection === section ? 'text-[var(--navigation-active)]!' : ''
-                      }
-                    >
-                      {serviceSections[section]}
-                    </Button>
-                  ))}
-                </nav>
-                {Object.entries(spec.services)
-                  .filter(
-                    ([name]) =>
-                      name ===
-                      (serviceName ||
-                        (spec.services[activeService]
-                          ? activeService
-                          : Object.keys(spec.services)[0])),
-                  )
-                  .map(([name, service]) => (
-                    <div className="service-form" key={name}>
-                      <div className="service-form-heading">
-                        <div className="service-mini-icon">
-                          <Icon
-                            name={service.public ? 'globe' : service.port ? 'lock' : 'terminal'}
-                            size={16}
-                          />
-                        </div>
-                        <strong className="mono">{name}</strong>
-                        <span className="form-spacer" />
-                        {!serviceName &&
-                          (Boolean(application) || Object.keys(spec.services).length > 1) && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label={`Remove service ${name}`}
-                              disabled={busy}
-                              onClick={() => {
-                                const next = withoutService(spec, name)
-                                setSpec(next)
-                                setActiveService(Object.keys(next.services)[0] || '')
-                                setServiceSection('source')
-                              }}
-                            >
-                              <Icon name="trash" size={14} />
-                            </Button>
-                          )}
-                      </div>
-                      <div className={serviceSection === 'compute' ? 'grid gap-4' : 'hidden'}>
-                        <ServiceExecutionFields
-                          name={name}
-                          service={service}
-                          project={project}
-                          environment={environment}
-                          application={spec.name}
-                          disabled={busy}
-                          error={error}
-                          onChange={(value) => updateService(name, value)}
-                          onStarter={(value) => {
-                            updateService(name, value)
-                            setRuntime((previous) => ({
-                              ...previous,
-                              [name]: runtimeDraft({ ...service, ...value }),
-                            }))
-                          }}
-                        />
-                      </div>
-                      <div className={serviceSection === 'source' ? 'grid gap-4' : 'hidden'}>
-                        <FunctionEditor
-                          service={service}
-                          disabled={busy}
-                          onChange={(value) => updateService(name, value)}
-                        />
-                        <label>
-                          Container image
-                          <Input
-                            placeholder="nginx:1.29-alpine"
-                            value={service.image}
-                            error={fieldError(error, `services.${name}.image`)}
-                            onChange={(event) => updateService(name, { image: event.target.value })}
-                          />
-                        </label>
-                        <label>
-                          Registry credential
-                          <SelectField
-                            disabled={busy}
-                            label="Registry credential"
-                            value={service.registry_credential || ''}
-                            error={fieldError(error, `services.${name}.registry_credential`)}
-                            onValueChange={(value) =>
-                              updateService(name, {
-                                registry_credential: value || undefined,
-                              })
-                            }
-                            options={[
-                              {
-                                value: '',
-                                label: 'Automatic · public or matching saved credential',
-                              },
-                              ...(service.registry_credential &&
-                              !registries.data?.items.some(
-                                (item) => item.name === service.registry_credential,
-                              )
-                                ? [
-                                    {
-                                      value: service.registry_credential,
-                                      label: `${service.registry_credential} (saved reference)`,
-                                    },
-                                  ]
-                                : []),
-                              ...(registries.data?.items.map((item) => ({
-                                value: item.name,
-                                label:
-                                  item.name +
-                                  ' · ' +
-                                  item.registry +
-                                  (item.synchronized ? '' : ' · pending sync'),
-                              })) ?? []),
-                            ]}
-                          />
-                          {registries.error && (
-                            <span className="field-help">
-                              Registry credentials could not be loaded. Existing references are
-                              preserved.
-                            </span>
-                          )}
-                        </label>
-                      </div>
-                      <div className={serviceSection === 'compute' ? 'grid gap-4' : 'hidden'}>
-                        <div className="form-grid-three">
-                          <label>
-                            Port
-                            <Input
-                              type="number"
-                              min={0}
-                              max={65535}
-                              placeholder="No port"
-                              disabled={Boolean(service.job)}
-                              value={service.port || ''}
-                              error={fieldError(error, `services.${name}.port`)}
-                              onChange={(event) =>
-                                updateService(name, {
-                                  port: Number(event.target.value) || 0,
-                                  ...(!Number(event.target.value) ? { public: false } : {}),
-                                })
-                              }
-                            />
-                          </label>
-                          <label>
-                            Size
-                            <SelectField
-                              disabled={busy}
-                              label="Size"
-                              value={service.size || 'small'}
-                              error={fieldError(
-                                error || limitIssues.join('\n'),
-                                `services.${name}.size`,
-                              )}
-                              onValueChange={(value) => updateService(name, { size: value })}
-                              options={[
-                                {
-                                  value: 'small',
-                                  label: 'Small',
-                                },
-                                {
-                                  value: 'medium',
-                                  label: features.hostedFree
-                                    ? 'Medium · Requires your own server'
-                                    : 'Medium',
-                                  disabled: features.hostedFree,
-                                },
-                                {
-                                  value: 'large',
-                                  label: features.hostedFree
-                                    ? 'Large · Requires your own server'
-                                    : 'Large',
-                                  disabled: features.hostedFree,
-                                },
-                              ]}
-                            />
-                          </label>
-                          <label>
-                            Replicas
-                            <Input
-                              type="number"
-                              min={1}
-                              max={features.hostedFree ? 1 : features.hostedCompute ? 3 : 20}
-                              value={service.replicas ?? 1}
-                              error={fieldError(
-                                error || limitIssues.join('\n'),
-                                `services.${name}.replicas`,
-                              )}
-                              disabled={Boolean(service.job || service.serverless)}
-                              onChange={(event) =>
-                                updateService(name, { replicas: Number(event.target.value) })
-                              }
-                            />
-                          </label>
-                        </div>
-                        <ResourceFields
-                          name={name}
-                          resources={service.resources}
-                          disabled={busy}
-                          hostedFree={features.hostedFree}
-                          error={error}
-                          onChange={(resources) => updateService(name, { resources })}
-                        />
-                      </div>
-                      <div className={serviceSection === 'source' ? 'grid gap-4' : 'hidden'}>
-                        <RunCommandFields
-                          label={name}
-                          disabled={busy}
-                          command={(runtime[name] || runtimeDraft(service)).command}
-                          args={(runtime[name] || runtimeDraft(service)).args}
-                          error={error}
-                          fieldPath={`services.${name}`}
-                          onChange={(value) =>
-                            setRuntime((previous) => ({
-                              ...previous,
-                              [name]: { ...(previous[name] || runtimeDraft(service)), ...value },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className={serviceSection === 'variables' ? 'grid gap-4' : 'hidden'}>
-                        <EnvironmentFields
-                          label={name}
-                          onBusyChange={setBusy}
-                          error={fieldError(error, `services.${name}.env`)}
-                          disabled={busy}
-                          rows={(runtime[name] || runtimeDraft(service)).variables}
-                          onChange={(variables) =>
-                            setRuntime((previous) => ({
-                              ...previous,
-                              [name]: { ...(previous[name] || runtimeDraft(service)), variables },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className={serviceSection === 'access' ? '' : 'hidden'}>
-                        <div className="service-exposure">
-                          <label className="checkbox-label">
-                            <Input
-                              type="checkbox"
-                              checked={service.public || false}
-                              disabled={Boolean(service.job) || !service.port}
-                              onChange={(event) =>
-                                updateService(name, { public: event.target.checked })
-                              }
-                            />
-                            <span>Public HTTP endpoint</span>
-                          </label>
-                          <span>
-                            {service.public
-                              ? 'Gets a generated URL'
-                              : service.port
-                                ? 'Private to this application'
-                                : service.job
-                                  ? service.job.schedule
-                                    ? `Schedule: ${service.job.schedule.cron} · ${service.job.schedule.timezone || 'UTC'}`
-                                    : 'Deployment job · configure timeout and retries in TOML'
-                                  : 'Background worker'}
-                          </span>
-                        </div>
-                      </div>
+                  <section className="create-section" aria-label="Services in this draft">
+                    <div className="create-section-heading">
+                      <h2>Services</h2>
+                      <span>
+                        {plural(serviceNames.length, 'service')} · private network included
+                      </span>
                     </div>
-                  ))}
-                {!serviceName && (
-                  <Button
-                    className="add-service-button"
-                    variant="ghost"
-                    disabled={
-                      Object.keys(spec.services).length >=
-                      (features.hostedFree ? 1 : features.hostedCompute ? 10 : 20)
-                    }
-                    onClick={() => {
-                      let name = 'api'
-                      let n = 2
-                      while (spec.services[name]) name = `service-${n++}`
-                      setActiveService(name)
+                    <div className="service-picker">
+                      {Object.entries(spec.services).map(([name, service]) => {
+                        const kind = serviceKind(service)
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            className="service-card interactive"
+                            aria-pressed={selectedService === name}
+                            onClick={() => {
+                              setActiveService(name)
+                              setServiceSection('source')
+                            }}
+                          >
+                            <Brackets />
+                            <span className="service-card-icon">
+                              <Icon name={kindIcon[kind]} size={16} />
+                            </span>
+                            <span className="service-card-text">
+                              <strong>{name}</strong>
+                              <span>{serviceKindLabel[kind]}</span>
+                              <small>
+                                {service.image ? service.image.split('@')[0] : 'Image needed'} ·{' '}
+                                {service.size || 'small'} ·{' '}
+                                {service.serverless
+                                  ? '0–1 replicas'
+                                  : plural(service.replicas ?? 1, 'replica')}
+                              </small>
+                            </span>
+                            <IssueCount count={issues[name]?.total ?? 0} />
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="service-presets" role="group" aria-label="Add service">
+                      {(
+                        [
+                          ['web', 'Web service'],
+                          ['private', 'Private service'],
+                          ['worker', 'Worker'],
+                        ] as const
+                      ).map(([preset, label]) => (
+                        <Button
+                          key={preset}
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || serviceNames.length >= maxServices}
+                          onClick={() => addService(preset)}
+                        >
+                          <Icon name="plus" size={14} />
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                    {features.hostedFree && (
+                      <p className="field-help">
+                        Hosted Free allows one small service with one replica, using an AMD64 image.
+                        More services and larger sizes require your own server.
+                      </p>
+                    )}
+                  </section>
+                )}
+                {selectedService && spec.services[selectedService] && (
+                  <ServiceEditor
+                    key={selectedService}
+                    name={selectedService}
+                    service={spec.services[selectedService]}
+                    draft={draftOf(selectedService)}
+                    issues={issues[selectedService]}
+                    showIssues={showIssues}
+                    section={serviceSection}
+                    onSection={setServiceSection}
+                    removable={!serviceName && (Boolean(application) || serviceNames.length > 1)}
+                    onRemove={() => {
+                      const next = withoutService(spec, selectedService)
+                      setSpec(next)
+                      setActiveService(Object.keys(next.services)[0] || '')
                       setServiceSection('source')
-                      setRuntime((previous) => {
-                        const next = { ...previous }
-                        delete next[name]
-                        return next
-                      })
-                      setSpec((previous) => ({
+                    }}
+                    busy={busy}
+                    error={error}
+                    sizeError={sizeError}
+                    application={spec.name}
+                    project={project}
+                    environment={environment}
+                    registries={registries}
+                    onChange={(changes) => updateService(selectedService, changes)}
+                    onDraft={(changes) =>
+                      setRuntime((previous) => ({
                         ...previous,
-                        services: {
-                          ...previous.services,
-                          [name]: {
-                            image: '',
-                            port: 8080,
-                            public: false,
-                            size: 'small',
-                            replicas: 1,
-                          },
-                        },
+                        [selectedService]: { ...draftOf(selectedService), ...changes },
+                      }))
+                    }
+                    onStarter={(value) => {
+                      updateService(selectedService, value)
+                      setRuntime((previous) => ({
+                        ...previous,
+                        [selectedService]: runtimeDraft({
+                          ...spec.services[selectedService],
+                          ...value,
+                        }),
                       }))
                     }}
-                  >
-                    <Icon name="plus" size={16} />
-                    Add service
-                  </Button>
+                  />
                 )}
-                {features.hostedFree && (
-                  <p className="field-help">
-                    Hosted Free allows one small service with one replica, using an AMD64 image.
-                    More services and larger sizes require your own server.
-                  </p>
+                {!serviceName && (
+                  <section className="create-section" aria-labelledby={applicationHeading}>
+                    <div className="create-section-heading">
+                      <h2 id={applicationHeading}>Application</h2>
+                      <span>Shared by every service</span>
+                    </div>
+                    <div className="create-fields">
+                      {isNew && (
+                        <label>
+                          Application name
+                          <Input
+                            value={spec.name}
+                            error={
+                              fieldError(error, 'name') || (showIssues ? nameIssue : undefined)
+                            }
+                            onChange={(event) => {
+                              setNameEdited(true)
+                              setSpec((previous) => ({ ...previous, name: event.target.value }))
+                            }}
+                            pattern="[a-z][a-z0-9\-]*"
+                            maxLength={40}
+                            autoComplete="off"
+                            spellCheck={false}
+                            aria-describedby="application-name-help"
+                          />
+                          <span id="application-name-help" className="field-help">
+                            Lowercase letters, numbers and hyphens. Suggested from the first image
+                            until you edit it.
+                          </span>
+                        </label>
+                      )}
+                      <label>
+                        Automatic release recovery
+                        <SelectField
+                          disabled={busy}
+                          label="Automatic release recovery"
+                          aria-describedby="release-recovery-help"
+                          value={spec.recovery?.on_failure || 'safe'}
+                          onValueChange={(value) =>
+                            setSpec((previous) => ({
+                              ...previous,
+                              recovery: { on_failure: value as 'safe' | 'disabled' },
+                            }))
+                          }
+                          options={[
+                            {
+                              value: 'safe',
+                              label: 'Restore the last successful stateless release',
+                            },
+                            { value: 'disabled', label: 'Disabled' },
+                          ]}
+                        />
+                        <span id="release-recovery-help" className="field-help">
+                          Skips jobs, volumes and service additions or removals. Restores workload
+                          configuration only; external data and secret values are unchanged.
+                        </span>
+                      </label>
+                    </div>
+                  </section>
                 )}
-                <Note>
-                  Private services discover each other by name, such as <code>http://api:8080</code>
-                  . Your public web server can proxy browser requests to the private API.
-                </Note>
               </div>
             )}
           </fieldset>
+        )}
+        {showIssues && mode === 'form' && step === 'configure' && !plan && issueList.length > 0 && (
+          <FormError className="create-issues">
+            <span>Resolve {plural(issueList.length, 'issue')} before review:</span>
+            <ul>
+              {issueList.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          </FormError>
         )}
         {error && <RequestError error={error} />}
       </div>
       <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">
           <Icon name="lock" size={13} />
-          {plan
-            ? 'Only reviewed changes will be submitted'
-            : tomlOnlyReason
-              ? 'Review validates the configuration before deployment'
-              : 'Secrets are saved at review or when switching to TOML; containers change on deployment'}
+          {step === 'source'
+            ? 'Nothing is created until the final review'
+            : plan
+              ? 'Only reviewed changes will be submitted'
+              : tomlOnlyReason
+                ? 'Review validates the configuration before deployment'
+                : 'Secrets are saved at review or when switching to TOML; containers change on deployment'}
         </span>
         <div className="deploy-footer-actions">
-          <Button disabled={busy} onClick={() => (plan ? setPlan(null) : onClose())}>
-            {plan ? 'Back to configuration' : 'Cancel'}
-          </Button>
           <Button
+            disabled={busy}
+            onClick={() =>
+              plan ? setPlan(null) : isNew && step === 'configure' ? setStep('source') : onClose()
+            }
+          >
+            {plan
+              ? 'Back to configuration'
+              : isNew && step === 'configure'
+                ? 'Back to source'
+                : 'Cancel'}
+          </Button>
+          <PendingButton
             variant="primary"
+            pending={busy && step === 'configure'}
+            pendingLabel={step === 'source' ? primaryLabel : pendingLabel}
             disabled={
               busy ||
-              Boolean(plan?.missing_secrets?.length) ||
-              mode === 'compose' ||
-              (!plan &&
-                mode === 'form' &&
-                (!spec.name || Object.values(spec.services).some((service) => !service.image))) ||
-              (!plan && mode === 'toml' && !toml.trim())
+              (step === 'source' && !chosenSource) ||
+              (step === 'configure' &&
+                (Boolean(plan?.missing_secrets?.length) ||
+                  mode === 'compose' ||
+                  (!plan && mode === 'toml' && !toml.trim())))
             }
-            onClick={() => void (plan ? deploy() : review())}
+            onClick={() =>
+              step === 'source' ? continueFromSource() : void (plan ? deploy() : review())
+            }
           >
-            {busy
-              ? plan
-                ? 'Submitting…'
-                : 'Validating…'
-              : plan
-                ? 'Deploy changes'
-                : 'Review changes'}
+            {primaryLabel}
             <Icon name="arrow" size={15} />
-          </Button>
+          </PendingButton>
         </div>
       </div>
       <Dialog
@@ -1069,6 +1015,491 @@ export function DeploymentForm({
         </div>
       </Dialog>
     </FormPage>
+  )
+}
+
+function SourceStep({
+  source,
+  onSource,
+  fileFormat,
+  onFileFormat,
+  repository,
+  buildConnection,
+}: {
+  source: Source | ''
+  onSource: (source: Source) => void
+  fileFormat: 'compose' | 'toml'
+  onFileFormat: (format: 'compose' | 'toml') => void
+  // Why repositories are unavailable to this person; empty when they are available.
+  repository: string
+  // undefined while loading, null when connections could not be loaded.
+  buildConnection: boolean | null | undefined
+}) {
+  return (
+    <div className="create-source">
+      <ChoiceCards
+        label="Where does this application come from?"
+        value={source}
+        onChange={onSource}
+        choices={[
+          {
+            value: 'repository',
+            title: 'Git repository',
+            description: 'Build an image from your code, or deploy the hakopod.toml it contains.',
+            icon: <Icon name="branch" size={18} />,
+            disabled: Boolean(repository),
+            unavailable: repository,
+          },
+          {
+            value: 'image',
+            title: 'Container image',
+            description:
+              'Run one or more existing images, pinned by digest for repeatable releases.',
+            icon: <Icon name="box" size={18} />,
+          },
+          {
+            value: 'file',
+            title: 'Compose or TOML file',
+            description: 'Convert a Compose file, or paste a Hakopod configuration.',
+            icon: <Icon name="code" size={18} />,
+          },
+        ]}
+      />
+      {source === 'repository' && (
+        <div className="create-source-detail" aria-live="polite">
+          {buildConnection === undefined ? (
+            <p className="field-help" role="status">
+              Checking Git connections…
+            </p>
+          ) : buildConnection ? (
+            <>
+              <p>
+                Pick a repository and branch next. Hakopod detects the framework, or builds your
+                Dockerfile, then reviews the release.
+              </p>
+              <Button asChild variant="ghost" size="sm" className="justify-self-start">
+                <Link to="/applications/import">Use a committed hakopod.toml instead</Link>
+              </Button>
+            </>
+          ) : (
+            <>
+              <p>
+                {buildConnection === null
+                  ? 'Git connections could not be loaded, so builds are unavailable right now.'
+                  : 'No Git connection can run builds yet.'}{' '}
+                You can still import a committed hakopod.toml, or connect GitHub or GitLab first.
+              </p>
+              <Button asChild variant="ghost" size="sm" className="justify-self-start">
+                <Link to="/settings/git/connections/new">
+                  <ServiceIcon name="github" size={15} />
+                  Connect a repository
+                </Link>
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+      {source === 'image' && (
+        <div className="create-source-detail">
+          <p>
+            Next you add services and choose each image, placement and variables. Use a digest such
+            as <code>nginx@sha256:…</code> so every release runs the same bytes; tags are resolved
+            to a digest at deployment.
+          </p>
+        </div>
+      )}
+      {source === 'file' && (
+        <div className="create-source-detail">
+          <ChoiceCards
+            compact
+            label="File format"
+            value={fileFormat}
+            onChange={onFileFormat}
+            choices={[
+              {
+                value: 'compose',
+                title: 'Docker Compose',
+                description: 'Converted to services you can review. Unsupported keys are reported.',
+              },
+              {
+                value: 'toml',
+                title: 'hakopod.toml',
+                description: 'Networks, mounts and ports beyond the guided form.',
+              },
+            ]}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ServiceEditor({
+  name,
+  service,
+  draft,
+  issues,
+  showIssues,
+  section,
+  onSection,
+  removable,
+  onRemove,
+  busy,
+  error,
+  sizeError,
+  application,
+  project,
+  environment,
+  registries,
+  onChange,
+  onDraft,
+  onStarter,
+}: {
+  name: string
+  service: Service
+  draft: RuntimeDraft
+  issues?: ReturnType<typeof serviceIssues>
+  showIssues: boolean
+  section: ServiceSection
+  onSection: (section: ServiceSection) => void
+  removable: boolean
+  onRemove: () => void
+  busy: boolean
+  error: string
+  sizeError?: string
+  application: string
+  project: string
+  environment: string
+  registries: {
+    data?: { items: { name: string; registry: string; synchronized: boolean }[] }
+    error: unknown
+  }
+  onChange: (changes: Partial<Service>) => void
+  onDraft: (changes: Partial<RuntimeDraft>) => void
+  onStarter: (value: Service) => void
+}) {
+  const features = useEditionFeatures()
+  const kind = serviceKind(service)
+  const panel = useId()
+  const sectionIssues: Partial<Record<ServiceSection, number>> = {
+    source: issues?.source.length,
+    variables: issues?.variables,
+  }
+  return (
+    <section className="service-form create-service-editor" aria-label={`${name} settings`}>
+      <div className="service-form-heading">
+        <div className="service-mini-icon">
+          <Icon name={kindIcon[kind]} size={16} />
+        </div>
+        <span className="min-w-0">
+          <strong className="mono">{name}</strong>
+          <small className="block text-muted-foreground">{serviceKindLabel[kind]}</small>
+        </span>
+        <span className="form-spacer" />
+        {removable && (
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={`Remove service ${name}`}
+            disabled={busy}
+            onClick={onRemove}
+          >
+            <Icon name="trash" size={14} />
+          </Button>
+        )}
+      </div>
+      <div className="service-tasks" role="group" aria-label={`${name} tasks`}>
+        {(Object.keys(serviceSections) as ServiceSection[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={section === key}
+            aria-controls={panel}
+            onClick={() => onSection(key)}
+          >
+            {serviceSections[key]}
+            <IssueCount count={sectionIssues[key] ?? 0} />
+          </button>
+        ))}
+      </div>
+      <div id={panel} className="create-fields">
+        {section === 'source' && (
+          <>
+            <FunctionEditor service={service} disabled={busy} onChange={onChange} />
+            <label>
+              Container image
+              <Input
+                placeholder="nginx@sha256:… or nginx:1.29-alpine"
+                value={service.image}
+                autoComplete="off"
+                spellCheck={false}
+                error={
+                  fieldError(error, `services.${name}.image`) ||
+                  (showIssues && !service.image.trim() ? 'Enter a container image.' : undefined)
+                }
+                onChange={(event) => onChange({ image: event.target.value })}
+              />
+            </label>
+            <label>
+              Registry credential
+              <SelectField
+                disabled={busy}
+                label="Registry credential"
+                value={service.registry_credential || ''}
+                error={fieldError(error, `services.${name}.registry_credential`)}
+                onValueChange={(value) => onChange({ registry_credential: value || undefined })}
+                options={[
+                  { value: '', label: 'Automatic · public or matching saved credential' },
+                  ...(service.registry_credential &&
+                  !registries.data?.items.some((item) => item.name === service.registry_credential)
+                    ? [
+                        {
+                          value: service.registry_credential,
+                          label: `${service.registry_credential} (saved reference)`,
+                        },
+                      ]
+                    : []),
+                  ...(registries.data?.items.map((item) => ({
+                    value: item.name,
+                    label:
+                      item.name +
+                      ' · ' +
+                      item.registry +
+                      (item.synchronized ? '' : ' · pending sync'),
+                  })) ?? []),
+                ]}
+              />
+              {Boolean(registries.error) && (
+                <span className="field-help">
+                  Registry credentials could not be loaded. Existing references are preserved.
+                </span>
+              )}
+            </label>
+            <RunCommandFields
+              label={name}
+              disabled={busy}
+              command={draft.command}
+              args={draft.args}
+              error={error}
+              fieldPath={`services.${name}`}
+              onChange={onDraft}
+            />
+          </>
+        )}
+        {section === 'compute' && (
+          <>
+            <div className="grid gap-1.5">
+              <span className="create-label">Size</span>
+              <ChoiceCards
+                compact
+                label={`${name} size`}
+                value={service.size || 'small'}
+                disabled={busy}
+                onChange={(size) => onChange({ size })}
+                choices={[
+                  { value: 'small', title: 'Small', description: 'Default profile' },
+                  {
+                    value: 'medium',
+                    title: 'Medium',
+                    description: 'Larger profile',
+                    disabled: features.hostedFree,
+                    unavailable: 'Requires your own server',
+                  },
+                  {
+                    value: 'large',
+                    title: 'Large',
+                    description: 'Largest profile',
+                    disabled: features.hostedFree,
+                    unavailable: 'Requires your own server',
+                  },
+                  ...(service.size && !['small', 'medium', 'large'].includes(service.size)
+                    ? [{ value: service.size, title: service.size, description: 'Saved profile' }]
+                    : []),
+                ]}
+              />
+              {sizeError ? (
+                <p className="field-error" role="alert">
+                  {sizeError}
+                </p>
+              ) : (
+                <p className="field-help">
+                  Profiles are defined by this installation. The review shows the exact CPU and
+                  memory each one requests.
+                </p>
+              )}
+            </div>
+            <label>
+              Replicas
+              <Input
+                type="number"
+                min={1}
+                max={features.hostedFree ? 1 : features.hostedCompute ? 3 : 20}
+                value={service.replicas ?? 1}
+                error={fieldError(error, `services.${name}.replicas`)}
+                disabled={Boolean(service.job || service.serverless)}
+                onChange={(event) => onChange({ replicas: Number(event.target.value) })}
+              />
+            </label>
+            <ServiceExecutionFields
+              name={name}
+              service={service}
+              project={project}
+              environment={environment}
+              application={application}
+              disabled={busy}
+              error={error}
+              onChange={onChange}
+              onStarter={onStarter}
+            />
+            <ResourceFields
+              name={name}
+              resources={service.resources}
+              disabled={busy}
+              hostedFree={features.hostedFree}
+              error={error}
+              onChange={(resources) => onChange({ resources })}
+            />
+          </>
+        )}
+        {section === 'variables' && (
+          <EnvironmentFields
+            label={name}
+            error={fieldError(error, `services.${name}.env`)}
+            disabled={busy}
+            showIssues={showIssues}
+            rows={draft.variables}
+            onChange={(variables) => onDraft({ variables })}
+          />
+        )}
+        {section === 'access' && (
+          <>
+            <label>
+              Port
+              <Input
+                type="number"
+                min={0}
+                max={65535}
+                placeholder="No port"
+                disabled={Boolean(service.job)}
+                value={service.port || ''}
+                error={fieldError(error, `services.${name}.port`)}
+                aria-describedby={`${panel}-port`}
+                onChange={(event) =>
+                  onChange({
+                    port: Number(event.target.value) || 0,
+                    ...(!Number(event.target.value) ? { public: false } : {}),
+                  })
+                }
+              />
+              <span id={`${panel}-port`} className="field-help">
+                The port your server listens on. Leave empty for a background worker.
+              </span>
+            </label>
+            <div className="service-exposure">
+              <label className="checkbox-label">
+                <Input
+                  type="checkbox"
+                  checked={service.public || false}
+                  disabled={Boolean(service.job) || !service.port}
+                  onChange={(event) => onChange({ public: event.target.checked })}
+                />
+                <span>Public HTTP endpoint</span>
+              </label>
+              <span>
+                {service.public
+                  ? 'Gets a generated URL'
+                  : service.port
+                    ? 'Private to this application'
+                    : service.job
+                      ? service.job.schedule
+                        ? `Schedule: ${service.job.schedule.cron} · ${service.job.schedule.timezone || 'UTC'}`
+                        : 'Deployment job · configure timeout and retries in TOML'
+                      : 'Background worker'}
+              </span>
+            </div>
+            <p className="field-help">
+              Private services discover each other by name, such as <code>http://api:8080</code>. A
+              public web service can proxy browser requests to a private API.
+            </p>
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function ReviewServices({ plan, only }: { plan: Plan; only?: string }) {
+  return (
+    <div className="review-services">
+      {Object.entries(plan.spec.services)
+        .filter(([name]) => !only || name === only)
+        .map(([name, service]) => {
+          const profile = serviceResources(service, plan.resource_profiles)
+          const kind = serviceKind(service)
+          const secrets = Object.keys(service.secrets || {}).length
+          const variables = Object.keys(service.env || {}).length
+          return (
+            <section key={name} className="review-service" aria-label={`${name} review`}>
+              <header>
+                <Icon name={kindIcon[kind]} size={15} />
+                <strong className="min-w-0 break-words">{name}</strong>
+                <span>{serviceKindLabel[kind]}</span>
+              </header>
+              <dl>
+                <div>
+                  <dt>Placement</dt>
+                  <dd>{service.node_name || 'Automatic · any eligible node'}</dd>
+                </div>
+                <div>
+                  <dt>Capacity</dt>
+                  <dd>
+                    {service.job?.schedule
+                      ? 'Scheduled job'
+                      : service.job
+                        ? 'Deployment job'
+                        : service.serverless
+                          ? service.serverless.min_replicas === 1
+                            ? '1 always-warm replica'
+                            : '0–1 replicas'
+                          : plural(service.replicas ?? 1, 'replica')}
+                    {profile &&
+                      ` · ${profile.CPURequest} CPU / ${profile.MemoryRequest} memory requested · limits ${profile.CPULimit} CPU / ${profile.MemoryLimit} per ${service.job ? 'attempt' : 'replica'}`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>External access</dt>
+                  <dd>
+                    {service.public
+                      ? `Public HTTP · generated URL · port ${service.port}`
+                      : service.port
+                        ? `Private · port ${service.port}`
+                        : 'None'}
+                    {service.public_tcp?.length
+                      ? ` · ${plural(service.public_tcp.length, 'public TCP port')}`
+                      : ''}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Bindings</dt>
+                  <dd>
+                    {plural(variables, 'variable')} · {plural(secrets, 'secret reference')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Startup</dt>
+                  <dd>
+                    {service.serverless
+                      ? `Serverless HTTP · ${service.serverless.min_replicas === 1 ? 'always warm' : `sleeps after ${service.serverless.idle_seconds ?? 300}s idle`} · ${service.serverless.max_concurrency ?? 16} concurrent requests · startup wait ${service.serverless.startup_timeout_seconds ?? 60}s · request limit ${service.serverless.request_timeout_seconds ?? 60}s`
+                      : service.startup_timeout_seconds
+                        ? `Startup wait ${service.startup_timeout_seconds}s`
+                        : 'Installation startup wait'}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          )
+        })}
+    </div>
   )
 }
 
