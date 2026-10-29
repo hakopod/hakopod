@@ -497,7 +497,7 @@ function Destinations() {
                   </span>
                   <span className="copy-id">
                     <code>{item.id.slice(0, 12)}</code>
-                    <Copy value={item.id} label={`Copy destination ID ${item.id}`} />
+                    <Copy value={item.id} label={`Copy destination ID ${item.id}`} iconOnly />
                   </span>
                   <span className="copy-id">
                     <code title={item.encryption_recipient}>
@@ -506,6 +506,7 @@ function Destinations() {
                     <Copy
                       value={item.encryption_recipient}
                       label={`Copy encryption recipient for ${item.name}`}
+                      iconOnly
                     />
                   </span>
                 </>

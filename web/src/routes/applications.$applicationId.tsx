@@ -476,7 +476,7 @@ function ApplicationDetail() {
                     ) : address ? (
                       <>
                         <code title={address}>{address}</code>
-                        <Copy value={address} label={`Copy ${label} internal address`} />
+                        <Copy value={address} label={`Copy ${label} internal address`} iconOnly />
                       </>
                     ) : undefined
                   }
@@ -835,7 +835,11 @@ function DeploymentHistory({ application }: { application: Application }) {
                   <>
                     <span className="copy-id">
                       <code>{deployment.id}</code>
-                      <Copy value={deployment.id} label={`Copy deployment ID ${deployment.id}`} />
+                      <Copy
+                        value={deployment.id}
+                        label={`Copy deployment ID ${deployment.id}`}
+                        iconOnly
+                      />
                     </span>
                     {deployment.revision === application.revision && (
                       <span className="runtime-summary">

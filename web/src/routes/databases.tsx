@@ -4,15 +4,21 @@ import { useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import { databaseSearch, databaseHealth, useDatabases } from '../lib/databases'
 import { useExternalDatabases, externalDatabaseHealth } from '../lib/external-databases'
-import { Empty, ErrorState, Loading, PageHeader } from '../components/shared'
+import { Empty, Loading, PageHeader } from '../components/shared'
+import {
+  CardMetric,
+  ObservedState,
+  ResourceCard,
+  ResourceEmpty,
+  ResourceError,
+  StaleNotice,
+} from '../components/resource-card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { Status } from '../components/shared'
 import { ServiceIcon } from '../components/service-icon'
 import { Icon } from '../components/icons'
 import { SelectField } from '../components/ui/select'
 import { engineName, expectedMembers, shardedDatabase } from '../lib/database-view'
-import { timestamp } from '../lib/api'
 import { projectRouteScopeMatches } from '../lib/projects'
 import { DatabaseResourceNavigation } from '../components/database-resource-navigation'
 import { databaseEngines } from '../lib/database-create'
@@ -115,17 +121,38 @@ function Databases() {
           </div>
           {query.isPending ? (
             <Loading />
-          ) : query.error ? (
-            <ErrorState error={query.error} />
+          ) : query.error && !query.data ? (
+            <ResourceError
+              error={query.error}
+              retry={() => void query.refetch()}
+              subject="databases in this environment"
+            />
           ) : !query.data.items.length && external.isSuccess && !external.data.items.length ? (
-            <Empty
+            <ResourceEmpty
+              icon="database"
               title="No managed databases"
-              description="Create a managed database with its own resources."
+              description="Managed databases run with their own resources, credentials and backups."
+              action={
+                canManage && (
+                  <Button asChild>
+                    <Link to="/databases/new" search={scope}>
+                      New database
+                    </Link>
+                  </Button>
+                )
+              }
             />
           ) : !filtered.length && external.isSuccess && !externalFiltered.length ? (
-            <Empty title="No matching databases" description="Try a different database name." />
+            <ResourceEmpty
+              icon="search"
+              title="No matching databases"
+              description="Try a different database name or engine."
+            />
           ) : filtered.length > 0 ? (
             <>
+              {query.error && (
+                <StaleNotice updatedAt={query.dataUpdatedAt} retry={() => void query.refetch()} />
+              )}
               <div className="flex flex-wrap gap-x-5 gap-y-2 pb-4 text-xs text-muted-foreground">
                 <span>{filtered.length} managed databases</span>
                 <span>{filtered.filter((d) => databaseHealth(d) === 'ready').length} healthy</span>
@@ -136,107 +163,81 @@ function Databases() {
                   {filtered.reduce((n, d) => n + expectedMembers(d.spec), 0)} configured members
                 </span>
               </div>
-              <div className="db-catalog">
-                {filtered.map((d) => (
-                  <article key={d.id} className="db-catalog-card" data-engine={d.spec.engine}>
-                    <div className="db-catalog-card-heading">
-                      <ServiceIcon name={d.spec.engine} size={36} />
-                      <div>
-                        <h2>
-                          <Link
-                            to="/databases/$databaseId"
-                            params={{ databaseId: d.id }}
-                            search={{ project: d.project, environment: d.environment }}
-                          >
-                            {d.spec.name}
-                          </Link>
-                        </h2>
-                        <p>
-                          {engineName(d.spec.engine)} {d.spec.version} ·{' '}
-                          {d.spec.mode === 'standalone' ? 'Standalone' : 'Cluster'}
-                        </p>
-                      </div>
-                      <Status
-                        value={
-                          d.status === 'ready'
-                            ? databaseHealth(d) === 'Observation stale'
-                              ? 'stale'
-                              : databaseHealth(d)
-                            : d.status
-                        }
-                      />
-                    </div>
-                    <dl className="db-catalog-facts">
-                      <div>
-                        <dt>CPU / member</dt>
-                        <dd>{d.spec.cpu}</dd>
-                      </div>
-                      <div>
-                        <dt>Memory</dt>
-                        <dd>{d.spec.memory}</dd>
-                      </div>
-                      <div>
-                        <dt>Disk / member</dt>
-                        <dd>
-                          {d.spec.storage_gib} GiB
-                          {d.spec.engine === 'mongodb' ? ' data + 1 GiB logs' : ''}
-                        </dd>
-                      </div>
-                    </dl>
-                    <div className="db-catalog-member-strip">
-                      <Icon name="network" size={14} />
-                      <span>
-                        {databaseHealth(d) === 'Not observed'
-                          ? 'Readiness not observed'
-                          : `${d.observation.members?.filter((m) => m.ready).length || 0} / ${expectedMembers(d.spec)} ready${databaseHealth(d) === 'Observation stale' ? ' · last known' : ''}`}
-                      </span>
-                      <span className="ml-auto flex gap-1" aria-hidden="true">
-                        {(d.observation.members || []).slice(0, 12).map((m) => (
-                          <i key={m.uid} data-ready={m.ready && databaseHealth(d) === 'ready'} />
-                        ))}
-                      </span>
-                    </div>
-                    <div className="db-catalog-footer">
-                      <span>
-                        {shardedDatabase(d.spec.engine) && d.spec.mode === 'cluster'
-                          ? `${d.spec.shards} shards · `
-                          : ''}
-                        {d.spec.replicas} {d.spec.replicas === 1 ? 'replica' : 'replicas'}
-                        {shardedDatabase(d.spec.engine) && d.spec.mode === 'cluster'
-                          ? ' / shard'
-                          : ''}
-                      </span>
-                      <span className="ml-auto">r{d.revision}</span>
-                    </div>
-                    {d.observation.message && (
-                      <p className="text-xs text-muted-foreground" role="status">
-                        {d.observation.message}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                      <span className="text-xs text-muted-foreground">
-                        Observed{' '}
-                        {d.observation.observed_at?.startsWith('0001-')
-                          ? 'not yet'
-                          : timestamp(d.observation.observed_at)}
-                      </span>
-                      <Button asChild variant="ghost" size="sm">
+              <div className="resource-grid" aria-label="Managed databases">
+                {filtered.map((d) => {
+                  const health = databaseHealth(d)
+                  const sharded = shardedDatabase(d.spec.engine) && d.spec.mode === 'cluster'
+                  return (
+                    <ResourceCard
+                      key={d.id}
+                      cue={<ServiceIcon name={d.spec.engine} size={20} />}
+                      name={
                         <Link
+                          className="ops-card-link"
                           to="/databases/$databaseId"
                           params={{ databaseId: d.id }}
                           search={{ project: d.project, environment: d.environment }}
                         >
-                          Inspect
-                          <Icon name="arrow" size={14} />
+                          {d.spec.name}
                         </Link>
-                      </Button>
-                    </div>
-                  </article>
-                ))}
+                      }
+                      meta={
+                        <>
+                          {engineName(d.spec.engine)} {d.spec.version} ·{' '}
+                          {d.spec.mode === 'standalone' ? 'Standalone' : 'Cluster'} · {d.spec.cpu}{' '}
+                          CPU / {d.spec.memory} · {d.spec.storage_gib} GiB
+                          {d.spec.engine === 'mongodb' ? ' data + 1 GiB logs' : ''} per member · r
+                          {d.revision}
+                        </>
+                      }
+                      endpoint={
+                        <span>
+                          {sharded ? `${d.spec.shards} shards · ` : ''}
+                          {d.spec.replicas} {d.spec.replicas === 1 ? 'replica' : 'replicas'}
+                          {sharded ? ' per shard' : ''}
+                        </span>
+                      }
+                      state={
+                        <ObservedState
+                          status={
+                            d.status === 'ready'
+                              ? health === 'Observation stale'
+                                ? 'stale'
+                                : health
+                              : d.status
+                          }
+                          observedAt={
+                            d.observation.observed_at?.startsWith('0001-')
+                              ? undefined
+                              : d.observation.observed_at
+                          }
+                          note={d.observation.message}
+                        />
+                      }
+                      metric={
+                        <CardMetric
+                          label="Ready members"
+                          window="now"
+                          value={
+                            health === 'Not observed' || health === 'Observation stale'
+                              ? undefined
+                              : `${d.observation.members?.filter((m) => m.ready).length || 0} / ${expectedMembers(d.spec)}`
+                          }
+                        />
+                      }
+                    />
+                  )
+                })}
               </div>
             </>
           ) : null}
-          {external.error && <ErrorState error={external.error} />}
+          {external.error && !external.data && (
+            <ResourceError
+              error={external.error}
+              retry={() => void external.refetch()}
+              subject="legacy provider connections"
+            />
+          )}
           {external.isPending && <Loading />}
           {externalFiltered.length > 0 && (
             <section className="grid gap-3 pt-5" aria-labelledby="external-databases-heading">
@@ -246,67 +247,43 @@ function Databases() {
                   · {externalFiltered.length}
                 </span>
               </h2>
-              <div className="db-catalog">
+              <div className="resource-grid">
                 {externalFiltered.map((d) => (
-                  <article key={d.id} className="db-catalog-card">
-                    <div className="db-catalog-card-heading">
-                      <ServiceIcon name={d.spec.engine} size={36} />
-                      <div>
-                        <h2>
-                          <Link
-                            to="/databases/external/$externalDatabaseId"
-                            params={{ externalDatabaseId: d.id }}
-                            search={{ project: d.project, environment: d.environment }}
-                          >
-                            {d.spec.name}
-                          </Link>
-                        </h2>
-                        <p>Legacy external connection · {engineName(d.spec.engine)}</p>
-                      </div>
-                      <Status
-                        value={
+                  <ResourceCard
+                    key={d.id}
+                    cue={<ServiceIcon name={d.spec.engine} size={20} />}
+                    name={
+                      <Link
+                        className="ops-card-link"
+                        to="/databases/external/$externalDatabaseId"
+                        params={{ externalDatabaseId: d.id }}
+                        search={{ project: d.project, environment: d.environment }}
+                      >
+                        {d.spec.name}
+                      </Link>
+                    }
+                    meta={
+                      <>
+                        Legacy external connection · {engineName(d.spec.engine)} · credentials r
+                        {d.credential_revision} · inspection and removal only
+                      </>
+                    }
+                    endpoint={
+                      <code title={`${d.spec.host}:${d.spec.port}/${d.spec.database}`}>
+                        {d.spec.host}:{d.spec.port}/{d.spec.database}
+                      </code>
+                    }
+                    state={
+                      <ObservedState
+                        status={
                           externalDatabaseHealth(d) === 'Observation stale'
                             ? 'stale'
                             : externalDatabaseHealth(d)
                         }
+                        observedAt={d.observation.revision ? d.observation.observed_at : undefined}
                       />
-                    </div>
-                    <dl className="db-catalog-facts">
-                      <div>
-                        <dt>Database</dt>
-                        <dd>{d.spec.database}</dd>
-                      </div>
-                      <div>
-                        <dt>Port</dt>
-                        <dd>{d.spec.port}</dd>
-                      </div>
-                      <div>
-                        <dt>Credentials</dt>
-                        <dd>r{d.credential_revision}</dd>
-                      </div>
-                    </dl>
-                    <p className="db-catalog-host">{d.spec.host}</p>
-                    <div className="db-catalog-footer">
-                      <span>Inspection and removal only</span>
-                      <span className="ml-auto">r{d.revision}</span>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                      <span className="text-xs text-muted-foreground">
-                        Checked{' '}
-                        {d.observation.revision ? timestamp(d.observation.observed_at) : 'not yet'}
-                      </span>
-                      <Button asChild variant="ghost" size="sm">
-                        <Link
-                          to="/databases/external/$externalDatabaseId"
-                          params={{ externalDatabaseId: d.id }}
-                          search={{ project: d.project, environment: d.environment }}
-                        >
-                          Inspect
-                          <Icon name="arrow" size={14} />
-                        </Link>
-                      </Button>
-                    </div>
-                  </article>
+                    }
+                  />
                 ))}
               </div>
             </section>

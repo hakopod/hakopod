@@ -1,5 +1,13 @@
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
-import { Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Empty, Loading, PageHeader } from '../components/shared'
+import {
+  CardMetric,
+  ObservedState,
+  ResourceCard,
+  ResourceEmpty,
+  ResourceError,
+  StaleNotice,
+} from '../components/resource-card'
 import { Button } from '../components/ui/button'
 import { Icon } from '../components/icons'
 import { ServiceIcon } from '../components/service-icon'
@@ -64,58 +72,91 @@ function Platforms() {
         />
       ) : (
         <>
-          {query.error && query.data && (
-            <Note>Refresh failed. Showing the last received platform list.</Note>
-          )}
           {query.isPending ? (
             <Loading />
           ) : query.error && !query.data ? (
-            <ErrorState error={query.error} />
+            <ResourceError
+              error={query.error}
+              retry={() => void query.refetch()}
+              subject="managed platforms"
+            />
           ) : !query.data.items.length ? (
-            <Empty
+            <ResourceEmpty
+              icon="server"
               title="No managed platforms"
-              description={'No managed platforms are available in your accessible projects.'}
+              description="No managed platforms are available in your accessible projects."
+              action={
+                canCreate &&
+                scope.project &&
+                scope.environment && (
+                  <Button asChild>
+                    <Link to="/platforms/new" search={scope}>
+                      New platform
+                    </Link>
+                  </Button>
+                )
+              }
             />
           ) : (
-            <div className="db-catalog">
-              {query.data.items.map((item) => (
-                <article className="db-catalog-card" key={item.id}>
-                  <div className="db-catalog-card-heading">
-                    <ServiceIcon name={item.spec.kind} size={28} />
-                    <div className="min-w-0">
-                      <h2>
-                        <Link
-                          to="/platforms/$platformId"
-                          params={{ platformId: item.id }}
-                          search={{ project: item.project, environment: item.environment }}
-                        >
-                          {item.spec.name}
-                        </Link>
-                      </h2>
-                      <p className="[overflow-wrap:anywhere]" title={item.spec.version}>
+            <>
+              {query.error && (
+                <StaleNotice updatedAt={query.dataUpdatedAt} retry={() => void query.refetch()} />
+              )}
+              <div className="resource-grid" aria-label="Managed platforms">
+                {query.data.items.map((item) => (
+                  <ResourceCard
+                    key={item.id}
+                    cue={<ServiceIcon name={item.spec.kind} size={20} />}
+                    name={
+                      <Link
+                        className="ops-card-link"
+                        to="/platforms/$platformId"
+                        params={{ platformId: item.id }}
+                        search={{ project: item.project, environment: item.environment }}
+                      >
+                        {item.spec.name}
+                      </Link>
+                    }
+                    meta={
+                      <span title={item.spec.version}>
                         {managedPlatformName(item.spec.kind)}{' '}
                         {item.spec.kind === 'neon'
                           ? item.spec.version.slice(0, 12)
-                          : item.spec.version}
-                      </p>
-                    </div>
-                    <Status value={item.status} />
-                  </div>
-                  <div className="db-catalog-footer">
-                    <span>
-                      {typeof item.observation.ready_components === 'number' &&
-                      typeof item.observation.expected_components === 'number'
-                        ? `${item.observation.ready_components} / ${item.observation.expected_components} ready`
-                        : 'Not observed'}
-                    </span>
-                    <span>
-                      {item.project} / {item.environment}
-                    </span>
-                    <span className="ml-auto">r{item.revision}</span>
-                  </div>
-                </article>
-              ))}
-            </div>
+                          : item.spec.version}{' '}
+                        · r{item.revision}
+                      </span>
+                    }
+                    endpoint={
+                      <span>
+                        {item.project} / {item.environment}
+                      </span>
+                    }
+                    state={
+                      <ObservedState
+                        status={item.status}
+                        freshness={
+                          item.observation.revision
+                            ? `Observed for r${item.observation.revision}`
+                            : 'Not observed'
+                        }
+                      />
+                    }
+                    metric={
+                      <CardMetric
+                        label="Ready components"
+                        window="now"
+                        value={
+                          typeof item.observation.ready_components === 'number' &&
+                          typeof item.observation.expected_components === 'number'
+                            ? `${item.observation.ready_components} / ${item.observation.expected_components}`
+                            : undefined
+                        }
+                      />
+                    }
+                  />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}
