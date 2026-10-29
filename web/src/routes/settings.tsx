@@ -4,7 +4,7 @@ import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
 import { Fragment, lazy, Suspense, useState, type ReactNode } from 'react'
 import { FormPage, FormSection } from '../components/form-page'
-import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
+import { CatchBoundary, createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { message, relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
@@ -32,12 +32,7 @@ import {
   SettingsSection,
   SettingsState,
 } from '../components/settings-section'
-import {
-  PageHeader,
-  ErrorState,
-  Loading,
-  RequestError,
-} from '../components/shared'
+import { PageHeader, ErrorState, Loading, RequestError } from '../components/shared'
 const AppearanceSettings = lazy(() =>
   import('../components/appearance-settings').then((m) => ({
     default: m.AppearanceSettings,
@@ -215,30 +210,38 @@ function Administration() {
           ))}
         </nav>
         <div className="app-settings-panel settings-hub-panel">
-          <Suspense fallback={<Loading />}>
-            {tab === 'account' && <AccountSettings />}
-            {tab === 'appearance' && <AppearanceSettings />}
-            {tab === 'teams' && <TeamSettings />}
-            {tab === 'license' && <LicenseSettings />}
-            {tab === 'integrations' && <SlackSettingsPanel />}
-            {(scope.identity.admin || scope.identity.can_manage_keys) && tab === 'keys' && <Keys />}
-            {(scope.identity.admin || scope.identity.can_manage_git) && tab === 'github' && (
-              <GitConnectionsPanel />
-            )}
-            {scope.identity.admin && (
-              <>
-                {tab === 'users' && <InstallationUsers />}
-                {tab === 'secret-providers' && <SecretProviders saved={search.saved} />}
-                {tab === 'private-destinations' && <PrivateDestinations />}
-                {tab === 'dns-providers' && <DNSProviders saved={search.saved} />}
-                {tab === 'audit' && <AuditLog />}
-                {tab === 'logs' && <AppLogSettings />}
-                {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
-                {installation.allowed && tab === 'smtp' && <SMTPSettings />}
-                {installation.allowed && tab === 'edge' && <ProxySettings />}
-              </>
-            )}
-          </Suspense>
+          {/* One failing section keeps the page heading and section navigation usable. */}
+          <CatchBoundary
+            getResetKey={() => tab}
+            errorComponent={({ error, reset }) => <ErrorState error={error} retry={reset} />}
+          >
+            <Suspense fallback={<Loading />}>
+              {tab === 'account' && <AccountSettings />}
+              {tab === 'appearance' && <AppearanceSettings />}
+              {tab === 'teams' && <TeamSettings />}
+              {tab === 'license' && <LicenseSettings />}
+              {tab === 'integrations' && <SlackSettingsPanel />}
+              {(scope.identity.admin || scope.identity.can_manage_keys) && tab === 'keys' && (
+                <Keys />
+              )}
+              {(scope.identity.admin || scope.identity.can_manage_git) && tab === 'github' && (
+                <GitConnectionsPanel />
+              )}
+              {scope.identity.admin && (
+                <>
+                  {tab === 'users' && <InstallationUsers />}
+                  {tab === 'secret-providers' && <SecretProviders saved={search.saved} />}
+                  {tab === 'private-destinations' && <PrivateDestinations />}
+                  {tab === 'dns-providers' && <DNSProviders saved={search.saved} />}
+                  {tab === 'audit' && <AuditLog />}
+                  {tab === 'logs' && <AppLogSettings />}
+                  {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
+                  {installation.allowed && tab === 'smtp' && <SMTPSettings />}
+                  {installation.allowed && tab === 'edge' && <ProxySettings />}
+                </>
+              )}
+            </Suspense>
+          </CatchBoundary>
         </div>
       </div>
     </div>
@@ -262,7 +265,10 @@ function Keys() {
   const active = items.filter((key) => keyState(key).tone === 'ok').length
   const create = (
     <Button variant="primary" asChild>
-      <Link to="/settings/keys/new" search={{ project: scope.project, environment: scope.environment }}>
+      <Link
+        to="/settings/keys/new"
+        search={{ project: scope.project, environment: scope.environment }}
+      >
         <Icon name="plus" size={15} />
         Create API key
       </Link>
@@ -276,7 +282,7 @@ function Keys() {
         keys.data
           ? items.length
             ? `${plural(active, 'active key')}${items.length > active ? `, ${items.length - active} revoked or expired` : ''}`
-            : 'No keys yet'
+            : undefined
           : undefined
       }
       actions={items.length > 0 && create}
@@ -618,7 +624,10 @@ export function CreateKey({
             </KeyGroup>
           ) : rotation ? (
             <>
-              <ReviewNotice tone="warn" title="The current key stops working 15 minutes after rotation">
+              <ReviewNotice
+                tone="warn"
+                title="The current key stops working 15 minutes after rotation"
+              >
                 Update CI and CLI configurations with the replacement before then. Existing
                 workloads keep running.
               </ReviewNotice>
@@ -758,7 +767,7 @@ export function CreateKey({
                 <Button
                   type="button"
                   disabled={busy}
-                  onClick={() => (reviewing ? setReviewing(false) : close(false))}
+                  onClick={() => (reviewing ? setReviewing(false) : dismiss(false))}
                 >
                   {reviewing ? 'Back' : 'Cancel'}
                 </Button>
@@ -814,7 +823,7 @@ function AuditLog() {
             : undefined
         }
         actions={
-          <Button size="sm" onClick={() => void audit.refetch()} disabled={audit.isFetching}>
+          <Button onClick={() => void audit.refetch()} disabled={audit.isFetching}>
             <Icon name="refresh" size={14} />
             {audit.isFetching && !audit.isPending ? 'Refreshing…' : 'Refresh'}
           </Button>
@@ -880,6 +889,14 @@ function KeyContainer({
   )
 }
 
-function KeyGroup({ page, title, children }: { page: boolean; title: string; children: ReactNode }) {
+function KeyGroup({
+  page,
+  title,
+  children,
+}: {
+  page: boolean
+  title: string
+  children: ReactNode
+}) {
   return page ? <FormSection title={title}>{children}</FormSection> : <>{children}</>
 }

@@ -20,7 +20,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
 import { ErrorState, Loading, Note, RequestError } from './shared'
-import { SettingsSection } from './settings-section'
+import { SettingsEmpty, SettingsSection } from './settings-section'
 
 function useSMTP() {
   return useQuery({
@@ -43,21 +43,39 @@ function SMTPOverview() {
   const [busy, setBusy] = useState(false),
     [sent, setSent] = useState(''),
     [error, setError] = useState('')
-  if (query.isPending) return <Loading />
-  if (query.error || !query.data)
-    return <ErrorState error={query.error} retry={() => void query.refetch()} />
+  const help =
+    'Send invitations, password recovery messages and alarm notifications through your SMTP server. The test email uses saved settings and goes to your administrator email address.'
+  if (query.isPending || query.error || !query.data)
+    return (
+      <SettingsSection title="Email delivery" help={help}>
+        {query.isPending ? (
+          <Loading />
+        ) : (
+          <ErrorState error={query.error} retry={() => void query.refetch()} />
+        )}
+      </SettingsSection>
+    )
   const current = query.data
   const configured = Boolean(current.host && current.from_email)
+  // Without the encryption key nothing can be saved, so no edit action is offered.
+  const editable = current.encryption_ready
+  const configure = editable && (
+    <Button variant={configured ? 'outline' : 'primary'} asChild>
+      <Link to="/settings/smtp">{configured ? 'Edit SMTP' : 'Configure SMTP'}</Link>
+    </Button>
+  )
   return (
     <SettingsSection
       title="Email delivery"
-      help="Send invitations, password recovery messages and alarm notifications through your SMTP server. The test email uses saved settings and goes to your administrator email address."
+      help={help}
       state={
-        !configured
-          ? 'Not configured · Hakopod sends no email'
-          : current.enabled
-            ? `Enabled · sends from ${current.from_email} through ${current.host}:${current.port}`
-            : `Disabled · ${current.host}:${current.port} is saved but not used`
+        !editable
+          ? 'Locked · set the installation encryption key before configuring SMTP'
+          : !configured
+            ? 'Not configured · Hakopod sends no email'
+            : current.enabled
+              ? `Enabled · sends from ${current.from_email} through ${current.host}:${current.port}`
+              : `Disabled · ${current.host}:${current.port} is saved but not used`
       }
       actions={
         <>
@@ -88,40 +106,46 @@ function SMTPOverview() {
               {busy ? 'Sending…' : 'Send test email'}
             </Button>
           )}
-          <Button variant={configured ? 'outline' : 'primary'} asChild>
-            <Link to="/settings/smtp">{configured ? 'Edit SMTP' : 'Configure SMTP'}</Link>
-          </Button>
+          {configured && configure}
         </>
       }
     >
-      {!current.encryption_ready && (
-        <Note>Configure the installation encryption key before changing SMTP settings.</Note>
-      )}
       {sent && (
         <p role="status" className="m-0 text-sm">
           {sent}
         </p>
       )}
       {error && <RequestError error={error} />}
-      <InstallationReviewRows
-        rows={[
-          ['SMTP server', current.host ? `${current.host}:${current.port}` : 'Not configured'],
-          ...(current.host
-            ? [['Connection', current.security === 'tls' ? 'TLS' : 'STARTTLS'] as [string, string]]
-            : []),
-          ['Sender', current.from_email || 'Not configured'],
-          [
-            'Authentication',
-            current.username
-              ? `${current.username} · password ${current.password_set ? 'stored' : 'not set'}`
-              : 'None',
-          ],
-          [
-            'Configuration',
-            current.source === 'operator' ? 'Operator settings' : 'Dashboard settings',
-          ],
-        ]}
-      />
+      {!configured ? (
+        <SettingsEmpty title="No SMTP server" action={configure || undefined}>
+          Invitations, password recovery and alarm email need one.
+        </SettingsEmpty>
+      ) : (
+        <InstallationReviewRows
+          rows={[
+            ['SMTP server', current.host ? `${current.host}:${current.port}` : 'Not configured'],
+            ...(current.host
+              ? [
+                  ['Connection', current.security === 'tls' ? 'TLS' : 'STARTTLS'] as [
+                    string,
+                    string,
+                  ],
+                ]
+              : []),
+            ['Sender', current.from_email || 'Not configured'],
+            [
+              'Authentication',
+              current.username
+                ? `${current.username} · password ${current.password_set ? 'stored' : 'not set'}`
+                : 'None',
+            ],
+            [
+              'Configuration',
+              current.source === 'operator' ? 'Operator settings' : 'Dashboard settings',
+            ],
+          ]}
+        />
+      )}
     </SettingsSection>
   )
 }
@@ -184,7 +208,7 @@ function SMTPForm({ current }: { current: SMTPConfiguration }) {
         ref={formRef}
         tabIndex={-1}
         aria-label={review ? 'Email delivery review' : 'Email delivery configuration'}
-        className="grid gap-4"
+        className="settings-task-form"
         onSubmit={(event) => {
           event.preventDefault()
           if (busy) return
@@ -201,13 +225,12 @@ function SMTPForm({ current }: { current: SMTPConfiguration }) {
           }
         }}
       >
-        {!current.encryption_ready && (
-          <Note>Configure the installation encryption key before saving SMTP settings.</Note>
-        )}
-        {current.source === 'operator' && (
+        {(!current.encryption_ready || current.source === 'operator') && (
           <Note>
-            These values come from operator configuration. Saving creates a dashboard override.
-            Disabling delivery here also disables delivery from operator settings.
+            {!current.encryption_ready &&
+              'Configure the installation encryption key before saving SMTP settings. '}
+            {current.source === 'operator' &&
+              'These values come from operator configuration. Saving creates a dashboard override, and disabling delivery here also disables delivery from operator settings.'}
           </Note>
         )}
         {review ? (

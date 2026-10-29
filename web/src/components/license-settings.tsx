@@ -48,9 +48,16 @@ export default function LicenseSettings() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [remove, setRemove] = useState(false)
-  if (license.isPending) return <Loading rows={3} />
-  if (license.error || !license.data)
-    return <ErrorState error={license.error} retry={() => void license.refetch()} />
+  if (license.isPending || license.error || !license.data)
+    return (
+      <SettingsSection title="License">
+        {license.isPending ? (
+          <Loading rows={3} />
+        ) : (
+          <ErrorState error={license.error} retry={() => void license.refetch()} />
+        )}
+      </SettingsSection>
+    )
   const current = license.data
   const refresh = async () => {
     await cache.invalidateQueries({ queryKey: ['license'] })

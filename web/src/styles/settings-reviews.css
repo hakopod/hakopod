@@ -261,14 +261,7 @@ html[data-edition='cloud'] .dialog-content:is(.focused-dialog, .review-dialog) .
 /* Provider marks sit only beside the provider's name. */
 .secret-provider-kind {
   @apply inline-flex items-center gap-2 whitespace-nowrap;
-}
-/* Settings section titles follow the edition type roles. */
-.settings-page .settings-content :is(.section-toolbar h2, .hako-section-heading-title h2) {
-  font-size: var(--type-section-size);
-  line-height: var(--type-section-line);
-  font-weight: var(--type-section-weight);
-}
-/* Domain setup rows: the value wraps and its copy control stays beside it. */
+} /* Domain setup rows: the value wraps and its copy control stays beside it. */
 .domain-copy-row {
   @apply flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1;
 }
@@ -278,4 +271,25 @@ html[data-edition='cloud'] .dialog-content:is(.focused-dialog, .review-dialog) .
 }
 .domain-record .review-facts {
   @apply my-3;
+}
+/* On wide screens the list owns the columns and every row is a subgrid, so names,
+   states, metadata and actions line up down the whole list, not just within a row. */
+@media (min-width: 768px) {
+  .settings-rows {
+    @apply gap-x-4;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 16rem) auto;
+  }
+  .settings-rows:has(> .settings-row-member) {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .settings-rows:has(> .settings-row-audit) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 12rem) auto;
+  }
+  .settings-rows:has(> .settings-row-feature) {
+    grid-template-columns: minmax(0, 1fr) 6rem 3rem;
+  }
+  .settings-rows > .settings-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
 }

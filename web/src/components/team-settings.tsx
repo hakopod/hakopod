@@ -129,7 +129,11 @@ export default function TeamSettings() {
     </Button>
   )
   const inviteMember = current && canTeam && (
-    <Button variant="primary" disabled={!hasFeature('invitations')} onClick={() => setInvite('team')}>
+    <Button
+      variant="primary"
+      disabled={!hasFeature('invitations')}
+      onClick={() => setInvite('team')}
+    >
       Invite member
     </Button>
   )
@@ -214,7 +218,10 @@ export default function TeamSettings() {
         ) : members.error ? (
           <ErrorState error={members.error} />
         ) : !members.data?.items.length ? (
-          <SettingsEmpty title={`No members in ${current?.name || 'this team'}`} action={inviteMember}>
+          <SettingsEmpty
+            title={`No members in ${current?.name || 'this team'}`}
+            action={inviteMember}
+          >
             Invite people to work in this team’s projects.
           </SettingsEmpty>
         ) : (
@@ -339,75 +346,80 @@ export default function TeamSettings() {
                 Installation administrators keep access.
               </SettingsEmpty>
             )}
-            {hasFeature('project_rbac') && hasFeature('teams') && Boolean(teams.data?.items.length) && (
-              <form
-                className="settings-inline-controls"
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  if (grantRole.startsWith('custom:') && !grantReview) {
-                    setGrantReview(true)
-                    return
-                  }
-                  setBusy(true)
-                  setError('')
-                  try {
-                    await unwrap(
-                      client.PUT('/projects/{project}/members', {
-                        params: { path: { project: scope.project } },
-                        body: { team_id: grant, role: grantRole },
-                      }),
-                    )
-                    setGrant('')
-                    setGrantReview(false)
-                    refresh()
-                  } catch (err) {
-                    setError(message(err))
-                  } finally {
-                    setBusy(false)
-                  }
-                }}
-              >
-                <SelectField
-                  label="Grant a team access"
-                  value={grant}
-                  onValueChange={(value) => {
-                    setGrant(value)
-                    setGrantReview(false)
+            {hasFeature('project_rbac') &&
+              hasFeature('teams') &&
+              Boolean(teams.data?.items.length) && (
+                <form
+                  className="settings-inline-controls"
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (grantRole.startsWith('custom:') && !grantReview) {
+                      setGrantReview(true)
+                      return
+                    }
+                    setBusy(true)
+                    setError('')
+                    try {
+                      await unwrap(
+                        client.PUT('/projects/{project}/members', {
+                          params: { path: { project: scope.project } },
+                          body: { team_id: grant, role: grantRole },
+                        }),
+                      )
+                      setGrant('')
+                      setGrantReview(false)
+                      refresh()
+                    } catch (err) {
+                      setError(message(err))
+                    } finally {
+                      setBusy(false)
+                    }
                   }}
-                  required
-                  options={[
-                    { value: '', label: 'Choose a team' },
-                    ...(teams.data?.items.map((item) => ({ value: item.id, label: item.name })) ?? []),
-                  ]}
-                />
-                <SelectField
-                  label="Role"
-                  value={grantRole}
-                  onValueChange={(value) => {
-                    setGrantRole(value)
-                    setGrantReview(false)
-                  }}
-                  options={projectRoles.map((role) => ({
-                    value: role,
-                    label: customRoles.data?.items.find((r) => r.id === role)?.name || role,
-                  }))}
-                />
-                <Button type="submit" disabled={busy || !grant}>
-                  {grantRole.startsWith('custom:') && !grantReview ? 'Review access' : 'Grant access'}
-                </Button>
-                {grantReview && (
-                  <Note>
-                    Grant {customRoles.data?.items.find((r) => r.id === grantRole)?.name} to every
-                    member of this team in {scope.project}:{' '}
-                    {customRoles.data?.items
-                      .find((r) => r.id === grantRole)
-                      ?.permissions.map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
-                      .join(' · ')}
-                    . Other memberships can grant additional access.
-                  </Note>
-                )}
-              </form>
-            )}
+                >
+                  <SelectField
+                    label="Grant a team access"
+                    value={grant}
+                    onValueChange={(value) => {
+                      setGrant(value)
+                      setGrantReview(false)
+                    }}
+                    required
+                    options={[
+                      { value: '', label: 'Choose a team' },
+                      ...(teams.data?.items.map((item) => ({ value: item.id, label: item.name })) ??
+                        []),
+                    ]}
+                  />
+                  <SelectField
+                    label="Role"
+                    value={grantRole}
+                    onValueChange={(value) => {
+                      setGrantRole(value)
+                      setGrantReview(false)
+                    }}
+                    options={projectRoles.map((role) => ({
+                      value: role,
+                      label: customRoles.data?.items.find((r) => r.id === role)?.name || role,
+                    }))}
+                  />
+                  <Button type="submit" disabled={busy || !grant}>
+                    {grantRole.startsWith('custom:') && !grantReview
+                      ? 'Review access'
+                      : 'Grant access'}
+                  </Button>
+                  {grantReview && (
+                    <Note>
+                      Grant {customRoles.data?.items.find((r) => r.id === grantRole)?.name} to every
+                      member of this team in {scope.project}:{' '}
+                      {customRoles.data?.items
+                        .find((r) => r.id === grantRole)
+                        ?.permissions.map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
+                        .join(' · ')}
+                      . Other memberships can grant additional access.
+                    </Note>
+                  )}
+                </form>
+              )}
           </>
         )}
       </SettingsSection>

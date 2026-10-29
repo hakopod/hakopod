@@ -91,9 +91,7 @@ export function LoginProviderSettingsPanel() {
           )
         }
       >
-        {license.error && (
-          <ErrorState error={license.error} retry={() => void license.refetch()} />
-        )}
+        {license.error && <ErrorState error={license.error} retry={() => void license.refetch()} />}
         <SettingsRows label="Sign-in providers">
           {loginProviders.map((provider, index) => {
             const query = queries[index]
@@ -243,7 +241,7 @@ function ProviderForm({
         ref={formRef}
         tabIndex={-1}
         aria-label={review ? 'Sign-in provider review' : 'Sign-in provider configuration'}
-        className="grid gap-4"
+        className="settings-task-form"
         onSubmit={(event) => {
           event.preventDefault()
           if (busy) return
@@ -260,14 +258,13 @@ function ProviderForm({
           }
         }}
       >
-        {!entitled && (
+        {(!entitled || !current.encryption_ready) && (
           <Note>
-            {provider === 'oidc' ? 'Enterprise SSO' : 'OAuth login'} requires an active entitlement.
-            You can inspect saved settings and turn off an enabled provider.
+            {!entitled &&
+              `${provider === 'oidc' ? 'Enterprise SSO' : 'OAuth login'} requires an active entitlement. You can inspect saved settings and turn off an enabled provider. `}
+            {!current.encryption_ready &&
+              'Configure the installation encryption key before saving provider credentials.'}
           </Note>
-        )}
-        {!current.encryption_ready && (
-          <Note>Configure the installation encryption key before saving provider credentials.</Note>
         )}
         {review ? (
           <FormSection title="Review sign-in settings">

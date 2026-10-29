@@ -42,8 +42,8 @@ export function AppearanceSettings() {
       state={
         <span role="status">
           {theme === 'dark' ? 'Dark' : 'Light'} theme ·{' '}
-          {accentPresets.find((preset) => preset.color === accent)?.name || accent} accent · saved in
-          this browser
+          {accentPresets.find((preset) => preset.color === accent)?.name || accent} accent · saved
+          in this browser
         </span>
       }
     >
@@ -129,7 +129,11 @@ export function AppearanceSettings() {
                 }
               }}
             />
-            <Button size="sm" variant="ghost" onClick={() => chooseAccent(dashboardEdition.cloud ? '#AC99FF' : DEFAULT_ACCENT)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => chooseAccent(dashboardEdition.cloud ? '#AC99FF' : DEFAULT_ACCENT)}
+            >
               Reset
             </Button>
           </div>

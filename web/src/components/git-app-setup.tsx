@@ -119,6 +119,28 @@ export function GitHubAppSetup({ id, footerActions }: { id?: string; footerActio
       }}
     >
       <FormSection title={id ? 'Finish GitHub setup' : 'GitHub App'}>
+        {/* A blocked setup says so before any field is filled in. */}
+        {providerSetup.isPending && <Loading />}
+        {providerSetup.error && <ErrorState error={providerSetup.error} />}
+        {providerSetup.data && !providerSetup.data.github_available && (
+          <Note>
+            {dashboardEdition.cloud ? (
+              'GitHub App setup is currently unavailable. Contact Hakopod support.'
+            ) : (
+              <>
+                {providerSetup.data.github_notice}{' '}
+                <Link
+                  className="underline! underline-offset-2"
+                  to="/infrastructure"
+                  search={{ tab: 'setup' }}
+                >
+                  Check installation setup
+                </Link>
+                .
+              </>
+            )}
+          </Note>
+        )}
         {!id && (
           <>
             <label>
@@ -164,32 +186,6 @@ export function GitHubAppSetup({ id, footerActions }: { id?: string; footerActio
             {builds
               ? 'Builds request write access to repository contents, workflows and Actions. Hakopod only installs a build workflow after you review it.'
               : 'Source-only access reads repository contents and receives push events.'}
-          </Note>
-        )}
-        <p className="field-help">
-          {dashboardEdition.cloud ? (
-            'If GitHub setup is unavailable, contact Hakopod support.'
-          ) : (
-            <>
-              Requires a publicly reachable HTTPS dashboard.{' '}
-              <Link
-                className="underline! underline-offset-2"
-                to="/infrastructure"
-                search={{ tab: 'setup' }}
-              >
-                Check installation setup
-              </Link>
-              .
-            </>
-          )}
-        </p>
-        {providerSetup.isPending && <Loading />}
-        {providerSetup.error && <ErrorState error={providerSetup.error} />}
-        {providerSetup.data && !providerSetup.data.github_available && (
-          <Note>
-            {dashboardEdition.cloud
-              ? 'GitHub App setup is currently unavailable. Contact Hakopod support.'
-              : providerSetup.data.github_notice}
           </Note>
         )}
         {error && <ErrorState error={error} />}

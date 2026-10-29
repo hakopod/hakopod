@@ -23,7 +23,10 @@ export function SettingsSection({
   const id = useId()
   const Heading = level === 2 ? 'h2' : 'h3'
   return (
-    <section className={`settings-section settings-section-${level} ${className}`} aria-labelledby={id}>
+    <section
+      className={`hako-settings-section settings-section-${level} ${className}`}
+      aria-labelledby={id}
+    >
       <header className="section-toolbar settings-section-head">
         <div className="settings-section-title">
           <div className="hako-section-heading-title">
