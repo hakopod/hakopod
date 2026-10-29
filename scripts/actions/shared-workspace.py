@@ -136,11 +136,11 @@ def pod_identity(pod, driver='vfs', profile='runtime'):
         require(driver == 'overlay2' and metadata.get('labels', {}).get('hakopod.io/development-fixture') == 'actions-representative-build' and
                 spec.get('nodeSelector') == {'kubernetes.io/arch': 'arm64', 'hakopod.io/actions-runtime': 'ready'},
                 'Representative shared workspace requires its exact development label, ARM64 node, and overlay2')
-        # These are the product's original 2 CPU / 6 GiB slot splits; the
-        # RuntimeClass reserves the remaining 100m CPU and 512 MiB memory.
+        # These are the product's 2 CPU / 6 GiB slot splits, half each for
+        # Docker and the runner; the RuntimeClass reserves 100m CPU and 512 MiB.
         expected = {'prepare': ('1900m', '5632Mi', '16Gi', '17Gi'),
-                    'docker': ('1425m', '4224Mi', '256Mi', '2Gi'),
-                    'runner': ('475m', '1408Mi', '16Gi', '17Gi')}
+                    'docker': ('950m', '2816Mi', '256Mi', '2Gi'),
+                    'runner': ('950m', '2816Mi', '16Gi', '17Gi')}
         observed = [*spec.get('initContainers', []), *containers]
         require(len(observed) == 3 and [item.get('name') for item in observed] == list(expected) and len(spec.get('volumes', [])) == 1,
                 'Representative shared workspace changed its product container or volume inventory')

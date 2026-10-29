@@ -243,7 +243,7 @@ type gitlabNativeConfig struct {
 }
 
 func gitlabActionsConfig(t Target, service string, s spec.Service, registration actions.GitLabManagerConfig, runtime GitLabActionsRuntime) ([]byte, error) {
-	daemon := actionsResources(s, 3)
+	daemon := actionsDaemonResources(s, 3)
 	memory, cpu := daemon.Limits[corev1.ResourceMemory], daemon.Limits[corev1.ResourceCPU]
 	jobMemory, serviceMemory := memory.Value()/2, memory.Value()/8
 	jobCPU, serviceCPU := max(int64(1), cpu.MilliValue()/2), max(int64(1), cpu.MilliValue()/8)

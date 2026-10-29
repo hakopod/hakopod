@@ -78,7 +78,7 @@ def representative_pod():
     value['spec']['initContainers'].insert(0, {'name': 'prepare'})
     for item, cpu, memory, request, limit in zip(
             [*value['spec']['initContainers'], *value['spec']['containers']],
-            ('1900m', '1425m', '475m'), ('5632Mi', '4224Mi', '1408Mi'),
+            ('1900m', '950m', '950m'), ('5632Mi', '2816Mi', '2816Mi'),
             ('16Gi', '256Mi', '16Gi'), ('17Gi', '2Gi', '17Gi')):
         item['resources'] = {'requests': {'cpu': cpu, 'memory': memory, 'ephemeral-storage': request},
                              'limits': {'cpu': cpu, 'memory': memory, 'ephemeral-storage': limit}}

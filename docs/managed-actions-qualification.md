@@ -141,10 +141,11 @@ throughput. A warm repeat within one builder is not a cache hit in a fresh
 ephemeral runner. Startup timings must distinguish image/sandbox preparation,
 workspace copying, Docker readiness and job assignment.
 
-The existing per-slot resource split matters when comparing compilers: after
-the 100m CPU and 512 MiB sandbox allowance, the runner receives one quarter and
-Docker receives three quarters. A two-core slot therefore limits shell steps
-to 475m and nested Docker work to 1425m. The total slot limit is not the CPU
+The per-slot resource split matters when comparing compilers: after the 100m
+CPU and 512 MiB sandbox allowance, the GitHub runner and Docker each receive
+half. A two-core slot therefore limits shell steps to 950m and nested Docker
+work to 950m. Earlier releases gave the runner one quarter and Docker three
+quarters. The total slot limit is not the CPU
 available to either process on its own. Native and emulated compiler results
 must state where the compiler runs.
 
