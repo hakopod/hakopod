@@ -33,6 +33,7 @@ import {
   Status,
 } from '../components/shared'
 import {
+  GuidedEmpty,
   ResourceEmpty,
   ResourceError,
   ResourceRow,
@@ -216,15 +217,35 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
         />
       ) : !active.data?.items.length ? (
         noStorage ? (
-          <ResourceEmpty
+          <GuidedEmpty
             icon="archive"
-            title="No backups yet"
-            description="Backups are written to object storage, and none is set up. Add a bucket first."
-            action={
-              <Button asChild>
-                <Link to="/backups/destinations/new">Add object storage</Link>
+            satellites={[
+              { icon: 'database', label: 'Database' },
+              { icon: 'server', label: 'Bucket' },
+              { icon: 'clock', label: 'Schedule' },
+              { icon: 'refresh', label: 'Restore' },
+            ]}
+            title="Set up backups"
+            description="Backups are encrypted and written to an S3-compatible bucket you own. Add one bucket, then back up any database on a schedule."
+            primary={
+              <Button asChild variant="primary">
+                <Link to="/backups/destinations/new">
+                  <Icon name="plus" size={14} />
+                  Add object storage
+                </Link>
               </Button>
             }
+            steps={[
+              {
+                title: 'Add a bucket',
+                detail: 'The endpoint and credentials are checked when you save.',
+              },
+              {
+                title: 'Schedule a database',
+                detail: 'Pick how often to back up and how long to keep copies.',
+              },
+              { title: 'Restore when needed', detail: 'Restore any stored copy into a database.' },
+            ]}
           />
         ) : (
           <ResourceEmpty
@@ -723,7 +744,9 @@ function Schedules() {
                         Last run {last.status} {relative(last.created_at).toLowerCase()}
                       </Link>
                     ) : (
-                      <span>{jobs.error ? 'Last run unavailable' : 'No run in recent history'}</span>
+                      <span>
+                        {jobs.error ? 'Last run unavailable' : 'No run in recent history'}
+                      </span>
                     )}
                   </>
                 }
@@ -844,7 +867,9 @@ function RemoveBackupConfig({
             }
           }}
         >
-          {busy ? 'Removing…' : `Remove ${kind === 'destination' ? 'object storage' : 'schedule'} ${name}`}
+          {busy
+            ? 'Removing…'
+            : `Remove ${kind === 'destination' ? 'object storage' : 'schedule'} ${name}`}
         </Button>
       </div>
     </Dialog>

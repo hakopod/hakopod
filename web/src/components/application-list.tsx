@@ -22,6 +22,7 @@ import {
   ExternalEndpoint,
   ObservedState,
   ResourceCard,
+  GuidedEmpty,
   ResourceEmpty,
   ResourceError,
   StaleNotice,
@@ -228,21 +229,51 @@ export function ApplicationList({
               retry={() => void applications.refetch()}
               subject="applications in this environment"
             />
+          ) : !items.length && !currentPage.cursor && scope.can('deployments:write') ? (
+            <GuidedEmpty
+              icon="box"
+              satellites={[
+                { icon: 'branch', label: 'Repository' },
+                { icon: 'globe', label: 'Address' },
+                { icon: 'code', label: 'Compose' },
+                { icon: 'database', label: 'Data' },
+              ]}
+              title={`Deploy your first application to ${scope.environment}`}
+              description="Start from a repository, a container image or a Compose file. Hakopod builds it, rolls it out and gives each public service an address."
+              primary={
+                <Button
+                  variant="primary"
+                  onClick={() => void navigate({ to: '/applications/new' })}
+                >
+                  <Icon name="plus" size={14} />
+                  New application
+                </Button>
+              }
+              secondary={
+                <Button asChild>
+                  <Link to="/templates">Browse the catalog</Link>
+                </Button>
+              }
+              tip="Every change is planned and shown to you before anything goes live."
+              steps={[
+                {
+                  title: 'Choose a source',
+                  detail: 'A Git repository, an image or a Compose file.',
+                },
+                {
+                  title: 'Review the plan',
+                  detail: 'See each service, its size and the exact configuration changes.',
+                },
+                {
+                  title: 'Watch it roll out',
+                  detail: 'Follow each service until it is ready, with logs one click away.',
+                },
+              ]}
+            />
           ) : !items.length && !currentPage.cursor ? (
             <ResourceEmpty
               title="No applications in this environment"
-              description={
-                scope.can('deployments:write')
-                  ? 'Deploy from a repository, an image or a template.'
-                  : 'Applications appear here once someone with deploy access creates one.'
-              }
-              action={
-                scope.can('deployments:write') && (
-                  <Button onClick={() => void navigate({ to: '/applications/new' })}>
-                    New application
-                  </Button>
-                )
-              }
+              description="Applications appear here once someone with deploy access creates one."
             />
           ) : !filtered.length ? (
             <ResourceEmpty

@@ -12,6 +12,7 @@ import { Copy, Loading, PageHeader } from '../components/shared'
 import { relative } from '../lib/api'
 import type { components } from '../lib/api.generated'
 import {
+  GuidedEmpty,
   ResourceCard,
   ResourceEmpty,
   ResourceError,
@@ -79,31 +80,33 @@ function Projects() {
         </div>
       </dl>
       <section className="projects-catalog" aria-label="Projects">
-        <div className="resource-toolbar">
-          <div className="ops-search-input">
-            <Icon name="search" size={15} />
-            <Input
-              aria-label="Filter projects"
-              placeholder="Find project…"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
-            />
+        {(items.length > 0 || !projects.data) && (
+          <div className="resource-toolbar">
+            <div className="ops-search-input">
+              <Icon name="search" size={15} />
+              <Input
+                aria-label="Filter projects"
+                placeholder="Find project…"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setPage(1)
+                }}
+              />
+            </div>
+            <span className="form-spacer" />
+            <Tooltip content="Refresh projects" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Refresh projects"
+                onClick={() => void projects.refetch()}
+              >
+                <Icon name="refresh" size={15} className={projects.isFetching ? 'spin' : ''} />
+              </Button>
+            </Tooltip>
           </div>
-          <span className="form-spacer" />
-          <Tooltip content="Refresh projects" side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Refresh projects"
-              onClick={() => void projects.refetch()}
-            >
-              <Icon name="refresh" size={15} className={projects.isFetching ? 'spin' : ''} />
-            </Button>
-          </Tooltip>
-        </div>
+        )}
         {projects.isPending ? (
           <Loading />
         ) : projects.error && !projects.data ? (
@@ -112,20 +115,40 @@ function Projects() {
             retry={() => void projects.refetch()}
             subject="projects"
           />
+        ) : !items.length && scope.identity.admin ? (
+          <GuidedEmpty
+            icon="grid"
+            satellites={[
+              { icon: 'box', label: 'Apps' },
+              { icon: 'database', label: 'Data' },
+              { icon: 'branch', label: 'Stages' },
+              { icon: 'network', label: 'Networks' },
+            ]}
+            title="Create your first project"
+            description="A project holds your applications, databases and networks, with an environment for each stage such as development and production."
+            primary={
+              <Button variant="primary" onClick={() => setProjectOpen(true)}>
+                <Icon name="plus" size={14} />
+                Create project
+              </Button>
+            }
+            steps={[
+              { title: 'Create a project', detail: 'Name it and choose its first environment.' },
+              {
+                title: 'Deploy an application',
+                detail: 'From a repository, a container image or a Compose file.',
+              },
+              {
+                title: 'Bring in your team',
+                detail: 'Share the project and give each person the role they need.',
+              },
+            ]}
+          />
         ) : !items.length ? (
           <ResourceEmpty
             icon="grid"
             title="No projects yet"
-            description={
-              scope.identity.admin
-                ? 'Projects group applications and environments.'
-                : 'Projects appear here when an administrator gives you access.'
-            }
-            action={
-              scope.identity.admin && (
-                <Button onClick={() => setProjectOpen(true)}>Create project</Button>
-              )
-            }
+            description="Projects appear here when an administrator gives you access."
           />
         ) : !filtered.length ? (
           <ResourceEmpty

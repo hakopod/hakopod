@@ -192,6 +192,72 @@ export function ResourceEmpty({
   )
 }
 
+// First-run state: what this place is for, the first step, and what follows it.
+export function GuidedEmpty({
+  icon,
+  satellites,
+  title,
+  description,
+  primary,
+  secondary,
+  steps,
+  tip,
+}: {
+  icon: string
+  satellites: { icon: string; label: string }[]
+  title: string
+  description: string
+  primary?: ReactNode
+  secondary?: ReactNode
+  steps?: { title: string; detail: string }[]
+  tip?: ReactNode
+}) {
+  return (
+    <section className="guided-empty" aria-label={title}>
+      <div className="guided-empty-body">
+        <div className="guided-empty-art" aria-hidden="true">
+          <svg viewBox="0 0 240 112" className="guided-empty-links">
+            {satellites.slice(0, 4).map((_, i) => (
+              <path key={i} d={`M120 56 L${i % 2 ? 196 : 44} ${i < 2 ? 26 : 86}`} />
+            ))}
+          </svg>
+          <span className="guided-empty-hub">
+            <Icon name={icon} size={20} />
+          </span>
+          {satellites.slice(0, 4).map((satellite, i) => (
+            <span key={i} className="guided-empty-satellite" data-slot={i}>
+              <span className="guided-empty-tile">
+                <Icon name={satellite.icon} size={14} />
+              </span>
+              <span className="guided-empty-label">{satellite.label}</span>
+            </span>
+          ))}
+        </div>
+        <h2>{title}</h2>
+        <p>{description}</p>
+        {(primary || secondary) && (
+          <div className="guided-empty-actions">
+            {primary}
+            {secondary}
+          </div>
+        )}
+        {tip && <p className="guided-empty-tip">{tip}</p>}
+      </div>
+      {steps && steps.length > 0 && (
+        <ol className="guided-empty-steps">
+          {steps.map((step, i) => (
+            <li key={step.title}>
+              <span>{String(i + 1).padStart(2, '0')}</span>
+              <strong>{step.title}</strong>
+              <p>{step.detail}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  )
+}
+
 // Permission failures are their own state; other errors keep the shared retry path.
 export function ResourceError({
   error,
