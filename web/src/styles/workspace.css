@@ -333,6 +333,10 @@
   font-size: var(--type-meta-size);
   line-height: var(--type-meta-line);
 }
+.resource-row-link > .current-label {
+  margin-left: var(--space-2);
+  vertical-align: 1px;
+}
 .app-activity-error {
   color: var(--destructive);
   overflow-wrap: anywhere;

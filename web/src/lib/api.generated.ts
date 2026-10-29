@@ -5731,6 +5731,14 @@ export interface components {
             name: string;
             environments: {
                 name: string;
+                summary?: {
+                    applications: number;
+                    services: number;
+                    failed: number;
+                    deploying: number;
+                    /** Format: date-time */
+                    last_deployed_at?: string;
+                };
             }[];
             display_name?: string;
             description?: string;

@@ -304,18 +304,109 @@
 .project-card-environments {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1);
   list-style: none;
   padding: 0;
-  margin: 12px 0;
+  margin: 0;
   font: 11px/1.5 var(--font-mono);
   color: var(--muted);
 }
 .project-card-environments li {
   max-width: 100%;
   overflow-wrap: anywhere;
+}
+.project-card-environments li > :is(a, span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 2px 6px;
   background: var(--surface-2);
+  color: inherit;
+  text-decoration: none;
+}
+.project-card-environments a:hover {
+  color: var(--foreground);
+}
+.project-env-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--hairline);
+}
+.project-env-dot[data-tone='healthy'] {
+  background: var(--success);
+}
+.project-env-dot[data-tone='deploying'] {
+  background: var(--warn);
+}
+.project-env-dot[data-tone='failed'] {
+  background: var(--destructive);
+}
+
+/* Monogram: a hue from the project name, held to the theme's contrast. */
+.project-monogram {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid hsl(var(--hue) 45% 50% / 0.45);
+  border-radius: var(--radius-control);
+  background: hsl(var(--hue) 45% 50% / 0.14);
+  color: hsl(var(--hue) 60% 72%);
+  font: 500 12px/1 var(--font-mono);
+  letter-spacing: 0.04em;
+}
+html.light .project-monogram {
+  color: hsl(var(--hue) 55% 30%);
+}
+.resource-card-cue:has(.project-monogram) {
+  color: inherit;
+}
+
+.project-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--hairline);
+}
+.project-card-stats > div {
+  padding: var(--space-2) 0;
+}
+.project-card-stats > div + div {
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--hairline);
+}
+.project-card-stats dt {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.project-card-stats dd {
+  margin: 2px 0 0;
+  font: 400 18px/24px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.project-card-stats [data-tone='failed'] dd,
+.project-summary-failing {
+  color: var(--destructive);
+}
+.project-card-stats [data-tone='deploying'] dd {
+  color: var(--warn);
+}
+.project-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+.project-card-footer > span {
+  white-space: nowrap;
+}
+.project-card-footer .copy-id {
+  min-width: 0;
 }
 .application-list-page .ops-search-input,
 .application-list-page .ops-search-input input,
