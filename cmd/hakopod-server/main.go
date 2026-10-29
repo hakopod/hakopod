@@ -46,6 +46,9 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "access-vpn-report" {
 		return runAccessVPNReport()
 	}
+	if len(os.Args) > 1 && os.Args[1] == "access-vpn-server-report" {
+		return runAccessVPNServerReport()
+	}
 	if err := loadOperatorConfig(); err != nil {
 		return err
 	}

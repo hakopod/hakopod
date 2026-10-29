@@ -38,7 +38,7 @@ class AccessFirewallTest(unittest.TestCase):
     def test_tunnel_only_closes_kubernetes_api_to_everything_but_the_tunnel(self):
         self.apply({'enabled': True, 'allow_cidrs': ['10.99.0.0/24'], 'tunnel_only': True})
         text = self.calls[0][1]
-        self.assertIn('tcp dport { 6443 } iifname "hakopod-wg" accept', text)
+        self.assertIn('tcp dport { 6443 } iifname { "hakopod-wg", "hakopod-wgs" } accept', text)
         self.assertIn('tcp dport { 6443 } counter drop', text)
         self.assertNotIn('8443', text)
         self.assertNotIn('10.99.0.0/24', text)
@@ -72,7 +72,7 @@ class AccessFirewallTest(unittest.TestCase):
         # GitHub-hosted runners have nftables and passwordless sudo; -c only checks.
         if not shutil.which('nft') or subprocess.run(['sudo', '-n', 'true'], capture_output=True).returncode:
             self.skipTest('nft with sudo is not available')
-        text = access_firewall.ruleset([ipaddress.ip_network('203.0.113.0/24'), ipaddress.ip_network('2001:db8::/32')], [6443, 8443], tunnel='hakopod-wg')
+        text = access_firewall.ruleset([ipaddress.ip_network('203.0.113.0/24'), ipaddress.ip_network('2001:db8::/32')], [6443, 8443], tunnel=('hakopod-wg', 'hakopod-wgs'))
         result = subprocess.run(['sudo', '-n', 'nft', '-c', '-f', '-'], input=text, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

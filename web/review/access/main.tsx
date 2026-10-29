@@ -22,10 +22,14 @@ const policy = (enabled: boolean, firewall = false) => ({
   allow_cidrs: enabled ? ['10.8.0.0/24', '203.0.113.0/24'] : [],
   firewall,
   ...(scenario === 'vpn' ? { vpn } : {}),
+  ...(scenario === 'server' ? { vpn_server: { network: '10.100.0.0/24', listen_port: 51820, endpoint: 'vpn.example.com:51820' } } : {}),
 })
 const access = {
   revision: scenario === 'off' || scenario === 'unlicensed' ? 0 : 3,
   policy: policy(scenario !== 'off' && scenario !== 'unlicensed', scenario === 'restricted' || scenario === 'vpn'),
+  ...(scenario === 'server'
+    ? { vpn_status: { public_key: '', server_public_key: 'U0VSVkVSLVBVQkxJQy1LRVktRk9SLVJFVklFVy0wMD0=', server_error: '', rx_bytes: 0, tx_bytes: 0, error: '', reported_at: new Date().toISOString() } }
+    : {}),
   ...(scenario === 'vpn'
     ? { vpn_status: { public_key: 'U0VSVkVSLVBVQkxJQy1LRVktRk9SLVJFVklFVy0wMD0=', latest_handshake: new Date(Date.now() - 42_000).toISOString(), rx_bytes: 18_204, tx_bytes: 40_996, error: '', reported_at: new Date().toISOString() } }
     : {}),
@@ -57,6 +61,14 @@ const answers: Record<string, unknown> = {
   '/api/security/advisories': { feed: { feed_enabled: true, osv_enabled: true, revision: 0, issued_at: null, expires_at: null, checked_at: null, stale: false, error: '' }, applications: [], summary: { affected_applications: 0, critical: 0, high: 0 } },
   '/api/alarms': { items: [], next_cursor: '', summary: { active: 0, unread: 0 } },
   '/api/installation/access': access,
+  '/api/installation/access/vpn-peers': {
+    items: scenario === 'server'
+      ? [
+          { id: 'peer-1', identity_id: 'synthetic-access-review-owner', name: 'Asha laptop', public_key: 'cGVlcg==', address: '10.100.0.2', latest_handshake: new Date(Date.now() - 30_000).toISOString(), created_at: new Date().toISOString() },
+          { id: 'peer-2', identity_id: 'synthetic-access-review-owner', name: 'On-call phone', public_key: 'cGVlcjI=', address: '10.100.0.3', created_at: new Date().toISOString() },
+        ]
+      : [],
+  },
 }
 
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {

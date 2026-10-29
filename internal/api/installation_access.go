@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net"
 	"net/http"
 	"net/netip"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -170,6 +172,9 @@ func (s *Server) registerAccessRoutes(public, protected *http.ServeMux) {
 	protected.HandleFunc("GET /api/v1/installation/access", s.installationAccess)
 	protected.HandleFunc("PUT /api/v1/installation/access", s.putInstallationAccess)
 	protected.HandleFunc("POST /api/v1/installation/access/confirm", s.confirmInstallationAccess)
+	protected.HandleFunc("GET /api/v1/installation/access/vpn-peers", s.listVPNPeers)
+	protected.HandleFunc("POST /api/v1/installation/access/vpn-peers", s.createVPNPeer)
+	protected.HandleFunc("DELETE /api/v1/installation/access/vpn-peers/{id}", s.revokeVPNPeer)
 }
 
 // Changing who can reach the installation needs an owner in a browser session:
@@ -223,14 +228,14 @@ func (s *Server) putInstallationAccess(w http.ResponseWriter, r *http.Request) {
 		problem(w, 400, "invalid_request", err.Error())
 		return
 	}
-	if policy.Enabled || policy.VPN != nil {
+	if policy.Enabled || policy.VPN != nil || policy.VPNServer != nil {
 		if err = s.Store.RequireFeatures(r.Context(), "private_access"); err != nil {
 			authFailure(w, err)
 			return
 		}
 	}
 	// vpn_only is safe only once the tunnel is up: require a recent handshake.
-	if policy.VPNOnly {
+	if policy.VPNOnly && policy.VPNServer == nil {
 		status, err := s.Store.AccessVPNStatus(r.Context())
 		if err != nil {
 			failure(w, err)
@@ -297,4 +302,107 @@ func requestIP(r *http.Request) string {
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return host
+}
+
+type vpnPeerProfile struct {
+	store.AccessVPNPeer
+	// What the browser needs to write the device's WireGuard profile. The
+	// device's private key never reaches the server.
+	ServerPublicKey string `json:"server_public_key"`
+	Endpoint        string `json:"endpoint"`
+	ServerAddress   string `json:"server_address"`
+	Network         string `json:"network"`
+}
+
+// VPN profiles are for installation administrators in a browser session.
+func vpnPeerAdministrator(w http.ResponseWriter, r *http.Request, s *Server) bool {
+	p := who(r)
+	if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud || !installationAdministrator(p) || p.CredentialType != "browser" || !p.IsHuman() {
+		failure(w, store.ErrForbidden)
+		return false
+	}
+	return true
+}
+
+func (s *Server) vpnServer(w http.ResponseWriter, r *http.Request) (*access.VPNServer, string, bool) {
+	s.forgetAccessPolicy()
+	policy, _, _, err := s.accessPolicy(r.Context())
+	if err != nil {
+		failure(w, err)
+		return nil, "", false
+	}
+	if policy.VPNServer == nil {
+		problem(w, 409, "vpn_server_off", "turn on the Hakopod VPN server before creating profiles")
+		return nil, "", false
+	}
+	status, err := s.Store.AccessVPNStatus(r.Context())
+	if err != nil {
+		failure(w, err)
+		return nil, "", false
+	}
+	key := ""
+	if status != nil {
+		key = status.ServerPublicKey
+	}
+	return policy.VPNServer, key, true
+}
+
+func (s *Server) listVPNPeers(w http.ResponseWriter, r *http.Request) {
+	if !vpnPeerAdministrator(w, r, s) {
+		return
+	}
+	peers, err := s.Store.AccessVPNPeers(r.Context())
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 200, map[string]any{"items": peers})
+}
+
+func (s *Server) createVPNPeer(w http.ResponseWriter, r *http.Request) {
+	if !vpnPeerAdministrator(w, r, s) {
+		return
+	}
+	var body struct {
+		Name      string `json:"name"`
+		PublicKey string `json:"public_key"`
+	}
+	if !decodeLimited(w, r, &body, 4<<10) {
+		return
+	}
+	body.Name = strings.TrimSpace(body.Name)
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(body.PublicKey))
+	if len(body.Name) < 1 || len(body.Name) > 64 || err != nil || len(key) != 32 {
+		problem(w, 400, "invalid_request", "send a device name of 1–64 characters and a WireGuard public key")
+		return
+	}
+	if err = s.Store.RequireFeatures(r.Context(), "private_access"); err != nil {
+		authFailure(w, err)
+		return
+	}
+	server, serverKey, ok := s.vpnServer(w, r)
+	if !ok {
+		return
+	}
+	if serverKey == "" {
+		problem(w, 409, "vpn_server_starting", "the server has not reported its WireGuard key yet; check that the private-access module is installed and retry")
+		return
+	}
+	peer, err := s.Store.CreateAccessVPNPeer(r.Context(), who(r), body.Name, base64.StdEncoding.EncodeToString(key), netip.MustParsePrefix(server.Network))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 201, vpnPeerProfile{AccessVPNPeer: peer, ServerPublicKey: serverKey, Endpoint: server.Endpoint, ServerAddress: server.Address().Addr().String(), Network: server.Network})
+}
+
+func (s *Server) revokeVPNPeer(w http.ResponseWriter, r *http.Request) {
+	if !vpnPeerAdministrator(w, r, s) {
+		return
+	}
+	if err := s.Store.RevokeAccessVPNPeer(r.Context(), who(r), r.PathValue("id")); err != nil {
+		failure(w, err)
+		return
+	}
+	w.WriteHeader(204)
 }

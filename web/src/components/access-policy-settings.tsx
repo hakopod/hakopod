@@ -11,6 +11,7 @@ import { Textarea } from './ui/textarea'
 import { ErrorState, Loading, Note, RequestError } from './shared'
 import { SettingsSection } from './settings-section'
 import { GuidedEmpty } from './resource-card'
+import { VPNProfiles } from './vpn-profiles'
 
 type Access = components['schemas']['InstallationAccess']
 type Policy = components['schemas']['InstallationAccessPolicy']
@@ -58,6 +59,13 @@ function AccessPolicyLoader() {
   return <AccessPolicyForm key={query.data.revision} current={query.data} />
 }
 
+// The VPN server takes the first address of its IPv4 network.
+function firstAddress(network: string) {
+  const [base] = network.split('/')
+  const value = base.split('.').reduce((total, part) => total * 256 + Number(part), 0) + 1
+  return [24, 16, 8, 0].map((shift) => Math.floor(value / 2 ** shift) % 256).join('.')
+}
+
 function vpnState(status?: VPNStatus) {
   if (!status) return 'Not connected'
   if (status.error) return `Error · ${status.error}`
@@ -85,6 +93,10 @@ function AccessPolicyForm({ current }: { current: Access }) {
   const [vpnEndpoint, setVPNEndpoint] = useState(policy.vpn?.peer_endpoint || '')
   const [vpnAllowed, setVPNAllowed] = useState((policy.vpn?.allowed_ips || []).join('\n'))
   const [vpnOnly, setVPNOnly] = useState(Boolean(policy.vpn_only))
+  const [serverOn, setServerOn] = useState(Boolean(policy.vpn_server))
+  const [serverNetwork, setServerNetwork] = useState(policy.vpn_server?.network || '10.100.0.0/24')
+  const [serverPort, setServerPort] = useState(String(policy.vpn_server?.listen_port || 51820))
+  const [serverEndpoint, setServerEndpoint] = useState(policy.vpn_server?.endpoint || '')
   const [elsewhere, setElsewhere] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -118,7 +130,16 @@ function AccessPolicyForm({ current }: { current: Access }) {
               trusted_proxy_cidrs: source === 'trusted_proxy' ? lines(proxies) : [],
               client_ip_header: source === 'trusted_proxy' ? header : '',
               firewall: enabled && firewall,
-              vpn_only: enabled && vpnOn && vpnOnly,
+              vpn_only: enabled && (vpnOn || serverOn) && vpnOnly,
+              ...(serverOn
+                ? {
+                    vpn_server: {
+                      network: serverNetwork.trim(),
+                      listen_port: Number(serverPort) || 0,
+                      endpoint: serverEndpoint.trim(),
+                    },
+                  }
+                : {}),
               ...(vpnOn
                 ? {
                     vpn: {
@@ -338,6 +359,52 @@ function AccessPolicyForm({ current }: { current: Access }) {
             </>
           )}
         </SettingsSection>
+        <SettingsSection
+          level={3}
+          title="Hakopod VPN server"
+          help="Runs a WireGuard server on this host for administrators, so you do not need a VPN of your own. Open the UDP port in any cloud or network firewall in front of the server. Needs the private-access installer module."
+          state={
+            !policy.vpn_server
+              ? 'Off'
+              : current.vpn_status?.server_error
+                ? `Error · ${current.vpn_status.server_error}`
+                : current.vpn_status?.server_public_key
+                  ? `Running · ${policy.vpn_server.endpoint}`
+                  : 'Starting · waiting for the server to report its key'
+          }
+        >
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={serverOn}
+              onChange={(event) => setServerOn(event.target.checked)}
+            />
+            Run a WireGuard server on this host
+          </label>
+          {serverOn && (
+            <>
+              <Field
+                label="Public endpoint"
+                value={serverEndpoint}
+                placeholder="For example vpn.example.com:51820"
+                onChange={(event) => setServerEndpoint(event.target.value)}
+                help="The host name or address and UDP port that devices dial."
+              />
+              <Field
+                label="UDP listen port"
+                inputMode="numeric"
+                value={serverPort}
+                onChange={(event) => setServerPort(event.target.value)}
+              />
+              <Field
+                label="VPN network"
+                value={serverNetwork}
+                onChange={(event) => setServerNetwork(event.target.value)}
+                help="Devices get addresses here; the server takes the first one. Add this network to Allowed networks to admit them."
+              />
+            </>
+          )}
+        </SettingsSection>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -358,6 +425,7 @@ function AccessPolicyForm({ current }: { current: Access }) {
           </Button>
         </div>
       </form>
+      {policy.vpn_server && <VPNProfiles serverAddress={firstAddress(policy.vpn_server.network)} />}
     </SettingsSection>
   )
 }

@@ -56,7 +56,7 @@ export const allowed = [
   /^previews\/[A-Za-z0-9_-]+$/,
   /^builds\/detect$/,
   /^installation\/(?:status|logs(?:\/query)?|setup|upgrade)$/,
-  /^installation\/access(?:\/confirm)?$/,
+  /^installation\/access(?:\/confirm|\/vpn-peers(?:\/[A-Za-z0-9_-]{1,64})?)?$/,
   /^installation\/cleanup\/(?:review|execute|operations\/[a-f0-9]{32})$/,
   /^git\/connections(?:\/[A-Za-z0-9_-]+(?:\/(?:authorize|oauth\/complete|github\/setup|repositories))?)?$/,
   /^git\/setup$/,

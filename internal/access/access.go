@@ -43,6 +43,8 @@ type Policy struct {
 	// then reachable only over the tunnel in the host firewall; the dashboard
 	// port stays open for signed webhooks and the gate refuses everything else.
 	VPNOnly bool `json:"vpn_only"`
+	// VPNServer runs a WireGuard server on this host for administrators.
+	VPNServer *VPNServer `json:"vpn_server,omitempty"`
 }
 
 func prefixes(values []string, field string) ([]netip.Prefix, error) {
@@ -112,18 +114,32 @@ func (p Policy) Normalize() (Policy, error) {
 		}
 		p.VPN = &vpn
 	}
+	if p.VPNServer != nil {
+		server, err := p.VPNServer.Normalize(p.VPN)
+		if err != nil {
+			return p, err
+		}
+		p.VPNServer = &server
+	}
 	if p.VPNOnly {
-		if !p.Enabled || p.VPN == nil {
-			return p, errors.New("vpn_only needs an enabled policy and a WireGuard connector")
+		if !p.Enabled || (p.VPN == nil && p.VPNServer == nil) {
+			return p, errors.New("vpn_only needs an enabled policy and a WireGuard connector or server")
+		}
+		var tunnels []string
+		if p.VPN != nil {
+			tunnels = append(tunnels, p.VPN.AllowedIPs...)
+		}
+		if p.VPNServer != nil {
+			tunnels = append(tunnels, p.VPNServer.Network)
 		}
 		for _, allowed := range allow {
 			inside := false
-			for _, raw := range p.VPN.AllowedIPs {
+			for _, raw := range tunnels {
 				tunnel := netip.MustParsePrefix(raw)
 				inside = inside || (tunnel.Bits() <= allowed.Bits() && tunnel.Contains(allowed.Addr()))
 			}
 			if !inside {
-				return p, errors.New("with vpn_only, every allowed network must be inside a network routed through the tunnel")
+				return p, errors.New("with vpn_only, every allowed network must be inside a VPN network")
 			}
 		}
 	}
@@ -256,4 +272,51 @@ func validHost(host string) bool {
 		}
 	}
 	return true
+}
+
+// VPNServer runs WireGuard on this host. People get their own peer and
+// address inside Network; the server takes Network's first address. Endpoint
+// is what client profiles dial: this host's public name or address and the
+// UDP listen port.
+type VPNServer struct {
+	ListenPort int    `json:"listen_port"`
+	Network    string `json:"network"`
+	Endpoint   string `json:"endpoint"`
+}
+
+func (v VPNServer) Normalize(client *VPN) (VPNServer, error) {
+	network, err := netip.ParsePrefix(strings.TrimSpace(v.Network))
+	if err != nil || network != network.Masked() || !network.Addr().Is4() || network.Bits() < 16 || network.Bits() > 29 {
+		return v, errors.New("vpn_server.network must be an IPv4 network from /16 to /29, such as 10.100.0.0/24")
+	}
+	for _, reserved := range reservedTunnelNetworks {
+		if network.Overlaps(reserved) {
+			return v, errors.New("vpn_server.network cannot overlap the cluster networks 10.42.0.0/16 and 10.43.0.0/16")
+		}
+	}
+	if client != nil {
+		for _, raw := range append([]string{client.Address}, client.AllowedIPs...) {
+			if other, err := netip.ParsePrefix(raw); err == nil && other.Overlaps(network) {
+				return v, errors.New("vpn_server.network cannot overlap the WireGuard connector's networks")
+			}
+		}
+	}
+	if v.ListenPort == 0 {
+		v.ListenPort = 51820
+	}
+	if v.ListenPort < 1 || v.ListenPort > 65535 {
+		return v, errors.New("vpn_server.listen_port must be 1–65535")
+	}
+	host, port, err := net.SplitHostPort(strings.TrimSpace(v.Endpoint))
+	if number, convErr := strconv.Atoi(port); err != nil || convErr != nil || number < 1 || number > 65535 || !validHost(host) {
+		return v, errors.New("vpn_server.endpoint must be this server's public host:port, such as vpn.example.com:51820")
+	}
+	v.Network, v.Endpoint = network.String(), net.JoinHostPort(host, port)
+	return v, nil
+}
+
+// Address is the server's own tunnel address.
+func (v VPNServer) Address() netip.Prefix {
+	network := netip.MustParsePrefix(v.Network)
+	return netip.PrefixFrom(network.Addr().Next(), network.Bits())
 }

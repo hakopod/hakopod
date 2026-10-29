@@ -11551,6 +11551,156 @@
         "summary": "Confirm a pending management access policy from an allowed network."
       }
     },
+    "/installation/access/vpn-peers": {
+      "get": {
+        "operationId": "listInstallationVPNPeers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationAccessVPNPeerList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation owner in a browser session required"
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "An installation administrator lists VPN profiles from a browser session in Settings.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "List live VPN device profiles."
+      },
+      "post": {
+        "operationId": "createInstallationVPNPeer",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationAccessVPNPeer"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation owner in a browser session required"
+          },
+          "409": {
+            "description": "Revision changed, the confirmation window ended, or the policy would block this network"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationAccessVPNPeerInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "An installation administrator creates VPN profiles from a browser session in Settings.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Create a VPN profile for a device from its WireGuard public key."
+      }
+    },
+    "/installation/access/vpn-peers/{id}": {
+      "delete": {
+        "operationId": "revokeInstallationVPNPeer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": null
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Installation administrator in a browser session required"
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "An installation administrator revokes VPN profiles from a browser session in Settings.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Revoke a VPN device profile."
+      }
+    },
     "/license": {
       "get": {
         "operationId": "getLicenseStatus",
@@ -33063,6 +33213,9 @@
           "vpn": {
             "$ref": "#/components/schemas/InstallationAccessVPN"
           },
+          "vpn_server": {
+            "$ref": "#/components/schemas/InstallationAccessVPNServer"
+          },
           "vpn_only": {
             "type": "boolean",
             "description": "Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on."
@@ -33116,12 +33269,129 @@
         ],
         "additionalProperties": false
       },
+      "InstallationAccessVPNServer": {
+        "type": "object",
+        "properties": {
+          "listen_port": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535,
+            "description": "UDP port; 0 means 51820."
+          },
+          "network": {
+            "type": "string",
+            "maxLength": 18,
+            "description": "IPv4 network for VPN devices, /16 to /29. The server takes the first address."
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 260,
+            "description": "This server's public host:port written into device profiles."
+          }
+        },
+        "required": [
+          "network",
+          "endpoint"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessVPNPeer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "identity_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "latest_handshake": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "server_public_key": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "server_address": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "identity_id",
+          "name",
+          "public_key",
+          "address",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessVPNPeerList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstallationAccessVPNPeer"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessVPNPeerInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "public_key": {
+            "type": "string",
+            "maxLength": 44,
+            "description": "The device's WireGuard public key. Generate the key pair on the device or in the browser; never send a private key."
+          }
+        },
+        "required": [
+          "name",
+          "public_key"
+        ],
+        "additionalProperties": false
+      },
       "InstallationAccessVPNStatus": {
         "type": "object",
         "properties": {
           "public_key": {
             "type": "string",
             "description": "The server's WireGuard public key; add it as a peer."
+          },
+          "server_public_key": {
+            "type": "string",
+            "description": "The built-in VPN server's public key."
+          },
+          "server_error": {
+            "type": "string"
           },
           "latest_handshake": {
             "type": "string",
@@ -33143,6 +33413,8 @@
         },
         "required": [
           "public_key",
+          "server_public_key",
+          "server_error",
           "rx_bytes",
           "tx_bytes",
           "error",

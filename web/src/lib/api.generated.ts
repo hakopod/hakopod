@@ -2601,6 +2601,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/installation/access/vpn-peers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List live VPN device profiles. */
+        get: operations["listInstallationVPNPeers"];
+        put?: never;
+        /** Create a VPN profile for a device from its WireGuard public key. */
+        post: operations["createInstallationVPNPeer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installation/access/vpn-peers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a VPN device profile. */
+        delete: operations["revokeInstallationVPNPeer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/license": {
         parameters: {
             query?: never;
@@ -7487,6 +7522,7 @@ export interface components {
             /** @description Also close the dashboard port and the K3s API in the host firewall. Needs the private-access installer module. */
             firewall?: boolean;
             vpn?: components["schemas"]["InstallationAccessVPN"];
+            vpn_server?: components["schemas"]["InstallationAccessVPNServer"];
             /** @description Admit only networks routed through the WireGuard connector. Needs a handshake from the last two minutes to turn on. */
             vpn_only?: boolean;
         };
@@ -7499,9 +7535,43 @@ export interface components {
             allowed_ips: string[];
             keepalive?: number;
         };
+        InstallationAccessVPNServer: {
+            /** @description UDP port; 0 means 51820. */
+            listen_port?: number;
+            /** @description IPv4 network for VPN devices, /16 to /29. The server takes the first address. */
+            network: string;
+            /** @description This server's public host:port written into device profiles. */
+            endpoint: string;
+        };
+        InstallationAccessVPNPeer: {
+            id: string;
+            identity_id: string;
+            name: string;
+            public_key: string;
+            address: string;
+            /** Format: date-time */
+            latest_handshake?: string;
+            /** Format: date-time */
+            created_at: string;
+            server_public_key?: string;
+            endpoint?: string;
+            server_address?: string;
+            network?: string;
+        };
+        InstallationAccessVPNPeerList: {
+            items: components["schemas"]["InstallationAccessVPNPeer"][];
+        };
+        InstallationAccessVPNPeerInput: {
+            name: string;
+            /** @description The device's WireGuard public key. Generate the key pair on the device or in the browser; never send a private key. */
+            public_key: string;
+        };
         InstallationAccessVPNStatus: {
             /** @description The server's WireGuard public key; add it as a peer. */
             public_key: string;
+            /** @description The built-in VPN server's public key. */
+            server_public_key: string;
+            server_error: string;
             /** Format: date-time */
             latest_handshake?: string;
             rx_bytes: number;
@@ -16490,6 +16560,127 @@ export interface operations {
             };
             /** @description Revision changed, the confirmation window ended, or the policy would block this network */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listInstallationVPNPeers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationAccessVPNPeerList"];
+                };
+            };
+            /** @description Self-hosted installation owner in a browser session required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createInstallationVPNPeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallationAccessVPNPeerInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationAccessVPNPeer"];
+                };
+            };
+            /** @description Self-hosted installation owner in a browser session required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Revision changed, the confirmation window ended, or the policy would block this network */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    revokeInstallationVPNPeer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Installation administrator in a browser session required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
