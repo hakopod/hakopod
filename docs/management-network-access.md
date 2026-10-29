@@ -66,8 +66,18 @@ the dashboard port and the Kubernetes API** in Settings:
 sudo python3 ./installer/modules.py private-access
 ```
 
-The module needs `nftables`. It adds one table, `inet hakopod_access`, and a
-root timer that brings it in line with the saved policy every ten seconds:
+The module needs `nftables`. It downloads the `hakopod-vpn` host agent for the
+installed version and the server's architecture from that version's GitHub
+release over HTTPS, checks it against the release's `SHA256SUMS`, installs it
+as `/opt/hakopod/vpn/hakopod-vpn` and starts a root timer that runs
+`hakopod-vpn sync` every ten seconds. The agent is not part of the installer
+kit; servers that never run the module never download it. Upgrades leave the
+installed agent in place; run the module again after an upgrade to fetch the
+matching agent.
+
+Each tick the agent checks in, so **Settings → Network access** shows it as
+installed, and brings one table, `inet hakopod_access`, in line with the
+saved policy:
 
 - The dashboard port (in `https` dashboard mode) and the K3s API on `6443`
   accept only the allowed networks, loopback, current cluster nodes and the
@@ -78,12 +88,16 @@ root timer that brings it in line with the saved policy every ten seconds:
   in the API. A reset turns the firewall off on the next tick; for an instant
   way out, run `sudo nft delete table inet hakopod_access`.
 - If the timer cannot read the policy, it keeps the current rules.
+- After a reboot the first tick applies the table again.
 
 ## WireGuard connector
 
 The same module can join this server to your WireGuard network as a client,
-so administrators reach the dashboard over the VPN. It needs
-`wireguard-tools` on the server.
+so administrators reach the dashboard over the VPN. The agent configures
+WireGuard through the kernel directly, so `wireguard-tools` is not needed,
+only the `wireguard` kernel module (built into current Linux kernels). If the
+module is missing, the install still finishes and says WireGuard is
+unavailable; the firewall and the other connectors keep working.
 
 1. In **Settings → VPN**, press **Connect**, choose **WireGuard** and enter the server's tunnel address, your peer's public key
    and endpoint, and the networks to route through the tunnel.

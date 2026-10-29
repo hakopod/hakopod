@@ -24,10 +24,15 @@ verify = module('verify-archives')
 class ArtifactPolicyTests(unittest.TestCase):
     def test_public_build_explicitly_overrides_ambient_cloud_tag(self):
         with patch.dict(os.environ, GOFLAGS='-tags=hakopod_cloud'):
-            for command in ('hakopod', 'hakopod-server'):
+            for command in ('hakopod', 'hakopod-server', 'hakopod-vpn'):
                 args = build.build_command(command, '/tmp/fixture', '0.1.0-alpha.2')
                 self.assertIn('-tags=hakopod_selfhosted', args)
                 self.assertNotIn('-tags=hakopod_cloud', args)
+
+    def test_cli_and_vpn_agent_carry_the_release_version(self):
+        for command, stamped in (('hakopod', True), ('hakopod-vpn', True), ('hakopod-server', False)):
+            flags = next(arg for arg in build.build_command(command, '/tmp/fixture', '0.1.0-alpha.2') if arg.startswith('-ldflags='))
+            self.assertEqual('-X main.version=0.1.0-alpha.2' in flags, stamped, command)
 
     def test_binary_metadata_requires_exact_public_policy(self):
         result = verify.selfhosted_build_settings('fixture: go1.26\n\tbuild\t-tags=hakopod_selfhosted\n')

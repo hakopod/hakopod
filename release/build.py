@@ -30,7 +30,7 @@ def compile_command(package, destination, *, tags='', ldflags='-s -w'):
     return command + ['-ldflags=' + ldflags, '-o', str(destination), package]
 
 def build_command(command, destination, version):
-    flags='-s -w'+(' -X main.version='+version if command=='hakopod' else '')
+    flags='-s -w'+(' -X main.version='+version if command in ('hakopod','hakopod-vpn') else '')
     # Public artifacts always retain their closed-signup build tag.
     return compile_command('./cmd/'+command, destination, tags=PUBLIC_BUILD_TAG, ldflags=flags)
 
@@ -71,7 +71,7 @@ def archive(source,destination,epoch):
                     info.uid=info.gid=0
                     info.uname=info.gname=''
                     info.mtime=epoch
-                    info.mode=0o755 if path.name in ('hakopod','hakopod-server','hakopod.exe') else 0o644
+                    info.mode=0o755 if path.name in ('hakopod','hakopod-server','hakopod.exe','hakopod-vpn') else 0o644
                     with path.open('rb') as file:bundle.addfile(info,file)
 
 def normalize_sbom_paths(destination,scan,go_cache,prefix='hakopod'):
@@ -129,6 +129,7 @@ def main():
     cli_stage.mkdir()
     bundles=[]
     cli_bundles=[]
+    vpn_bundles=[]
     for system,arch in TARGETS:
         env=dict(ENV,GOOS=system,GOARCH=arch)
         cli_name=f'hakopod-cli_{version}_{system}_{arch}'
@@ -162,6 +163,15 @@ def main():
                 + ('The OpenAPI contract is embedded in the server; api/openapi.json is also\nincluded for external tooling. The server requires an existing configured\nPostgreSQL database, Kubernetes credentials and explicit environment\nconfiguration; see the repository docs.\n' if system=='linux' else '')
                 + '\nLicense and third-party notices accompany this archive.\n')
             bundles.append(directory)
+            if system=='linux':
+                # The private-access host agent is fetched on its own by the
+                # installer module, so it ships as a minimal archive like the CLI.
+                vpn_directory=scan/f'hakopod-vpn_{version}_{system}_{arch}'
+                vpn_directory.mkdir()
+                print(f'Building hakopod-vpn for {system}/{arch}',flush=True)
+                run(build_command('hakopod-vpn', vpn_directory/'hakopod-vpn', version),env=env,cwd=source)
+                for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,vpn_directory/filename)
+                vpn_bundles.append(vpn_directory)
             # CLI-only archive reuses the already-built hakopod binary; never
             # recompiled a second time.
             shutil.copyfile(directory/'hakopod',cli_directory/'hakopod')
@@ -183,7 +193,7 @@ def main():
          '-o','cyclonedx-json='+str(destination/'hakopod.cyclonedx.json'),
          '-o','syft-json='+str(destination/'hakopod.syft.json')],env=sbom_env)
     normalize_sbom_paths(destination,scan,go_cache)
-    for directory in bundles+cli_bundles:archive(directory,destination/(directory.name+'.tar.gz'),epoch)
+    for directory in bundles+cli_bundles+vpn_bundles:archive(directory,destination/(directory.name+'.tar.gz'),epoch)
     archive(notices,destination/f'hakopod_{version}_dependency-notices.tar.gz',epoch)
     shutil.copyfile(notices/'inventory.json',destination/'dependency-license-inventory.json')
     try:revision=subprocess.check_output(['git','rev-parse','--verify','HEAD'],cwd=ROOT,env=ENV,text=True,stderr=subprocess.DEVNULL).strip()
