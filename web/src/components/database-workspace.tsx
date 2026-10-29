@@ -5,6 +5,7 @@ import { client, unwrap } from '../lib/client'
 import { message, relative, timestamp } from '../lib/api'
 import {
   databaseHealth,
+  useDatabaseConnections,
   type DatabaseOperation,
   type ManagedDatabase,
 } from '../lib/databases'
@@ -49,19 +50,20 @@ export function readyMembers(d: ManagedDatabase, now = Date.now()) {
 export function DatabaseHealthLine({ database: d, now }: { database: ManagedDatabase; now: number }) {
   const state = databaseState(d, now)
   const ready = readyMembers(d, now)
+  const stale = databaseHealth(d, now) === 'Observation stale'
   const at = observed(d)
   return (
-    <p className="db-health-line" role="status">
+    <p className="db-health-line">
       <Status value={state} small />
       <span>
         {ready
-          ? `${ready} members ready${state === 'stale' ? ' · last known' : ''}`
-          : `${expectedMembers(d.spec)} ${expectedMembers(d.spec) === 1 ? 'member' : 'members'} desired · none observed`}
+          ? `${ready} members ready${stale ? ' · last known' : ''}`
+          : `${expectedMembers(d.spec)} ${expectedMembers(d.spec) === 1 ? 'member' : 'members'} desired`}
       </span>
       <span aria-hidden="true">·</span>
       {at ? (
         <time dateTime={at} title={timestamp(at)}>
-          Observed {relative(at).toLowerCase()}
+          {stale ? 'Last observed' : 'Observed'} {relative(at).toLowerCase()}
         </time>
       ) : (
         <span>Not observed yet</span>
@@ -111,29 +113,33 @@ export function DatabaseAttention({
     Number.isFinite(Date.parse(tls?.expires_at || '')) &&
     Date.parse(tls!.expires_at!) <= now
   const latestFailed = latest?.status === 'failed' && latest.revision === d.revision ? latest : undefined
+  const running = latest && !latest.finished_at && latest.status !== 'failed' ? latest : undefined
+  const stale = databaseHealth(d, now) === 'Observation stale'
   const recent = (failures.data?.items || []).filter((f) => f.revision === d.revision).slice(0, 3)
   const memoryLimited = recent.some((f) => f.memory_limit_bytes || /oom/i.test(f.reason))
   const search = { project: d.project, environment: d.environment }
   const pending = ['pending', 'provisioning', 'creating', 'not observed'].includes(state)
   const failing = ['failed', 'error', 'unavailable', 'degraded', 'not ready'].includes(state)
-  if (!failing && !pending && state !== 'stale' && !latestFailed && !recent.length && !tlsExpired && !refreshFailed)
+  if (!failing && !pending && !stale && !latestFailed && !recent.length && !tlsExpired && !refreshFailed)
     return null
   const title = latestFailed
     ? `${sentence(opLabel(latestFailed.kind))} failed at revision ${latestFailed.revision}`
     : failing
       ? `${d.spec.name} is ${state}`
-      : state === 'stale'
+      : stale
         ? 'The last observation is stale'
         : pending
-          ? at
-            ? `${d.spec.name} is ${state}`
-            : `Waiting for ${d.spec.name} to be observed`
+          ? running
+            ? `${sentence(opLabel(running.kind))} in progress${running.phase ? ` · ${running.phase}` : ''}`
+            : at
+              ? `${d.spec.name} is ${state}`
+              : `Waiting for ${d.spec.name} to be observed`
           : tlsExpired
             ? 'The server certificate has expired'
             : recent.length
               ? `${recent.length} recent ${recent.length === 1 ? 'failure' : 'failures'} at revision ${d.revision}`
               : 'Refresh failed'
-  const tone = failing || latestFailed || tlsExpired ? 'error' : 'warn'
+  const tone = failing || latestFailed || tlsExpired ? 'error' : stale || refreshFailed || recent.length ? 'warn' : 'info'
   const retryResize =
     canManage && latestFailed && ['resize', 'resize-retry'].includes(latestFailed.kind) &&
     votingDatabase(d.spec.engine) && d.spec.mode === 'cluster' && d.status === 'failed'
@@ -141,16 +147,17 @@ export function DatabaseAttention({
     canManage && latestFailed?.kind === 'switchover' && latestFailed.switchover && latestFailed.phase !== 'switchover'
   return (
     <section className={`app-attention db-attention db-attention-${tone}`} aria-labelledby="db-attention-heading">
-      <Icon name={tone === 'error' ? 'alert' : 'info'} size={18} />
+      <Icon name={tone === 'info' ? 'info' : 'alert'} size={18} />
       <div className="app-attention-body">
         <h2 id="db-attention-heading">{title}</h2>
         {latestFailed?.message && <p className="app-attention-log"><span className="sr-only">Recorded error: </span><code>{latestFailed.message}</code></p>}
         {d.observation.message && d.observation.message !== latestFailed?.message && (
           <p className="app-attention-detail">{d.observation.message}</p>
         )}
-        {state === 'stale' && (
+        {running?.message && pending && <p className="app-attention-detail">{running.message}</p>}
+        {stale && (
           <p className="app-attention-detail">
-            Last observed {at ? relative(at).toLowerCase() : 'never'}
+            {failing ? 'This observation is stale. ' : ''}Last observed {at ? relative(at).toLowerCase() : 'never'}
             {d.observation.revision !== d.revision ? ` at revision ${d.observation.revision}, desired revision ${d.revision}` : ''}.
             Members and topology show the last known state.
           </p>
@@ -163,6 +170,12 @@ export function DatabaseAttention({
         )}
         {tlsExpired && (
           <p className="app-attention-detail">Certificate expired {timestamp(tls!.expires_at)}. Clients that verify TLS will refuse to connect.</p>
+        )}
+        {memoryLimited && d.status !== 'ready' && (
+          <p className="app-attention-detail">
+            A member ran out of memory. Capacity changes need a ready database; review a recovery
+            into a larger database if it does not recover.
+          </p>
         )}
         {refreshFailed && <p className="app-attention-detail">Refresh failed. Showing the last received observation.</p>}
         {recent.length > 0 && (
@@ -207,12 +220,17 @@ export function DatabaseAttention({
               Inspect {opLabel(latestFailed.kind)}
             </Button>
           )}
+          {running && pending && (
+            <Button size="sm" onClick={() => onTab('activity')}>
+              Inspect {opLabel(running.kind)}
+            </Button>
+          )}
           {tlsExpired && (
             <Button size="sm" onClick={() => onTab('connections')}>
               Inspect connection security
             </Button>
           )}
-          {(state === 'stale' || refreshFailed) && (
+          {(stale || refreshFailed) && (
             <Button size="sm" onClick={onRefresh}>
               <Icon name="refresh" size={14} />
               Refresh now
@@ -423,7 +441,7 @@ export function DatabaseOperations({
               }
               actions={
                 op.unavailable ? (
-                  <Button size="sm" disabled variant={op.destructive ? 'danger' : undefined}>
+                  <Button size="sm" disabled>
                     {op.destructive && <Icon name="trash" size={14} />}
                     {op.label}
                   </Button>
@@ -434,7 +452,7 @@ export function DatabaseOperations({
                     </Link>
                   </Button>
                 ) : (
-                  <Button size="sm" variant={op.destructive ? 'danger' : undefined} onClick={op.onSelect}>
+                  <Button size="sm" onClick={op.onSelect}>
                     {op.destructive && <Icon name="trash" size={14} />}
                     {op.label}
                   </Button>
@@ -455,6 +473,10 @@ export function DeleteDatabaseReview({ database: d, onClose }: { database: Manag
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const members = (d.observation.members || []).length
+  const connections = useDatabaseConnections(d.id)
+  const bound = [
+    ...new Set((connections.data?.items || []).map((c) => c.application_display_name || c.application_name)),
+  ]
   return (
     <Dialog
       open
@@ -489,12 +511,22 @@ export function DeleteDatabaseReview({ database: d, onClose }: { database: Manag
               ['Database', `${engineName(d.spec.engine)} ${d.spec.version} · ${databaseLayoutSummary(d.spec)}`],
               ['Members removed', `${members} observed · ${expectedMembers(d.spec)} desired`],
               ['Data removed', `${databaseStorageGiB(d.spec)} GiB of configured volumes`],
+              [
+                'Bound applications',
+                connections.isPending
+                  ? 'Loading…'
+                  : connections.error
+                    ? 'Unavailable'
+                    : bound.length
+                      ? bound.join(', ')
+                      : 'None recorded',
+              ],
               ['Revision', String(d.revision)],
             ]}
           />
           <ReviewNotice tone="danger" title="Data cannot be recovered from this database">
-            Saved backups remain and can be recovered into a new database. Applications bound to it
-            lose their connection.
+            Saved backups remain and can be recovered into a new database.
+            {bound.length > 0 && ` ${bound.length === 1 ? 'The bound application loses its' : `${bound.length} bound applications lose their`} connection.`}
           </ReviewNotice>
           <label className="db-confirm-field">
             <span>Type {d.spec.name} to confirm</span>
@@ -548,9 +580,11 @@ export function DatabaseActivity({
                 {op.finished_at && ` · finished ${timestamp(op.finished_at)}`}
                 {op.revision === d.revision && op.id === operations[0]?.id && ' · current'}
               </span>
-              {op.message && <span className="db-activity-message">{op.message}</span>}
+              {op.message && (
+                <span className={`db-activity-message${op.status === 'failed' ? ' db-activity-error' : ''}`}>{op.message}</span>
+              )}
               {op.progress?.length > 0 && !limit && (
-                <details className="db-activity-stages">
+                <details className="db-activity-stages" open={op.status === 'failed'}>
                   <summary>{op.progress.length} {op.progress.length === 1 ? 'stage' : 'stages'}</summary>
                   <ol>
                     {op.progress.map((stage) => (

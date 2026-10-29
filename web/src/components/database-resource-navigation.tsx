@@ -9,7 +9,7 @@ export function DatabaseResourceNavigation({
   scope: { project: string; environment: string }
 }) {
   return (
-    <nav className="tab-list" aria-label="Database resources">
+    <nav className="tab-list db-resource-tabs" aria-label="Database resources">
       <Button asChild variant="ghost" className="tab-trigger">
         <Link
           to="/databases"

@@ -165,7 +165,7 @@ export function DatabaseMembers({
             identity={
               <span className="db-member-name">
                 <span>{m.name}</span>
-                <span className="db-member-role">{m.role}{m.shard ? ` · ${m.shard}` : ''}</span>
+                <span className="db-member-role">{m.role.charAt(0).toUpperCase() + m.role.slice(1)}{m.shard ? ` · ${m.shard}` : ''}</span>
               </span>
             }
             detail={

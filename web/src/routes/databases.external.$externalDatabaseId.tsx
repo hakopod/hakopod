@@ -92,7 +92,7 @@ function Detail({ id }: { id: string }) {
           </HeadingHelp>
         </div>
         <div className="app-workspace-meta">
-          <p className="db-health-line" role="status">
+          <p className="db-health-line">
             <Status value={state} small />
             {at ? <time dateTime={at} title={timestamp(at)}>Checked {relative(at).toLowerCase()}</time> : <span>Not checked yet</span>}
           </p>
@@ -111,7 +111,7 @@ function Detail({ id }: { id: string }) {
         {problem && <section className={`app-attention db-attention db-attention-${state === 'stale' || state === 'Not observed' ? 'warn' : 'error'}`} aria-labelledby="ext-attention-heading">
           <Icon name="alert" size={18} />
           <div className="app-attention-body">
-            <h2 id="ext-attention-heading">{state === 'stale' ? 'The last connection check is stale' : state === 'ready' ? 'Refresh failed' : `${d.spec.name} is ${state.toLowerCase()}`}</h2>
+            <h2 id="ext-attention-heading">{state === 'stale' ? 'The last connection check is stale' : state !== 'ready' ? `${d.spec.name} is ${state.toLowerCase()}` : query.error ? 'Refresh failed' : 'The last connection check reported a problem'}</h2>
             {d.observation.message && <p className="app-attention-log"><code>{d.observation.message}</code></p>}
             {query.error && <p className="app-attention-detail">Refresh failed. Showing the last received connection state.</p>}
             <div className="app-attention-actions"><Button size="sm" disabled={query.isFetching} onClick={() => { void query.refetch(); void connections.refetch() }}><Icon name="refresh" size={14} />Check again</Button></div>
@@ -119,24 +119,29 @@ function Detail({ id }: { id: string }) {
         </section>}
         <section className="app-workspace-section" aria-labelledby="ext-endpoint-heading">
           <div className="app-workspace-section-head">
-            <h2 id="ext-endpoint-heading">Provider endpoint</h2>
-            <HeadingHelp title="provider transport">
-              TLS 1.2 or newer, with hostname and issuer verification against the current public CA
-              bundle. The provider manages certificate rotation. Credentials are encrypted at rest
-              and excluded from configuration and API responses.{' '}
-              {d.spec.engine === 'mysql' ? 'Set your MySQL driver to verify the provider hostname and CA. Some drivers ignore URL TLS options; configure the driver directly and test refusal of an invalid certificate.' : 'Use sslmode=verify-full with a current public CA bundle. Keep the provider hostname in the connection even when routing to a resolved address.'}
-            </HeadingHelp>
+            <div className="db-section-title">
+              <h2 id="ext-endpoint-heading">Provider endpoint</h2>
+              <HeadingHelp title="provider transport">
+                TLS 1.2 or newer, with hostname and issuer verification against the current public
+                CA bundle. The provider manages certificate rotation. Credentials are encrypted at
+                rest and excluded from configuration and API responses.
+              </HeadingHelp>
+            </div>
           </div>
+          <p className="db-section-note db-requirement">{d.spec.engine === 'mysql' ? 'Set your MySQL driver to verify the provider hostname and CA. Some drivers ignore URL TLS options; configure the driver directly and test refusal of an invalid certificate.' : 'Use sslmode=verify-full with a current public CA bundle. Keep the provider hostname in the connection even when routing to a resolved address.'}</p>
           <dl className="app-workspace-details">{facts.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl>
         </section>
       </Tabs.Content>
       <Tabs.Content value="connections" className="tab-content app-workspace-overview">
         <section className="app-workspace-section" aria-labelledby="ext-apps-heading">
           <div className="app-workspace-section-head">
-            <h2 id="ext-apps-heading">Connected applications</h2>
-            <HeadingHelp title="connected applications">These links come from saved application configurations and deployment history. They do not report live database sessions or the provider's internal topology. Removing a binding requires an application deployment.</HeadingHelp>
+            <div className="db-section-title">
+              <h2 id="ext-apps-heading">Connected applications</h2>
+              <HeadingHelp title="connected applications">These links come from saved application configurations and deployment history. They do not report live database sessions or the provider's internal topology.</HeadingHelp>
+            </div>
             <span className="app-workspace-count">{connections.data ? applications.length : ''}</span>
           </div>
+          <p className="db-section-note db-requirement">Removing a binding requires an application deployment.</p>
           {connections.isPending ? <Loading /> : connections.error ? <ResourceError error={connections.error} retry={() => void connections.refetch()} subject="connected applications" /> : !applications.length ? <ResourceEmpty icon="box" title="No connected applications" description="This legacy connection can be removed when no active deployment references it." /> : <>
             {applications.length > 12 && <div className="ops-search-input"><Icon name="search" size={15} /><Input aria-label="Find connected application" placeholder="Find application…" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(0) }} /></div>}
             {!shown.length ? <ResourceEmpty icon="search" title="No matching applications" description="Try a different application name." /> : <ResourceRows label="Connected applications">{shown.map((app) => <ResourceRow key={app.id}

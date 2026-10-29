@@ -20,11 +20,12 @@ import { Input } from '../components/ui/input'
 import { ServiceIcon } from '../components/service-icon'
 import { Icon } from '../components/icons'
 import { SelectField } from '../components/ui/select'
-import { databaseLayoutSummary, endpointAddress, engineName, expectedMembers } from '../lib/database-view'
+import { databaseLayoutSummary, endpointAddress, engineName } from '../lib/database-view'
 import { projectRouteScopeMatches } from '../lib/projects'
 import { DatabaseResourceNavigation } from '../components/database-resource-navigation'
 import { databaseEngines } from '../lib/database-create'
 
+const pendingStates = ['pending', 'provisioning', 'creating', 'not observed']
 export const Route = createFileRoute('/databases')({
   validateSearch: databaseSearch,
   component: DatabaseRoute,
@@ -49,10 +50,17 @@ function Databases() {
       d.spec.name.toLowerCase().includes(filter.toLowerCase()) &&
       (engine === 'all' || d.spec.engine === engine),
   )
-  // Databases that need attention come first; the API order is kept within each group.
-  const ranked = [...filtered].sort(
-    (a, b) => Number(databaseState(a) === 'ready') - Number(databaseState(b) === 'ready'),
-  )
+  // Failed first, then stale, then provisioning, then ready; API order is kept within each group.
+  const rank = (state: string) =>
+    state === 'ready' ? 3 : state === 'stale' ? 1 : pendingStates.includes(state) ? 2 : 0
+  const ranked = [...filtered].sort((a, b) => rank(databaseState(a)) - rank(databaseState(b)))
+  const counts = filtered.reduce<Record<string, number>>((all, d) => {
+    const state = databaseState(d)
+    const group =
+      state === 'ready' ? 'ready' : state === 'stale' ? 'stale' : pendingStates.includes(state) ? 'provisioning' : 'failing'
+    all[group] = (all[group] || 0) + 1
+    return all
+  }, {})
   const navigate = useNavigate()
   const externalFiltered = (external.data?.items || []).filter(
     (d) =>
@@ -98,9 +106,10 @@ function Databases() {
         />
       ) : (
         <>
-          <div className="resource-toolbar">
+          <div className="resource-toolbar db-list-toolbar">
             <DatabaseExplorerLink project={scope.project} environment={scope.environment} />
-            <div className="w-full sm:w-72">
+            <div className="ops-search-input">
+              <Icon name="search" size={15} />
               <Input
                 aria-label="Filter databases"
                 placeholder="Find database…"
@@ -162,16 +171,15 @@ function Databases() {
               {query.error && (
                 <StaleNotice updatedAt={query.dataUpdatedAt} retry={() => void query.refetch()} />
               )}
-              <div className="db-list-summary" role="status">
-                <span>{filtered.length} managed databases</span>
-                <span>{filtered.filter((d) => databaseState(d) === 'ready').length} ready</span>
+              <p className="db-list-summary">
                 <span>
-                  {filtered.filter((d) => databaseState(d) !== 'ready').length} need attention
+                  {filtered.length} managed {filtered.length === 1 ? 'database' : 'databases'}
                 </span>
-                <span>
-                  {filtered.reduce((n, d) => n + expectedMembers(d.spec), 0)} configured members
-                </span>
-              </div>
+                {counts.failing > 0 && <span>{counts.failing} need attention</span>}
+                {counts.stale > 0 && <span>{counts.stale} stale</span>}
+                {counts.provisioning > 0 && <span>{counts.provisioning} provisioning</span>}
+                <span>{counts.ready || 0} ready</span>
+              </p>
               <div className="resource-grid" aria-label="Managed databases">
                 {ranked.map((d) => {
                   const state = databaseState(d)
@@ -234,12 +242,10 @@ function Databases() {
                           </MenuItem>
                         </Menu>
                       }
-                      meta={
-                        <>
-                          {engineName(d.spec.engine)} {d.spec.version} · {databaseLayoutSummary(d.spec)} ·{' '}
-                          {d.spec.cpu} CPU · {d.spec.memory} · {d.spec.storage_gib} GiB per member
-                        </>
-                      }
+                      meta={(() => {
+                        const text = `${engineName(d.spec.engine)} ${d.spec.version} · ${databaseLayoutSummary(d.spec)} · ${d.spec.cpu} CPU · ${d.spec.memory} · ${d.spec.storage_gib} GiB per member`
+                        return <span title={text}>{text}</span>
+                      })()}
                       endpoint={
                         address ? (
                           <>

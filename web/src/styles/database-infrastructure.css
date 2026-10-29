@@ -22,6 +22,14 @@
 .db-attention-warn > svg {
   color: var(--warn);
 }
+/* Normal progress is information, not a problem. */
+.db-attention-info {
+  border-color: var(--hairline);
+  background: var(--surface-2);
+}
+.db-attention-info > svg {
+  color: var(--muted);
+}
 .db-attention-failures {
   display: grid;
   gap: var(--space-2);
@@ -45,6 +53,11 @@
   font-size: var(--type-meta-size);
   line-height: var(--type-meta-line);
 }
+/* Client requirements stay visible beside the values they apply to. */
+.db-section-note.db-requirement {
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
 /* Title and its help stay together; actions keep the far edge. */
 .db-section-title {
   display: flex;
@@ -56,8 +69,11 @@
 .db-section-title h2 {
   margin: 0;
 }
-.db-workspace .app-workspace-section-head h2 + .hako-heading-help {
-  margin-right: auto;
+.db-workspace .app-workspace-section-head {
+  flex-wrap: wrap;
+}
+.db-section-title {
+  flex-wrap: wrap;
 }
 /* Each overview column stacks from the top instead of stretching to its neighbour. */
 .db-workspace .app-workspace-columns > .app-workspace-overview {
@@ -72,9 +88,6 @@
 }
 .app-workspace-columns .db-activity-rows .resource-row-actions {
   display: none;
-}
-.db-workspace .app-workspace-section-head > .app-workspace-count {
-  margin-left: auto;
 }
 .db-id,
 .db-fingerprint {
@@ -124,7 +137,6 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.db-member-role,
 .db-activity-kind {
   text-transform: capitalize;
 }
@@ -139,6 +151,9 @@
 .db-activity-message {
   color: var(--foreground);
   overflow-wrap: anywhere;
+}
+.db-activity-message.db-activity-error {
+  color: var(--destructive);
 }
 .db-activity-stages summary {
   min-height: 24px;
@@ -187,6 +202,9 @@
 }
 
 /* Database list: one line of counts above the grid. */
+.resource-toolbar.db-list-toolbar {
+  margin-bottom: var(--space-3);
+}
 .db-list-summary {
   display: flex;
   flex-wrap: wrap;
@@ -299,4 +317,8 @@
 }
 .ops-page .resource-footnote.infra-footnote {
   padding-inline: 0;
+}
+/* The heading already leaves its gap; the resource tabs add none of their own. */
+.tab-list.db-resource-tabs {
+  margin-top: 0;
 }
