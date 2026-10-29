@@ -63,8 +63,8 @@ func actionsSharedWorkspaceProfile(pod *corev1.Pod, workspaceGiB int64, flag, dr
 		budget := spec.Service{Resources: &spec.Resources{CPURequest: "2", CPULimit: "2", MemoryRequest: "6Gi", MemoryLimit: "6Gi"}, Actions: &spec.Actions{WorkspaceSizeGiB: 16}}
 		if len(pod.Spec.InitContainers) != 2 || len(pod.Spec.Containers) != 1 || len(pod.Spec.Volumes) != 1 ||
 			!reflect.DeepEqual(pod.Spec.InitContainers[0].Resources, actionsResources(budget, 4)) ||
-			!reflect.DeepEqual(pod.Spec.InitContainers[1].Resources, actionsResources(budget, 3)) ||
-			!reflect.DeepEqual(pod.Spec.Containers[0].Resources, actionsResources(budget, 1)) {
+			!reflect.DeepEqual(pod.Spec.InitContainers[1].Resources, actionsDaemonResources(budget, actionsDockerShare)) ||
+			!reflect.DeepEqual(pod.Spec.Containers[0].Resources, actionsResources(budget, actionsRunnerShare)) {
 			return fmt.Errorf("representative shared workspace changed its 2 CPU, 6 GiB memory, or 16 GiB workspace budget")
 		}
 	}

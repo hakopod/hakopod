@@ -370,7 +370,7 @@ func TestActionsWorkspaceProbeShapeSurvivesAPISerializationAndRejectsEnvelopeCha
 		t.Fatal(err)
 	}
 	admitted.Spec.Overhead[corev1.ResourceCPU] = resource.MustParse("0.1")
-	admitted.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("0.225")
+	admitted.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("0.45")
 	if !actionsWorkspaceProbeShape(&admitted, wanted) {
 		t.Fatal("equivalent API-decoded resource quantities were treated as an admission change")
 	}

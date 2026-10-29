@@ -122,7 +122,7 @@ func TestActionsServicePullFixtureIsolation(t *testing.T) {
 					continue
 				}
 				pods++
-				if pod.Spec.ActiveDeadlineSeconds == nil || *pod.Spec.ActiveDeadlineSeconds != 1800 || pod.Spec.Containers[0].Resources.Limits.Memory().Value() != 896*1024*1024 || pod.Spec.Containers[0].Resources.Limits.Cpu().MilliValue() != 475 {
+				if pod.Spec.ActiveDeadlineSeconds == nil || *pod.Spec.ActiveDeadlineSeconds != 1800 || pod.Spec.Containers[0].Resources.Limits.Memory().Value() != 1792*1024*1024 || pod.Spec.Containers[0].Resources.Limits.Cpu().MilliValue() != 950 {
 					t.Fatal("service pull resource or deadline bounds changed")
 				}
 				if (len(pod.Annotations) != 0) != (selection[0] == "1") {

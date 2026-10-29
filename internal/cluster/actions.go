@@ -214,9 +214,27 @@ func (c *Client) ActionsCredential(ctx context.Context, t Target, name string) (
 	return c.actionsCredential(ctx, t, name)
 }
 
+// GitHub jobs run most steps in the runner, so it and the Docker sidecar each
+// get half of the slot. Provider pods that run every job inside Docker keep a
+// quarter for their manager and three quarters for the daemon.
+const (
+	actionsRunnerShare = 2
+	actionsDockerShare = 2
+)
+
 // Resources are split within the declared per-slot budget, including the
 // native Docker sidecar. No host path, socket, device or service-account token.
 func actionsResources(s spec.Service, numerator int64) corev1.ResourceRequirements {
+	return actionsSplitResources(s, numerator, false)
+}
+
+// actionsDaemonResources is the Docker sidecar's share. Its own storage stays
+// small because images and layers live in the shared workspace volume.
+func actionsDaemonResources(s spec.Service, numerator int64) corev1.ResourceRequirements {
+	return actionsSplitResources(s, numerator, true)
+}
+
+func actionsSplitResources(s spec.Service, numerator int64, daemon bool) corev1.ResourceRequirements {
 	p := spec.EffectiveResources(s)
 	part := func(v string, cpu bool) resource.Quantity {
 		q := resource.MustParse(v)
@@ -226,7 +244,7 @@ func actionsResources(s spec.Service, numerator int64) corev1.ResourceRequiremen
 		return *resource.NewQuantity(max(1, (q.Value()-(512<<20))*numerator/4), resource.BinarySI)
 	}
 	storageRequest, storageLimit := resource.MustParse("256Mi"), resource.MustParse("2Gi")
-	if numerator != 3 {
+	if !daemon {
 		// Reserve the shared workspace and Docker data before scheduling a
 		// runner. Leave another GiB for logs and its writable container layer.
 		storageRequest = resource.MustParse(fmt.Sprintf("%dGi", spec.ActionsWorkspaceGiB(s.Actions)))
@@ -247,13 +265,13 @@ func actionsPod(t Target, service, id string, s spec.Service) *corev1.Pod {
 			// The volume root belongs to kubelet. Copy files without trying to
 			// restore its timestamps or ownership as the unprivileged runner.
 			{Name: "prepare", Image: spec.ActionsRunnerImage, Command: []string{"sh", "-c", "cp -R /home/runner/. /runner/"}, SecurityContext: safe, Resources: copyResources, VolumeMounts: []corev1.VolumeMount{{Name: "runner", MountPath: "/runner"}}},
-			{Name: "docker", Image: ActionsDaemonImage, Command: []string{"sh", "-c", actionsDaemon}, RestartPolicy: ptr(corev1.ContainerRestartPolicyAlways), Resources: actionsResources(s, 3),
+			{Name: "docker", Image: ActionsDaemonImage, Command: []string{"sh", "-c", actionsDaemon}, RestartPolicy: ptr(corev1.ContainerRestartPolicyAlways), Resources: actionsDaemonResources(s, actionsDockerShare),
 				SecurityContext: &corev1.SecurityContext{Privileged: ptr(false), RunAsUser: ptr(int64(0)), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}, Add: []corev1.Capability{"AUDIT_WRITE", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "MKNOD", "NET_BIND_SERVICE", "NET_ADMIN", "NET_RAW", "SETFCAP", "SETGID", "SETPCAP", "SETUID", "SYS_ADMIN", "SYS_CHROOT", "SYS_PTRACE"}}},
 				Env:             []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "unix:///var/run/docker.sock"}},
 				StartupProbe:    &corev1.Probe{ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{"docker", "info"}}}, PeriodSeconds: 2, FailureThreshold: 60, TimeoutSeconds: 2},
 				VolumeMounts:    mounts},
 		},
-		Containers: []corev1.Container{{Name: service, Image: spec.ActionsRunnerImage, WorkingDir: "/home/runner", Command: []string{"sh", "-c", "exec /usr/bin/python3 /usr/local/lib/hakopod/observe.py"}, SecurityContext: safe, Resources: actionsResources(s, 1), Env: []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "tcp://127.0.0.1:2375"}, {Name: "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT", Value: "1"}}, VolumeMounts: append(append([]corev1.VolumeMount{}, mounts...), corev1.VolumeMount{Name: "jit", MountPath: "/run/hakopod-jit", ReadOnly: true})}},
+		Containers: []corev1.Container{{Name: service, Image: spec.ActionsRunnerImage, WorkingDir: "/home/runner", Command: []string{"sh", "-c", "exec /usr/bin/python3 /usr/local/lib/hakopod/observe.py"}, SecurityContext: safe, Resources: actionsResources(s, actionsRunnerShare), Env: []corev1.EnvVar{{Name: "DOCKER_HOST", Value: "tcp://127.0.0.1:2375"}, {Name: "ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT", Value: "1"}}, VolumeMounts: append(append([]corev1.VolumeMount{}, mounts...), corev1.VolumeMount{Name: "jit", MountPath: "/run/hakopod-jit", ReadOnly: true})}},
 		Volumes:    []corev1.Volume{{Name: "runner", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr(resource.MustParse(fmt.Sprintf("%dGi", spec.ActionsWorkspaceGiB(s.Actions))))}}}, {Name: "jit", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, DefaultMode: ptr(int32(0440))}}}},
 	}}
 	if s.Architecture != "" {

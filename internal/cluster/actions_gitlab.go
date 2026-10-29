@@ -33,7 +33,7 @@ func gitlabActionsPod(t Target, service, id string, s spec.Service, registration
 	pod.Spec.SchedulerName = corev1.DefaultSchedulerName
 	safe := &corev1.SecurityContext{RunAsUser: ptr(int64(1001)), RunAsGroup: ptr(int64(1001)), RunAsNonRoot: ptr(true), ReadOnlyRootFilesystem: ptr(true), AllowPrivilegeEscalation: ptr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}}
 	managerResources := actionsResources(s, 1)
-	daemonResources := actionsResources(s, 3)
+	daemonResources := actionsDaemonResources(s, 3)
 	// The entire disk-backed workspace belongs to the private daemon. Keep the
 	// same summed storage reservation used by the shared Actions namespace quota.
 	for _, resources := range []struct{ manager, daemon corev1.ResourceList }{{managerResources.Requests, daemonResources.Requests}, {managerResources.Limits, daemonResources.Limits}} {
