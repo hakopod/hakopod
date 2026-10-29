@@ -1,0 +1,319 @@
+/* Proposed open-source authentication language, scoped to the study.
+   Components stay the dashboard's own; only tokens and layout change here. */
+.auth-study {
+  --study-forest: #0c1c16;
+  --study-display: #c9f2a6;
+  --study-ion: #d8ff45;
+  --study-stone: #d5cdc5;
+  --study-stone-2: #cbc2b9;
+  --study-ink: #12201b;
+  --study-muted: #545a54;
+  --study-line: #3d433d;
+  --study-line-soft: #a69d94;
+  --study-serif: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+
+  /* Dashboard tokens the shared components read. */
+  --background: var(--study-stone);
+  --foreground: var(--study-ink);
+  --muted-foreground: var(--study-muted);
+  --card: var(--study-stone);
+  --border: var(--study-line-soft);
+  --hairline: var(--study-line-soft);
+  --action: var(--study-ink);
+  --action-fg: var(--study-ion);
+  --action-text: var(--study-ink);
+
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(380px, 1fr);
+  min-height: 100vh;
+  background: var(--study-stone);
+  color: var(--study-ink);
+}
+
+/* Art panel */
+.auth-study-art {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--study-forest);
+  color: var(--study-display);
+}
+.auth-study-art canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+}
+.auth-study-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.22;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.auth-study-art-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 40px 48px 48px;
+}
+.auth-study-art-top,
+.auth-study-art-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+.auth-study-art-top { align-items: center; }
+.auth-study-art-foot { align-items: end; }
+.auth-study-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.auth-study-brand .brand-mark { color: inherit; }
+.auth-study-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 8px 12px;
+  border: 1px solid rgb(201 242 166 / 0.18);
+  border-radius: 999px;
+  background: rgb(20 40 30 / 0.38);
+  backdrop-filter: blur(14px) saturate(1.2);
+  color: #e9f5e3;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.auth-study-pill i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--study-ion);
+  box-shadow: 0 0 0 3px rgb(216 255 69 / 0.15);
+}
+.auth-study-art-foot h2 {
+  max-width: 15ch;
+  margin: 0;
+  font: 300 clamp(40px, 5.4vw, 76px) / 1.02 var(--study-serif);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.auth-study-art-foot p {
+  margin: 0;
+  color: rgb(233 245 227 / 0.62);
+  font: 12px/1.6 var(--font-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Form panel */
+.auth-study-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 40px 48px 32px;
+}
+.auth-study-panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: 32px;
+  color: var(--study-muted);
+  font-size: 13px;
+}
+.auth-study-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.auth-study-view h1 {
+  margin: 40px 0 12px;
+  font: 300 48px/1.05 var(--study-serif);
+  letter-spacing: -0.02em;
+}
+.auth-study-lede {
+  max-width: 34ch;
+  margin: 0;
+  opacity: 0.82;
+}
+.auth-study-fields {
+  display: grid;
+  gap: 24px;
+  margin-top: 40px;
+}
+
+/* Shared inputs read as a single underline in this language. */
+.auth-study .input-wrap {
+  border: 0;
+  border-bottom: 1px solid var(--study-line);
+  border-radius: 0;
+  background: transparent;
+}
+.auth-study .input-wrap:focus-within {
+  border-bottom-color: var(--study-ink);
+  box-shadow: inset 0 -1px 0 var(--study-ink);
+}
+.auth-study .input-wrap > .brackets { display: none; }
+.auth-study .input-wrap input {
+  padding-inline: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 16px;
+}
+.auth-study .input-wrap input:focus { outline: none; }
+.auth-study .input-wrap input[aria-invalid='true'] { color: #9a3324; }
+.auth-study .auth-study-mono { font-family: var(--font-mono); font-size: 15px; }
+.auth-study .field label { color: var(--study-ink); font-size: 13px; }
+
+/* Providers: square outline buttons in one row. */
+.auth-study-providers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.auth-study .auth-study-providers .button {
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  border-color: var(--study-line-soft);
+  border-radius: 0;
+  background: transparent;
+  color: var(--study-ink);
+}
+.auth-study .auth-study-providers .button:hover {
+  border-color: var(--study-ink);
+  background: rgb(255 255 255 / 0.22);
+}
+.auth-study .hako-auth-divider { margin: 0; color: var(--study-muted); }
+
+.auth-study .otp-cell {
+  border: 0;
+  border-bottom: 1px solid var(--study-line);
+  border-radius: 0;
+  background: transparent;
+  font: 300 30px/1.2 var(--study-serif);
+}
+
+.auth-study-note {
+  max-width: 44ch;
+  margin: 28px 0 0;
+  padding: 14px 16px;
+  border-left: 2px solid #2f5641;
+  background: var(--study-stone-2);
+  font-size: 13px;
+}
+.auth-study-mail {
+  margin: 48px 0 0;
+  font: 300 26px/1.25 var(--study-serif);
+}
+.auth-study-mail small {
+  display: block;
+  margin-top: 8px;
+  color: var(--study-muted);
+  font: 13px/1.5 var(--font-sans);
+}
+
+.auth-study-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 40px;
+}
+.auth-study .auth-study-link {
+  height: auto;
+  padding: 0;
+  background: none;
+  color: var(--study-muted);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.auth-study .auth-study-submit {
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--study-ink);
+}
+.auth-study .auth-study-submit > span {
+  display: grid;
+  place-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--study-ink);
+  color: var(--study-ion);
+  transition: transform 0.2s ease;
+}
+.auth-study .auth-study-link:hover { background: none; color: var(--study-ink); }
+.auth-study .auth-study-submit:is(:hover, :active) {
+  background: none;
+  filter: none;
+  transform: none;
+}
+.auth-study .auth-study-submit:hover > span { transform: translateX(3px); }
+.auth-study .auth-study-submit > .brackets { display: none; }
+
+.auth-study-legal {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  color: var(--study-muted);
+  font-size: 11px;
+}
+
+/* Review controls are not part of the design. */
+.auth-study-review {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid rgb(201 242 166 / 0.2);
+  border-radius: 999px;
+  background: rgb(12 28 22 / 0.85);
+  backdrop-filter: blur(12px);
+  color: #b9c9bb;
+  font-size: 11px;
+  transform: translateX(-50%);
+}
+.auth-study-review select {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(223 238 224 / 0.1);
+  color: #e9f5e3;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .auth-study { grid-template-columns: 1fr; }
+  .auth-study-art,
+  .auth-study-art-inner { min-height: 300px; }
+  .auth-study-art-inner { padding: 56px 20px 24px; }
+  .auth-study-art-top { flex-wrap: wrap; gap: 12px; }
+  .auth-study-art-foot h2 { font-size: clamp(32px, 9vw, 44px); }
+  .auth-study-art-foot p { display: none; }
+  .auth-study-panel { min-height: auto; padding: 24px 20px 40px; }
+  .auth-study-view h1 { margin-top: 8px; font-size: 38px; }
+  .auth-study .auth-study-submit > span { width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-study .auth-study-submit > span { transition: none; }
+}
