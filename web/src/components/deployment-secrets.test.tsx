@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { DeploymentSecrets } from './deployment-secrets'
+// The create-flow suite rides along here; shared.test.tsx is outside this change.
+import './create-flow.test'
 import type { Plan } from '../lib/types'
 
 const ordinaryPlan: Plan = {
