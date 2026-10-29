@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { ChevronRight } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { APIError, message, relative, timestamp } from '../lib/api'
 import {
@@ -6,13 +7,14 @@ import {
   checkApplicationSecurity,
   findingBadge,
   fixLine,
+  fixPrompt,
   invalidateSecurity,
   putSecurityPolicy,
   useApplicationSecurity,
   type ApplicationSecurity as Security,
   type SecurityFinding,
 } from '../lib/security'
-import { ErrorState, HeadingHelp, Loading, Note } from './shared'
+import { Copy, ErrorState, HeadingHelp, Loading, Note } from './shared'
 import { Badge } from './ui/surfaces'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
@@ -28,6 +30,7 @@ export function ApplicationSecurity({ applicationId }: { applicationId: string }
 
 const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 const tone = { critical: 'danger', high: 'danger', moderate: 'warning', low: 'neutral' } as const
+const severities = ['critical', 'high', 'moderate', 'low'] as const
 
 export function ApplicationSecurityView({
   security,
@@ -48,6 +51,8 @@ export function ApplicationSecurityView({
   const [toast, setToast] = useState('')
   const incomplete = security.incomplete
   const unknown = security.unknown_services
+  const counts: Partial<Record<SecurityFinding['severity'], number>> = {}
+  for (const f of security.findings) counts[f.severity] = (counts[f.severity] ?? 0) + 1
   const showPolicy = security.auto_patch || security.findings.some((f) => f.auto_eligible)
 
   const check = async () => {
@@ -109,6 +114,9 @@ export function ApplicationSecurityView({
               </HeadingHelp>
             </div>
           )}
+          {security.findings.length > 0 && (
+            <Copy value={fixPrompt(security)} label="Copy fix prompt" className="ml-auto" />
+          )}
           {security.can_write && (
             <Button type="button" variant="secondary" size="sm" disabled={checking} onClick={check}>
               {checking ? 'Checking…' : 'Check again'}
@@ -128,46 +136,62 @@ export function ApplicationSecurityView({
         </p>
       )}
       {security.findings.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {security.findings.map((f) => (
-            <li
-              key={`${f.advisory_id}:${f.service}`}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border py-2"
-            >
-              <Badge tone={f.confidence === 'confirmed' ? 'danger' : 'warning'}>
-                {findingBadge(f)}
-              </Badge>
-              <Badge tone={tone[f.severity]}>{capitalize(f.severity)}</Badge>
-              <a
-                href={f.url}
-                target="_blank"
-                rel="noreferrer"
-                className="min-w-0 font-medium [overflow-wrap:anywhere]"
+        <details className="group min-w-0 border-y border-border">
+          <summary className="flex min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 py-3 [&::-webkit-details-marker]:hidden">
+            <ChevronRight
+              size={16}
+              aria-hidden="true"
+              className="shrink-0 transition-transform group-open:rotate-90"
+            />
+            <span className="font-medium">
+              {security.findings.length}{' '}
+              {security.findings.length === 1 ? 'advisory affects' : 'advisories affect'} this app
+            </span>
+            {severities
+              .filter((level) => counts[level])
+              .map((level) => (
+                <Badge key={level} tone={tone[level]}>
+                  {counts[level]} {level}
+                </Badge>
+              ))}
+          </summary>
+          <ul className="flex flex-col pb-1">
+            {security.findings.map((f) => (
+              <li
+                key={`${f.advisory_id}:${f.service}`}
+                className="flex min-w-0 items-start gap-3 border-t border-border py-3"
               >
-                {f.title}
-              </a>
-              <span className="text-sm text-muted-foreground">
-                {f.source === 'osv' ? 'OSV.dev' : 'Hakopod'}
-              </span>
-              {f.aliases && f.aliases.length > 0 && (
-                <span className="min-w-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                  {f.aliases.slice(0, 2).join(', ')}
+                <span className="w-20 shrink-0">
+                  <Badge tone={tone[f.severity]}>{capitalize(f.severity)}</Badge>
                 </span>
-              )}
-              <span className="min-w-0 text-sm text-muted-foreground [overflow-wrap:anywhere]">
-                {f.service}: {f.evidence}
-              </span>
-              <span className="min-w-0 text-sm [overflow-wrap:anywhere]">
-                {f.fix === 'manual' ? f.fix_reason || fixLine(f) : fixLine(f)}
-              </span>
-              {security.can_write && f.fix !== 'manual' && (
-                <Button type="button" size="sm" onClick={() => setFixing(f)}>
-                  {f.fix === 'rebuild' ? 'Rebuild' : 'Update'}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
+                <div className="grid min-w-0 flex-1 gap-1">
+                  <a
+                    href={f.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={f.title}
+                    className="min-w-0 truncate text-sm font-medium"
+                  >
+                    {f.title}
+                  </a>
+                  <p className="min-w-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                    {findingBadge(f)} · {f.service}: {f.evidence} ·{' '}
+                    {f.source === 'osv' ? 'OSV.dev' : 'Hakopod'}
+                    {f.aliases && f.aliases.length > 0 && ` · ${f.aliases.slice(0, 2).join(', ')}`}
+                  </p>
+                  <p className="min-w-0 text-xs [overflow-wrap:anywhere]">
+                    {f.fix === 'manual' ? f.fix_reason || fixLine(f) : fixLine(f)}
+                  </p>
+                </div>
+                {security.can_write && f.fix !== 'manual' && (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setFixing(f)}>
+                    {f.fix === 'rebuild' ? 'Rebuild' : 'Update'}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {unknown.length > 0 && (
         <p className="min-w-0 text-sm text-muted-foreground [overflow-wrap:anywhere]">
