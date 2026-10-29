@@ -13,4 +13,7 @@ iptables -t nat -A POSTROUTING -o "$iface" -j SNAT --to-source "$addr" -p udp
 # Keep the standard socket in the daemon for nested GitHub job-container mounts.
 # Docker images and build layers share the bounded, disk-backed workspace.
 # Keeping them off the memory-backed root avoids exhausting RAM during pulls.
-exec dockerd --data-root=/home/runner/.docker-data --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --tls=false --group=1001 --iptables=false --ip6tables=false --mtu="$mtu" --storage-driver=vfs --feature=containerd-snapshotter=false
+# Public Docker Hub pulls go through the installation's pull-through mirror
+# when the managed-actions module installed one. Without it the name does not
+# resolve and dockerd pulls from Docker Hub directly.
+exec dockerd --data-root=/home/runner/.docker-data --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --tls=false --group=1001 --iptables=false --ip6tables=false --mtu="$mtu" --registry-mirror=http://registry-mirror.hakopod-actions-mirror.svc.cluster.local:5000 --insecure-registry=registry-mirror.hakopod-actions-mirror.svc.cluster.local:5000 --storage-driver=vfs --feature=containerd-snapshotter=false

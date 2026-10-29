@@ -364,6 +364,32 @@ and SHA-256. Its run-specific key can be removed after acceptance. A successful
 archive smoke check alone does not verify GitHub upload, download or cross-job
 reuse; consult the release verification record for the completed cache run.
 
+## Docker Hub pull-through mirror
+
+Every job starts with an empty Docker data directory, so each job pulls its
+service and job images again. The managed-actions module also installs a Docker
+Hub pull-through mirror, `registry-mirror` in the `hakopod-actions-mirror`
+namespace. Runner Docker daemons try the mirror first. After the first pull,
+public Docker Hub images such as `postgres` and `redis` come from inside the
+cluster.
+
+- The mirror caches public Docker Hub images only. It has no credentials. A
+  private Docker Hub image fails on the mirror and Docker pulls it from Docker
+  Hub directly with the job's own login, which is never sent to the mirror.
+- Images from other registries, such as GHCR, are not mirrored.
+- If the mirror is missing or down, Docker pulls from Docker Hub directly.
+  Existing installations get the mirror the next time the managed-actions
+  module runs.
+- Runner pods can reach this one pod on TCP 5000 and nothing else in the
+  cluster. A runner on an internal-only network gets no mirror access.
+- The mirror is shared by every pool in the installation. A job can tell from
+  pull timing whether another job recently pulled the same public image. Image
+  contents are verified by digest, so a job cannot change what another job
+  receives.
+- The cache is an `emptyDir` of at most 20 GiB. A restart empties it, and Docker
+  Hub entries expire after seven days.
+- GitHub and GitLab runners use the mirror. Bitbucket runners do not yet.
+
 ## Building images for another architecture
 
 `docker/setup-qemu-action` registers interpreters through the kernel's

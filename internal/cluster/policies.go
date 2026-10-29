@@ -108,6 +108,10 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{
 				CIDR: "0.0.0.0/0", Except: []string{"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.168.0.0/16", "198.18.0.0/15", "224.0.0.0/4", "240.0.0.0/4"},
 			}}}})
+			// Only runners that can already reach the internet may use the mirror.
+			if svc.Actions != nil {
+				policy.Spec.Egress = append(policy.Spec.Egress, actionsMirrorEgress())
+			}
 		}
 		if t.policy != nil {
 			for i := range policy.Spec.Egress {

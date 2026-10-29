@@ -16,6 +16,20 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// Runners may reach the installation's Docker Hub pull-through mirror and
+// nothing else in the cluster. It serves public images and holds no credentials.
+const (
+	ActionsMirrorNamespace = "hakopod-actions-mirror"
+	actionsMirrorPort      = 5000
+)
+
+func actionsMirrorEgress() networkingv1.NetworkPolicyEgressRule {
+	return networkingv1.NetworkPolicyEgressRule{
+		To:    []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": ActionsMirrorNamespace}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/name": "registry-mirror"}}}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: ptr(corev1.ProtocolTCP), Port: ptr(intstr.FromInt32(actionsMirrorPort))}},
+	}
+}
+
 func gitlabSlotNetworkPolicy(t Target, service, id string, runtime GitLabActionsRuntime, denied []string, allow bool) *networkingv1.NetworkPolicy {
 	labels := labelsFor(t, service)
 	labels[gitlabActionsProviderLabel], labels[gitlabActionsSlotLabel] = "gitlab", id
@@ -53,7 +67,7 @@ func gitlabSlotNetworkPolicy(t Target, service, id string, runtime GitLabActions
 			rule.Ports = append(rule.Ports, networkingv1.NetworkPolicyPort{Protocol: ptr(corev1.ProtocolTCP), Port: ptr(intstr.FromInt32(port))})
 		}
 	}
-	p.Spec.Egress = append(p.Spec.Egress, rule)
+	p.Spec.Egress = append(p.Spec.Egress, rule, actionsMirrorEgress())
 	for _, destination := range runtime.PrivateDestinations {
 		u, _ := url.Parse(destination.Origin)
 		port := 443
