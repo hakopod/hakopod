@@ -173,7 +173,7 @@ function AccessPolicyForm({ current }: { current: Access }) {
             id="access-allow"
             rows={5}
             value={allow}
-            placeholder={'10.8.0.0/24\n203.0.113.0/24'}
+            placeholder="For example 10.8.0.0/24"
             onChange={(event) => setAllow(event.target.value)}
           />
           <div className="field-help">
