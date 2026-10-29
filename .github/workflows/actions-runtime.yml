@@ -59,10 +59,14 @@ on:
         type: choice
         options: [disabled, vfs, overlay2, service-pull-vfs, service-pull-shared-vfs, service-pull-shared-overlay2]
         default: disabled
+      registry_mirror:
+        description: Install and warm the Docker Hub pull-through mirror before the run
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}-${{ inputs.shared_workspace || 'disabled' }}-${{ inputs.runtime_force_overlay_diff && 'forced-candidate-runtime' || inputs.runtime_buildkit_image != '' && 'candidate-runtime' || inputs.buildkit_candidate && 'candidate-build' || inputs.buildkit_qualification && 'qualification' || inputs.export_buildkit_test_run != '' && 'kernel-tests' || inputs.export_force_overlay_diff && 'forced-export' || (inputs.export_benchmark || inputs.export_buildkit_image != '') && 'export' || 'normal-runtime' }}
+  group: actions-runtime-${{ github.event.pull_request.number || github.ref }}-${{ inputs.shared_workspace || 'disabled' }}-${{ inputs.registry_mirror && 'mirror' || 'direct' }}-${{ inputs.runtime_force_overlay_diff && 'forced-candidate-runtime' || inputs.runtime_buildkit_image != '' && 'candidate-runtime' || inputs.buildkit_candidate && 'candidate-build' || inputs.buildkit_qualification && 'qualification' || inputs.export_buildkit_test_run != '' && 'kernel-tests' || inputs.export_force_overlay_diff && 'forced-export' || (inputs.export_benchmark || inputs.export_buildkit_image != '') && 'export' || 'normal-runtime' }}
   cancel-in-progress: true
 env:
   HAKOPOD_ACTIONS_BUILDKIT_CANDIDATE: ${{ inputs.buildkit_candidate && '1' || '0' }}
@@ -167,8 +171,16 @@ jobs:
           python3 scripts/actions/setup-dev-runtime.py
           sleep 10
           kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
+      - name: Install and warm the registry mirror
+        if: inputs.registry_mirror
+        run: python3 scripts/actions/registry-mirror-dev.py
       - name: Verify Docker workloads inside gVisor
         run: python3 scripts/actions/docker-acceptance.py
+      - name: Preserve registry mirror requests
+        if: always() && inputs.registry_mirror
+        run: |
+          mkdir -p .local/actions-runtime-acceptance
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev -n hakopod-actions-mirror logs deployment/registry-mirror > .local/actions-runtime-acceptance/registry-mirror.log || true
       - name: Preserve bounded runtime evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
