@@ -32,6 +32,21 @@ Copy this standing checklist into each UI review. The blank boxes are a reusable
 - [ ] Action links use shared Button with asChild. Sibling actions have equal height and vertical alignment; labels remain readable and targets usable.
 - [ ] Application endpoint text and external-link icon stay on one line; long labels truncate without hiding the destination from assistive technology. Alarm links have visible separation from the preceding content.
 
+### Spacing and rhythm
+
+Every page uses one spacing scale, exposed as `--space-1` … `--space-7` in `web/src/styles/foundation.css`: 4, 8, 12, 16, 24, 32 and 48px. Run `web/scripts/page-audit.js` on each route (paste it into the browser console on the loaded page) and record its result; a page passes only with zero findings or each remaining finding explained.
+
+- [ ] Page heading: balanced vertical padding (`--space-4` above and below), title row first, status or state on the title's baseline before the title with an 8px gap, metadata on the next line 4px below.
+- [ ] Heading actions align to the title row, not the metadata row, and share one height. One primary action at most; the rest are secondary or live in the heading menu.
+- [ ] Between the page heading (or page tabs) and the first section: `--space-5` (24px). Between top-level sections: `--space-6` (32px), `--space-5` below 640px. Nothing else between top-level blocks.
+- [ ] Section heading to its content: `--space-3` (12px). Stacked blocks inside a section: `--space-4` (16px).
+- [ ] Text never touches a rule, border or neighbouring block: at least `--space-2` (8px) from any divider it is not part of.
+- [ ] Every block's content starts on the page inset. Ghost buttons and text links that sit on the left edge compensate their padding so the label, not the hit area, aligns.
+- [ ] Card padding is `--space-4` (Cloud `--space-3`) on all sides; card grids and row lists use a `--space-3` gap. A card's first line has the same inset as its sides.
+- [ ] Alerts and notices are full content width, use the shared radius and sit `--space-5` below the global header or page heading.
+- [ ] Inline gaps: icon to label 8px, metadata items 12px, sibling buttons 8px.
+- [ ] Long single-line values (image references, IDs, URLs) are shortened to a readable label with the full value in the inspector, title or copy control; they never wrap inside card metadata.
+
 ### Components and interaction
 
 - [ ] Consume Hatch through public exports. Use shared tokens for color, spacing, state and typography; check dark and Paper themes.

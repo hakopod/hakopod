@@ -58,6 +58,22 @@ html[data-edition='cloud'] {
   --type-label-weight: 400;
   --type-meta-weight: 300;
 }
+/* One spacing scale for every page; see docs/ui-ux-checklist.md "Spacing and rhythm". */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --section-gap: var(--space-6);
+}
+@media (max-width: 639px) {
+  :root {
+    --section-gap: var(--space-5);
+  }
+}
 :root,
 .dark,
 .light {
