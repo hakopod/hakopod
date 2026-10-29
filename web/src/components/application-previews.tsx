@@ -10,7 +10,8 @@ import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/input'
-import { Empty, ErrorState, Loading, Status, RequestError } from './shared'
+import { ErrorState, Loading, Status, RequestError } from './shared'
+import { GuidedEmpty } from './resource-card'
 
 type Preview = components['schemas']['Preview']
 export function ApplicationPreviews({ application }: { application: Application }) {
@@ -68,9 +69,28 @@ export function ApplicationPreviews({ application }: { application: Application 
         until complete. Up to three active previews per project.
       </p>
       {!previews.length ? (
-        <Empty
-          title="No previews yet"
-          description="Test an image before changing your running application."
+        <GuidedEmpty
+          compact
+          icon="play"
+          title="Try a change before it reaches the application"
+          description="A preview runs an image on its own, with separate secrets and volumes, and is removed when it expires."
+          steps={[
+            { title: 'Choose the image', detail: 'Pick the image or reference to try.' },
+            { title: 'Test it in isolation', detail: 'The running application is untouched.' },
+            { title: 'It cleans up at expiry', detail: 'Cleanup retries until complete.' },
+          ]}
+          primary={
+            canManage && (
+              <Button asChild variant="primary">
+                <Link
+                  to="/applications/$applicationId/previews/new"
+                  params={{ applicationId: application.id }}
+                >
+                  Create preview
+                </Link>
+              </Button>
+            )
+          }
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

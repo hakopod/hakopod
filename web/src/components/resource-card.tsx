@@ -192,10 +192,12 @@ export function ResourceEmpty({
   )
 }
 
-// First-run state: what this place is for, the first step, and what follows it.
+// First-run state: what this place is for, the first step, and what follows it. Inside a
+// tab or section, `compact` keeps the same parts on one row.
 export function GuidedEmpty({
   icon,
-  satellites,
+  satellites = [],
+  compact,
   title,
   description,
   primary,
@@ -204,7 +206,8 @@ export function GuidedEmpty({
   tip,
 }: {
   icon: string
-  satellites: { icon: string; label: string }[]
+  satellites?: { icon: string; label: string }[]
+  compact?: boolean
   title: string
   description: string
   primary?: ReactNode
@@ -212,6 +215,34 @@ export function GuidedEmpty({
   steps?: { title: string; detail: string }[]
   tip?: ReactNode
 }) {
+  if (compact)
+    return (
+      <section className="guided-empty guided-empty-compact" aria-label={title}>
+        <span className="guided-empty-hub" aria-hidden="true">
+          <Icon name={icon} size={18} />
+        </span>
+        <div className="guided-empty-text">
+          <h3>{title}</h3>
+          <p>{description}</p>
+          {steps && steps.length > 0 && (
+            <ol className="guided-empty-inline-steps">
+              {steps.map((step, i) => (
+                <li key={step.title} title={step.detail}>
+                  <span>{String(i + 1).padStart(2, '0')}</span>
+                  {step.title}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+        {(primary || secondary) && (
+          <div className="guided-empty-actions">
+            {secondary}
+            {primary}
+          </div>
+        )}
+      </section>
+    )
   return (
     <section className="guided-empty" aria-label={title}>
       <div className="guided-empty-body">

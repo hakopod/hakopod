@@ -9,7 +9,8 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Empty, ErrorState, Loading, Note, RequestError } from './shared'
+import { ErrorState, Loading, Note, RequestError } from './shared'
+import { GuidedEmpty } from './resource-card'
 
 export default function ApplicationSecrets({
   project,
@@ -55,10 +56,23 @@ export default function ApplicationSecrets({
       ) : secrets.error ? (
         <ErrorState error={secrets.error} />
       ) : !secrets.data?.items.length ? (
-        <Empty
+        <GuidedEmpty
+          compact
           icon="lock"
-          title="No saved secrets"
-          description="Store a value here, then reference its name from your service configuration."
+          title="Keep passwords and tokens out of configuration"
+          description="Store a value here once, then reference its name from your service configuration."
+          steps={[
+            { title: 'Add a secret', detail: 'Its value is never shown again.' },
+            { title: 'Reference it by name', detail: 'In a service variable.' },
+            { title: 'Deploy the change', detail: 'Through a reviewed deployment.' },
+          ]}
+          primary={
+            scope.can('deployments:write') && (
+              <Button variant="primary" disabled={busy} onClick={() => setEdit('')}>
+                Add secret
+              </Button>
+            )
+          }
         />
       ) : (
         <div className="panel settings-session-list">

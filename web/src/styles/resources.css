@@ -562,3 +562,67 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
     border-top: 1px solid var(--hairline);
   }
 }
+
+/* Compact: the same guidance inside a tab or section, on one row. */
+.guided-empty-compact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+.guided-empty-compact > .guided-empty-hub {
+  position: static;
+  width: 40px;
+  height: 40px;
+  box-shadow: none;
+}
+.guided-empty-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.guided-empty-text h3 {
+  margin: 0;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-card-weight);
+}
+.guided-empty-text > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.guided-empty-inline-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.guided-empty-inline-steps li {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+.guided-empty-inline-steps span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+.guided-empty-compact > .guided-empty-actions {
+  margin: 0;
+  justify-content: flex-end;
+  align-self: center;
+}
+@media (max-width: 639px) {
+  .guided-empty-compact {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .guided-empty-compact > .guided-empty-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
