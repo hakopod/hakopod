@@ -219,6 +219,12 @@ class ActionsRuntimeTests(unittest.TestCase):
                         (template.parent / 'config.toml').write_text(
                             generated)
                         (template.parent / 'config.toml').chmod(0o644)
+                    elif args[:2] == ['kubectl', 'apply'] and args[-1].endswith('mirror.json'):
+                        events.append('mirror-apply')
+                        items = json.loads(Path(args[-1]).read_text())['items']
+                        self.assertEqual([item['kind'] for item in items], ['Namespace', 'Deployment', 'Service', 'NetworkPolicy'])
+                        self.assertTrue(all(item['metadata']['labels']['hakopod.com/installation'] == 'install-id' for item in items))
+                        self.assertIn('@sha256:', items[1]['spec']['template']['spec']['containers'][0]['image'])
                     elif args[:2] == ['kubectl', 'apply']:
                         events.append('runtimeclass-apply')
                         state.runtime = json.loads(Path(args[-1]).read_text())
@@ -285,6 +291,8 @@ class ActionsRuntimeTests(unittest.TestCase):
                                                 profile)
                         self.assertLess(events.index('withdraw'), events.index('restart'))
                         self.assertLess(events.index('runtimeclass-check'), events.index('restore'))
+                        self.assertLess(events.index('runtimeclass-apply'), events.index('mirror-apply'))
+                        self.assertLess(events.index('mirror-apply'), events.index('restore'))
                         self.assertEqual(events.count('binary-check'), 2)
                         self.assertEqual((base / 'workspace-profile').read_text(), (profile or actions_runtime.WORKSPACE_PROFILE) + '\n')
                         if profile == 'vfs':
@@ -358,9 +366,12 @@ class MultiNodeTests(unittest.TestCase):
                 return {}
             return applied['value']
 
+        commands = []
+
         def run(args, **_kwargs):
-            self.assertEqual(args[:2], ['kubectl', 'apply'])
-            applied['value'] = json.loads(Path(args[-1]).read_text())
+            commands.append(args[:3])
+            if args[-1].endswith('runtime.json'):
+                applied['value'] = json.loads(Path(args[-1]).read_text())
 
         class Lock:
             def __enter__(self): return self
@@ -369,8 +380,18 @@ class MultiNodeTests(unittest.TestCase):
         with patch.object(actions_runtime, 'RuntimeMaintenanceLock', Lock), \
              patch.object(actions_runtime.subprocess, 'run', side_effect=run) as called:
             actions_runtime.publish_runtime_class({'id': self.IDENT}, ['kubectl'], read)
-        called.assert_called_once()
+        self.assertEqual(called.call_count, 3)
+        self.assertEqual(commands, [['kubectl', 'apply', '--server-side'], ['kubectl', 'apply', '--server-side'],
+                                    ['kubectl', '-n', actions_runtime.MIRROR_NAMESPACE]])
         self.assertEqual(applied['value'], actions_runtime.runtime_class(self.IDENT))
+
+    def test_registry_mirror_refuses_an_unowned_namespace(self):
+        other = {'metadata': {'labels': {actions_runtime.INSTALLATION_LABEL: 'other'}}}
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(actions_runtime.subprocess, 'run') as run, \
+             self.assertRaisesRegex(ValueError, 'unowned Actions registry mirror'):
+            actions_runtime.apply_registry_mirror(self.IDENT, ['kubectl'], lambda *args: other, tmp)
+        run.assert_not_called()
 
     def test_adoption_labels_only_a_ready_agent_on_the_server_release(self):
         taint = [{'key': actions_runtime.DEDICATED_TAINT, 'value': 'true', 'effect': 'NoSchedule'}]

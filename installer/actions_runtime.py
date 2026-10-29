@@ -38,6 +38,8 @@ RUNTIME_LABEL = 'hakopod.io/actions-runtime'
 WORKSPACE_KEYS = ['dev.gvisor.spec.mount.runner.' + name for name in ('type', 'share', 'options')]
 MAINTENANCE_LOCK = Path('/run/lock/hakopod-actions-runtime.lock')
 INSTALLATION_LABEL = 'hakopod.com/installation'
+MIRROR_NAMESPACE = 'hakopod-actions-mirror'
+MIRROR_IMAGE = 'docker.io/library/registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e'
 CONTROL_PLANE_LABEL = 'node-role.kubernetes.io/control-plane'
 DEDICATED_TAINT = 'hakopod.io/actions-only'
 CONTAINERD_CONFIG = 'agent/etc/containerd/config.toml'
@@ -295,6 +297,56 @@ def apply_runtime_class(ident, kube, read, tmp):
     verify_runtime_class(read('get', 'runtimeclass', 'hakopod-actions'), ident)
 
 
+def registry_mirror(ident):
+    """Docker Hub pull-through mirror that runner pods' dockerd uses first.
+
+    It caches public images only. Runner policies allow this pod and port and
+    nothing else in the cluster; dockerd pulls upstream when it is missing.
+    """
+    labels = {'app.kubernetes.io/managed-by': 'hakopod', INSTALLATION_LABEL: ident}
+    selector = {'app.kubernetes.io/name': 'registry-mirror'}
+    meta = {'name': 'registry-mirror', 'namespace': MIRROR_NAMESPACE, 'labels': labels}
+    private = ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.168.0.0/16', '198.18.0.0/15', '224.0.0.0/4', '240.0.0.0/4']
+    container = {
+        'name': 'registry', 'image': MIRROR_IMAGE, 'ports': [{'containerPort': 5000}],
+        'env': [{'name': 'REGISTRY_PROXY_REMOTEURL', 'value': 'https://registry-1.docker.io'},
+                {'name': 'REGISTRY_STORAGE_DELETE_ENABLED', 'value': 'true'},
+                {'name': 'OTEL_TRACES_EXPORTER', 'value': 'none'}],
+        'readinessProbe': {'httpGet': {'path': '/', 'port': 5000}, 'periodSeconds': 5},
+        'resources': {'requests': {'cpu': '100m', 'memory': '128Mi'}, 'limits': {'cpu': '1', 'memory': '512Mi'}},
+        'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}},
+        'volumeMounts': [{'name': 'cache', 'mountPath': '/var/lib/registry'}, {'name': 'tmp', 'mountPath': '/tmp'}],
+    }
+    pod = {
+        'automountServiceAccountToken': False, 'enableServiceLinks': False,
+        'securityContext': {'runAsNonRoot': True, 'runAsUser': 65534, 'runAsGroup': 65534, 'fsGroup': 65534, 'seccompProfile': {'type': 'RuntimeDefault'}},
+        'containers': [container],
+        # ponytail: the cache is lost on restart; a PVC if refills cost too much.
+        'volumes': [{'name': 'cache', 'emptyDir': {'sizeLimit': '20Gi'}}, {'name': 'tmp', 'emptyDir': {'sizeLimit': '64Mi'}}],
+    }
+    return [
+        {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': MIRROR_NAMESPACE, 'labels': {**labels, 'pod-security.kubernetes.io/enforce': 'restricted'}}},
+        {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': meta, 'spec': {'replicas': 1, 'selector': {'matchLabels': selector}, 'template': {'metadata': {'labels': {**selector, **labels}}, 'spec': pod}}},
+        {'apiVersion': 'v1', 'kind': 'Service', 'metadata': meta, 'spec': {'selector': selector, 'ports': [{'port': 5000, 'targetPort': 5000, 'protocol': 'TCP'}]}},
+        {'apiVersion': 'networking.k8s.io/v1', 'kind': 'NetworkPolicy', 'metadata': meta, 'spec': {
+            'podSelector': {'matchLabels': selector}, 'policyTypes': ['Ingress', 'Egress'],
+            'ingress': [{'from': [{'namespaceSelector': {}}], 'ports': [{'protocol': 'TCP', 'port': 5000}]}],
+            'egress': [{'to': [{'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'kube-system'}}, 'podSelector': {'matchLabels': {'k8s-app': 'kube-dns'}}}],
+                        'ports': [{'protocol': 'UDP', 'port': 53}, {'protocol': 'TCP', 'port': 53}]},
+                       {'to': [{'ipBlock': {'cidr': '0.0.0.0/0', 'except': private}}], 'ports': [{'protocol': 'TCP', 'port': 443}]}]}},
+    ]
+
+
+def apply_registry_mirror(ident, kube, read, tmp):
+    existing = read('get', 'namespace', MIRROR_NAMESPACE, '--ignore-not-found')
+    if existing and existing.get('metadata', {}).get('labels', {}).get(INSTALLATION_LABEL) != ident:
+        raise ValueError('An unowned Actions registry mirror namespace already exists')
+    manifest = Path(tmp) / 'mirror.json'
+    manifest.write_text(json.dumps({'apiVersion': 'v1', 'kind': 'List', 'items': registry_mirror(ident)}))
+    subprocess.run([*kube, 'apply', '--server-side', '--field-manager=hakopod-installer', '-f', str(manifest)], check=True, timeout=30)
+    subprocess.run([*kube, '-n', MIRROR_NAMESPACE, 'rollout', 'status', 'deployment/registry-mirror', '--timeout=180s'], check=True, timeout=200)
+
+
 def publish_runtime_class(marker, kube, read):
     """Create the cluster's RuntimeClass without preparing the server node.
 
@@ -308,6 +360,7 @@ def publish_runtime_class(marker, kube, read):
         refuse_unowned_published_nodes(read('get', 'nodes')['items'], ident)
         with tempfile.TemporaryDirectory(prefix='hakopod-actions-') as tmp:
             apply_runtime_class(ident, kube, read, tmp)
+            apply_registry_mirror(ident, kube, read, tmp)
 
 
 def k3s_version(node):
@@ -543,6 +596,7 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance, a
             verify_runtime_class(read('get', 'runtimeclass', 'hakopod-actions'), ident)
         else:
             apply_runtime_class(ident, kube, read, tmp)
+            apply_registry_mirror(ident, kube, read, tmp)
         current = read('get', 'node', config['node_name'])
         if current['metadata']['uid'] != node['metadata']['uid'] or current['metadata'].get('labels', {}).get(INSTALLATION_LABEL) != ident or 'hakopod.io/actions-workspace-probe' in current['metadata'].get('annotations', {}) or any(name in current['metadata'].get('labels', {}) for name in (RUNTIME_LABEL, WORKSPACE_LABEL)):
             raise ValueError('Actions node eligibility changed before runtime verification completed')
