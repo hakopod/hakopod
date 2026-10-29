@@ -2,6 +2,7 @@ import { DeleteServiceDialog } from '../components/delete-service-dialog'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { DeploymentForm } from '../components/deploy-dialog'
+import { useApplicationDraft } from '../lib/drafts'
 import { Empty, ErrorState, Loading } from '../components/shared'
 import { client, unwrap } from '../lib/client'
 import { useScope, useResourceScope } from '../lib/scope'
@@ -31,8 +32,9 @@ function ConfigureApplication() {
       unwrap(client.GET('/applications/{id}', { signal, params: { path: { id: applicationId } } })),
     gcTime: 0,
   })
+  const staged = useApplicationDraft(applicationId)
   useResourceScope(application.data)
-  if (application.isPending) return <Loading />
+  if (application.isPending || staged.isPending) return <Loading />
   if (application.error || !application.data) return <ErrorState error={application.error} />
   if (!scope.can('deployments:write'))
     return (
@@ -137,7 +139,9 @@ function ConfigureApplication() {
     )
   return (
     <DeploymentForm
-      application={application.data}
+      // Edits continue from the staged changes so a second edit never drops the first.
+      application={staged.data ? { ...application.data, spec: staged.data.spec } : application.data}
+      draftRevision={staged.isError ? undefined : (staged.data?.revision ?? 0)}
       initialMode={service && mode === 'compose' ? 'form' : mode}
       serviceName={remove ? undefined : service}
       removeService={remove}

@@ -7,6 +7,7 @@ import { useResourceScope, useScope } from '../lib/scope'
 import { httpFunction } from '../lib/http-functions'
 import type { Service } from '../lib/types'
 import { DeploymentForm } from '../components/deploy-dialog'
+import { useApplicationDraft } from '../lib/drafts'
 import { FormPage } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -23,6 +24,7 @@ function AddService() {
   const { applicationId } = Route.useParams()
   const navigate = useNavigate()
   const scope = useScope()
+  const staged = useApplicationDraft(applicationId)
   const app = useQuery({
     queryKey: ['application', applicationId],
     queryFn: ({ signal }) =>
@@ -54,7 +56,7 @@ function AddService() {
   const [reuse, setReuse] = useState('')
   const [source, setSource] = useState<'' | 'catalog' | 'compose' | 'function' | 'image'>('')
   const [draft, setDraft] = useState<{ name: string; service: Service }>()
-  if (app.isPending) return <Loading />
+  if (app.isPending || staged.isPending) return <Loading />
   if (app.error || !app.data) return <ErrorState error={app.error} />
   if (!scope.can('deployments:write'))
     return (
@@ -63,11 +65,13 @@ function AddService() {
         description="Your role cannot add services to this application."
       />
     )
-  const application = app.data
+  // Names and collisions are checked against the staged configuration when one exists.
+  const application = staged.data ? { ...app.data, spec: staged.data.spec } : app.data
   if (draft)
     return (
       <DeploymentForm
         application={application}
+        draftRevision={staged.isError ? undefined : (staged.data?.revision ?? 0)}
         addedService={draft}
         serviceName={draft.name}
         onClose={() => setDraft(undefined)}
