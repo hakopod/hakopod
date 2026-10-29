@@ -1,22 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { APIError, message } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import {
   networkDraft,
   networkTOML,
   segmentDrafts,
+  type SegmentDraft,
   type VirtualNetworkDetail,
   type VirtualNetworkPlan,
 } from '../lib/virtual-networks'
-import { FormHint, FormPage, FormSection } from './form-page'
+import { FlowSteps, PendingButton, plural } from './create-flow'
+import { FormError, FormPage } from './form-page'
 import { Icon } from './icons'
 import { Note, RequestError } from './shared'
+import { Consequence, Consequences, ReviewFacts, ScopeLabel } from './task-review'
 import { TOMLCode } from './toml-code'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
+
+// Mirrors the name rule in lib/virtual-networks so the first step can be checked on its own.
+const validName = /^[a-z](?:[a-z0-9-]{0,38}[a-z0-9])?$/
+
+const grantList = (value: string) =>
+  value
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+type Step = 'details' | 'segments' | 'review'
 
 export function VirtualNetworkForm({
   project,
@@ -29,12 +43,14 @@ export function VirtualNetworkForm({
 }) {
   const navigate = useNavigate()
   const cache = useQueryClient()
+  const [step, setStep] = useState<Step>(existing ? 'segments' : 'details')
   const [name, setName] = useState(existing?.spec.name || '')
   const [description, setDescription] = useState(existing?.spec.description || '')
   const [segments, setSegments] = useState(() => segmentDrafts(existing?.spec))
   const [mode, setMode] = useState<'form' | 'toml'>('form')
   const [toml, setTOML] = useState(existing?.toml || '')
   const [plan, setPlan] = useState<VirtualNetworkPlan | null>(null)
+  const [nameIssue, setNameIssue] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [base, setBase] = useState(() => ({
@@ -45,6 +61,16 @@ export function VirtualNetworkForm({
   const [baseNotice, setBaseNotice] = useState('')
   const request = useRef<AbortController | null>(null)
   useEffect(() => () => request.current?.abort(), [])
+  // Applications already deployed here, offered as grants. Names not yet deployed can be typed.
+  const applications = useQuery({
+    queryKey: ['applications', project, environment, 'network-grants'],
+    queryFn: ({ signal }) =>
+      unwrap(client.GET('/applications', { signal, params: { query: { project, environment } } })),
+    enabled: mode === 'form',
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  })
+  const known = [...new Set((applications.data?.items || []).map((item) => item.name))].sort()
   const close = () =>
     existing
       ? void navigate({
@@ -72,7 +98,7 @@ export function VirtualNetworkForm({
       throw new Error('Keep the original network name when editing its configuration.')
     if (!existing && result.expected_revision !== 0)
       throw new Error(
-        'A network with this name already exists. Use a different name or open that network to edit it.',
+        `A network named ${result.spec.name} already exists in ${project} / ${environment}. Choose another name, or open that network to change it.`,
       )
     if (existing && result.expected_revision === 0)
       throw new Error(
@@ -84,6 +110,7 @@ export function VirtualNetworkForm({
     setError(message(cause))
     if (cause instanceof APIError && cause.status === 409) {
       setPlan(null)
+      setStep(mode === 'toml' ? 'details' : 'segments')
       if (existing) setBaseStale(true)
     }
   }
@@ -129,17 +156,30 @@ export function VirtualNetworkForm({
         setSegments(segmentDrafts(parsed.spec))
       }
       setMode(next)
+      setStep(next === 'toml' ? 'details' : existing ? 'segments' : 'details')
     } catch (cause) {
       failed(cause)
     } finally {
       setBusy(false)
     }
   }
+  function continueFromDetails() {
+    if (mode === 'toml') return void review()
+    const issue =
+      name === 'new'
+        ? 'The name "new" is reserved. Choose another network name.'
+        : !validName.test(name)
+          ? 'Use 1–40 lowercase letters, numbers or hyphens. Start with a letter and end with a letter or number.'
+          : ''
+    setNameIssue(issue)
+    if (!issue) setStep('segments')
+  }
   async function review() {
     setBusy(true)
     setError('')
     try {
       setPlan(await getPlan())
+      setStep('review')
     } catch (cause) {
       if (!request.current?.signal.aborted) failed(cause)
     } finally {
@@ -182,263 +222,197 @@ export function VirtualNetworkForm({
         search: {},
       })
     } catch (cause) {
-      if (!controller.signal.aborted) {
-        failed(cause)
-      }
+      if (!controller.signal.aborted) failed(cause)
     } finally {
       if (!controller.signal.aborted) setBusy(false)
     }
   }
-  const names = plan
-    ? [
-        ...new Set([
-          ...Object.keys(plan.previous?.segments || {}),
-          ...Object.keys(plan.spec.segments),
-        ]),
-      ].sort()
-    : []
+  const updateSegment = (id: string, change: Partial<SegmentDraft>) =>
+    setSegments((previous) =>
+      previous.map((item) => (item.id === id ? { ...item, ...change } : item)),
+    )
+  const stepKeys: Step[] =
+    mode === 'toml'
+      ? ['details', 'review']
+      : existing
+        ? ['segments', 'review']
+        : ['details', 'segments', 'review']
+  const steps =
+    mode === 'toml'
+      ? ['Configuration', 'Review']
+      : existing
+        ? ['Segments and grants', 'Review']
+        : ['Name', 'Segments and grants', 'Review']
+  const target = existing?.network.name || plan?.spec.name || name
+  const primary =
+    step === 'review'
+      ? existing
+        ? `Save ${target} r${(plan?.expected_revision || 0) + 1}`
+        : `Create network ${target}`
+      : step === 'details' && mode === 'form'
+        ? 'Continue to segments'
+        : 'Review network'
   return (
     <FormPage
       title={
-        plan
-          ? 'Review network configuration'
+        step === 'review'
+          ? existing
+            ? `Review changes to ${target}`
+            : `Review ${target}`
           : existing
             ? `Configure ${existing.network.name}`
-            : 'Create a virtual network'
+            : 'New network'
       }
-      description={`${project} / ${environment} · Grant application names access to private segments.`}
+      description="Virtual networks let services in different applications reach each other privately within one project and environment."
       icon="network"
       breadcrumbs={[
         { label: 'Virtual networks', to: '/networks' },
         { label: existing?.network.name || 'New network' },
       ]}
-      help={
-        <>
-          <FormHint title="Small groups of services">
-            Use a segment for applications that need to communicate, such as an API and its
-            database. Names are scoped to this project and environment.
-          </FormHint>
-          <FormHint title="Grants and connections">
-            A grant lets an application join. Connect each service separately after saving.
-            Disconnect services before removing their grant or segment.
-          </FormHint>
-        </>
-      }
     >
-      <div className="form-body virtual-network-form">
-        {plan ? (
-          <>
-            <div className="review-summary">
-              <div>
-                <span className="muted-text">NETWORK</span>
-                <strong>{plan.spec.name}</strong>
-              </div>
-              <div>
-                <span className="muted-text">REVISION</span>
-                <strong className="mono">
-                  {plan.expected_revision
-                    ? `r${plan.expected_revision} → r${plan.expected_revision + 1}`
-                    : 'New network · r1'}
-                </strong>
-              </div>
-              <div>
-                <span className="muted-text">SEGMENTS</span>
-                <strong>{Object.keys(plan.spec.segments).length}</strong>
-              </div>
-            </div>
-            {plan.previous?.description !== plan.spec.description && (
-              <div className="virtual-network-description-review">
-                <strong>Description</strong>
-                <p>{plan.spec.description || 'No description'}</p>
-                {plan.previous?.description && (
-                  <small>Previously: {plan.previous.description}</small>
-                )}
-              </div>
-            )}
-            <div className="table-container network-grant-review">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Segment</th>
-                    <th>Currently allowed</th>
-                    <th>Allowed after saving</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {names.map((segment) => (
-                    <tr key={segment}>
-                      <th scope="row">
-                        <code>{segment}</code>
-                      </th>
-                      <td>
-                        {plan.previous?.segments[segment]
-                          ? plan.previous.segments[segment].applications.join(', ') ||
-                            'No applications'
-                          : 'New segment'}
-                      </td>
-                      <td>
-                        {plan.spec.segments[segment]
-                          ? plan.spec.segments[segment].applications.join(', ') || 'No applications'
-                          : 'Removed'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <details className="virtual-network-toml">
-              <summary>Canonical network TOML</summary>
-              <TOMLCode code={plan.toml} />
-            </details>
-            <Note>
-              Saving grants access to these application names. Services join only after their
-              application configuration is deployed.
-            </Note>
-          </>
-        ) : (
-          <>
-            <div className="segmented-control">
-              <button
-                type="button"
-                className={mode === 'form' ? 'selected' : ''}
+      <div className="network-flow-context">
+        <ScopeLabel project={project} environment={environment} />
+        <FlowSteps
+          steps={steps}
+          current={stepKeys.indexOf(step)}
+          disabled={busy}
+          onSelect={(index) => {
+            setPlan(null)
+            setError('')
+            setStep(stepKeys[index])
+          }}
+        />
+      </div>
+      <div className="form-body create-flow virtual-network-form">
+        {step === 'review' && plan ? (
+          <NetworkReview plan={plan} existing={Boolean(existing)} environment={environment} />
+        ) : mode === 'toml' ? (
+          <section className="create-section" aria-labelledby="network-toml-heading">
+            <div className="create-section-heading">
+              <h2 id="network-toml-heading">Network TOML</h2>
+              <Button
+                size="sm"
+                variant="ghost"
                 disabled={busy}
                 onClick={() => void changeMode('form')}
               >
-                <Icon name="network" size={14} />
-                Guided setup
-              </button>
-              <button
-                type="button"
-                className={mode === 'toml' ? 'selected' : ''}
+                Use the guided form
+              </Button>
+            </div>
+            <label>
+              <span className="sr-only">Network TOML</span>
+              <Textarea
+                className="code-editor"
+                value={toml}
+                maxLength={32768}
+                spellCheck={false}
+                disabled={busy}
+                onChange={(event) => setTOML(event.target.value)}
+                aria-describedby="network-toml-help"
+              />
+              <span id="network-toml-help" className="field-help">
+                One network with <code>schema_version</code>, <code>name</code> and{' '}
+                <code>[segments.NAME]</code> tables. The review shows exactly what it grants.
+              </span>
+            </label>
+          </section>
+        ) : step === 'details' ? (
+          <section className="create-section" aria-labelledby="network-name-heading">
+            <div className="create-section-heading">
+              <h2 id="network-name-heading">Name the network</h2>
+              <Button
+                size="sm"
+                variant="ghost"
                 disabled={busy}
                 onClick={() => void changeMode('toml')}
               >
                 <Icon name="code" size={14} />
-                TOML
-              </button>
+                Paste TOML instead
+              </Button>
             </div>
-            {mode === 'toml' ? (
-              <label className="field-stack">
-                Network configuration
-                <Textarea
-                  aria-label="Network TOML"
-                  className="code-editor"
-                  value={toml}
-                  maxLength={32768}
+            <div className="create-fields network-name-fields">
+              <label>
+                Network name
+                <Input
+                  value={name}
+                  maxLength={40}
+                  autoComplete="off"
                   spellCheck={false}
+                  autoFocus
                   disabled={busy}
-                  onChange={(event) => setTOML(event.target.value)}
+                  error={nameIssue}
+                  onChange={(event) => {
+                    setName(event.target.value)
+                    setNameIssue('')
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') continueFromDetails()
+                  }}
+                  aria-describedby="network-name-help"
                 />
+                <span id="network-name-help" className="field-help">
+                  Lowercase letters, numbers and hyphens. Application TOML refers to the network by
+                  this name, and it cannot be changed later.
+                </span>
               </label>
-            ) : (
-              <>
-                <FormSection title="Network" icon="network">
-                  <label className="field-stack">
-                    Name
-                    <Input
-                      value={name}
-                      maxLength={40}
-                      autoComplete="off"
-                      spellCheck={false}
-                      disabled={busy || Boolean(existing)}
-                      onChange={(event) => setName(event.target.value)}
-                      placeholder="shared-backend"
-                    />
-                  </label>
-                  <label className="field-stack">
-                    Description
-                    <Textarea
-                      value={description}
-                      maxLength={500}
-                      rows={2}
-                      disabled={busy}
-                      onChange={(event) => setDescription(event.target.value)}
-                      placeholder="Services shared by our applications"
-                    />
-                  </label>
-                </FormSection>
-                <FormSection
-                  title="Segments and grants"
-                  description="Use exact application names, one per line or separated by commas. You can grant a name before deploying it."
-                  icon="lock"
-                >
-                  <div className="network-segment-editor">
-                    {segments.map((segment, index) => (
-                      <div className="network-segment-row" key={segment.id}>
-                        <label className="field-stack">
-                          Segment name
-                          <Input
-                            aria-label={`Segment ${index + 1} name`}
-                            value={segment.name}
-                            maxLength={40}
-                            autoComplete="off"
-                            spellCheck={false}
-                            disabled={busy}
-                            onChange={(event) =>
-                              setSegments((previous) =>
-                                previous.map((item) =>
-                                  item.id === segment.id
-                                    ? { ...item, name: event.target.value }
-                                    : item,
-                                ),
-                              )
-                            }
-                          />
-                        </label>
-                        <label className="field-stack">
-                          Allowed applications
-                          <Textarea
-                            aria-label={`Segment ${index + 1} allowed applications`}
-                            value={segment.applications}
-                            maxLength={4096}
-                            rows={3}
-                            spellCheck={false}
-                            disabled={busy}
-                            onChange={(event) =>
-                              setSegments((previous) =>
-                                previous.map((item) =>
-                                  item.id === segment.id
-                                    ? { ...item, applications: event.target.value }
-                                    : item,
-                                ),
-                              )
-                            }
-                            placeholder={'orders\ndatabase'}
-                          />
-                        </label>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={`Remove segment ${segment.name || index + 1}`}
-                          disabled={busy || segments.length === 1}
-                          onClick={() =>
-                            setSegments((previous) =>
-                              previous.filter((item) => item.id !== segment.id),
-                            )
-                          }
-                        >
-                          <Icon name="trash" size={15} />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    size="sm"
-                    disabled={busy || segments.length >= 16}
-                    onClick={() =>
-                      setSegments((previous) => [
-                        ...previous,
-                        { id: crypto.randomUUID(), name: '', applications: '' },
-                      ])
-                    }
-                  >
-                    <Icon name="plus" size={14} />
-                    Add segment
-                  </Button>
-                </FormSection>
-              </>
-            )}
-          </>
+              <label>
+                Description <span className="muted-text">(optional)</span>
+                <Input
+                  value={description}
+                  maxLength={500}
+                  disabled={busy}
+                  onChange={(event) => setDescription(event.target.value)}
+                  aria-describedby="network-description-help"
+                />
+                <span id="network-description-help" className="field-help">
+                  Shown in the network list, for example “Storefront and its data services”.
+                </span>
+              </label>
+            </div>
+          </section>
+        ) : (
+          <section className="create-section" aria-labelledby="network-segments-heading">
+            <div className="create-section-heading">
+              <h2 id="network-segments-heading">Segments and grants</h2>
+              <span>{plural(segments.length, 'segment')} · up to 16</span>
+            </div>
+            <p className="network-flow-lead">
+              A segment is a group of applications allowed to connect services to each other.
+              Granting an application lets it join; its services connect one at a time afterwards.
+            </p>
+            <ol className="network-segment-editor">
+              {segments.map((segment, index) => (
+                <SegmentEditor
+                  key={segment.id}
+                  index={index}
+                  segment={segment}
+                  known={known}
+                  knownPending={applications.isPending}
+                  knownMore={Boolean(applications.data?.next_cursor)}
+                  disabled={busy}
+                  removable={segments.length > 1}
+                  onChange={(change) => updateSegment(segment.id, change)}
+                  onRemove={() =>
+                    setSegments((previous) => previous.filter((item) => item.id !== segment.id))
+                  }
+                />
+              ))}
+            </ol>
+            <Button
+              size="sm"
+              className="justify-self-start"
+              disabled={busy || segments.length >= 16}
+              onClick={() =>
+                setSegments((previous) => [
+                  ...previous,
+                  { id: crypto.randomUUID(), name: '', applications: '' },
+                ])
+              }
+            >
+              <Icon name="plus" size={14} />
+              Add segment
+            </Button>
+          </section>
         )}
         {baseStale && (
           <div className="network-base-conflict">
@@ -452,35 +426,275 @@ export function VirtualNetworkForm({
           </div>
         )}
         {baseNotice && !baseStale && <Note>{baseNotice}</Note>}
-        {error && <RequestError error={error} />}
+        {error && (step === 'review' ? <RequestError error={error} /> : <FormError className="create-issues">{error}</FormError>)}
       </div>
       <div className="form-footer deploy-footer">
         <span className="dialog-footer-note">
           <Icon name="lock" size={13} />
-          {plan ? 'Only reviewed grants will be saved' : 'Nothing changes until you save'}
+          {step === 'review'
+            ? 'Only the reviewed grants are saved'
+            : 'Nothing is saved until the review'}
         </span>
         <div className="deploy-footer-actions">
-          <Button disabled={busy} onClick={() => (plan ? setPlan(null) : close())}>
-            {plan ? 'Back to configuration' : 'Cancel'}
-          </Button>
           <Button
-            variant="primary"
-            disabled={busy || baseStale || (mode === 'toml' && !toml.trim())}
-            onClick={() => void (plan ? save() : review())}
+            disabled={busy}
+            onClick={() => {
+              setError('')
+              if (step === 'review') {
+                setPlan(null)
+                setStep(mode === 'toml' ? 'details' : 'segments')
+              } else if (step === 'segments' && !existing) setStep('details')
+              else close()
+            }}
           >
-            {busy
-              ? plan
-                ? 'Saving…'
-                : 'Validating…'
-              : plan
-                ? existing
-                  ? 'Save network'
-                  : 'Create network'
-                : 'Review changes'}
-            <Icon name="arrow" size={15} />
+            {step === 'details' || (existing && step === 'segments') ? 'Cancel' : 'Back'}
           </Button>
+          <PendingButton
+            variant="primary"
+            pending={busy}
+            pendingLabel={
+              step === 'review' ? (existing ? 'Saving…' : 'Creating…') : 'Checking…'
+            }
+            disabled={baseStale || (mode === 'toml' && step !== 'review' && !toml.trim())}
+            onClick={() =>
+              step === 'review'
+                ? void save()
+                : step === 'details'
+                  ? continueFromDetails()
+                  : void review()
+            }
+          >
+            <span className="network-primary-label">{primary}</span>
+            <Icon name="arrow" size={15} />
+          </PendingButton>
         </div>
       </div>
     </FormPage>
+  )
+}
+
+function SegmentEditor({
+  index,
+  segment,
+  known,
+  knownPending,
+  knownMore,
+  disabled,
+  removable,
+  onChange,
+  onRemove,
+}: {
+  index: number
+  segment: SegmentDraft
+  known: string[]
+  knownPending: boolean
+  knownMore: boolean
+  disabled: boolean
+  removable: boolean
+  onChange: (change: Partial<SegmentDraft>) => void
+  onRemove: () => void
+}) {
+  const granted = grantList(segment.applications)
+  const others = granted.filter((item) => !known.includes(item))
+  // Keep the typed text (including a trailing new line) while it still lists the same names.
+  const [text, setText] = useState(others.join('\n'))
+  const shown = grantList(text).join('\n') === others.join('\n') ? text : others.join('\n')
+  const label = segment.name || `segment ${index + 1}`
+  const toggle = (application: string, on: boolean) =>
+    onChange({
+      applications: (on
+        ? [...granted, application]
+        : granted.filter((item) => item !== application)
+      ).join('\n'),
+    })
+  return (
+    <li className="network-segment-row">
+      <header>
+        <label>
+          Segment name
+          <Input
+            value={segment.name}
+            maxLength={40}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={disabled}
+            placeholder="data"
+            onChange={(event) => onChange({ name: event.target.value })}
+          />
+        </label>
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label={`Remove ${label}`}
+          disabled={disabled || !removable}
+          onClick={onRemove}
+        >
+          <Icon name="trash" size={15} />
+        </Button>
+      </header>
+      <fieldset className="network-grant-picker" disabled={disabled}>
+        <legend>
+          Applications allowed to join <span>{plural(granted.length, 'application')}</span>
+        </legend>
+        {knownPending ? (
+          <p className="field-help">Loading applications in this environment…</p>
+        ) : known.length ? (
+          <div className="network-grant-options">
+            {known.map((application) => (
+              <label key={application} className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={granted.includes(application)}
+                  onChange={(event) => toggle(application, event.target.checked)}
+                />
+                <span>{application}</span>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p className="field-help">No applications are deployed in this environment yet.</p>
+        )}
+        <label>
+          {known.length ? 'Other application names' : 'Application names'}
+          <Textarea
+            value={shown}
+            maxLength={4096}
+            rows={2}
+            spellCheck={false}
+            onChange={(event) => {
+              setText(event.target.value)
+              onChange({
+                applications: [
+                  ...granted.filter((item) => known.includes(item)),
+                  ...grantList(event.target.value),
+                ].join('\n'),
+              })
+            }}
+          />
+          <span className="field-help">
+            Exact names, one per line. You can grant an application before it is deployed.
+            {knownMore ? ' Only the first page of applications is listed above.' : ''}
+          </span>
+        </label>
+      </fieldset>
+    </li>
+  )
+}
+
+function NetworkReview({
+  plan,
+  existing,
+  environment,
+}: {
+  plan: VirtualNetworkPlan
+  existing: boolean
+  environment: string
+}) {
+  const names = [
+    ...new Set([...Object.keys(plan.previous?.segments || {}), ...Object.keys(plan.spec.segments)]),
+  ].sort()
+  const removedGrants = names.flatMap((segment) => {
+    const after = plan.spec.segments[segment]?.applications || []
+    return (plan.previous?.segments[segment]?.applications || [])
+      .filter((application) => !after.includes(application))
+      .map((application) => `${application} from ${segment}`)
+  })
+  const removedSegments = names.filter((segment) => !plan.spec.segments[segment])
+  return (
+    <>
+      <ReviewFacts
+        label="Network"
+        items={[
+          ['Network', <strong className="mono">{plan.spec.name}</strong>],
+          [
+            'Revision',
+            <span className="mono">
+              {plan.expected_revision ? `r${plan.expected_revision} → ` : 'New · '}r
+              {plan.expected_revision + 1}
+            </span>,
+          ],
+          ['Segments', String(Object.keys(plan.spec.segments).length)],
+          [
+            'Description',
+            plan.spec.description || <span className="muted-text">No description</span>,
+          ],
+        ]}
+      />
+      <section className="create-section" aria-labelledby="network-review-grants">
+        <div className="create-section-heading">
+          <h2 id="network-review-grants">Who can join each segment</h2>
+        </div>
+        <ul className="network-review-segments">
+          {names.map((segment) => {
+            const before = plan.previous?.segments[segment]?.applications
+            const after = plan.spec.segments[segment]?.applications
+            return (
+              <li key={segment} data-removed={!after || undefined}>
+                <header>
+                  <Icon name="network" size={14} />
+                  <code>{segment}</code>
+                  <span>
+                    {!after ? 'Removed' : !before && existing ? 'New segment' : plural(after.length, 'application')}
+                  </span>
+                </header>
+                {after?.length ? (
+                  <ul className="network-chip-list" aria-label={`Applications allowed in ${segment}`}>
+                    {after.map((application) => (
+                      <li
+                        key={application}
+                        className="label-chip"
+                        data-change={before && !before.includes(application) ? 'added' : undefined}
+                      >
+                        {application}
+                        {before && !before.includes(application) && (
+                          <span className="sr-only"> (added)</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  after && <p className="muted-text">No application can join yet.</p>
+                )}
+                {before?.some((application) => !after?.includes(application)) && (
+                  <p className="network-review-removed">
+                    No longer allowed:{' '}
+                    {before.filter((application) => !after?.includes(application)).join(', ')}
+                  </p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </section>
+      <Consequences>
+        {existing ? (
+          <Consequence>
+            Granted applications can connect services after you save. Existing connections stay as
+            they are.
+          </Consequence>
+        ) : (
+          <Consequence>
+            Creates the network in {environment} with no services connected. Each granted
+            application connects its services afterwards; every connection deploys a new
+            application revision.
+          </Consequence>
+        )}
+        <Consequence>
+          Services connected to the same segment can reach each other at private addresses, subject
+          to each service’s peer restrictions. Nothing here opens public access.
+        </Consequence>
+        {(removedGrants.length > 0 || removedSegments.length > 0) && (
+          <Consequence tone="warning">
+            Removes {[...removedSegments.map((item) => `segment ${item}`), ...removedGrants].join(', ')}.
+            Disconnect affected services first; their application revisions still reference this
+            network.
+          </Consequence>
+        )}
+      </Consequences>
+      <details className="virtual-network-toml">
+        <summary>Network TOML that will be saved</summary>
+        <TOMLCode code={plan.toml} />
+      </details>
+    </>
   )
 }
