@@ -690,6 +690,12 @@ function BuildRunDetail({ build, runId }: { build: Build; runId: string }) {
         )}
       </dl>
       {current.message && <Note>{current.message}</Note>}
+      <p className="field-help">
+        {/^https:\/\/(?:github|gitlab)\.com\//.test(current.run_url)
+          ? `Build output stays in ${current.provider === 'gitlab' ? 'GitLab CI' : 'GitHub Actions'}; Hakopod does not copy it.`
+          : `${current.provider === 'gitlab' ? 'GitLab' : 'GitHub'} has not returned a build log link for this run.`}
+        {current.deployment_id && ' The deployment log records the rollout.'}
+      </p>
       <div className="toolbar-actions">
         {/^https:\/\/(?:github|gitlab)\.com\//.test(current.run_url) && (
           <a

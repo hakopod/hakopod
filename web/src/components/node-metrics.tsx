@@ -27,6 +27,16 @@ function timestamp(value?: string) {
   return Number.isFinite(time) ? sampleTime.format(time) : 'Unavailable'
 }
 
+// The time window a chart covers; samples arrive only while the page is visible.
+export function sampleWindow(samples: MetricSample[]) {
+  if (samples.length < 2) return samples.length ? 'Window: 1 sample' : 'Window: no samples yet'
+  const seconds = Math.round(
+    (Date.parse(samples[samples.length - 1].at) - Date.parse(samples[0].at)) / 1000,
+  )
+  const span = seconds < 120 ? `${seconds}s` : `${Math.round(seconds / 60)} min`
+  return `Window: ${span} · ${samples.length} samples`
+}
+
 export function NodeMetrics({
   metrics,
   cpuCapacity,
@@ -139,8 +149,8 @@ export function NodeMetrics({
         </div>
       </dl>
       <p className="node-runtime-help">
-        Every 15s while visible · {samples.length} / {retainedMetricSamples} source samples. Probe
-        reads the latest cluster sample.
+        <span className="inspect-metric-window">{sampleWindow(samples)}</span> · Every 15s while
+        visible, up to {retainedMetricSamples} samples. Probe reads the latest cluster sample.
       </p>
       {!available && <Note>{metrics.reason || 'Metrics are unavailable for this node.'}</Note>}
     </section>
