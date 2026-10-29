@@ -18,7 +18,6 @@ import * as Tabs from '@radix-ui/react-tabs'
 import type { Application, DeploymentSummary } from '../lib/types'
 import { APIError, message, relative } from '../lib/api'
 import { client, unwrap } from '../lib/client'
-import { readinessLabel } from '../lib/readiness'
 import { downloadConfig, specToTOML } from '../lib/toml'
 import { useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
@@ -30,7 +29,15 @@ import {
 import { ApplicationAlarmLinks, RuntimeNotice } from '../components/runtime-notice'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
-import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import {
+  CardMetric,
+  ExternalEndpoint,
+  ObservedState,
+  ResourceCard,
+  ResourceEmpty,
+  ResourceRow,
+  ResourceRows,
+} from '../components/resource-card'
 import { ServiceImageIcon } from '../components/service-image-icon'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import {
@@ -330,20 +337,32 @@ function ApplicationDetail() {
               Application private network
             </span>
           </div>
-          <div className="ops-catalog-grid ops-service-catalog" aria-label="Service cards">
+          <div className="resource-grid" aria-label="Service cards">
             {Object.entries(app.spec.services).map(([name, service]) => {
               const runtime = observed.find((status) => status.name === name)
               const serviceHealth = serviceRuntimeHealth(runtime, app.observed?.observed_at)
+              const label = app.service_display_names?.[name] || name
+              const image = runtime?.image || service.image
+              const replicas = runtimeReplicaSummary(serviceHealth, Boolean(service.job))
+              const address =
+                runtime?.internal_address || (service.port ? `${name}:${service.port}` : '')
               return (
-                <article key={name} className="ops-catalog-card interactive">
-                  <Brackets />
-                  <div className="ops-card-heading">
-                    <ServiceImageIcon
-                      image={runtime?.image || service.image}
-                      actions={service.actions}
-                    />
-                    <Status value={serviceHealth.status} small />
-                    <div className="ops-card-actions">
+                <ResourceCard
+                  key={name}
+                  cue={<ServiceImageIcon image={image} actions={service.actions} />}
+                  name={
+                    <Link
+                      className="ops-card-link"
+                      to="/applications/$applicationId"
+                      params={{ applicationId: app.id }}
+                      search={{ service: name }}
+                      aria-label={`Open ${label} service`}
+                    >
+                      {label}
+                    </Link>
+                  }
+                  menu={
+                    <>
                       <RenameResource application={app} service={name} />
                       <Menu
                         trigger={
@@ -432,64 +451,54 @@ function ApplicationDetail() {
                           </MenuItem>
                         )}
                       </Menu>
-                    </div>
-                  </div>
-                  <h2>
-                    <Link
-                      className="ops-card-link"
-                      to="/applications/$applicationId"
-                      params={{ applicationId: app.id }}
-                      search={{ service: name }}
-                      aria-label={`Open ${app.service_display_names?.[name] || name} service`}
-                    >
-                      {app.service_display_names?.[name] || name}
-                    </Link>
-                  </h2>
-                  <div className="ops-object-id">
-                    <code title={runtime?.image || service.image}>
-                      {runtime?.image || service.image}
-                    </code>
-                    <Copy value={runtime?.image || service.image} />
-                  </div>
-                  <small className="ops-card-caption">
-                    {runtime?.image ? 'Observed image' : 'Requested image'}
-                  </small>
-                  <dl className="ops-card-facts">
-                    <div>
-                      <dt>{service.job ? 'Job result' : 'Replicas'}</dt>
-                      <dd>{runtimeReplicaSummary(serviceHealth, Boolean(service.job))}</dd>
-                    </div>
-                    <div>
-                      <dt>Exposure</dt>
-                      <dd>
-                        {service.public || Object.keys(service.http || {}).length > 0
-                          ? 'Public HTTP'
-                          : service.port || service.ports?.length
-                            ? 'Private'
-                            : service.job
-                              ? service.job.schedule
-                                ? 'Scheduled job'
-                                : 'Deployment job'
-                              : 'Worker'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Profile</dt>
-                      <dd>{serviceProfileLabel(service)}</dd>
-                    </div>
-                    <div>
-                      <dt>Readiness</dt>
-                      <dd>{readinessLabel(service)}</dd>
-                    </div>
-                  </dl>
-                  {runtime?.message && !serviceHealth.note && (
-                    <p className="ops-card-message">{runtime.message}</p>
-                  )}
-                  <div className="ops-card-footer">
-                    <span>Inspect service</span>
-                    <Icon name="arrow" size={15} />
-                  </div>
-                </article>
+                    </>
+                  }
+                  meta={
+                    <>
+                      {service.public || Object.keys(service.http || {}).length > 0
+                        ? 'Public HTTP'
+                        : service.port || service.ports?.length
+                          ? 'Private service'
+                          : service.job
+                            ? service.job.schedule
+                              ? 'Scheduled job'
+                              : 'Deployment job'
+                            : 'Worker'}{' '}
+                      · {serviceProfileLabel(service)} ·{' '}
+                      <code title={`${runtime?.image ? 'Observed' : 'Requested'} image ${image}`}>
+                        {image}
+                      </code>
+                    </>
+                  }
+                  endpoint={
+                    runtime?.url && /^https?:\/\//.test(runtime.url) ? (
+                      <ExternalEndpoint url={runtime.url} label={label} />
+                    ) : address ? (
+                      <>
+                        <code title={address}>{address}</code>
+                        <Copy value={address} label={`Copy ${label} internal address`} />
+                      </>
+                    ) : undefined
+                  }
+                  state={
+                    <ObservedState
+                      status={serviceHealth.status}
+                      observedAt={serviceHealth.observedAt}
+                      note={serviceHealth.note || runtime?.message}
+                    />
+                  }
+                  metric={
+                    <CardMetric
+                      label={service.job ? 'Job result' : 'Replicas'}
+                      window="now"
+                      value={
+                        replicas === 'Unavailable' || replicas === 'Not observed'
+                          ? undefined
+                          : replicas
+                      }
+                    />
+                  }
+                />
               )
             })}
           </div>
@@ -517,24 +526,6 @@ function ApplicationDetail() {
           <ApplicationAlarmLinks application={app} />
         </Tabs.Content>
         <Tabs.Content value="deployments" className="tab-content">
-          <div className="flex justify-end">
-            <Button asChild variant="outline">
-              <Link to="/applications/$applicationId/notifications" params={{ applicationId }}>
-                Notification settings
-              </Link>
-            </Button>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Deploying from CI?{' '}
-            <a
-              href="https://hakopod.com/docs/ci-deployments/"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1"
-            >
-              Read the deployment API guide <Icon name="external" size={13} />
-            </a>
-          </p>
           <DeploymentHistory application={app} />
         </Tabs.Content>
         <Tabs.Content value="logs" className="tab-content">
@@ -789,110 +780,123 @@ function DeploymentHistory({ application }: { application: Application }) {
             </HeadingHelp>
           </div>
         </div>
+        <Button asChild>
+          <Link
+            to="/applications/$applicationId/notifications"
+            params={{ applicationId: application.id }}
+          >
+            Notification settings
+          </Link>
+        </Button>
       </div>
       {error && <RequestError error={error} />}
       {!deployments.length ? (
-        <Empty
+        <ResourceEmpty
           icon="branch"
           title="No deployments recorded"
-          description="Accepted releases appear here with their status and service results."
+          description="Accepted releases appear here with their outcome and service results."
+          action={
+            scope.can('deployments:write') && (
+              <Button asChild>
+                <Link
+                  to="/applications/$applicationId/configure"
+                  params={{ applicationId: application.id }}
+                  search={{ mode: 'form' }}
+                >
+                  Deploy changes
+                </Link>
+              </Button>
+            )
+          }
         />
       ) : (
-        <div className="table-container ops-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Revision / deployment outcome</th>
-                <th>Deployment</th>
-                <th>Created</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...deployments]
-                .sort((a, b) => b.revision - a.revision)
-                .map((deployment) => (
-                  <tr key={deployment.id} className="ops-linked-row">
-                    <td>
-                      <div className="ops-object">
-                        <Status value={deployment.status} small />
-                        <Link
-                          className="ops-object-name ops-row-link"
-                          to="/deployments/$deploymentId"
-                          params={{ deploymentId: deployment.id }}
-                          aria-label={`Inspect deployment revision ${deployment.revision}`}
-                        >
-                          r{deployment.revision}
-                        </Link>
-                        {deployment.revision === application.revision && (
-                          <span className="current-label">Current revision</span>
-                        )}
-                      </div>
-                      {deployment.revision === application.revision && (
-                        <div className="ops-table-sub runtime-summary">
-                          <span>Runtime now</span>
-                          <Status value={health.status} small />
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <div className="ops-object-id">
-                        <code>{deployment.id}</code>
-                        <Copy value={deployment.id} />
-                      </div>
-                    </td>
-                    <td>
-                      <time title={deployment.created_at} dateTime={deployment.created_at}>
-                        {relative(deployment.created_at)}
-                      </time>
-                    </td>
-                    <td>
-                      <Menu
-                        trigger={
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Actions for revision ${deployment.revision}`}
-                          >
-                            <span aria-hidden="true">···</span>
-                          </Button>
-                        }
+        <ResourceRows label="Deployments, most recent first">
+          {[...deployments]
+            .sort((a, b) => b.revision - a.revision)
+            .map((deployment) => (
+              <ResourceRow
+                key={deployment.id}
+                identity={
+                  <>
+                    <Link
+                      className="resource-row-link"
+                      to="/deployments/$deploymentId"
+                      params={{ deploymentId: deployment.id }}
+                      aria-label={`Inspect deployment revision ${deployment.revision}`}
+                    >
+                      r{deployment.revision}
+                    </Link>
+                    {deployment.revision === application.revision && (
+                      <span className="current-label">Current revision</span>
+                    )}
+                  </>
+                }
+                detail={
+                  <>
+                    <span className="copy-id">
+                      <code>{deployment.id}</code>
+                      <Copy value={deployment.id} label={`Copy deployment ID ${deployment.id}`} />
+                    </span>
+                    {deployment.revision === application.revision && (
+                      <span className="runtime-summary">
+                        Runtime now <Status value={health.status} small />
+                      </span>
+                    )}
+                  </>
+                }
+                status={<Status value={deployment.status} small />}
+                meta={
+                  <time title={deployment.created_at} dateTime={deployment.created_at}>
+                    {relative(deployment.created_at)}
+                  </time>
+                }
+                actions={
+                  <Menu
+                    trigger={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Actions for revision ${deployment.revision}`}
                       >
+                        <span aria-hidden="true">···</span>
+                      </Button>
+                    }
+                  >
+                    <MenuItem
+                      onSelect={() =>
+                        void navigate({
+                          to: '/deployments/$deploymentId',
+                          params: { deploymentId: deployment.id },
+                        })
+                      }
+                    >
+                      Inspect deployment
+                    </MenuItem>
+                    {scope.can('deployments:write') &&
+                      deployment.status === 'succeeded' &&
+                      deployment.revision < application.revision && (
                         <MenuItem
-                          onSelect={() =>
-                            void navigate({
-                              to: '/deployments/$deploymentId',
-                              params: { deploymentId: deployment.id },
-                            })
-                          }
+                          disabled={Boolean(busy)}
+                          onSelect={() => void rollback(deployment)}
                         >
-                          Inspect deployment
+                          {busy === deployment.id
+                            ? 'Creating rollback…'
+                            : 'Roll back to this revision'}
                         </MenuItem>
-                        {scope.can('deployments:write') &&
-                          deployment.status === 'succeeded' &&
-                          deployment.revision < application.revision && (
-                            <MenuItem
-                              disabled={Boolean(busy)}
-                              onSelect={() => void rollback(deployment)}
-                            >
-                              {busy === deployment.id
-                                ? 'Creating rollback…'
-                                : 'Roll back to this revision'}
-                            </MenuItem>
-                          )}
-                      </Menu>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+                      )}
+                  </Menu>
+                }
+              />
+            ))}
+        </ResourceRows>
       )}
       <Note>
         Rollback creates a new deployment from recorded image digests and configuration. Database
-        migrations and external secret values are not rolled back.
+        migrations and external secret values are not rolled back. Deploying from CI?{' '}
+        <a href="https://hakopod.com/docs/ci-deployments/" target="_blank" rel="noreferrer">
+          Read the deployment API guide
+        </a>
+        .
       </Note>
     </>
   )
