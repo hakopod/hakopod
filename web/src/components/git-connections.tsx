@@ -21,19 +21,14 @@ import { Dialog } from './ui/dialog'
 import { Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { Icon } from './icons'
 import { focusedDialog, plural } from './operation-review'
-import {
-  SettingsEmpty,
-  SettingsRow,
-  SettingsRows,
-  SettingsSection,
-  SettingsState,
-} from './settings-section'
+import { SettingsRow, SettingsRows, SettingsSection, SettingsState } from './settings-section'
 import { ChoiceCards } from './create-flow'
 import { FormPage, FormHint, FormSection } from './form-page'
 import { InstallationReviewRows, useInstallationFormFocus } from './installation-form-fields'
 import { ServiceIcon } from './service-icon'
 import { GitOAuthAuthorize, GitWebhookAddress } from './git-oauth'
 import { GitHubAppSetup, GitLabRegistrationCallback } from './git-app-setup'
+import { GuidedEmpty } from './resource-card'
 
 function AccessRequired() {
   return (
@@ -76,9 +71,18 @@ export function GitConnectionsPanel() {
       ) : query.error ? (
         <ErrorState error={query.error} retry={() => void query.refetch()} />
       ) : !items.length ? (
-        <SettingsEmpty title="No Git connections" action={add}>
-          Connect GitHub or GitLab to deploy from your repositories.
-        </SettingsEmpty>
+        <GuidedEmpty
+          compact
+          icon="branch"
+          title="Deploy from your repositories"
+          description="Connect GitHub or GitLab once. Each application source or build then picks a named connection."
+          steps={[
+            { title: 'Choose a provider', detail: 'GitHub or GitLab.' },
+            { title: 'Install the App', detail: 'On the account or organization you deploy from.' },
+            { title: 'Pick repositories', detail: 'When you set up a source or build.' },
+          ]}
+          primary={add}
+        />
       ) : (
         <SettingsRows label="Git connections">
           {items.map((item) =>
