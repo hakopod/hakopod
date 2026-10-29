@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
+import { focusedDialog } from './operation-review'
 import { Input } from './ui/input'
 import { useScope } from '../lib/scope'
 import { client, unwrap } from '../lib/client'
@@ -74,6 +75,7 @@ export function RenameName({
         onOpenChange={(next) => {
           if (!busy && !next) close()
         }}
+        className={focusedDialog}
         title={`Rename ${kind}`}
         description={`ID: ${id}`}
       >

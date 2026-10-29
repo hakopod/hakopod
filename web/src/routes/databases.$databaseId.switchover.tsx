@@ -9,6 +9,7 @@ import { message, timestamp } from '../lib/api'
 import { FormError, FormPage, FormSection } from '../components/form-page'
 import { Empty, ErrorState, Loading, Note } from '../components/shared'
 import { Button } from '../components/ui/button'
+import { ReviewFacts } from '../components/operation-review'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
 
@@ -94,6 +95,7 @@ function Switchover({ id, operationId }: { id: string; operationId?: string }) {
     <FormSection title={selectedPlan ? 'Reviewed role change' : 'Choose standby'}>
       <dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Database</dt><dd>{d.spec.name}</dd></div><div><dt className="text-muted-foreground">{selectedPlan ? 'Reviewed primary' : 'Current primary'}</dt><dd className="break-all">{selectedPlan?.primary || d.observation.primary || 'Unavailable'}</dd></div></dl>
       {!selectedPlan ? <SelectField label="New primary" value={target} disabled={blocked} required onValueChange={setTarget} options={[{ value: '', label: 'Choose a healthy standby' }, ...standbys.map((member) => ({ value: member.name, label: `${member.name}${member.zone ? ` · ${member.zone}` : ''}` }))]} /> : <dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Reviewed target</dt><dd className="break-all">{selectedPlan.target}</dd></div><div><dt className="text-muted-foreground">Configuration revision</dt><dd>{selectedPlan.revision}</dd></div>{!retry && <div><dt className="text-muted-foreground">Review expires</dt><dd>{timestamp(selectedPlan.expires_at)}</dd></div>}</dl>}
+      {selectedPlan && <ReviewFacts label="Consequences" facts={[['Scope', `${d.project} / ${d.environment}`], ['Role change', <>{selectedPlan.primary || 'Current primary'} becomes a standby; <code>{selectedPlan.target}</code> becomes primary.</>], ['Connections', 'Existing connections close and clients reconnect to the new primary.'], ['Data', 'Unchanged. This is a graceful switchover, not a failover.']]} />}
       {Boolean(plan?.warnings.length) && <Note><ul className="grid list-disc gap-2 pl-4">{plan!.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></Note>}
       {retry?.message && <Note>{retry.message}</Note>}
       {changed && <Note>The database revision or scope changed. Return to the database and review its current topology.</Note>}
@@ -101,6 +103,6 @@ function Switchover({ id, operationId }: { id: string; operationId?: string }) {
       {selectedPlan && <label htmlFor="switchover-confirm" className="grid gap-2">Type {d.spec.name} to confirm<Input id="switchover-confirm" autoComplete="off" required value={confirmation} disabled={busy} onChange={(event) => setConfirmation(event.target.value)} /></label>}
     </FormSection>
     {error && <FormError>{error}</FormError>}
-    <div className="form-actions flex flex-wrap gap-2">{back}{plan && <Button type="button" disabled={busy} onClick={() => { setPlan(null); setConfirmation(''); key.current = ''; setError('') }}>Review again</Button>}<Button type="submit" variant="primary" disabled={blocked || (selectedPlan ? confirmation !== d.spec.name : !target)}>{busy ? 'Checking…' : retry ? 'Resume switchover' : plan ? 'Switch primary' : 'Review switchover'}</Button></div>
+    <div className="form-actions flex flex-wrap gap-2">{back}{plan && <Button type="button" disabled={busy} onClick={() => { setPlan(null); setConfirmation(''); key.current = ''; setError('') }}>Review again</Button>}<Button type="submit" variant="primary" disabled={blocked || (selectedPlan ? confirmation !== d.spec.name : !target)}>{busy ? 'Checking…' : retry ? `Resume switchover to ${retry.switchover?.target}` : plan ? `Switch primary to ${plan.plan.target}` : 'Review switchover'}</Button></div>
   </form>)
 }
