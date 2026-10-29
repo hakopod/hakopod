@@ -5,7 +5,9 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import tarfile
 import tempfile
 
 from database_controllers import ENGINES
@@ -25,6 +27,60 @@ def read(*args):
 
 def run(*args):
     subprocess.run(args,check=True,timeout=240)
+
+AGENT=Path('/opt/hakopod/vpn/hakopod-vpn')
+UNITS=Path('/etc/systemd/system')
+AGENT_UNITS={'hakopod-vpn.service':'''[Unit]
+Description=Hakopod private management access agent
+After=network-online.target hakopod-k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/hakopod/vpn/hakopod-vpn sync
+''','hakopod-vpn.timer':'''[Unit]
+Description=Keep the Hakopod management firewall and VPN in step with the access policy
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+'''}
+
+def install_vpn_agent(machine=None, agent=AGENT, units=UNITS):
+    """Fetch hakopod-vpn for the installed release from its GitHub release,
+    verify it against that release's SHA256SUMS, install it and start its timer."""
+    import maintenance
+    if shutil.which('nft') is None:
+        raise ValueError('nft is required: install the nftables package, then run this module again')
+    arch={'x86_64':'amd64','aarch64':'arm64'}.get(machine or os.uname().machine)
+    if arch is None:raise ValueError('hakopod-vpn is published for x86_64 and aarch64 only')
+    version=maintenance.current()
+    release=json.loads(maintenance.fetch(maintenance.REPO+'/releases/tags/v'+version,2<<20))
+    if not isinstance(release,dict) or release.get('tag_name')!='v'+version:
+        raise ValueError('The release for the installed version was not found')
+    checksums=maintenance.checksum_map(maintenance.fetch(maintenance.asset_url(release,'SHA256SUMS'),65536))
+    root=f'hakopod-vpn_{version}_linux_{arch}'
+    with tempfile.TemporaryDirectory(prefix='hakopod-vpn-') as tmp:
+        archive=maintenance.download(release,root+'.tar.gz',checksums,Path(tmp),64<<20)
+        with tarfile.open(archive,'r:gz') as bundle:
+            member=bundle.getmember(root+'/hakopod-vpn')
+            if not member.isfile() or member.size>64<<20:raise ValueError('The hakopod-vpn archive is invalid')
+            data=bundle.extractfile(member).read()
+    agent.parent.mkdir(parents=True,exist_ok=True);agent.parent.chmod(0o755)
+    temporary=agent.with_name('.hakopod-vpn.tmp')
+    temporary.unlink(missing_ok=True)
+    with open(os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o700),'wb') as out:out.write(data)
+    os.chown(temporary,0,0);temporary.chmod(0o755);temporary.replace(agent)
+    for name,text in AGENT_UNITS.items():
+        (units/name).write_text(text);(units/name).chmod(0o644)
+    wireguard=subprocess.run(['modprobe','wireguard'],capture_output=True,timeout=60).returncode==0
+    run('systemctl','daemon-reload')
+    run('systemctl','enable','--now','hakopod-vpn.timer')
+    if not wireguard:
+        print('The wireguard kernel module is not available: the firewall, Tailscale, OpenVPN and IPsec work, the WireGuard connector and server do not.')
 
 def main(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False, adopt_node=None):
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
@@ -87,8 +143,7 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
             else:
                 install(config, marker, KUBE, read, workspace_profile)
         elif module=='private-access':
-            from access_firewall import install as install_access_firewall
-            install_access_firewall()
+            install_vpn_agent()
         elif module=='storage':
             for item in read('get','storageclasses')['items']:
                 if item['metadata']['name']!='hakopod-local-path' and item['metadata'].get('annotations',{}).get('storageclass.kubernetes.io/is-default-class')=='true':

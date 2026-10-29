@@ -39,6 +39,7 @@ def main():
     assert provenance.get('product') == 'self-hosted' and provenance.get('go_build_tags') == ['hakopod_selfhosted']
     assert provenance.get('binary_capabilities') == {'public_signup': False}
     binaries=[]
+    agents=[]
     for bundle in sorted(destination.glob('*.tar.gz')):
         with tarfile.open(bundle) as archive:
             names=archive.getnames()
@@ -62,6 +63,21 @@ def main():
                     if '_amd64/' in entry.name:assert 'x86_64' in kind or 'x86-64' in kind
                     settings = selfhosted_build_settings(subprocess.check_output(['go','version','-m',str(binary)],text=True))
                     binaries.append({'path':entry.name,'bytes':len(blob),'sha256':digest,'file_type':kind,**settings})
+            elif bundle.name.startswith('hakopod-vpn_'):
+                files=[member for member in archive.getmembers() if member.isfile()]
+                assert sorted(Path(member.name).name for member in files)==['LICENSE','NOTICE','hakopod-vpn']
+                entry=next(member for member in files if Path(member.name).name=='hakopod-vpn')
+                assert entry.mode&0o111,'hakopod-vpn is not executable'
+                blob=archive.extractfile(entry).read()
+                binary=stage/entry.name
+                digest=hashlib.sha256(blob).hexdigest()
+                assert digest==hashlib.sha256(binary.read_bytes()).hexdigest(),'archive binary differs from scanned stage'
+                kind=subprocess.check_output(['file','-b',str(binary)],text=True).strip()
+                assert '_linux_' in entry.name and 'ELF' in kind and 'statically linked' in kind
+                if '_arm64/' in entry.name:assert 'arm64' in kind or 'aarch64' in kind
+                if '_amd64/' in entry.name:assert 'x86_64' in kind or 'x86-64' in kind
+                settings=selfhosted_build_settings(subprocess.check_output(['go','version','-m',str(binary)],text=True))
+                agents.append({'path':entry.name,'bytes':len(blob),'sha256':digest,'file_type':kind,**settings})
             elif bundle.name.startswith('hakopod-cli_'):
                 # Minimal family: exactly the binary plus LICENSE and NOTICE, nothing else.
                 files=[member for member in archive.getmembers() if member.isfile()]
@@ -80,6 +96,7 @@ def main():
                     if '_arm64' in bundle.name:assert 'Aarch64' in kind or 'ARM64' in kind
                     if '_amd64' in bundle.name:assert 'x86-64' in kind or 'x86_64' in kind
     assert len(binaries)==6
+    assert sorted(Path(agent['path']).parent.name for agent in agents)==[f'hakopod-vpn_{args.version}_linux_{arch}' for arch in ('amd64','arm64')]
     host_os=build.output(['go','env','GOHOSTOS'])
     host_arch=build.output(['go','env','GOHOSTARCH'])
     native=stage/('hakopod_'+args.version+'_'+host_os+'_'+host_arch)/'hakopod'
@@ -94,8 +111,8 @@ def main():
     for path in destination.glob('*.json'):
         assert str(Path.home()) not in path.read_text(),'absolute host-home path in '+path.name
     report={'verified_at':datetime.now(timezone.utc).isoformat(),'source_fingerprint_sha256':provenance['source_fingerprint_sha256'],
-            'source_matches_working_tree':True,'native_cli_platform':host_os+'/'+host_arch,'native_cli_version':native_version,'binaries':binaries,
-            'checks':['all archive paths relative and traversal-free','all six archive executable bytes equal scanned binary bytes',
+            'source_matches_working_tree':True,'native_cli_platform':host_os+'/'+host_arch,'native_cli_version':native_version,'binaries':binaries+agents,
+            'checks':['all archive paths relative and traversal-free','all six archive executable bytes equal scanned binary bytes','both hakopod-vpn archives hold exactly the scanned agent, LICENSE and NOTICE',
                       'Linux binaries statically linked; all target formats and architectures correct','native host CLI returns release version',
                       'all public binaries carry the self-hosted build tag and disable public signup',
                       'all linked external Go modules have preserved license/notice files','JSON host paths normalized','SHA256SUMS verified'],
