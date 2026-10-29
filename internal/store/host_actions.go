@@ -112,7 +112,7 @@ func (s *Store) hostActionsKey(ctx context.Context, grant HostActionsGrant, raw 
 		}
 		id, token, digest := makeKey()
 		input := KeyInput{Name: "Host Actions recovery " + grant.ApplicationID, Project: project, Environment: environment, Application: name, Permissions: permissions, ExpiresAt: expires}
-		if err = validKeyInput(input); err != nil {
+		if err = validKeyInput(input, false); err != nil {
 			return Key{}, "", err
 		}
 		key := Key{ID: id, IdentityID: grant.OwnerIdentity, Name: input.Name, Prefix: "hp_" + id[:8], Project: project, Environment: environment, Application: name, Permissions: permissions, ExpiresAt: &expires, CreatedAt: time.Now().UTC()}

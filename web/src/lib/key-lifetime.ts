@@ -1,10 +1,12 @@
-export function keyLifetimeOptions(cloud: boolean) {
+// Never-expiring keys are for CI and other long-lived integrations. The API
+// allows them only for an administrator in a browser session.
+export function keyLifetimeOptions(_cloud: boolean) {
   return [
     { value: '7', label: '7 days' },
     { value: '30', label: '30 days' },
     { value: '60', label: '60 days' },
     { value: '89', label: '89 days' },
-    ...(cloud ? [{ value: 'never', label: 'Never expires' }] : []),
+    { value: 'never', label: 'Never expires' },
   ]
 }
 

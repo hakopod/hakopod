@@ -41,7 +41,7 @@ schemas["AutomationKeyInput"] = {"oneOf": [
     obj({**key_fields, **bounded_lifetime}, ["name", "permissions", "expires_at"]),
     obj({**key_fields, **never_lifetime}, ["name", "permissions", "never_expires"]),
 ]}
-schemas["AutomationKeyInput"]["description"] = "Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available only through the trusted Cloud automation issuer."
+schemas["AutomationKeyInput"]["description"] = "Provide expires_at for a bounded key, or set never_expires to true and omit expires_at or send it as null. The two modes are mutually exclusive. Never-expiring keys are available to self-hosted administrators in a browser session and to the trusted Cloud automation issuer."
 schemas["AutomationKeyLifetimeInput"] = {"oneOf": [
     obj(bounded_lifetime, ["expires_at"]),
     obj(never_lifetime, ["never_expires"]),

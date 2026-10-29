@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -153,6 +154,7 @@ func run() error {
 	name := fs.String("name", "", "application or key name")
 	permissions := fs.String("permissions", "deployments:write,deployments:read,logs:read", "comma-separated key permissions")
 	ttl := fs.Duration("ttl", 24*time.Hour, "API key lifetime, maximum 90 days")
+	neverExpires := fs.Bool("never-expires", false, "key-create: a key without an expiry date (self-hosted administrators only)")
 	tail := fs.Int64("tail", 100, "maximum log tail lines (1–1000)")
 	follow := fs.Bool("follow", false, "follow live logs (each connection capped at ten minutes)")
 	pod := fs.String("pod", "", "pod name for terminal or log search; log history also accepts a pod UID")
@@ -314,6 +316,16 @@ func run() error {
 				}
 			} else if cfg.Project == "" || cfg.Environment == "" {
 				return &exitError{2, "browser login requires --project and --environment for the CLI session scope"}
+			} else {
+				// Execution grants are never implied; request them only when asked.
+				for _, grant := range []struct {
+					on         bool
+					permission string
+				}{{*allowExec, "pods:exec"}, {*allowSQL || *allowSQLWrite, "databases:query"}, {*allowSQLWrite, "databases:write-query"}} {
+					if grant.on && !slices.Contains(strings.Split(*permissions, ","), grant.permission) {
+						*permissions += "," + grant.permission
+					}
+				}
 			}
 			session, err := deviceLogin(ctx, cfg, *noBrowser, strings.Split(*permissions, ","))
 			if err != nil {
@@ -453,7 +465,7 @@ func run() error {
 			return &exitError{2, "key-create requires --name"}
 		}
 		var out any
-		if err = c.request(ctx, "POST", "/keys", store.KeyInput{Name: *name, Project: cfg.Project, Environment: cfg.Environment, Permissions: strings.Split(*permissions, ","), ExpiresAt: time.Now().Add(*ttl).UTC()}, "", &out); err != nil {
+		if err = c.request(ctx, "POST", "/keys", keyCreateInput(*name, cfg, strings.Split(*permissions, ","), *ttl, *neverExpires), "", &out); err != nil {
 			return err
 		}
 		return printJSON(out)
@@ -903,7 +915,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--history": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--never-expires": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--history": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -1035,4 +1047,12 @@ func (c *client) authorizeRequest(req *http.Request) {
 	if c.workspace != "" {
 		req.Header.Set("X-Hakopod-Workspace", c.workspace)
 	}
+}
+
+func keyCreateInput(name string, cfg config, permissions []string, ttl time.Duration, never bool) store.KeyInput {
+	in := store.KeyInput{Name: name, Project: cfg.Project, Environment: cfg.Environment, Permissions: permissions, NeverExpires: never}
+	if !never {
+		in.ExpiresAt = time.Now().Add(ttl).UTC()
+	}
+	return in
 }

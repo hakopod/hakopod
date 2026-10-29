@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/hakopod/hakopod/internal/agent"
 	"github.com/hakopod/hakopod/internal/operations"
 	"io"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -84,6 +86,18 @@ func runExecution(ctx context.Context, c *client, cfg config, kind, id string, f
 	defer cancel()
 	server := agent.NewWithOptions(c.request, agent.Scope{Project: cfg.Project, Environment: cfg.Environment}, opts, 0)
 	out, err := server.Call(bounded, name, raw)
+	if err != nil && strings.Contains(err.Error(), "forbidden") {
+		// The usual cause is a CLI session that was not granted the
+		// execution permission at login; say how to get one.
+		grant := "--allow-exec"
+		if kind == "query" {
+			grant = "--allow-sql"
+			if f.AllowSQLWrite {
+				grant += " --allow-sql-write"
+			}
+		}
+		return fmt.Errorf("%w\nThis CLI session may not have the permission. Log in again with: hakopod login --project %s --environment %s %s", err, cfg.Project, cfg.Environment, grant)
+	}
 	if err != nil {
 		return err
 	}

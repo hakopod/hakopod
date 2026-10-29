@@ -260,6 +260,9 @@ type KeyInput struct {
 	Application string    `json:"application"`
 	Permissions []string  `json:"permissions"`
 	ExpiresAt   time.Time `json:"expires_at"`
+	// NeverExpires is for long-lived integrations such as CI. Only a
+	// self-hosted administrator in a browser session may set it.
+	NeverExpires bool `json:"never_expires,omitempty"`
 }
 type BoundKeyInput struct {
 	Name         string     `json:"name"`
@@ -271,8 +274,15 @@ type BoundKeyInput struct {
 	NeverExpires bool       `json:"never_expires"`
 }
 
-func validKeyInput(in KeyInput) error {
-	if in.ExpiresAt.Before(time.Now().Add(time.Minute)) || in.ExpiresAt.After(time.Now().Add(90*24*time.Hour)) {
+func validKeyInput(in KeyInput, allowNeverExpires bool) error {
+	if in.NeverExpires {
+		if !allowNeverExpires {
+			return errors.New("never_expires needs a self-hosted administrator in a browser session")
+		}
+		if !in.ExpiresAt.IsZero() {
+			return errors.New("expires_at must be omitted when never_expires is true")
+		}
+	} else if in.ExpiresAt.Before(time.Now().Add(time.Minute)) || in.ExpiresAt.After(time.Now().Add(90*24*time.Hour)) {
 		return errors.New("expires_at must be between one minute and 90 days from now")
 	}
 	return validKeyFields(in.Name, in.Project, in.Environment, in.Application, in.Permissions)
@@ -373,7 +383,7 @@ func (s *Store) Bootstrap(ctx context.Context, name string) (string, error) {
 func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte, error) {
 	var p Principal
 	var digest []byte
-	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id))) FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine' AND EXISTS(SELECT 1 FROM automation_key_scopes s WHERE s.key_id=k.id))) AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision, &p.MFAVerified)
+	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id))) FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine')) AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision, &p.MFAVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, nil, ErrUnauthorized
 	}
@@ -433,7 +443,7 @@ func (s *Store) CreateKey(ctx context.Context, p Principal, in KeyInput) (Key, s
 	if !p.IsAdmin() {
 		return Key{}, "", ErrForbidden
 	}
-	if err := validKeyInput(in); err != nil {
+	if err := validKeyInput(in, s.allowNeverExpiringKey(p)); err != nil {
 		return Key{}, "", err
 	}
 	if in.Project != "" {
@@ -446,18 +456,22 @@ func (s *Store) CreateKey(ctx context.Context, p Principal, in KeyInput) (Key, s
 		}
 	}
 	id, raw, digest := makeKey()
-	expires := in.ExpiresAt.UTC()
-	k := Key{ID: id, IdentityID: p.ID, Name: in.Name, Prefix: "hp_" + id[:8], Project: in.Project, Environment: in.Environment, Application: in.Application, Permissions: in.Permissions, ExpiresAt: &expires, CreatedAt: time.Now().UTC()}
+	var expires *time.Time
+	if !in.NeverExpires {
+		at := in.ExpiresAt.UTC()
+		expires = &at
+	}
+	k := Key{ID: id, IdentityID: p.ID, Name: in.Name, Prefix: "hp_" + id[:8], Project: in.Project, Environment: in.Environment, Application: in.Application, Permissions: in.Permissions, ExpiresAt: expires, NeverExpires: in.NeverExpires, CreatedAt: time.Now().UTC()}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return k, "", err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", id, p.ID, in.Name, digest, k.Prefix, in.Project, in.Environment, in.Application, in.Permissions, in.ExpiresAt)
+	_, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,never_expires) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", id, p.ID, in.Name, digest, k.Prefix, in.Project, in.Environment, in.Application, in.Permissions, expires, in.NeverExpires)
 	if err != nil {
 		return k, "", err
 	}
-	_, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource) VALUES($1,$2,'key.create',$3)", p.ID, p.KeyID, id)
+	_, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'key.create',$3,$4)", p.ID, p.KeyID, id, JSON(map[string]any{"never_expires": in.NeverExpires}))
 	if err != nil {
 		return k, "", err
 	}
@@ -644,4 +658,10 @@ func (s *Store) Event(ctx context.Context, id, typ, message, service string) err
 	}
 	_, err := s.Pool.Exec(ctx, "INSERT INTO deployment_events(deployment_id,type,message,service) VALUES($1,$2,$3,$4)", id, typ, message, service)
 	return err
+}
+
+// allowNeverExpiringKey keeps keys without an expiry to self-hosted
+// administrators acting in a browser, never an automation credential.
+func (s *Store) allowNeverExpiringKey(p Principal) bool {
+	return !s.ManagedCloud && p.IsAdmin() && p.IsHuman() && p.CredentialType == "browser"
 }
