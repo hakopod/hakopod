@@ -117,6 +117,7 @@ schemas["InstallationAccess"] = obj({
     "licensed": B,
     "vpn_status": ref("InstallationAccessVPNStatus"),
     "connector_secrets_set": {"type": "object", "additionalProperties": B},
+    "agent": obj({"version": S, "seen_at": {**S, "format": "date-time"}}, ["version"]),
     "connector_status": obj({"type": S, "connected": B, "address": S, "error": S}, []),
 }, ["revision", "policy", "client_ip", "licensed"])
 schemas["InstallationAccessInput"] = obj({
