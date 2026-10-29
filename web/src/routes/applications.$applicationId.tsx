@@ -206,7 +206,8 @@ function ApplicationDetail() {
         ),
       refetchInterval: 30000,
       refetchIntervalInBackground: false,
-      enabled: !selectedService,
+      // Only the Overview cards show these figures.
+      enabled: !selectedService && view.tab === 'overview',
     })),
   })
   const configuration = useMemo(

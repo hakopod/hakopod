@@ -137,6 +137,10 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       case '/api/security/advisories': data = { feed: { feed_enabled: true, osv_enabled: true, revision: 0, issued_at: null, expires_at: null, checked_at: null, stale: false, error: '' }, applications: [], summary: { affected_applications: 0, critical: 0, high: 0 } }; break
       case '/api/alarms': data = { items: [], next_cursor: '', summary: { active: 0, unread: 0 } }; break
       case applicationPath: data = application; break
+      case `${applicationPath}/draft`:
+        status = 404
+        data = failure('no changes are staged.', 'no_draft')
+        break
       case `${servicePath}/tls`: data = fixture.tls; break
       case `${servicePath}/delivery`:
         data = { public_tcp: [], observed_at: now, public_tcp_policy: { allowed: true, message: '' } }

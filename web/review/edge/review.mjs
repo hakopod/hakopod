@@ -44,7 +44,7 @@ async function capture(page, id, options = {}) {
       const style = getComputedStyle(element)
       return { className: element.className, box: rect(element), padding: [style.paddingLeft, style.paddingRight], maxWidth: style.maxWidth }
     })
-    const controls = [...main.querySelectorAll('input:not([type=hidden]),textarea,button,[role=combobox]')].filter(visible).filter((element) => !element.closest('.settings-nav,.tab-list')).map((element) => ({
+    const controls = [...main.querySelectorAll('input:not([type=hidden]),textarea,button,[role=combobox]')].filter(visible).filter((element) => !element.closest('.settings-nav,.app-settings-nav,.tab-list')).map((element) => ({
       label: element.getAttribute('aria-label') || element.labels?.[0]?.textContent?.trim().slice(0, 100) || element.textContent?.trim(),
       box: rect(element),
     }))
@@ -52,7 +52,7 @@ async function capture(page, id, options = {}) {
       const style = getComputedStyle(element)
       return { box: rect(element), top: style.paddingTop, bottom: style.paddingBottom }
     })
-    const active = [...document.querySelectorAll('.settings-nav [aria-current=page],.tab-list [data-state=active]')].filter(visible).map((element) => {
+    const active = [...document.querySelectorAll('.settings-nav [aria-current=page],.app-settings-nav [aria-current=page],.tab-list [data-state=active]')].filter(visible).map((element) => {
       const style = getComputedStyle(element)
       return { label: element.textContent, box: rect(element), color: style.color, background: style.backgroundColor, border: style.borderBottomWidth }
     })
@@ -286,7 +286,7 @@ try {
       await runCase('settings', theme, viewport, async (page, id, size) => {
         await page.goto(`${base}/settings?tab=edge`)
         await settled(page, page.getByRole('heading', { name: 'Saved traffic configuration', exact: true }))
-        const selected = page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Hakopod Edge', exact: true })
+        const selected = page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Hakopod Edge', exact: true })
         assert.equal(await selected.getAttribute('aria-current'), 'page')
         await capture(page, id)
         await helpCheck(page, id, size.width < 640)
