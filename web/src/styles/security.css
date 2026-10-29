@@ -34,41 +34,7 @@
   gap: 4px;
   align-items: center;
 }
-.advisory-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  margin: 0 0 16px;
-}
-.advisory-summary div {
-  display: grid;
-  gap: 2px;
-}
-.advisory-summary dt {
-  color: var(--muted);
-  font-size: 12px;
-}
-.advisory-summary dd {
-  margin: 0;
-  font-weight: 600;
-}
-.advisory-section-title {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin: 16px 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.advisory-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
 @media (max-width: 640px) {
-  .advisory-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .advisory-banner {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -82,97 +48,324 @@
     min-width: 44px;
   }
 }
-.advisory-card {
+
+/* Security triage: an inline summary, then one list of apps ordered by severity. */
+.security-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 12px;
-  align-items: center;
-  padding: 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--card);
-  color: var(--foreground);
-  text-decoration: none;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
 }
-.advisory-card:hover {
-  border-color: color-mix(in oklab, var(--foreground) 25%, var(--hairline));
+.security-summary-line {
+  margin: 0;
+  font-weight: 500;
 }
-.advisory-card small,
-.advisory-muted {
-  color: var(--muted);
-  font-size: 12px;
-}
-.advisory-card > svg {
-  grid-row: 1 / span 3;
-  grid-column: 2;
-  color: var(--muted);
-}
-.advisory-app-name {
+.security-sources {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
   align-items: center;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.advisory-detail {
-  margin-top: 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--card);
-}
-.advisory-detail > summary {
-  padding: 10px 12px;
-  cursor: pointer;
-  font-weight: 600;
-}
-.advisory-detail-body {
-  display: grid;
-  gap: 12px;
-  padding: 0 12px 12px;
-}
-.advisory-footer {
-  display: grid;
-  gap: 4px;
-  margin-top: 16px;
+  gap: 0 var(--space-3);
+  min-height: 32px;
+  margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
 }
-.advisory-footer span {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
+.security-sources > * + *::before {
+  content: '·';
+  margin-right: var(--space-3);
 }
-.advisory-error {
+.security-sources > button::before {
+  content: none;
+}
+/* Ghost buttons align their label, not their hit area, with the text beside them. */
+.security-sources > .button-ghost {
+  margin-left: calc(-1 * var(--space-3));
+}
+.security-muted {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.security-error {
+  margin: 0;
   color: var(--destructive);
-  font-size: 12px;
+  font-size: var(--type-meta-size);
 }
-.advisory-settings {
+.security-page > .hako-note {
+  margin-bottom: var(--space-4);
+}
+
+/* Rows share column tracks through subgrid so severity, fix and freshness line up. */
+.security-rows {
   display: grid;
-  gap: 8px;
-  margin-top: 24px;
+  grid-template-columns: 32px minmax(0, 1fr) max-content max-content max-content max-content;
+  column-gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.advisory-settings label {
-  display: flex;
-  gap: 8px;
+.security-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
+  row-gap: var(--space-3);
+  padding-block: var(--space-3);
+  scroll-margin-top: 72px;
 }
-.advisory-card-icon {
-  grid-row: 1 / span 3;
-  display: grid;
+.security-row + .security-row {
+  border-top: 1px solid var(--hairline);
+}
+.security-row-toggle {
+  display: inline-grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--muted);
+  cursor: pointer;
 }
-.advisory-card:has(.advisory-card-icon) {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.security-row-toggle:hover {
+  background: var(--surface-2);
+  color: var(--foreground);
 }
-.advisory-card:has(.advisory-card-icon) > svg {
-  grid-column: 3;
+.security-row-toggle svg {
+  transition: transform 120ms ease;
 }
-.advisory-card-plain {
-  grid-template-columns: minmax(0, 1fr);
+.security-row[data-open='true'] .security-row-toggle svg {
+  transform: rotate(90deg);
+}
+.security-row-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.security-row-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+.security-row-name a {
+  color: var(--foreground);
+  font-weight: var(--type-card-weight);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.security-row-name a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.security-row-scope,
+.security-row-checked {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.security-row-severity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.security-row-fix {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.security-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.security-row-actions:empty {
+  display: none;
+}
+.security-row-panel {
+  display: grid;
+  grid-column: 2 / -1;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Advisories inside an expanded row. */
+.security-advisories {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.security-advisories th {
+  padding: 0 var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.security-advisories td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.security-advisories tbody tr + tr td {
+  border-top: 1px solid var(--hairline);
+}
+.security-advisories :is(th, td):last-child {
+  padding-right: 0;
+}
+.security-advisories td:first-child {
+  width: 88px;
+}
+.security-advisories td:nth-child(3) {
+  width: 132px;
+}
+.security-advisories td:nth-child(4) {
+  width: 24%;
+}
+.security-advisories td:nth-child(5) {
+  width: 128px;
+}
+.security-advisory-title a {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.security-advisories :is(.security-muted, code) {
+  display: block;
+}
+.security-advisories code {
+  font-size: 12px;
+}
+.security-advisory-actions {
+  text-align: right;
+}
+.security-advisory-actions > * + * {
+  margin-left: var(--space-2);
+}
+.security-source-options {
+  display: grid;
+  gap: var(--space-3);
+}
+.security-source-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.security-source-options label span {
+  display: grid;
+  gap: 2px;
+}
+.security-source-options small {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+
+/* Narrower than a desktop row: stack severity, fix and freshness under the app name. */
+@media (max-width: 1023px) {
+  .security-rows {
+    display: block;
+  }
+  .security-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-areas:
+      'toggle identity'
+      '. severity'
+      '. fix'
+      '. checked'
+      '. actions'
+      '. panel';
+    column-gap: var(--space-2);
+    row-gap: var(--space-2);
+    align-items: start;
+  }
+  .security-row-toggle {
+    grid-area: toggle;
+  }
+  .security-row-identity {
+    grid-area: identity;
+    align-self: center;
+  }
+  .security-row-severity {
+    grid-area: severity;
+  }
+  .security-row-fix {
+    grid-area: fix;
+  }
+  .security-row-fix:empty {
+    display: none;
+  }
+  .security-row-checked {
+    grid-area: checked;
+  }
+  .security-row-actions {
+    grid-area: actions;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .security-row-actions > .button-ghost:first-child {
+    margin-left: calc(-1 * var(--space-3));
+  }
+  .security-row-panel {
+    grid-area: panel;
+  }
+}
+@media (max-width: 639px) {
+  .security-row-toggle {
+    width: 44px;
+    height: 44px;
+    margin: -6px;
+  }
+  .security-row {
+    grid-template-areas:
+      'toggle identity'
+      '. severity'
+      '. fix'
+      '. checked'
+      '. actions'
+      'panel panel';
+  }
+  .security-sources > * + *::before {
+    content: none;
+  }
+  .security-advisories thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .security-advisories,
+  .security-advisories tbody {
+    display: block;
+  }
+  .security-advisories tr {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    padding-block: var(--space-2);
+  }
+  .security-advisories tbody tr + tr {
+    border-top: 1px solid var(--hairline);
+  }
+  .security-advisories td,
+  .security-advisories tbody tr + tr td {
+    display: block;
+    width: auto !important;
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+  .security-advisories td[data-label]:not(:first-child, .security-advisory-title)::before {
+    content: attr(data-label) ': ';
+    color: var(--muted);
+  }
+  .security-advisories td[data-label='Package'] code {
+    display: inline;
+  }
+  .security-advisory-actions {
+    text-align: left;
+  }
 }
