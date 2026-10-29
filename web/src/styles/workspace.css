@@ -231,11 +231,11 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
   }
+  /* Sections wrap onto a second line so every one stays on screen. */
   .app-settings-nav {
-    grid-auto-flow: column;
-    grid-auto-columns: max-content;
-    gap: var(--space-5);
-    overflow-x: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-5);
   }
   .app-settings-link {
     min-height: 44px;
