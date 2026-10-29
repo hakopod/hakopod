@@ -41,7 +41,7 @@ import { Dialog } from './ui/dialog'
 import { SelectField } from './ui/select'
 import { Tooltip } from './ui/surfaces'
 import { ParentBackLink } from './parent-navigation'
-import { Bot } from 'lucide-react'
+import { Bot, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { AuthScreen } from './auth-screen'
 import { NotificationButton } from './notification-button'
@@ -265,6 +265,7 @@ function Workspace({
   const [projectOpen, setProjectOpen] = useState(false)
   const [environmentOpen, setEnvironmentOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [preferencesOpen, setPreferencesOpen] = useState(false)
   const [assistantOpen, setAssistantOpen] = useState(false)
@@ -436,6 +437,8 @@ function Workspace({
           to={to}
           search={search}
           className="hako-nav-link interactive"
+          aria-label={label}
+          title={label}
           data-active={isActive(to) || undefined}
           aria-current={isActive(to) ? 'page' : undefined}
           onClick={() => setMobileOpen(false)}
@@ -450,7 +453,24 @@ function Workspace({
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <div className="hako-shell">
+      <div className="hako-shell" data-sidebar-collapsed={sidebarCollapsed || undefined}>
+        {dashboardEdition.cloud && (
+          <aside className="hako-cloud-sidebar" aria-label="Workspace navigation">
+            <div className="hako-cloud-sidebar-brand">
+              <Button variant="ghost" size="icon" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="cloud-sidebar-navigation" onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
+                {sidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+              </Button>
+              <Link to={dashboardEdition.home} aria-label="Hakopod workspaces">
+                {sidebarCollapsed ? <Logo size={24} /> : <Brand />}
+              </Link>
+            </div>
+            <nav id="cloud-sidebar-navigation" aria-label="Cloud main navigation">{links(true)}</nav>
+            <div className="hako-cloud-sidebar-bottom">
+              <Button variant="ghost" onClick={toggleTheme}>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</Button>
+              <Button variant="ghost" onClick={() => setPreferencesOpen(true)}>Appearance</Button>
+            </div>
+          </aside>
+        )}
         <header className="hako-global-header">
           <div className="hako-brand-group">
             <ParentBackLink />

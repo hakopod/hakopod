@@ -53,3 +53,17 @@ export function accentText(color: string, theme: 'dark' | 'light') {
   }
   return theme === 'dark' ? '#FFFFFF' : '#000000'
 }
+
+
+// Cloud surface strength stays bounded so custom accents cannot obscure text.
+export function cloudSurfaces(color: string, theme: 'dark' | 'light') {
+  const accent = channels(validAccent(color) ? color : '#AC99FF')
+  const mix = (base: number, amount: number) =>
+    '#' + accent.map(value => Math.round(base * (1 - amount) + value * amount)
+      .toString(16).padStart(2, '0')).join('').toUpperCase()
+  return theme === 'dark'
+    ? { background: mix(5, .015), card: mix(5, .04), popover: mix(7, .065),
+        surface2: mix(7, .065), surface3: mix(8, .10), hairline: mix(16, .14) }
+    : { background: mix(247, .015), card: '#FFFFFF', popover: '#FFFFFF',
+        surface2: mix(242, .025), surface3: mix(242, .10), hairline: mix(220, .03) }
+}

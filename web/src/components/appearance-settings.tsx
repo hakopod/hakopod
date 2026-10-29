@@ -1,3 +1,4 @@
+import { dashboardEdition } from '../lib/dashboard-edition'
 import { HeadingHelp } from './shared'
 import { useEffect, useId, useState } from 'react'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
@@ -73,7 +74,7 @@ export function AppearanceSettings() {
       <section className="hako-accent-settings" aria-labelledby={`${titleId}-accent`}>
         <div>
           <h3 id={`${titleId}-accent`}>Accent color</h3>
-          <p>Personalize buttons and highlights. Text contrast adjusts automatically.</p>
+          <p>{dashboardEdition.cloud ? 'Personalize buttons, highlights and subtle surface tints in this browser.' : 'Personalize buttons and highlights. Text contrast adjusts automatically.'}</p>
         </div>
         <div className="hako-accent-options" role="group" aria-label="Accent presets">
           {accentPresets.map(({ name, color }) => (
@@ -123,7 +124,7 @@ export function AppearanceSettings() {
                 }
               }}
             />
-            <Button size="sm" variant="ghost" onClick={() => chooseAccent(DEFAULT_ACCENT)}>
+            <Button size="sm" variant="ghost" onClick={() => chooseAccent(dashboardEdition.cloud ? '#AC99FF' : DEFAULT_ACCENT)}>
               Reset
             </Button>
           </div>

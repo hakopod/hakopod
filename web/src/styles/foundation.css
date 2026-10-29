@@ -653,3 +653,20 @@ html[data-edition='self-hosted'] .ops-card-link:focus-visible::after {
 .toml-editor-body .input-wrap textarea.code-editor {
   @apply min-h-0 resize-none;
 }
+
+
+@font-face { font-family: 'IBM Plex Mono'; src: url('/fonts/IBMPlexMono-Light.ttf') format('truetype'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('/fonts/IBMPlexMono.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+html[data-edition='cloud'] {
+  --font-sans: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --action: #ac99ff;
+  --action-fg: #101010;
+  --success: #77bdfb;
+  --info: #b7ace6;
+}
+html[data-edition='cloud'] body { font-family: var(--font-sans); font-weight: 300; }
+html[data-edition='cloud'] :is(h1,h2,h3,h4,strong,b) { font-weight: 400; letter-spacing: normal; }
+html[data-edition='cloud'] h1 { font-size: 18px; line-height: 24px; }
+html[data-edition='cloud'] :is(h2,h3) { font-size: 14px; line-height: 20px; }
+html[data-edition='cloud'].light { --success: #1769a8; --info: #645b9e; }
