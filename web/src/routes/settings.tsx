@@ -2,7 +2,8 @@ import { dashboardEdition, useEditionFeatures } from '../lib/dashboard-edition'
 import { AuditHistory } from '../components/audit-history'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
-import { Fragment, lazy, Suspense, useState } from 'react'
+import { Fragment, lazy, Suspense, useState, type ReactNode } from 'react'
+import { FormPage, FormSection } from '../components/form-page'
 import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { message, relative, timestamp } from '../lib/api'
@@ -35,7 +36,6 @@ import {
   PageHeader,
   ErrorState,
   Loading,
-  Note,
   RequestError,
 } from '../components/shared'
 const AppearanceSettings = lazy(() =>
@@ -576,60 +576,52 @@ export function CreateKey({
           }
         }}
       >
-        <div className={page ? 'field-stack py-4' : 'dialog-body field-stack'}>
+        <div className={page ? 'grid gap-4' : 'dialog-body field-stack'}>
           {created ? (
-            <>
+            <KeyGroup page={page} title="Copy your API key">
               <div className="created-key">
                 <code>{created}</code>
                 <CopyValue value={created} what="API key" />
               </div>
-              <Note>
-                Store this key as HAKOPOD_API_KEY in your secret manager. Set HAKOPOD_API_URL to
-                this dashboard's address. The SDK reads the key's scope when it connects.
-              </Note>
-            </>
-          ) : reviewing ? (
-            <>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                <dt>Name</dt>
-                <dd className="min-w-0 break-words">{rotation?.name || name}</dd>
-                <dt>Project</dt>
-                <dd className="min-w-0 break-words">
-                  {rotation ? rotation.project || 'Installation' : project}
-                </dd>
-                <dt>Environment</dt>
-                <dd className="min-w-0 break-words">
-                  {rotation ? rotation.environment || 'All environments' : environment}
-                </dd>
-                <dt>Application</dt>
-                <dd className="min-w-0 break-words">
-                  {rotation
-                    ? rotation.application || 'All in this environment'
-                    : application || 'All in this environment'}
-                </dd>
-                <dt>Lifetime</dt>
-                <dd>{lifetime === 'never' ? 'Never expires' : `${lifetime} days`}</dd>
-              </dl>
-              <p className="text-sm break-words">
-                Permissions: {(rotation?.permissions || permissions).join(', ')}
+              <p className="field-help">
+                Store it as HAKOPOD_API_KEY in your secret manager and set HAKOPOD_API_URL to this
+                dashboard's address. The SDK reads the key's scope when it connects.
               </p>
-              <Note>
+            </KeyGroup>
+          ) : reviewing ? (
+            <KeyGroup page={page} title="Review API key">
+              <ReviewFacts
+                facts={[
+                  ['Name', rotation?.name || name],
+                  ['Project', rotation ? rotation.project || 'Installation' : project],
+                  [
+                    'Environment',
+                    rotation ? rotation.environment || 'All environments' : environment,
+                  ],
+                  [
+                    'Application',
+                    (rotation ? rotation.application : application) || 'All in this environment',
+                  ],
+                  ['Lifetime', lifetime === 'never' ? 'Never expires' : `${lifetime} days`],
+                  ['Permissions', (rotation?.permissions || permissions).join(', ')],
+                ]}
+              />
+              <ReviewNotice tone="warn" title="Treat this key as a trusted capability">
                 Deployment access can run code and change workloads. Execution grants permit
-                commands or SQL in the selected scope. Credential access lets the selected agent
-                retrieve authorized credentials. Returned secrets may enter its context. Grant this
-                only to agents and integrations you trust. Keep the key in a secret store. Existing
-                workloads continue if the key expires or is revoked.
+                commands or SQL in the selected scope, and credential access lets the holder
+                retrieve authorized credentials. Keep the key in a secret store. Existing workloads
+                continue if the key expires or is revoked.
                 {lifetime === 'never' &&
-                  ' This key has no expiry date. Revoke it when the CI workflow no longer needs it.'}
+                  ' This key has no expiry date; revoke it when the workflow no longer needs it.'}
                 {rotation && ' The previous key expires within 15 minutes of rotation.'}
-              </Note>
-            </>
+              </ReviewNotice>
+            </KeyGroup>
           ) : rotation ? (
             <>
-              <Note>
-                The previous key expires within 15 minutes. Update your integrations with the
-                replacement before that overlap ends. Existing workloads keep running.
-              </Note>
+              <ReviewNotice tone="warn" title="The current key stops working 15 minutes after rotation">
+                Update CI and CLI configurations with the replacement before then. Existing
+                workloads keep running.
+              </ReviewNotice>
               <label>
                 Replacement lifetime
                 <SelectField
@@ -642,96 +634,104 @@ export function CreateKey({
             </>
           ) : (
             <>
-              <label>
-                Key name
-                <Input
-                  required
-                  placeholder="production-deploy"
-                  value={name}
-                  maxLength={80}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </label>
-              <div className="form-grid-two">
-                {!dashboardEdition.cloud && (
-                  <label>
-                    Application restriction
-                    <Input
-                      placeholder="All in this environment"
-                      value={application}
-                      onChange={(event) => {
-                        setApplication(event.target.value)
-                        if (event.target.value)
-                          setExtraGrants((grants) =>
-                            grants.filter(
-                              (grant) =>
-                                !grant.startsWith('databases:') && grant !== 'agent:credentials',
-                            ),
-                          )
-                      }}
-                    />
-                  </label>
-                )}
+              <KeyGroup page={page} title="Key">
                 <label>
-                  Lifetime
-                  <SelectField
-                    label="Lifetime"
-                    value={lifetime}
-                    onValueChange={setLifetime}
-                    options={keyLifetimeOptions(dashboardEdition.cloud)}
+                  Key name
+                  <Input
+                    required
+                    placeholder="production-deploy"
+                    value={name}
+                    maxLength={80}
+                    onChange={(event) => setName(event.target.value)}
                   />
                 </label>
-              </div>
-              <label>
-                Access
-                <SelectField
-                  label="Access"
-                  value={access}
-                  onValueChange={setAccess}
-                  options={[
-                    {
-                      value: 'read',
-                      label: 'Read only — inspect workloads and logs',
-                    },
-                    {
-                      value: 'deploy',
-                      label: 'Deploy — apps, services and databases',
-                    },
-                    {
-                      value: 'manage',
-                      label: 'Manage workloads — includes Git, networks and app deletion',
-                    },
-                  ]}
-                />
-              </label>
-              <fieldset className="grid gap-2">
-                <legend className="mb-2 text-sm">Explicit execution and credential access</legend>
-                {executionGrants.map(([grant, label]) => (
-                  <label key={grant} className="flex min-h-11 items-center gap-3 text-sm">
-                    <Input
-                      type="checkbox"
-                      disabled={
-                        Boolean(application) &&
-                        (grant.startsWith('databases:') || grant === 'agent:credentials')
-                      }
-                      checked={extraGrants.includes(grant)}
-                      onChange={(event) =>
-                        setExtraGrants(toggleGrant(extraGrants, grant, event.target.checked))
-                      }
+                <div className="form-grid-two">
+                  {!dashboardEdition.cloud && (
+                    <label>
+                      Application restriction
+                      <Input
+                        placeholder="All in this environment"
+                        value={application}
+                        onChange={(event) => {
+                          setApplication(event.target.value)
+                          if (event.target.value)
+                            setExtraGrants((grants) =>
+                              grants.filter(
+                                (grant) =>
+                                  !grant.startsWith('databases:') && grant !== 'agent:credentials',
+                              ),
+                            )
+                        }}
+                      />
+                    </label>
+                  )}
+                  <label>
+                    Lifetime
+                    <SelectField
+                      label="Lifetime"
+                      value={lifetime}
+                      onValueChange={setLifetime}
+                      options={keyLifetimeOptions(dashboardEdition.cloud)}
                     />
-                    {label}
                   </label>
-                ))}
-              </fieldset>
-              <Note>
-                Execution and credential grants are selected separately. SQL writes require SQL
-                query access. Credential retrieval also requires deployment access.
-              </Note>
-              <Note>
-                Deployment access can run code that reads application credentials. Manage workloads
-                also permits Git setup, private network changes and application deletion; it needs
-                access to the whole environment. These keys cannot administer the installation.
-              </Note>
+                </div>
+              </KeyGroup>
+              <KeyGroup page={page} title="Access">
+                <label>
+                  Access
+                  <SelectField
+                    label="Access"
+                    value={access}
+                    onValueChange={setAccess}
+                    options={[
+                      {
+                        value: 'read',
+                        label: 'Read only — inspect workloads and logs',
+                      },
+                      {
+                        value: 'deploy',
+                        label: 'Deploy — apps, services and databases',
+                      },
+                      {
+                        value: 'manage',
+                        label: 'Manage workloads — includes Git, networks and app deletion',
+                      },
+                    ]}
+                  />
+                  <small className="field-help">
+                    {access === 'read'
+                      ? 'Reads deployments and logs. Cannot change workloads.'
+                      : access === 'manage'
+                        ? 'Can run code, set up Git, change private networks and delete applications. Needs the whole environment.'
+                        : 'Can run code that reads application credentials.'}{' '}
+                    No key can administer the installation.
+                  </small>
+                </label>
+                <fieldset className="grid gap-2">
+                  <legend className="mb-2 text-sm">Execution and credential access</legend>
+                  {executionGrants.map(([grant, label]) => (
+                    <label key={grant} className="flex min-h-11 items-center gap-3 text-sm">
+                      <Input
+                        type="checkbox"
+                        disabled={
+                          Boolean(application) &&
+                          (grant.startsWith('databases:') || grant === 'agent:credentials')
+                        }
+                        checked={extraGrants.includes(grant)}
+                        onChange={(event) =>
+                          setExtraGrants(toggleGrant(extraGrants, grant, event.target.checked))
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                  <small className="field-help">
+                    Granted separately from access. SQL writes need SQL query access; credential
+                    retrieval also needs deployment access. Database and credential grants need the
+                    whole environment.
+                  </small>
+                </fieldset>
+              </KeyGroup>
             </>
           )}
           {error && <RequestError error={error} />}
@@ -748,7 +748,7 @@ export function CreateKey({
               : 'Close and discard this API key draft?'}
           </DiscardPrompt>
         ) : (
-          <div className={page ? 'flex justify-end gap-3 py-4' : 'dialog-footer'}>
+          <div className={page ? 'form-footer' : 'dialog-footer'}>
             {created ? (
               <Button type="button" variant="primary" onClick={() => close(false)}>
                 Done
@@ -870,12 +870,16 @@ function KeyContainer({
       </Dialog>
     )
   return (
-    <div className="page-content hako-form-page">
-      <PageHeader
-        title={title}
-        description={typeof description === 'string' ? description : undefined}
-      />
+    <FormPage
+      title={typeof title === 'string' ? title : 'Create API key'}
+      description={typeof description === 'string' ? description : undefined}
+      breadcrumbs={[]}
+    >
       {children}
-    </div>
+    </FormPage>
   )
+}
+
+function KeyGroup({ page, title, children }: { page: boolean; title: string; children: ReactNode }) {
+  return page ? <FormSection title={title}>{children}</FormSection> : <>{children}</>
 }
