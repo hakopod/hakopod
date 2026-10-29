@@ -737,34 +737,38 @@ export function DeploymentForm({
               />
             ) : mode === 'toml' ? (
               <div className="field-stack deploy-toml-field">
-                <div className="toml-editor-heading">
-                  <span>hakopod.toml</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    aria-haspopup="dialog"
-                    onClick={() => setEditorExpanded(true)}
-                  >
-                    <Icon name="external" size={14} />
-                    Expand editor
-                  </Button>
+                <div className="toml-editor-frame">
+                  <div className="toml-editor-heading">
+                    <span>hakopod.toml</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-haspopup="dialog"
+                      onClick={() => setEditorExpanded(true)}
+                    >
+                      <Icon name="external" size={14} />
+                      Expand
+                    </Button>
+                  </div>
+                  <TOMLEditor
+                    ref={tomlEditor}
+                    label="TOML configuration"
+                    value={toml}
+                    onChange={setToml}
+                    disabled={busy}
+                  />
                 </div>
-                <TOMLEditor
-                  ref={tomlEditor}
-                  label="TOML configuration"
-                  value={toml}
-                  onChange={setToml}
-                  disabled={busy}
-                />
                 <p className="field-help">
-                  {tomlOnlyReason
-                    ? 'Review the saved provider, target, image and secret references here.'
-                    : 'Configure networks, private ports, peer access, mounts and filesystem permissions here alongside images, health checks and secret references. Switching to the form validates and keeps these settings.'}
-                </p>
-                <p className="field-help">
-                  Use env_file = ".env" above the service tables to share a file across services, or
-                  inside a service table for that service.
+                  {tomlOnlyReason ? (
+                    'Review the saved provider, target, image and secret references here.'
+                  ) : (
+                    <>
+                      Networks, ports, mounts and secret references all live here; switching to the
+                      form keeps them. Put <code>env_file = ".env"</code> above the service tables
+                      to share a file, or inside one service table for that service.
+                    </>
+                  )}
                 </p>
                 <EnvironmentFiles
                   files={envFiles}
@@ -996,7 +1000,7 @@ export function DeploymentForm({
               ? 'Only reviewed changes will be submitted'
               : tomlOnlyReason
                 ? 'Review validates the configuration before deployment'
-                : 'Secrets are saved at review or when switching to TOML; containers change on deployment'}
+                : 'Nothing deploys until you review. Secrets save at review or on switching to TOML.'}
         </span>
         <div className="deploy-footer-actions">
           <Button

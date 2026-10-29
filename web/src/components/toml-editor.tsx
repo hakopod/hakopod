@@ -104,7 +104,7 @@ export const TOMLEditor = forwardRef<
         if (language === 'sql')
           instance.addCommand(
             monaco.KeyCode.Escape,
-            () => exit.current ? exit.current() : container.current?.parentElement?.focus(),
+            () => (exit.current ? exit.current() : container.current?.parentElement?.focus()),
             '!suggestWidgetVisible',
           )
         editor.current = instance
@@ -160,7 +160,10 @@ export const TOMLEditor = forwardRef<
             stopWorker('Grammar lint is unavailable. Your SQL is preserved.')
             return
           }
-          sqlDeadline = setTimeout(() => stopWorker('Grammar lint timed out. Your SQL is preserved.'), 2000)
+          sqlDeadline = setTimeout(
+            () => stopWorker('Grammar lint timed out. Your SQL is preserved.'),
+            2000,
+          )
         }
         const grammarLint = async () => {
           monaco.editor.setModelMarkers(model, 'sql-grammar', [])
@@ -170,10 +173,18 @@ export const TOMLEditor = forwardRef<
             setEditorStatus('')
             return
           }
-          if (language !== 'sql' || !supportsSQLGrammar(dialect) || new TextEncoder().encode(text).length > 65536) return
+          if (
+            language !== 'sql' ||
+            !supportsSQLGrammar(dialect) ||
+            new TextEncoder().encode(text).length > 65536
+          )
+            return
           pending = { text, version: model.getVersionId() }
           if (workerFailed) return
-          if (sqlWorker) { sendPending(); return }
+          if (sqlWorker) {
+            sendPending()
+            return
+          }
           if (workerStarting) return
           workerStarting = true
           let ParserWorker: (typeof import('../lib/sql-parser.worker?worker'))['default']
@@ -185,7 +196,9 @@ export const TOMLEditor = forwardRef<
           }
           if (disposed) return
           let worker: Worker
-          try { worker = new ParserWorker() } catch {
+          try {
+            worker = new ParserWorker()
+          } catch {
             stopWorker('Grammar lint is unavailable. Your SQL is preserved.')
             return
           }
@@ -203,7 +216,9 @@ export const TOMLEditor = forwardRef<
             active = null
             clearTimeout(sqlDeadline)
             if (model.getVersionId() === version && model.getValue().trim()) {
-              setEditorStatus(event.data.failed ? 'Grammar lint is unavailable. Your SQL is preserved.' : '')
+              setEditorStatus(
+                event.data.failed ? 'Grammar lint is unavailable. Your SQL is preserved.' : '',
+              )
               monaco.editor.setModelMarkers(
                 model,
                 'sql-grammar',
@@ -244,9 +259,13 @@ export const TOMLEditor = forwardRef<
             sendPending()
           }
           worker.onerror = () => {
-            if (sqlWorker === worker) stopWorker('Grammar lint is unavailable. Your SQL is preserved.')
+            if (sqlWorker === worker)
+              stopWorker('Grammar lint is unavailable. Your SQL is preserved.')
           }
-          sqlDeadline = setTimeout(() => stopWorker('Grammar lint could not start. Your SQL is preserved.'), 10000)
+          sqlDeadline = setTimeout(
+            () => stopWorker('Grammar lint could not start. Your SQL is preserved.'),
+            10000,
+          )
         }
         const subscription = model.onDidChangeContent(() => {
           const next = model.getValue()
@@ -273,7 +292,7 @@ export const TOMLEditor = forwardRef<
             void grammarLint()
           }, 300)
         })
-        monaco.editor.defineTheme('hakopod-mocha', {
+        const mocha: Monaco.editor.IStandaloneThemeData = {
           base: 'vs-dark',
           inherit: true,
           rules: [
@@ -308,8 +327,8 @@ export const TOMLEditor = forwardRef<
             'scrollbarSlider.background': '#585B7060',
             'scrollbarSlider.hoverBackground': '#6C708680',
           },
-        })
-        monaco.editor.defineTheme('hakopod-latte', {
+        }
+        const latte: Monaco.editor.IStandaloneThemeData = {
           base: 'vs',
           inherit: true,
           rules: [
@@ -344,11 +363,37 @@ export const TOMLEditor = forwardRef<
             'scrollbarSlider.background': '#9CA0B060',
             'scrollbarSlider.hoverBackground': '#8C8FA180',
           },
-        })
-        const theme = () =>
-          monaco.editor.setTheme(
-            document.documentElement.dataset.theme === 'light' ? 'hakopod-latte' : 'hakopod-mocha',
-          )
+        }
+        // Syntax colours stay; surfaces come from the dashboard's tokens so the editor sits on
+        // the page instead of on a separate palette.
+        const theme = () => {
+          const root = document.documentElement
+          const base = root.dataset.theme === 'light' ? latte : mocha
+          const css = getComputedStyle(root)
+          // The surrounding frame shows focus; Monaco's own blue focus ring would double it.
+          const surfaces: Record<string, string> = { focusBorder: '#00000000' }
+          for (const [color, token] of [
+            ['editor.background', '--card'],
+            ['editor.foreground', '--foreground'],
+            ['editor.lineHighlightBackground', '--surface-2'],
+            ['editorLineNumber.foreground', '--muted'],
+            ['editorLineNumber.activeForeground', '--foreground'],
+            ['editorIndentGuide.background1', '--hairline'],
+            ['editorSuggestWidget.background', '--card'],
+            ['editorSuggestWidget.border', '--hairline'],
+            ['editorSuggestWidget.selectedBackground', '--surface-2'],
+            ['editorHoverWidget.background', '--card'],
+            ['editorHoverWidget.border', '--hairline'],
+          ]) {
+            const value = css.getPropertyValue(token).trim()
+            if (/^#[0-9a-f]{6}$/i.test(value)) surfaces[color] = value
+          }
+          monaco.editor.defineTheme('hakopod', {
+            ...base,
+            colors: { ...base.colors, ...surfaces },
+          })
+          monaco.editor.setTheme('hakopod')
+        }
         const observer = new MutationObserver(theme)
         observer.observe(document.documentElement, {
           attributes: true,
@@ -389,7 +434,7 @@ export const TOMLEditor = forwardRef<
       className={
         expanded
           ? 'flex h-full w-full min-h-0 min-w-0 flex-1 flex-col'
-          : 'flex h-[420px] min-w-0 flex-col border border-[var(--border)]'
+          : 'toml-editor-surface flex h-[420px] min-w-0 flex-col border border-[var(--hairline)]'
       }
       role={language === 'sql' ? 'group' : undefined}
       aria-describedby={describedBy}

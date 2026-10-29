@@ -36,6 +36,7 @@ export function EnvironmentFiles({
   const [error, setError] = useState('')
   const [path, setPath] = useState('.env')
   const [content, setContent] = useState('')
+  const [pasting, setPasting] = useState(false)
   function attach(added: EnvironmentFile[]) {
     const next = [...files, ...added]
     environmentFilePayload(next)
@@ -43,89 +44,104 @@ export function EnvironmentFiles({
     setError('')
   }
   return (
-    <section className="grid min-w-0 gap-2" aria-label="Environment file attachments">
-      <div className="field-stack">
-        <span>Environment files</span>
-        <input
-          ref={fileInput}
-          className="hidden!"
-          type="file"
-          multiple
-          disabled={disabled}
-          aria-label="Upload environment files"
-          onChange={(event) => {
-            const selected = Array.from(event.target.files || [])
-            event.target.value = ''
-            if (!selected.length) return
-            if (
-              selected.length + files.length > 8 ||
-              selected.reduce((sum, file) => sum + file.size, 0) > maximum
-            ) {
-              setError('Attach at most 8 environment files totalling 128 KiB.')
-              return
-            }
-            onBusyChange(true)
-            void Promise.all(
-              selected.map(async (file) => ({
-                id: crypto.randomUUID(),
-                path: file.name,
-                content: await file.text(),
-              })),
-            )
-              .then(attach)
-              .catch((cause) =>
-                setError(
-                  cause instanceof Error ? cause.message : 'Could not read the environment file.',
-                ),
-              )
-              .finally(() => onBusyChange(false))
-          }}
-        />
+    <section className="env-files" aria-labelledby="env-files-title">
+      <div className="env-files-heading">
         <div>
-          <Button
-            type="button"
-            disabled={disabled || files.length >= 8}
-            onClick={() => fileInput.current?.click()}
-          >
-            Upload environment files
-          </Button>
+          <h3 id="env-files-title">Environment files</h3>
+          <p className="field-help">
+            Match the paths in <code>env_file</code>. Later files override earlier ones; explicit
+            variables override files. Sensitive values become secret references at review.
+          </p>
         </div>
-      </div>
-      <p className="field-help">
-        Match the paths in env_file. Later files override earlier files; explicit variables override
-        files. Sensitive values are saved as secret references when you review.
-      </p>
-      {files.map((file) => (
-        <div key={file.id} className="flex min-w-0 items-end gap-2">
-          <label className="field-stack min-w-0 flex-1">
-            File path
-            <Input
-              value={file.path}
-              disabled={disabled}
-              maxLength={200}
-              onChange={(event) =>
-                onChange(
-                  files.map((item) =>
-                    item.id === file.id ? { ...item, path: event.target.value } : item,
+        <div className="env-files-actions">
+          <input
+            ref={fileInput}
+            className="hidden!"
+            type="file"
+            multiple
+            disabled={disabled}
+            aria-label="Upload environment files"
+            onChange={(event) => {
+              const selected = Array.from(event.target.files || [])
+              event.target.value = ''
+              if (!selected.length) return
+              if (
+                selected.length + files.length > 8 ||
+                selected.reduce((sum, file) => sum + file.size, 0) > maximum
+              ) {
+                setError('Attach at most 8 environment files totalling 128 KiB.')
+                return
+              }
+              onBusyChange(true)
+              void Promise.all(
+                selected.map(async (file) => ({
+                  id: crypto.randomUUID(),
+                  path: file.name,
+                  content: await file.text(),
+                })),
+              )
+                .then(attach)
+                .catch((cause) =>
+                  setError(
+                    cause instanceof Error ? cause.message : 'Could not read the environment file.',
                   ),
                 )
-              }
-            />
-          </label>
+                .finally(() => onBusyChange(false))
+            }}
+          />
           <Button
             type="button"
             size="sm"
-            disabled={disabled}
-            onClick={() => onChange(files.filter((item) => item.id !== file.id))}
-            aria-label={`Remove ${file.path}`}
+            variant="ghost"
+            aria-expanded={pasting}
+            disabled={disabled || files.length >= 8}
+            onClick={() => setPasting((open) => !open)}
           >
-            Remove
+            Paste
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={disabled || files.length >= 8}
+            onClick={() => fileInput.current?.click()}
+          >
+            Upload
           </Button>
         </div>
-      ))}
-      <details>
-        <summary className="cursor-pointer">Paste an environment file</summary>
-        <div className="mt-2 grid gap-2">
+      </div>
+      {files.length > 0 && (
+        <ul className="env-files-list" aria-label="Attached environment files">
+          {files.map((file) => (
+            <li key={file.id}>
+              <Input
+                aria-label="File path"
+                value={file.path}
+                disabled={disabled}
+                maxLength={200}
+                onChange={(event) =>
+                  onChange(
+                    files.map((item) =>
+                      item.id === file.id ? { ...item, path: event.target.value } : item,
+                    ),
+                  )
+                }
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={disabled}
+                onClick={() => onChange(files.filter((item) => item.id !== file.id))}
+                aria-label={`Remove ${file.path}`}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {pasting && (
+        <div className="env-files-paste">
           <label className="field-stack">
             File path
             <Input
@@ -136,26 +152,33 @@ export function EnvironmentFiles({
             />
           </label>
           <label className="field-stack">
-            .env contents
+            Contents
             <Textarea
+              className="code-editor"
               value={content}
               disabled={disabled}
               rows={5}
               maxLength={maximum}
               spellCheck={false}
               autoComplete="off"
+              placeholder="KEY=value"
               onChange={(event) => setContent(event.target.value)}
             />
           </label>
-          <div>
+          <div className="env-files-paste-actions">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setPasting(false)}>
+              Cancel
+            </Button>
             <Button
               type="button"
               size="sm"
+              variant="primary"
               disabled={disabled || !path || !content}
               onClick={() => {
                 try {
                   attach([{ id: crypto.randomUUID(), path, content }])
                   setContent('')
+                  setPasting(false)
                 } catch (cause) {
                   setError(cause instanceof Error ? cause.message : 'Could not attach the file.')
                 }
@@ -165,7 +188,7 @@ export function EnvironmentFiles({
             </Button>
           </div>
         </div>
-      </details>
+      )}
       {error && <RequestError error={error} />}
     </section>
   )
