@@ -333,3 +333,24 @@ func (s *Store) AccessConnectorStatus(ctx context.Context) (json.RawMessage, err
 	}
 	return report, err
 }
+
+// AccessAgent is the hakopod-vpn host agent's last check-in.
+type AccessAgent struct {
+	Version string     `json:"version"`
+	SeenAt  *time.Time `json:"seen_at,omitempty"`
+}
+
+func (s *Store) ReportAccessAgent(ctx context.Context, version string) error {
+	_, err := s.Pool.Exec(ctx, `INSERT INTO installation_access_vpn(singleton,agent_version,agent_seen_at) VALUES(true,$1,now())
+		ON CONFLICT(singleton) DO UPDATE SET agent_version=excluded.agent_version,agent_seen_at=now()`, version)
+	return err
+}
+
+func (s *Store) AccessAgentStatus(ctx context.Context) (AccessAgent, error) {
+	var a AccessAgent
+	err := s.Pool.QueryRow(ctx, "SELECT agent_version,agent_seen_at FROM installation_access_vpn WHERE singleton").Scan(&a.Version, &a.SeenAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return a, nil
+	}
+	return a, err
+}

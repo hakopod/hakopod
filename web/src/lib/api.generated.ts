@@ -7618,6 +7618,11 @@ export interface components {
             connector_secrets_set?: {
                 [key: string]: boolean;
             };
+            agent?: {
+                version: string;
+                /** Format: date-time */
+                seen_at?: string;
+            };
             connector_status?: {
                 type?: string;
                 connected?: boolean;

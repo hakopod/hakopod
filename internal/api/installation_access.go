@@ -208,6 +208,12 @@ func (s *Server) installationAccess(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	agent, err := s.Store.AccessAgentStatus(r.Context())
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	view.Agent = &agent
 	if view.Connector, err = s.Store.AccessConnectorStatus(r.Context()); err != nil {
 		failure(w, err)
 		return

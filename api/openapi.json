@@ -33557,6 +33557,22 @@
               "type": "boolean"
             }
           },
+          "agent": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "seen_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "additionalProperties": false
+          },
           "connector_status": {
             "type": "object",
             "properties": {

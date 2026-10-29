@@ -52,6 +52,9 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "access-connector-report" {
 		return runAccessConnectorReport()
 	}
+	if len(os.Args) > 1 && os.Args[1] == "access-agent-report" {
+		return runAccessAgentReport(os.Args[2:])
+	}
 	if err := loadOperatorConfig(); err != nil {
 		return err
 	}

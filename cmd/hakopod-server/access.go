@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/access"
@@ -228,4 +229,22 @@ func runAccessConnectorReport() error {
 	defer db.Close()
 	raw, _ := json.Marshal(report)
 	return db.ReportAccessConnector(ctx, raw)
+}
+
+var agentVersion = regexp.MustCompile(`^[0-9A-Za-z.+-]{1,64}$`)
+
+// runAccessAgentReport records the hakopod-vpn agent's version; it runs once
+// per agent tick so the dashboard knows the agent is installed and alive.
+func runAccessAgentReport(args []string) error {
+	if len(args) != 1 || !agentVersion.MatchString(args[0]) {
+		return fmt.Errorf("usage: hakopod-server access-agent-report VERSION")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := accessStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.ReportAccessAgent(ctx, args[0])
 }
