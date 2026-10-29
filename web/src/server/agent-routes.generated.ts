@@ -638,6 +638,41 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "getApplicationDraft",
+    "method": "GET",
+    "path": "/applications/{id}/draft",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "stageApplicationDraft",
+    "method": "PUT",
+    "path": "/applications/{id}/draft",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "discardApplicationDraft",
+    "method": "DELETE",
+    "path": "/applications/{id}/draft",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "planApplicationDraft",
+    "method": "POST",
+    "path": "/applications/{id}/draft/plan",
+    "category": "deploy",
+    "boundary": "project"
+  },
+  {
+    "id": "deployApplicationDraft",
+    "method": "POST",
+    "path": "/applications/{id}/draft/deploy",
+    "category": "deploy",
+    "boundary": "project"
+  },
+  {
     "id": "listGitConnections",
     "method": "GET",
     "path": "/git/connections",

@@ -2134,6 +2134,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the staged changes for the application, carried forward onto its current revision. */
+        get: operations["getApplicationDraft"];
+        /** Stage a configuration change for the application without deploying it. */
+        put: operations["stageApplicationDraft"];
+        post?: never;
+        /** Discard the application's staged changes. */
+        delete: operations["discardApplicationDraft"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/draft/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare a deployment plan from the application's staged changes. */
+        post: operations["planApplicationDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/draft/deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deploy the application's staged changes together. */
+        post: operations["deployApplicationDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/git/connections": {
         parameters: {
             query?: never;
@@ -5847,6 +5900,7 @@ export interface components {
                     MemoryLimit?: string;
                 };
             };
+            draft_revision?: number;
             /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
@@ -7143,6 +7197,39 @@ export interface components {
             /** Format: date-time */
             verified_at?: string;
             target: string;
+        };
+        DraftEntry: {
+            identity_id: string;
+            author: string;
+            /** Format: date-time */
+            at: string;
+            changes: components["schemas"]["Change"][];
+        };
+        Draft: {
+            application_id: string;
+            revision: number;
+            base_revision: number;
+            current_revision: number;
+            stale: boolean;
+            conflicts: string[];
+            spec: components["schemas"]["Spec"];
+            changes: components["schemas"]["Change"][];
+            entries: components["schemas"]["DraftEntry"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        DraftInput: {
+            spec?: components["schemas"]["Spec"];
+            toml?: string;
+            service?: string;
+            /** @description Selected services to deploy together. Mutually exclusive with service. Omit both selectors for an application-wide deployment. */
+            services?: string[];
+            expected_draft_revision: number;
+        };
+        DraftReviewInput: {
+            expected_draft_revision: number;
         };
         GitConnectionCapabilities: {
             read_source: boolean;
@@ -9390,6 +9477,7 @@ export interface components {
                     MemoryLimit?: string;
                 };
             };
+            draft_revision?: number;
             /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
@@ -9431,6 +9519,7 @@ export interface components {
                     MemoryLimit?: string;
                 };
             };
+            draft_revision?: number;
             /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
@@ -9530,6 +9619,7 @@ export interface components {
                     MemoryLimit?: string;
                 };
             };
+            draft_revision?: number;
             /** @description Per-service CI source assertions, atomically retained with the release. Requires exact digest-pinned images. Not independently verified attestations. */
             provenance?: {
                 [key: string]: components["schemas"]["SourceBuild"];
@@ -15030,6 +15120,184 @@ export interface operations {
                     "application/json": {
                         results: components["schemas"]["DNSRecordResult"][];
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getApplicationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Draft"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    stageApplicationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Draft"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    discardApplicationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftReviewInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        discarded: boolean;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    planApplicationDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftReviewInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deployApplicationDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_draft_revision: number;
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deployment"];
                 };
             };
             /** @description Error */

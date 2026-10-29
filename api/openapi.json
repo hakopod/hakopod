@@ -9506,6 +9506,319 @@
         "summary": "Create DNS records for the application domain."
       }
     },
+    "/applications/{id}/draft": {
+      "get": {
+        "operationId": "getApplicationDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Draft"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Read the staged changes for the application, carried forward onto its current revision."
+      },
+      "put": {
+        "operationId": "stageApplicationDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Draft"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Stage a configuration change for the application without deploying it."
+      },
+      "delete": {
+        "operationId": "discardApplicationDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "discarded": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "discarded"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftReviewInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Discard the application's staged changes."
+      }
+    },
+    "/applications/{id}/draft/plan": {
+      "post": {
+        "operationId": "planApplicationDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftReviewInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "deploy",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Prepare a deployment plan from the application's staged changes."
+      }
+    },
+    "/applications/{id}/draft/deploy": {
+      "post": {
+        "operationId": "deployApplicationDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deployment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_draft_revision": {
+                    "type": "integer"
+                  },
+                  "expected_revision": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expected_draft_revision",
+                  "expected_revision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "deploy",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:write"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Deploy the application's staged changes together."
+      }
+    },
     "/git/connections": {
       "get": {
         "operationId": "listGitConnections",
@@ -26596,6 +26909,9 @@
               "additionalProperties": false
             }
           },
+          "draft_revision": {
+            "type": "integer"
+          },
           "provenance": {
             "type": "object",
             "additionalProperties": {
@@ -31600,6 +31916,140 @@
           "verification_name",
           "verification_value",
           "target"
+        ],
+        "additionalProperties": false
+      },
+      "DraftEntry": {
+        "type": "object",
+        "properties": {
+          "identity_id": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          }
+        },
+        "required": [
+          "identity_id",
+          "author",
+          "at",
+          "changes"
+        ],
+        "additionalProperties": false
+      },
+      "Draft": {
+        "type": "object",
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "base_revision": {
+            "type": "integer"
+          },
+          "current_revision": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spec": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            }
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DraftEntry"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "application_id",
+          "revision",
+          "base_revision",
+          "current_revision",
+          "stale",
+          "conflicts",
+          "spec",
+          "changes",
+          "entries",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "DraftInput": {
+        "type": "object",
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "toml": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true,
+            "description": "Selected services to deploy together. Mutually exclusive with service. Omit both selectors for an application-wide deployment."
+          },
+          "expected_draft_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_draft_revision"
+        ],
+        "additionalProperties": false
+      },
+      "DraftReviewInput": {
+        "type": "object",
+        "properties": {
+          "expected_draft_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_draft_revision"
         ],
         "additionalProperties": false
       },
@@ -40464,6 +40914,9 @@
               "additionalProperties": false
             }
           },
+          "draft_revision": {
+            "type": "integer"
+          },
           "provenance": {
             "type": "object",
             "additionalProperties": {
@@ -40616,6 +41069,9 @@
               "required": [],
               "additionalProperties": false
             }
+          },
+          "draft_revision": {
+            "type": "integer"
           },
           "provenance": {
             "type": "object",
@@ -40998,6 +41454,9 @@
               "required": [],
               "additionalProperties": false
             }
+          },
+          "draft_revision": {
+            "type": "integer"
           },
           "provenance": {
             "type": "object",

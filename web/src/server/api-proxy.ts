@@ -86,6 +86,7 @@ export const allowed = [
   /^license$/,
   /^applications\/[A-Za-z0-9_-]+\/logs\/query$/,
   /^applications\/[A-Za-z0-9_-]+\/log-sources$/,
+  /^applications\/[A-Za-z0-9_-]+\/draft(?:\/(?:plan|deploy))?$/,
   /^settings\/app-logs$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input|poll))?)?$/,
   /^(me|projects(?:\/[A-Za-z0-9_-]+)?|applications(?:\/[A-Za-z0-9_-]+(?:\/(?:logs|rollback)|\/services\/[A-Za-z0-9_-]+\/(?:runtime|restart|stop|resume|scale|tls|delivery|certificates|exec))?)?|plan|deployments(?:\/[A-Za-z0-9_-]+(?:\/(?:cancel|resume))?)?|nodes|keys(?:\/[A-Za-z0-9_-]+(?:\/rotate)?)?|audit|settings\/appearance)$/,
