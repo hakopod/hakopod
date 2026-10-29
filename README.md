@@ -1,17 +1,81 @@
 # Hakopod
 
-Your apps. Your rules. Deploy applications on infrastructure you own. Hakopod combines
-a Go API and reconciler, a small CLI, PostgreSQL durable state, and a TanStack
-Start dashboard over K3s and HAProxy.
+Your apps. Your rules. Hakopod is an open-source platform for deploying and
+running your apps on servers you own: push from Git, import a `docker-compose.yml`
+or pick a template, review what will change, then deploy with TLS on your domain.
 
-This repository includes the deployment engine and an expanded cockpit with
-human accounts, team roles, source builds, templates, live service monitoring,
-searchable logs, container and host terminals, custom domains, encrypted backups,
-registry credentials, TLS controls and worker enrollment. See the
-[cockpit guide](docs/cockpit.md) and [verification and remaining gates](docs/milestones.md).
-It remains a development release; production installation and operational recovery
-have separate acceptance gates.
-The website and guides are at [hakopod.com](https://hakopod.com).
+```sh
+curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
+```
+
+One fresh Ubuntu or Debian server with 4 GiB RAM is enough to start. Hakopod is in
+alpha; read [what is and isn't verified yet](docs/milestones.md) before you trust
+it with production work. Website and guides: [hakopod.com](https://hakopod.com).
+
+## What you can stop paying for
+
+Each row is a template in the [catalog](docs/templates.md) that you can deploy
+from the dashboard today. The catalog records each template's verification status
+and limits, so check it before relying on one.
+
+| Instead of | Run |
+| --- | --- |
+| Vercel, Heroku, Render | Your own apps, from Git, a Dockerfile or Compose |
+| Sentry | GlitchTip |
+| Google Analytics | Umami |
+| Zapier | n8n |
+| Pingdom, Better Stack | Uptime Kuma |
+| Airtable | NocoDB |
+| A shared password manager | Vaultwarden |
+| ChatGPT team seats | Open WebUI with your own model keys |
+| Managed Postgres and Redis | PostgreSQL, Valkey, Redis |
+
+## Why Hakopod
+
+- **Kubernetes underneath, no YAML on top.** Hakopod runs on K3s from the first
+  server, so growing to a second machine means enrolling a worker, not migrating.
+  You describe an application and its services; Hakopod writes the manifests.
+- **See the change before it ships.** Every deployment starts as a plan showing
+  what will change. Rollback creates a new, auditable revision.
+- **Bring your Compose file.** Paste a `docker-compose.yml`, review the converted
+  configuration and the plan, then deploy.
+- **Give agents a key, not your cluster.** The CLI and MCP endpoint use scoped,
+  short-lived machine keys. CI and agents never need Kubernetes credentials.
+- **Private by default.** Services share a private network; only the ones you
+  mark public get an address.
+
+## How it compares
+
+Coolify, Dokploy and Openship are good tools, and if you want the most mature
+option today, Coolify has the largest community. This is how the approaches
+differ, based on each project's own documentation in October 2026:
+
+| | Hakopod | Coolify | Dokploy | Openship |
+| --- | --- | --- | --- | --- |
+| Runs apps on | K3s (Kubernetes) | Docker | Docker, Swarm for multiple servers | Docker, K3s for clusters |
+| Written in | Go | PHP (Laravel) | TypeScript | TypeScript |
+
+K3s costs memory, which is why Hakopod asks for more than Docker-based tools. In
+return, scheduling across servers and rolling updates come from Kubernetes
+rather than from code we wrote ourselves.
+
+## How we build it
+
+We build Hakopod with help from AI coding agents; you'll find their instructions
+in [AGENTS.md](AGENTS.md). Every release runs the installer on fresh amd64 and
+arm64 GitHub runners before it's published, and [docs/milestones.md](docs/milestones.md) records
+what we've verified on real clusters and what we haven't. If something breaks,
+[open an issue](https://github.com/hakopod/hakopod/issues/new) and tell us your
+version, OS and what you tried.
+
+## Under the hood
+
+Hakopod combines a Go API and reconciler, a small CLI, PostgreSQL durable state,
+and a TanStack Start dashboard over K3s and HAProxy. This repository includes the
+deployment engine and the dashboard: human accounts, team roles, source builds,
+templates, live service monitoring, searchable logs, container and host terminals,
+custom domains, encrypted backups, registry credentials, TLS controls and worker
+enrollment. See the [cockpit guide](docs/cockpit.md).
 
 ## Open source and Cloud
 
