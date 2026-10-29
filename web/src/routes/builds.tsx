@@ -9,6 +9,7 @@ import { Icon } from '../components/icons'
 import { Copy, Loading, PageHeader } from '../components/shared'
 import { Button } from '../components/ui/button'
 import {
+  GuidedEmpty,
   ResourceEmpty,
   ResourceError,
   ResourceRow,
@@ -111,6 +112,39 @@ function BuildList() {
             error={builds.error}
             retry={() => void builds.refetch()}
             subject="source builds"
+          />
+        ) : !items.length && canWrite ? (
+          <GuidedEmpty
+            icon="code"
+            satellites={[
+              { icon: 'branch', label: 'Branch' },
+              { icon: 'play', label: 'CI runner' },
+              { icon: 'box', label: 'Image' },
+              { icon: 'check', label: 'Verified' },
+            ]}
+            title="Build an image from your repository"
+            description="Builds run in your own GitHub Actions or GitLab CI and push to your registry. Hakopod verifies the image so you can deploy exactly what was built."
+            primary={
+              <Button asChild variant="primary">
+                <Link to="/builds/new">
+                  <Icon name="plus" size={14} />
+                  Build from a repository
+                </Link>
+              </Button>
+            }
+            secondary={
+              <Button asChild>
+                <Link to="/settings/integrations">Connect GitHub or GitLab</Link>
+              </Button>
+            }
+            steps={[
+              {
+                title: 'Connect a provider',
+                detail: 'Install the GitHub App or connect GitLab once.',
+              },
+              { title: 'Pick a branch', detail: 'Choose the repository, branch and Dockerfile.' },
+              { title: 'Deploy the image', detail: 'Use the verified image in any application.' },
+            ]}
           />
         ) : !items.length ? (
           <ResourceEmpty

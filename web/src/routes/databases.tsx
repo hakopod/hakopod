@@ -11,6 +11,7 @@ import {
   CardMetric,
   ObservedState,
   ResourceCard,
+  GuidedEmpty,
   ResourceEmpty,
   ResourceError,
   StaleNotice,
@@ -57,7 +58,13 @@ function Databases() {
   const counts = filtered.reduce<Record<string, number>>((all, d) => {
     const state = databaseState(d)
     const group =
-      state === 'ready' ? 'ready' : state === 'stale' ? 'stale' : pendingStates.includes(state) ? 'provisioning' : 'failing'
+      state === 'ready'
+        ? 'ready'
+        : state === 'stale'
+          ? 'stale'
+          : pendingStates.includes(state)
+            ? 'provisioning'
+            : 'failing'
     all[group] = (all[group] || 0) + 1
     return all
   }, {})
@@ -106,37 +113,44 @@ function Databases() {
         />
       ) : (
         <>
-          <div className="resource-toolbar db-list-toolbar">
-            <DatabaseExplorerLink project={scope.project} environment={scope.environment} />
-            <div className="ops-search-input">
-              <Icon name="search" size={15} />
-              <Input
-                aria-label="Filter databases"
-                placeholder="Find database…"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
+          {!(
+            query.data &&
+            !query.data.items.length &&
+            external.isSuccess &&
+            !external.data.items.length
+          ) && (
+            <div className="resource-toolbar db-list-toolbar">
+              <DatabaseExplorerLink project={scope.project} environment={scope.environment} />
+              <div className="ops-search-input">
+                <Icon name="search" size={15} />
+                <Input
+                  aria-label="Filter databases"
+                  placeholder="Find database…"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                />
+              </div>
+              <SelectField
+                label="Database engine"
+                value={engine}
+                onValueChange={setEngine}
+                options={[
+                  { value: 'all', label: 'All engines' },
+                  ...databaseEngines.map(({ id, name }) => ({ value: id, label: name })),
+                ]}
               />
+              <Button
+                onClick={() => {
+                  void query.refetch()
+                  void external.refetch()
+                }}
+                disabled={query.isFetching || external.isFetching}
+              >
+                <Icon name="refresh" size={14} />
+                Refresh
+              </Button>
             </div>
-            <SelectField
-              label="Database engine"
-              value={engine}
-              onValueChange={setEngine}
-              options={[
-                { value: 'all', label: 'All engines' },
-                ...databaseEngines.map(({ id, name }) => ({ value: id, label: name })),
-              ]}
-            />
-            <Button
-              onClick={() => {
-                void query.refetch()
-                void external.refetch()
-              }}
-              disabled={query.isFetching || external.isFetching}
-            >
-              <Icon name="refresh" size={14} />
-              Refresh
-            </Button>
-          </div>
+          )}
           {query.isPending ? (
             <Loading />
           ) : query.error && !query.data ? (
@@ -144,6 +158,47 @@ function Databases() {
               error={query.error}
               retry={() => void query.refetch()}
               subject="databases in this environment"
+            />
+          ) : !query.data.items.length &&
+            external.isSuccess &&
+            !external.data.items.length &&
+            canManage ? (
+            <GuidedEmpty
+              icon="database"
+              satellites={[
+                { icon: 'box', label: 'Apps' },
+                { icon: 'key', label: 'Secrets' },
+                { icon: 'archive', label: 'Backups' },
+                { icon: 'lock', label: 'Private' },
+              ]}
+              title="Create a managed database"
+              description="PostgreSQL, MySQL, Redis, MongoDB, ClickHouse and more, each with its own resources, private TLS endpoints and backups."
+              primary={
+                <Button asChild variant="primary">
+                  <Link to="/databases/new" search={scope}>
+                    <Icon name="plus" size={14} />
+                    New database
+                  </Link>
+                </Button>
+              }
+              secondary={
+                <Button asChild>
+                  <Link to="/databases/import" search={scope}>
+                    Import a Docker backup
+                  </Link>
+                </Button>
+              }
+              steps={[
+                {
+                  title: 'Pick an engine and size',
+                  detail: 'Start small and resize when you need to.',
+                },
+                {
+                  title: 'Connect an application',
+                  detail: 'Bind it to a service with Connect application.',
+                },
+                { title: 'Schedule backups', detail: 'Send copies to your own object storage.' },
+              ]}
             />
           ) : !query.data.items.length && external.isSuccess && !external.data.items.length ? (
             <ResourceEmpty
@@ -209,7 +264,11 @@ function Databases() {
                       menu={
                         <Menu
                           trigger={
-                            <Button variant="ghost" size="icon" aria-label={`Actions for ${d.spec.name}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Actions for ${d.spec.name}`}
+                            >
                               <span aria-hidden="true">···</span>
                             </Button>
                           }

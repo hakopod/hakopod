@@ -7,6 +7,7 @@ import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { Loading, PageHeader } from '../components/shared'
 import {
+  GuidedEmpty,
   ResourceEmpty,
   ResourceError,
   ResourceRow,
@@ -90,6 +91,34 @@ function Networks() {
             error={networks.error}
             retry={() => void networks.refetch()}
             subject="networks in this environment"
+          />
+        ) : !items.length && networks.data?.can_manage ? (
+          <GuidedEmpty
+            icon="network"
+            satellites={[
+              { icon: 'box', label: 'App' },
+              { icon: 'box', label: 'App' },
+              { icon: 'shield', label: 'Grant' },
+              { icon: 'network', label: 'Segment' },
+            ]}
+            title="Connect applications privately"
+            description="Services in different applications cannot reach each other until a network connects them. A network holds segments, and applications granted a segment can connect their services to it."
+            primary={
+              <Button asChild variant="primary">
+                <Link to="/networks/new">
+                  <Icon name="plus" size={14} />
+                  Create network
+                </Link>
+              </Button>
+            }
+            steps={[
+              { title: 'Create a network', detail: 'Name it for the services it will join.' },
+              { title: 'Add a segment', detail: 'A segment is the private space services join.' },
+              {
+                title: 'Grant applications',
+                detail: 'Granted applications connect the services they choose.',
+              },
+            ]}
           />
         ) : !items.length ? (
           <ResourceEmpty
