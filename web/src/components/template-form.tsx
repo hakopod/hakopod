@@ -16,7 +16,9 @@ import { TemplateSecretField } from './template-secret-field'
 import { TOMLCode } from './toml-code'
 import { TOMLEditor } from './toml-editor'
 import { templateReviewMatches, templateReviewSecretFields } from '../lib/template-review'
-import { FormPage, FormHint, FormSection } from './form-page'
+import { FormPage, FormSection } from './form-page'
+import { TemplateSummary } from './template-summary'
+import { Icon } from './icons'
 import { ServiceIcon } from './service-icon'
 import { ComputeNotice } from './compute-notice'
 import { useEditionFeatures } from '../lib/dashboard-edition'
@@ -205,9 +207,35 @@ export default function TemplateForm({
     }
   }
   const unsupportedRequirements = unsupportedHostedTemplateRequirements(template, features)
+  const brandMark = (
+    <ServiceIcon
+      background={template.logo_background}
+      src={template.logo || undefined}
+      name={template.id}
+      size={28}
+      loading="eager"
+    />
+  )
+  const summary = (
+    <TemplateSummary
+      template={template}
+      target={{
+        application: application ? application.display_name || application.name : undefined,
+        project: scope.project,
+        environment: scope.environment,
+      }}
+    />
+  )
+  const guide = template.upstream.startsWith('https://') ? template.upstream : template.sources[0]
   if (template.deployable && features.hostedCompute && unsupportedRequirements.length)
     return (
-      <FormPage title={template.name} description={template.description} breadcrumbs={[]}>
+      <FormPage
+        title={template.name}
+        description={template.description}
+        breadcrumbs={[]}
+        brandMark={brandMark}
+        help={summary}
+      >
         <section className="grid gap-4 py-6">
           <h2>
             {unsupportedRequirements.length === 1 &&
@@ -249,30 +277,34 @@ export default function TemplateForm({
         title={template.name}
         description={template.description}
         breadcrumbs={[{ label: 'Templates', to: '/templates' }, { label: template.name }]}
-        icon="book"
+        brandMark={brandMark}
+        help={summary}
       >
-        <FormSection title="Deployment prerequisites" icon="book">
-          <ServiceIcon
-            background={template.logo_background}
-            src={template.logo || undefined}
-            name={template.id}
-            size={42}
-          />
-          {template.requirements.map((requirement) => (
-            <Note key={requirement}>{requirement}</Note>
-          ))}
-          <p>{template.verification}</p>
-          {template.upstream.startsWith('https://') && (
-            <a
-              href={template.upstream}
-              target="_blank"
-              rel="noreferrer"
-              className="button button-primary"
-            >
-              Read the upstream deployment guide
-            </a>
+        <FormSection title="Deploy from the upstream guide">
+          <p>
+            Hakopod cannot deploy {template.name} directly yet. Resolve these prerequisites, then
+            follow the upstream guide.
+          </p>
+          {template.requirements.length > 0 && (
+            <ul className="template-guide-steps">
+              {template.requirements.map((requirement) => (
+                <li key={requirement}>{requirement}</li>
+              ))}
+            </ul>
           )}
+          {template.verification && <p className="field-help">{template.verification}</p>}
         </FormSection>
+        <div className="form-footer">
+          <Button onClick={onClose}>Back to catalog</Button>
+          {guide && (
+            <Button variant="primary" asChild>
+              <a href={guide} target="_blank" rel="noreferrer">
+                Open the {template.name} guide
+                <Icon name="external" size={14} />
+              </a>
+            </Button>
+          )}
+        </div>
       </FormPage>
     )
   return (
@@ -280,46 +312,10 @@ export default function TemplateForm({
       keepFocusedControlsVisible
       breadcrumbs={[{ label: 'Templates', to: '/templates' }, { label: template.name }]}
       icon="box"
-      help={
-        plan ? null : (
-          <>
-            <div className="template-identity">
-              <ServiceIcon
-                background={template.logo_background}
-                src={template.logo || undefined}
-                name={template.id}
-                size={42}
-              />
-              <h2>{template.name}</h2>
-              <p>{template.description}</p>
-              <small>{template.license}</small>
-            </div>
-            <FormHint title="What this creates">
-              {application
-                ? 'Adds the template’s services to this application after review.'
-                : 'Creates an application with an immutable image and an explicit configuration.'}
-            </FormHint>
-            <FormHint title="Resources">{template.resource_summary}</FormHint>
-            <FormHint title="Image verification">{template.verification}</FormHint>
-            {template.requirements.map((item) => (
-              <FormHint key={item} title="Requirement">
-                {item}
-              </FormHint>
-            ))}
-            <FormHint title="Official setup references">
-              {template.sources.map((source, index) => (
-                <p key={source}>
-                  <a href={source} target="_blank" rel="noreferrer">
-                    {index ? 'Additional requirements' : 'Upstream setup guide'}
-                  </a>
-                </p>
-              ))}
-            </FormHint>
-          </>
-        )
-      }
-      title={plan ? `${editingTOML ? 'Edit' : 'Review'} ${plan.spec.name}` : `Configure ${template.name}`}
-      description={`${scope.project} / ${scope.environment} · ${plan ? 'Review the exact revision before deploying.' : template.description}`}
+      brandMark={plan ? undefined : brandMark}
+      help={plan ? null : summary}
+      title={plan ? `${editingTOML ? 'Edit' : 'Review'} ${plan.spec.name}` : template.name}
+      description={plan ? `${scope.project} / ${scope.environment}. Review the exact revision before deploying.` : template.description}
     >
       <div className="form-body auth-form">
         <ComputeNotice creatingApplication={!application} />
@@ -708,7 +704,13 @@ export default function TemplateForm({
           }
           onClick={() => void (editingTOML ? reviewTOML() : plan ? deploy() : review())}
         >
-          {busy ? 'Working…' : editingTOML ? 'Review configuration' : plan ? 'Deploy template' : 'Review template'}
+          {busy
+            ? plan && !editingTOML ? 'Deploying…' : 'Reviewing…'
+            : editingTOML
+              ? 'Review configuration'
+              : plan
+                ? `Deploy ${plan.spec.name}`
+                : `Review ${template.name}`}
         </Button>
       </div>
     </FormPage>

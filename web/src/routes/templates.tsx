@@ -1,23 +1,16 @@
-import { useState } from 'react'
 import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@hakopod/hatch-ui/components/badge'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { client, unwrap } from '../lib/client'
-import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
 import { ServiceIcon } from '../components/service-icon'
 import { ComputeNotice } from '../components/compute-notice'
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { Dialog } from '../components/ui/dialog'
-import { Copy, Loading, Note, PageHeader } from '../components/shared'
-import {
-  ResourceEmpty,
-  ResourceError,
-  ResourceRow,
-  ResourceRows,
-} from '../components/resource-card'
+import { Loading, PageHeader } from '../components/shared'
+import { ResourceEmpty, ResourceError } from '../components/resource-card'
 
 export const Route = createFileRoute('/templates')({
   validateSearch: (
@@ -41,11 +34,9 @@ const labels: Record<string, string> = {
   automation: 'Automation',
 }
 function Templates() {
-  const scope = useScope()
   const features = useEditionFeatures()
   const { q = '', category = '', application } = Route.useSearch()
   const navigate = Route.useNavigate()
-  const [selected, setSelected] = useState('')
   const templates = useQuery({
     queryKey: ['templates'],
     queryFn: ({ signal }) => unwrap(client.GET('/templates', { signal })),
@@ -58,37 +49,52 @@ function Templates() {
       (!category || item.category === category) &&
       `${item.name} ${item.description} ${item.category}`.toLowerCase().includes(q.toLowerCase()),
   )
-  const detail = items.find((item) => item.id === selected)
+  const filter = (next: { q?: string; category?: string }, replace = false) =>
+    void navigate({
+      search: {
+        application,
+        q: (next.q ?? q) || undefined,
+        category: (next.category ?? category) || undefined,
+      },
+      replace,
+    })
   return (
-    <div className="catalog-page">
+    <div className="catalog-page templates-page">
       <PageHeader
         eyebrow="WORKSPACE / CATALOG"
         title={category === 'agent' ? 'Agents' : 'Catalog'}
-        description="Choose a database, application, or AI service. Review its requirements before deploying."
+        description="Choose a database, application, or AI service. Each template shows what it creates and what it needs before you deploy."
       />
       {application && (
-        <div className="flex flex-wrap items-center gap-2 py-3">
-          <span className="text-sm">Adding to an existing application</span>
-          <Button asChild size="sm">
+        <div className="templates-target">
+          <span>Adding services to an existing application.</span>
+          <Button asChild size="sm" variant="ghost">
             <Link to="/applications/$applicationId" params={{ applicationId: application }}>
               Back to application
             </Link>
           </Button>
         </div>
       )}
-      <div className="catalog-toolbar">
-        <nav className="catalog-categories" aria-label="Template categories">
+      <div className="templates-toolbar">
+        <label className="templates-search">
+          <Icon name="search" size={16} />
+          <span className="sr-only">Search templates</span>
+          <Input
+            type="search"
+            value={q}
+            maxLength={100}
+            placeholder="Search templates"
+            onChange={(event) => filter({ q: event.target.value }, true)}
+          />
+        </label>
+        <div className="catalog-categories" role="group" aria-label="Category">
           {[['', 'All'], ...categories.map((value) => [value, labels[value] || value])].map(
             ([value, label]) => (
               <Button
                 key={value}
                 variant="chip"
                 aria-pressed={category === value}
-                onClick={() =>
-                  void navigate({
-                    search: { application, q: q || undefined, category: value || undefined },
-                  })
-                }
+                onClick={() => filter({ category: value })}
               >
                 {label}{' '}
                 <span className="catalog-category-count">
@@ -97,29 +103,11 @@ function Templates() {
               </Button>
             ),
           )}
-        </nav>
-        <label className="catalog-search">
-          <Icon name="search" size={18} />
-          <span className="sr-only">Search templates</span>
-          <Input
-            value={q}
-            maxLength={100}
-            placeholder="Search templates…"
-            onChange={(event) =>
-              void navigate({
-                search: {
-                  application,
-                  q: event.target.value || undefined,
-                  category: category || undefined,
-                },
-                replace: true,
-              })
-            }
-          />
-        </label>
-      </div>
-      <div className="catalog-result-count" role="status">
-        {matches.length} {matches.length === 1 ? 'template' : 'templates'}
+        </div>
+        <span className={q ? 'templates-count' : 'sr-only'} role="status">
+          {templates.data &&
+            (q ? `${matches.length} of ${items.length}` : `${matches.length} templates`)}
+        </span>
       </div>
       <ComputeNotice />
       {templates.isPending ? (
@@ -142,152 +130,43 @@ function Templates() {
           }
         />
       ) : (
-        <ResourceRows label="Templates">
+        <ul className="templates-grid" aria-label="Templates">
           {matches.map((template) => (
-            <ResourceRow
-              key={template.id}
-              identity={
-                <>
-                  <ServiceIcon
-                    background={template.logo_background}
-                    src={template.logo || undefined}
-                    name={template.id}
-                    size={20}
-                  />
-                  <button
-                    type="button"
-                    className="resource-row-link"
-                    aria-haspopup="dialog"
-                    onClick={() => setSelected(template.id)}
-                  >
-                    {template.name}
-                  </button>
-                  {template.id === 'managed-actions' && <Badge>Pro</Badge>}
-                </>
-              }
-              detail={
-                <>
-                  <code>{template.id}</code>
-                  <span className="resource-row-description">{template.description}</span>
-                </>
-              }
-              status={<Badge>{labels[template.category] || template.category}</Badge>}
-              meta={
-                features.hostedCompute && template.workload_requirements?.length
-                  ? 'Requires your server'
-                  : template.deployable
-                    ? template.architectures.join(' / ')
-                    : 'Deployment guide'
-              }
-            />
-          ))}
-        </ResourceRows>
-      )}
-      <Dialog
-        sheet
-        open={Boolean(detail)}
-        onOpenChange={(open) => {
-          if (!open) setSelected('')
-        }}
-        title={detail?.name || 'Template'}
-        description={detail?.description || 'Requirements and deployment options.'}
-      >
-        {detail && (
-          <>
-            <div className="dialog-body catalog-detail">
-              <div className="catalog-detail-identity">
+            <li key={template.id} className="ops-catalog-card template-card interactive">
+              <Brackets />
+              <div className="template-card-top">
                 <ServiceIcon
-                  background={detail.logo_background}
-                  src={detail.logo || undefined}
-                  name={detail.id}
-                  size={36}
+                  background={template.logo_background}
+                  src={template.logo || undefined}
+                  name={template.id}
+                  size={24}
                 />
-                <span className="copy-id">
-                  <code>{detail.id}</code>
-                  <Copy value={detail.id} />
-                </span>
-                <Badge>{labels[detail.category] || detail.category}</Badge>
-              </div>
-              <dl className="service-definition-list">
-                <div>
-                  <dt>License</dt>
-                  <dd>{detail.license}</dd>
-                </div>
-                <div>
-                  <dt>Architectures</dt>
-                  <dd>{detail.architectures.join(' / ') || 'See deployment guide'}</dd>
-                </div>
-                <div>
-                  <dt>Resources</dt>
-                  <dd>{detail.resource_summary}</dd>
-                </div>
-              </dl>
-              {detail.required_secrets.length > 0 && (
-                <section>
-                  <h3>
-                    {detail.deployable ? 'Required secrets' : 'Candidate credential references'}
-                  </h3>
-                  <p>
-                    {detail.deployable
-                      ? 'Set these values during deployment review.'
-                      : 'Some providers are alternatives. Finalize required bindings after resolving the migration prerequisites.'}
-                  </p>
-                  <div className="catalog-secret-list">
-                    {detail.required_secrets.map((name) => (
-                      <code key={name}>{name}</code>
-                    ))}
-                  </div>
-                </section>
-              )}
-              {detail.requirements.length > 0 && (
-                <section>
-                  <h3>Before you deploy</h3>
-                  <ul>
-                    {detail.requirements.map((requirement) => (
-                      <li key={requirement}>{requirement}</li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-              {detail.verification && <Note>{detail.verification}</Note>}
-              {detail.configuration && (
-                <section>
-                  <h3>Configuration</h3>
-                  <p>{detail.configuration}</p>
-                </section>
-              )}
-              {detail.upstream.startsWith('https://') && (
-                <a href={detail.upstream} target="_blank" rel="noreferrer" className="text-link">
-                  View upstream project <Icon name="external" size={14} />
-                </a>
-              )}
-            </div>
-            <div className="dialog-footer">
-              <Button variant="ghost" onClick={() => setSelected('')}>
-                Close
-              </Button>
-              {scope.can('deployments:write') || !detail.deployable ? (
-                <Button asChild variant="primary">
+                <h2>
                   <Link
+                    className="template-card-link"
                     to="/templates/$templateId"
-                    params={{ templateId: detail.id }}
+                    params={{ templateId: template.id }}
                     search={{ application }}
                   >
-                    {features.hostedCompute && detail.workload_requirements?.length
-                      ? 'View requirements'
-                      : detail.deployable
-                        ? 'Use template'
-                        : 'Open deployment guide'}
-                    <Icon name="arrow" size={14} />
+                    {template.name}
                   </Link>
-                </Button>
-              ) : (
-                <p>Deployment access required</p>
-              )}
-            </div>
-          </>
-        )}
-      </Dialog>
+                </h2>
+                {template.id === 'managed-actions' && <Badge>Pro</Badge>}
+              </div>
+              <p className="template-card-description" title={template.description}>
+                {template.description}
+              </p>
+              <p className="template-card-meta">
+                {features.hostedCompute && template.workload_requirements?.length
+                  ? 'Requires your server'
+                  : template.deployable
+                    ? template.architectures.join(' · ')
+                    : 'Deployment guide'}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
