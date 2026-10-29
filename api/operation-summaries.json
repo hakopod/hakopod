@@ -345,5 +345,10 @@
   "verifySessionMFA": "Verify additional authentication for the current session.",
   "volumeResizeAction": "Request a volume resize retry or cancellation, or retention or deletion of its original volume.",
   "writeHostTerminal": "Send input or a resize request to the host terminal session.",
-  "proxyDatabaseExplorer": "Open the scoped database explorer with the current Hakopod session."
+  "proxyDatabaseExplorer": "Open the scoped database explorer with the current Hakopod session.",
+  "deployApplicationDraft": "Deploy the application's staged changes together.",
+  "discardApplicationDraft": "Discard the application's staged changes.",
+  "getApplicationDraft": "Read the staged changes for the application, carried forward onto its current revision.",
+  "planApplicationDraft": "Prepare a deployment plan from the application's staged changes.",
+  "stageApplicationDraft": "Stage a configuration change for the application without deploying it."
 }

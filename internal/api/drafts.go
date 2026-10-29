@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/spec"
@@ -164,16 +163,19 @@ func (s *Server) discardDraft(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	expected, err := strconv.ParseInt(r.URL.Query().Get("expected_draft_revision"), 10, 64)
-	if err != nil || expected < 1 {
+	var in draftDeployInput
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.ExpectedDraftRevision < 1 {
 		problem(w, 400, "missing_revision", "expected_draft_revision is required")
 		return
 	}
-	if err := s.Store.DiscardDraft(r.Context(), app.ID, expected); err != nil {
+	if err := s.Store.DiscardDraft(r.Context(), app.ID, in.ExpectedDraftRevision); err != nil {
 		failure(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	write(w, 200, map[string]bool{"discarded": true})
 }
 
 type draftDeployInput struct {

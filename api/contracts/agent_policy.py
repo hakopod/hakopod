@@ -2683,6 +2683,14 @@ for operation in ['checkApplicationSecurity','applySecurityFix','putSecurityPoli
 for operation in ['getSecuritySettings','putSecuritySettings']:
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
 
+# Staged application changes: reading the draft is a scoped read; staging and discarding are
+# writes; planning reviews; deploying accepts a release like any other deployment.
+POLICIES['getApplicationDraft'] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'prerequisite':'','review':'none','sensitive_fields':[]}
+for operation in ['stageApplicationDraft','discardApplicationDraft']:
+    POLICIES[operation] = {'boundary':'project','category':'write','exposure':'generic','permissions':['deployments:write'],'prerequisite':'','review':'canonical','sensitive_fields':[]}
+POLICIES['planApplicationDraft'] = {'boundary':'project','category':'deploy','exposure':'generic','permissions':['deployments:write'],'prerequisite':'','review':'none','sensitive_fields':[]}
+POLICIES['deployApplicationDraft'] = {'boundary':'project','category':'deploy','exposure':'generic','permissions':['deployments:write'],'prerequisite':'','review':'canonical','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:
