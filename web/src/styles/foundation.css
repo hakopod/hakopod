@@ -7,14 +7,17 @@
 .light {
   --card: #fafafa;
 }
-/* Self-hosted light uses warm stone; muted text is darkened to keep 4.5:1 on it. */
-html[data-edition='self-hosted'].light {
+/* Light uses warm stone in both editions. Text colours that sit on the canvas are
+   darkened so they keep 4.5:1 on it. */
+html.light {
   --background: #d5cdc5;
   --card: #f3efea;
   --surface-2: #cbc2b9;
   --surface-3: #c0b6ac;
   --hairline: #a69d94;
   --muted: #4f4a44;
+  --destructive: #9a3324;
+  --warn: #6b4704;
 }
 html[data-edition='cloud']:not(.light) {
   --background: #0f0004;
@@ -678,4 +681,4 @@ html[data-edition='cloud'] body { font-family: var(--font-sans); font-weight: 30
 html[data-edition='cloud'] :is(h1,h2,h3,h4,strong,b) { font-weight: 400; letter-spacing: normal; }
 html[data-edition='cloud'] h1 { font-size: 18px; line-height: 24px; }
 html[data-edition='cloud'] :is(h2,h3) { font-size: 14px; line-height: 20px; }
-html[data-edition='cloud'].light { --success: #1769a8; --info: #645b9e; }
+html[data-edition='cloud'].light { --success: #125487; --info: #524a86; }
