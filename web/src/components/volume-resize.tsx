@@ -6,6 +6,7 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { canAccess, useScope } from '../lib/scope'
 import { Dialog } from './ui/dialog'
+import { plural, ReviewFacts, ReviewNotice, reviewDialog } from './operation-review'
 import { Input } from './ui/input'
 import { Button } from './ui/button'
 import { Icon } from './icons'
@@ -255,11 +256,11 @@ export function VolumeResizeDialog({
           summary.current?.focus()
         }
       }}
-      className="[overflow-wrap:anywhere]"
+      className={`${reviewDialog} [overflow-wrap:anywhere]`}
       title="Resize volume"
       description="Move data to a larger or smaller volume during a reviewed service interruption."
     >
-      <div className="dialog-body grid min-w-0 grid-cols-1 gap-4 text-sm">
+      <div className="dialog-body grid min-w-0 grid-cols-1 gap-4">
         {!operation ? (
           <>
             <p className="break-all">
@@ -285,19 +286,25 @@ export function VolumeResizeDialog({
             )}
             {plan && (
               <>
-                <p>
-                  <strong>
-                    {plan.old_gib} → {plan.size_gib} GiB.
-                  </strong>{' '}
-                  Stop: {plan.services.join(', ')}.
-                </p>
-                <p>
-                  The copy needs {plan.temporary_gib} GiB of temporary storage. Both volumes total{' '}
-                  {plan.peak_gib} GiB until you delete the original; other volumes also count toward
-                  your quota.
-                </p>
+                <ReviewFacts
+                  facts={[
+                    ['Volume', <code key="claim">{claim}</code>],
+                    ['Size', `${plan.old_gib} → ${plan.size_gib} GiB`],
+                    ['Services stopped', plan.services.join(', ')],
+                    [
+                      'Storage',
+                      `${plan.temporary_gib} GiB temporary for the copy; ${plan.peak_gib} GiB in total until you delete the original. Other volumes also count toward your quota.`,
+                    ],
+                    [
+                      'Data',
+                      'Copied to a new volume and verified offline. Files are never truncated; the original is kept.',
+                    ],
+                  ]}
+                />
                 {plan.warnings.map((warning) => (
-                  <p key={warning}>{warning}</p>
+                  <ReviewNotice key={warning} tone="warn" title="Plan warning">
+                    {warning}
+                  </ReviewNotice>
                 ))}
                 <p className="text-muted-foreground">
                   Data usage is measured after services stop. If the data and required free space do
@@ -393,7 +400,7 @@ export function VolumeResizeDialog({
       </div>
       <div className="dialog-footer flex-wrap">
         <Button disabled={busy} onClick={onClose}>
-          Close
+          {operation ? 'Close' : 'Cancel'}
         </Button>
         {!operation && (
           <>
@@ -409,7 +416,11 @@ export function VolumeResizeDialog({
               }
               onClick={() => void submit()}
             >
-              {busy ? 'Working…' : plan ? 'Stop services and resize' : 'Review resize'}
+              {busy
+                ? 'Working…'
+                : plan
+                  ? `Stop ${plural(plan.services.length, 'service')} and resize to ${plan.size_gib} GiB`
+                  : 'Review resize'}
             </Button>
           </>
         )}
@@ -450,7 +461,7 @@ export function VolumeResizeDialog({
                 onClick={() => void act('delete-original')}
               >
                 <Icon name="trash" size={14} />
-                {busy ? 'Requesting…' : 'Delete original volume'}
+                {busy ? 'Requesting…' : `Delete ${operation.claim}`}
               </Button>
             )}
           </>
