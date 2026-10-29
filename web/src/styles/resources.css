@@ -1,0 +1,372 @@
+/* Resource summary cards and inventory rows. Radii and type come from foundation tokens. */
+
+/* Content-fit grid: 240px minimum cards, at most five columns, sparse grids keep card width. */
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, max(240px, calc((100% - 48px) / 5))), 1fr)
+  );
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Cards share the grid's rows through subgrid, so slots line up across siblings. */
+.resource-grid > .resource-card {
+  display: grid;
+  grid-row: span 5;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  border-color: var(--hairline);
+}
+.resource-grid > .resource-card:is(:hover, :focus-within) {
+  border-color: var(--muted);
+}
+.resource-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  margin-top: -4px;
+}
+.resource-card-cue {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+}
+.resource-card-cue svg,
+.resource-card-cue img {
+  width: 20px;
+  height: 20px;
+}
+.resource-card h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-card-menu {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.resource-card-meta,
+.resource-card-endpoint {
+  min-width: 0;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  font-weight: var(--type-meta-weight);
+  overflow-wrap: anywhere;
+}
+.resource-card-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.resource-card
+  :is(.resource-card-endpoint, .resource-card-state, .resource-card-metric)
+  :is(a, button) {
+  position: relative;
+  z-index: 2;
+}
+.resource-card-endpoint .project-card-environments {
+  margin: 0;
+}
+.resource-card-meta {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.resource-card :is(.resource-card-endpoint, .resource-card-state) code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-endpoint-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--foreground);
+  text-decoration: none;
+}
+.resource-endpoint-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.resource-endpoint-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-endpoint-link > svg {
+  flex-shrink: 0;
+}
+.resource-card-absent {
+  color: var(--muted);
+  font-style: normal;
+}
+.resource-card-state {
+  min-width: 0;
+  margin-top: 12px;
+}
+.resource-state-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.resource-freshness {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  font-weight: var(--type-meta-weight);
+  white-space: nowrap;
+}
+.resource-state-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  overflow-wrap: anywhere;
+}
+.resource-card-metric:not(:empty) {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.resource-metric {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0;
+}
+.resource-metric dt {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  font-weight: var(--type-meta-weight);
+}
+.resource-metric dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+.resource-metric dd small {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+
+/* Inventory rows: no outer border, subtle separators between rows only. */
+.resource-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.resource-row {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, max-content) 144px 44px;
+  grid-template-areas: 'identity status meta actions';
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 56px;
+  padding: 10px 8px;
+  border-radius: var(--radius-control);
+  transition: background-color 120ms ease;
+}
+.resource-row + .resource-row {
+  border-top: 1px solid var(--hairline);
+}
+.resource-row:hover,
+.resource-row:has(.resource-row-link:focus-visible) {
+  background: var(--surface-2);
+}
+.resource-row:has(.resource-row-link:focus-visible) {
+  outline: 2px solid var(--navigation-active);
+  outline-offset: -2px;
+}
+.resource-row-identity {
+  grid-area: identity;
+  min-width: 0;
+}
+.resource-row-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+.resource-row-link {
+  min-width: 0;
+  color: var(--foreground);
+  font-weight: var(--type-card-weight);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+/* The row draws the focus ring, so the link itself does not draw a second one. */
+html[data-edition] .resource-row .resource-row-link:focus-visible {
+  outline: none;
+  background-image: none;
+}
+.resource-row-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.resource-row-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  font-weight: var(--type-meta-weight);
+}
+.resource-row-detail code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.resource-row-status {
+  grid-area: status;
+  min-width: 0;
+}
+.resource-row-meta {
+  grid-area: meta;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+  font-weight: var(--type-meta-weight);
+  text-align: right;
+}
+.resource-row-actions {
+  grid-area: actions;
+  display: flex;
+  justify-content: flex-end;
+}
+.resource-row :is(.resource-row-actions, .resource-row-detail) :is(a, button) {
+  position: relative;
+  z-index: 2;
+}
+
+/* Inventory sections drop the outer panel; the toolbar sits on the page. */
+.ops-resource-list.resource-section {
+  border: 0;
+  background: transparent;
+}
+.ops-resource-list.resource-section > .resource-toolbar {
+  padding: 0 0 12px;
+  border: 0;
+  background: transparent;
+}
+
+/* Compact empty and stale states replace the hero card inside resource sections. */
+.resource-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.resource-empty > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.resource-empty > p {
+  display: grid;
+  flex: 1 1 240px;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+.resource-empty strong {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+.resource-empty p > span {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.resource-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--warn);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.resource-stale > span {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+@media (max-width: 1023px) {
+  .resource-row {
+    grid-template-columns: minmax(0, 1fr) minmax(96px, max-content) 44px;
+    grid-template-areas:
+      'identity status actions'
+      'meta meta actions';
+  }
+  .resource-row-meta {
+    text-align: left;
+  }
+}
+/* Phone and touch: the whole card stays a 44px target and rows stack their metadata. */
+@media (max-width: 639px), (pointer: coarse) {
+  .resource-card-top {
+    min-height: 44px;
+  }
+}
+@media (max-width: 639px) {
+  .resource-row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-areas:
+      'identity actions'
+      'status actions'
+      'meta actions';
+    padding-inline: 0;
+  }
+  .resource-row-actions {
+    align-self: start;
+  }
+}

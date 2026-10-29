@@ -6,7 +6,15 @@ import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
-import { Copy, Empty, ErrorState, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Copy, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Button } from '../components/ui/button'
+import {
+  ResourceEmpty,
+  ResourceError,
+  ResourceRow,
+  ResourceRows,
+  StaleNotice,
+} from '../components/resource-card'
 
 export const Route = createFileRoute('/builds')({ component: Builds })
 function Builds() {
@@ -45,14 +53,16 @@ function BuildList() {
         description="Build container images with GitHub Actions or GitLab CI, using Dockerfiles or Cloud Native Buildpacks."
         action={
           scope.can('deployments:write') && (
-            <Link className="button button-primary" to="/builds/new">
-              <Icon name="plus" size={15} />
-              New source build
-            </Link>
+            <Button asChild variant="primary">
+              <Link to="/builds/new">
+                <Icon name="plus" size={15} />
+                New source build
+              </Link>
+            </Button>
           )
         }
       />
-      <section className="ops-resource-list" aria-label="Source builds">
+      <section className="ops-resource-list resource-section" aria-label="Source builds">
         <div className="resource-toolbar">
           <div className="ops-search-input">
             <Icon name="search" size={15} />
@@ -90,103 +100,88 @@ function BuildList() {
         </div>
         {builds.isPending ? (
           <Loading />
-        ) : builds.error ? (
-          <ErrorState error={builds.error} retry={() => void builds.refetch()} />
-        ) : !builds.data?.items.length ? (
-          <Empty
+        ) : builds.error && !builds.data ? (
+          <ResourceError
+            error={builds.error}
+            retry={() => void builds.refetch()}
+            subject="source builds"
+          />
+        ) : !items.length ? (
+          <ResourceEmpty
             icon="code"
-            title="Start with your source code"
-            description="Connect a repository, review its generated workflow, build, then deploy the verified image."
+            title="No source builds"
+            description="A source build turns a repository into a verified image you can deploy."
             action={
               scope.can('deployments:write') && (
-                <Link className="button" to="/builds/new">
-                  Create source build
-                </Link>
+                <Button asChild>
+                  <Link to="/builds/new">Create source build</Link>
+                </Button>
               )
             }
           />
         ) : !filtered.length ? (
-          <Empty
+          <ResourceEmpty
             icon="search"
             title="No matching source builds"
             description="Change the name or provider filter."
           />
         ) : (
-          <div className="table-container ops-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Service / workflow</th>
-                  <th>Repository</th>
-                  <th>Build method</th>
-                  <th>Automation</th>
-                  <th>
-                    <span className="sr-only">Open build</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((build) => (
-                  <tr key={build.id}>
-                    <td>
-                      <div className="ops-object">
-                        <Status
-                          value={
-                            build.installed_revision === build.revision
-                              ? 'installed'
-                              : 'installation required'
-                          }
-                          small
-                        />
-                        <Link
-                          className="ops-object-name"
-                          to="/builds/$buildId"
-                          params={{ buildId: build.id }}
-                        >
-                          {build.name} / {build.service}
-                        </Link>
-                      </div>
-                      <div className="ops-object-id">
-                        <code>{build.id}</code>
-                        <Copy value={build.id} />
-                      </div>
-                    </td>
-                    <td>
-                      <div className="ops-object">
-                        <Icon name={build.provider === 'gitlab' ? 'gitlab' : 'github'} size={16} />
+          <>
+            {builds.error && (
+              <StaleNotice updatedAt={builds.dataUpdatedAt} retry={() => void builds.refetch()} />
+            )}
+            <ResourceRows label="Source build configurations">
+              {filtered.map((build) => (
+                <ResourceRow
+                  key={build.id}
+                  identity={
+                    <Link
+                      className="resource-row-link"
+                      to="/builds/$buildId"
+                      params={{ buildId: build.id }}
+                    >
+                      {build.name} / {build.service}
+                    </Link>
+                  }
+                  detail={
+                    <>
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <Icon name={build.provider === 'gitlab' ? 'gitlab' : 'github'} size={14} />
                         <code>{build.repository}</code>
-                      </div>
-                      <small className="ops-table-sub mono">{build.branch}</small>
-                    </td>
-                    <td>
-                      {build.mode === 'framework'
-                        ? `${build.framework?.framework} · ${build.framework?.runtime}`
-                        : build.mode === 'buildpacks'
-                          ? `Buildpacks · ${build.preset}`
-                          : 'Dockerfile'}
-                      <small className="ops-table-sub mono">{build.architecture}</small>
-                    </td>
-                    <td>
+                      </span>
+                      <code>{build.branch}</code>
+                      <span>
+                        {build.mode === 'framework'
+                          ? `${build.framework?.framework} · ${build.framework?.runtime}`
+                          : build.mode === 'buildpacks'
+                            ? `Buildpacks · ${build.preset}`
+                            : 'Dockerfile'}{' '}
+                        · {build.architecture}
+                      </span>
+                    </>
+                  }
+                  status={
+                    <Status
+                      value={
+                        build.installed_revision === build.revision
+                          ? 'installed'
+                          : 'installation required'
+                      }
+                      small
+                    />
+                  }
+                  meta={
+                    <>
                       {build.auto_build ? 'Build on push' : 'Manual build'}
-                      <small className="ops-table-sub">
-                        {build.auto_deploy ? 'Automatic deployment' : 'Manual deployment review'}
-                      </small>
-                    </td>
-                    <td>
-                      <Link
-                        className="button button-ghost"
-                        to="/builds/$buildId"
-                        params={{ buildId: build.id }}
-                        aria-label={`Open ${build.name} build`}
-                      >
-                        <Icon name="chevron" size={16} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <br />
+                      {build.auto_deploy ? 'Automatic deployment' : 'Manual deployment review'}
+                    </>
+                  }
+                  actions={<Copy value={build.id} label={`Copy build ID ${build.id}`} />}
+                />
+              ))}
+            </ResourceRows>
+          </>
         )}
       </section>
       <Note>

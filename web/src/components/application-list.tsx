@@ -7,7 +7,7 @@ import { SelectField } from './ui/select'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Badge, Tooltip } from './ui/surfaces'
+import { Tooltip } from './ui/surfaces'
 import { relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { ScopeContext, canAccess, useScope } from '../lib/scope'
@@ -15,8 +15,17 @@ import type { Application, Project } from '../lib/types'
 import { applicationRuntimeHealth } from '../lib/runtime-health'
 import { Button } from './ui/button'
 import { Icon } from './icons'
-import { Copy, Empty, ErrorState, Loading, PageHeader, Status } from './shared'
-import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { Loading, PageHeader } from './shared'
+import { publicEndpoints } from '../lib/public-endpoints'
+import {
+  CardMetric,
+  ExternalEndpoint,
+  ObservedState,
+  ResourceCard,
+  ResourceEmpty,
+  ResourceError,
+  StaleNotice,
+} from './resource-card'
 import { Menu, MenuItem } from '@hakopod/hatch-ui/components/dropdown-menu'
 import { ServiceImageIcon } from './service-image-icon'
 import { DeleteResource } from './delete-resource'
@@ -125,6 +134,7 @@ export function ApplicationList({
         </Suspense>
         <PageHeader
           title="Applications"
+          description={`Applications in ${project.display_name || project.name} / ${environment}. Health comes from the latest runtime observation.`}
           action={
             scope.can('deployments:write') && (
               <div className="toolbar-actions">
@@ -212,41 +222,52 @@ export function ApplicationList({
           </div>
           {applications.isPending ? (
             <Loading />
-          ) : applications.error ? (
-            <ErrorState error={applications.error} retry={() => void applications.refetch()} />
+          ) : applications.error && !applications.data ? (
+            <ResourceError
+              error={applications.error}
+              retry={() => void applications.refetch()}
+              subject="applications in this environment"
+            />
           ) : !items.length && !currentPage.cursor ? (
-            <div className="ops-empty-grid">
-              <Empty
-                title="Your next application starts here"
-                description="Build from a repository, deploy an image, or start with a template."
-                action={
-                  <div className="toolbar-actions">
-                    {scope.can('deployments:write') && (
-                      <Button onClick={() => void navigate({ to: '/applications/new' })}>
-                        Deploy application
-                      </Button>
-                    )}
-                    <Button asChild>
-                      <Link to="/templates">Browse templates</Link>
-                    </Button>
-                  </div>
-                }
-              />
-            </div>
+            <ResourceEmpty
+              title="No applications in this environment"
+              description={
+                scope.can('deployments:write')
+                  ? 'Deploy from a repository, an image or a template.'
+                  : 'Applications appear here once someone with deploy access creates one.'
+              }
+              action={
+                scope.can('deployments:write') && (
+                  <Button onClick={() => void navigate({ to: '/applications/new' })}>
+                    New application
+                  </Button>
+                )
+              }
+            />
           ) : !filtered.length ? (
-            <Empty
+            <ResourceEmpty
               icon="search"
               title="No matching applications"
               description="Change the name or health filter, or move to another page."
             />
           ) : (
-            <div className="ops-catalog-grid" aria-label="Application cards">
-              {filtered.map((app) => (
-                <article key={app.id} className="ops-catalog-card interactive">
-                  <Brackets />
-                  <div className="ops-card-heading">
-                    <div className="ops-card-icons" aria-hidden="true">
-                      {Object.values(app.spec.services)
+            <>
+              {applications.error && (
+                <StaleNotice
+                  updatedAt={applications.dataUpdatedAt}
+                  retry={() => void applications.refetch()}
+                />
+              )}
+              <div className="resource-grid" aria-label="Application cards">
+                {filtered.map((app) => {
+                  const appHealth = healthByID.get(app.id)!
+                  const serviceCount = Object.keys(app.spec.services).length
+                  const endpoints = publicEndpoints(app)
+                  const issue = appHealth.issues[0]
+                  return (
+                    <ResourceCard
+                      key={app.id}
+                      cue={Object.values(app.spec.services)
                         .slice(0, 3)
                         .map((service, index) => (
                           <ServiceImageIcon
@@ -255,129 +276,124 @@ export function ApplicationList({
                             actions={service.actions}
                           />
                         ))}
-                    </div>
-                    <Status value={healthByID.get(app.id)?.status} small />
-                    <div className="ops-card-actions">
-                      <Menu
-                        trigger={
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Actions for ${app.display_name || app.name}`}
-                            id={`application-actions-${app.id}`}
-                          >
-                            <span aria-hidden="true">···</span>
-                          </Button>
-                        }
-                      >
-                        <MenuItem
-                          onSelect={() =>
-                            void navigate({
-                              to: '/applications/$applicationId',
-                              params: { applicationId: app.id },
-                            })
+                      name={
+                        <Link
+                          to="/applications/$applicationId"
+                          params={{ applicationId: app.id }}
+                          className="ops-card-link"
+                          aria-label={`Open ${app.display_name || app.name}`}
+                        >
+                          {app.display_name || app.name}
+                        </Link>
+                      }
+                      menu={
+                        <Menu
+                          trigger={
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Actions for ${app.display_name || app.name}`}
+                              id={`application-actions-${app.id}`}
+                            >
+                              <span aria-hidden="true">···</span>
+                            </Button>
                           }
                         >
-                          <Icon name="box" size={14} />
-                          Inspect application
-                        </MenuItem>
-                        <MenuItem
-                          onSelect={() =>
-                            void navigate({
-                              to: '/applications/$applicationId',
-                              params: { applicationId: app.id },
-                              search: { tab: 'deployments' },
-                            })
-                          }
-                        >
-                          <Icon name="branch" size={14} />
-                          Deployment history
-                        </MenuItem>
-                        {scope.can('deployments:write') && (
                           <MenuItem
                             onSelect={() =>
                               void navigate({
-                                to: '/applications/$applicationId/configure',
+                                to: '/applications/$applicationId',
                                 params: { applicationId: app.id },
-                                search: { mode: 'form' },
                               })
                             }
                           >
-                            <Icon name="settings" size={14} />
-                            Configure application
+                            <Icon name="box" size={14} />
+                            Inspect application
                           </MenuItem>
-                        )}
-                        {(scope.identity.admin ||
-                          scope.identity.can_manage_applications ||
-                          scope.identity.project_roles?.some(
-                            (role) => role.project === app.project && role.role === 'admin',
-                          )) && (
+                          <MenuItem
+                            onSelect={() =>
+                              void navigate({
+                                to: '/applications/$applicationId',
+                                params: { applicationId: app.id },
+                                search: { tab: 'deployments' },
+                              })
+                            }
+                          >
+                            <Icon name="branch" size={14} />
+                            Deployment history
+                          </MenuItem>
+                          {scope.can('deployments:write') && (
+                            <MenuItem
+                              onSelect={() =>
+                                void navigate({
+                                  to: '/applications/$applicationId/configure',
+                                  params: { applicationId: app.id },
+                                  search: { mode: 'form' },
+                                })
+                              }
+                            >
+                              <Icon name="settings" size={14} />
+                              Configure application
+                            </MenuItem>
+                          )}
+                          {(scope.identity.admin ||
+                            scope.identity.can_manage_applications ||
+                            scope.identity.project_roles?.some(
+                              (role) => role.project === app.project && role.role === 'admin',
+                            )) && (
+                            <>
+                              <MenuItem onSelect={() => setRenameApplication(app)}>
+                                <Pencil size={14} />
+                                Rename application
+                              </MenuItem>
+                              <MenuItem destructive onSelect={() => setDeleteApplication(app)}>
+                                <Icon name="trash" size={14} />
+                                Delete application
+                              </MenuItem>
+                            </>
+                          )}
+                        </Menu>
+                      }
+                      meta={
+                        <>
+                          Application · {serviceCount} {serviceCount === 1 ? 'service' : 'services'}{' '}
+                          · r{app.revision} · updated{' '}
+                          <time title={app.updated_at} dateTime={app.updated_at}>
+                            {relative(app.updated_at).toLowerCase()}
+                          </time>
+                        </>
+                      }
+                      endpoint={
+                        endpoints[0] && (
                           <>
-                            <MenuItem onSelect={() => setRenameApplication(app)}>
-                              <Pencil size={14} />
-                              Rename application
-                            </MenuItem>
-                            <MenuItem destructive onSelect={() => setDeleteApplication(app)}>
-                              <Icon name="trash" size={14} />
-                              Delete application
-                            </MenuItem>
+                            <ExternalEndpoint url={endpoints[0].url} label={endpoints[0].service} />
+                            {endpoints.length > 1 && <span>+{endpoints.length - 1}</span>}
                           </>
-                        )}
-                      </Menu>
-                    </div>
-                  </div>
-                  <h2>
-                    <Link
-                      to="/applications/$applicationId"
-                      params={{ applicationId: app.id }}
-                      className="ops-card-link"
-                      aria-label={`Open ${app.display_name || app.name}`}
-                    >
-                      {app.display_name || app.name}
-                    </Link>
-                  </h2>
-                  <div className="ops-object-id">
-                    <code title={app.id}>{app.id}</code>
-                    <Copy value={app.id} />
-                  </div>
-                  <dl className="ops-card-facts">
-                    <div>
-                      <dt>Services</dt>
-                      <dd>{Object.keys(app.spec.services).length}</dd>
-                    </div>
-                    <div>
-                      <dt>Ready replicas</dt>
-                      <dd>
-                        {healthByID.get(app.id)?.ready === undefined
-                          ? healthByID.get(app.id)?.observed
-                            ? 'Unavailable'
-                            : 'Not observed'
-                          : `${healthByID.get(app.id)!.ready} / ${healthByID.get(app.id)!.desired}`}
-                      </dd>
-                    </div>
-                  </dl>
-                  {healthByID.get(app.id)?.issues[0] && (
-                    <p
-                      className="ops-card-message"
-                      title={healthByID.get(app.id)!.issues[0].message}
-                    >
-                      {healthByID.get(app.id)!.issues[0].service}:{' '}
-                      {healthByID.get(app.id)!.issues[0].message}
-                    </p>
-                  )}
-                  {healthByID.get(app.id)?.note && (
-                    <p className="ops-card-message">{healthByID.get(app.id)!.note}</p>
-                  )}
-                  <div className="ops-card-footer">
-                    <Badge>r{app.revision}</Badge>
-                    <time title={app.updated_at} dateTime={app.updated_at}>
-                      {relative(app.updated_at)}
-                    </time>
-                    <Icon name="arrow" size={15} />
-                  </div>
-                </article>
-              ))}
-            </div>
+                        )
+                      }
+                      state={
+                        <ObservedState
+                          status={appHealth.status}
+                          observedAt={appHealth.observedAt}
+                          note={issue ? `${issue.service}: ${issue.message}` : appHealth.note}
+                        />
+                      }
+                      metric={
+                        <CardMetric
+                          label="Ready replicas"
+                          window="now"
+                          value={
+                            appHealth.ready === undefined
+                              ? undefined
+                              : `${appHealth.ready} / ${appHealth.desired}`
+                          }
+                        />
+                      }
+                    />
+                  )
+                })}
+              </div>
+            </>
           )}
           <div className="resource-footnote">
             <span>

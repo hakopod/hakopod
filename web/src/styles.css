@@ -12,6 +12,7 @@
 @import './styles/errors.css';
 @import './styles/databases.css';
 @import './styles/database-create.css';
+@import './styles/resources.css';
 
 /* Match the source set for browser and server builds. */
 @source './';

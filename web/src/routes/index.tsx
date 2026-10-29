@@ -2,14 +2,19 @@ import { RenameResource } from '../components/rename-resource'
 import { DeleteResource } from '../components/delete-resource'
 import { lazy, Suspense, useState } from 'react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { useProjects } from '../lib/projects'
 import { useScope } from '../lib/scope'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { Badge, Tooltip } from '../components/ui/surfaces'
+import { Tooltip } from '../components/ui/surfaces'
 import { Icon } from '../components/icons'
-import { Copy, Empty, ErrorState, Loading, PageHeader } from '../components/shared'
+import { Copy, Loading, PageHeader } from '../components/shared'
+import {
+  ResourceCard,
+  ResourceEmpty,
+  ResourceError,
+  StaleNotice,
+} from '../components/resource-card'
 
 const ProjectWizard = lazy(() => import('../components/project-wizard'))
 
@@ -88,15 +93,20 @@ function Projects() {
         </div>
         {projects.isPending ? (
           <Loading />
-        ) : projects.error ? (
-          <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+        ) : projects.error && !projects.data ? (
+          <ResourceError
+            error={projects.error}
+            retry={() => void projects.refetch()}
+            subject="projects"
+          />
         ) : !items.length ? (
-          <Empty
+          <ResourceEmpty
+            icon="grid"
             title="No projects yet"
             description={
               scope.identity.admin
-                ? 'Create a project to organize your applications and environments.'
-                : 'Projects appear here when your administrator gives you access.'
+                ? 'Projects group applications and environments.'
+                : 'Projects appear here when an administrator gives you access.'
             }
             action={
               scope.identity.admin && (
@@ -105,86 +115,102 @@ function Projects() {
             }
           />
         ) : !filtered.length ? (
-          <Empty
+          <ResourceEmpty
+            icon="search"
             title="No matching projects"
             description="Try another project name or description."
           />
         ) : (
-          <div className="ops-catalog-grid project-catalog-grid" aria-label="Project cards">
-            {visible.map((project) => {
-              const name = project.display_name || project.name
-              return (
-                <article className="ops-catalog-card project-card interactive" key={project.id}>
-                  <Brackets />
-                  <div className="ops-card-heading">
-                    {project.personal !== undefined && (
-                      <Badge>{project.personal ? 'Personal' : 'Shared'}</Badge>
-                    )}
-                    <div className="ops-card-actions relative z-10 ml-auto flex items-center gap-2">
-                      <Button asChild variant="ghost" size="icon">
-                        <Link
-                          to="/projects/$project"
-                          params={{ project: project.name }}
-                          search={{ tab: 'manage' }}
-                          aria-label={`Settings for project ${name}`}
+          <>
+            {projects.error && (
+              <StaleNotice
+                updatedAt={projects.dataUpdatedAt}
+                retry={() => void projects.refetch()}
+              />
+            )}
+            <div className="resource-grid" aria-label="Project cards">
+              {visible.map((project) => {
+                const name = project.display_name || project.name
+                return (
+                  <ResourceCard
+                    key={project.id}
+                    cue={<Icon name="grid" size={20} />}
+                    name={
+                      <Link
+                        className="ops-card-link"
+                        to="/projects/$project"
+                        params={{ project: project.name }}
+                        search={{ environment: project.environments[0]?.name }}
+                        aria-label={`Open ${name} project`}
+                      >
+                        {name}
+                      </Link>
+                    }
+                    menu={
+                      <>
+                        <Button asChild variant="ghost" size="icon">
+                          <Link
+                            to="/projects/$project"
+                            params={{ project: project.name }}
+                            search={{ tab: 'manage' }}
+                            aria-label={`Settings for project ${name}`}
+                          >
+                            <Icon name="settings" size={14} />
+                          </Link>
+                        </Button>
+                        <RenameResource project={project} />
+                        {scope.identity.admin && !project.personal && (
+                          <DeleteResource project={project.name} trigger="icon" />
+                        )}
+                      </>
+                    }
+                    meta={
+                      <>
+                        {project.personal === undefined
+                          ? 'Project'
+                          : project.personal
+                            ? 'Personal project'
+                            : 'Shared project'}
+                        {project.description && <> · {project.description}</>}
+                      </>
+                    }
+                    endpoint={
+                      project.environments.length ? (
+                        <ul
+                          className="project-card-environments"
+                          aria-label={`${name} environments`}
                         >
-                          <Icon name="settings" size={14} />
-                        </Link>
-                      </Button>
-                      <RenameResource project={project} />
-                      {scope.identity.admin && !project.personal && (
-                        <DeleteResource project={project.name} trigger="icon" />
-                      )}
-                    </div>
-                  </div>
-                  <h2>
-                    <Link
-                      className="ops-card-link"
-                      to="/projects/$project"
-                      params={{ project: project.name }}
-                      search={{ environment: project.environments[0]?.name }}
-                      aria-label={`Open ${name} project`}
-                    >
-                      {name}
-                    </Link>
-                  </h2>
-                  <div className="ops-object-id">
-                    <code title={project.name}>{project.name}</code>
-                    <Copy value={project.name} />
-                  </div>
-                  {project.description && (
-                    <p className="project-card-description">{project.description}</p>
-                  )}
-                  {project.environments.length > 0 && (
-                    <ul className="project-card-environments" aria-label={`${name} environments`}>
-                      {project.environments.slice(0, 3).map((environment) => (
-                        <li key={environment.name}>{environment.name}</li>
-                      ))}
-                      {project.environments.length > 3 && (
-                        <li>
-                          <span aria-hidden="true">+{project.environments.length - 3}</span>
-                          <span className="sr-only">
-                            {project.environments.length - 3} more environments:{' '}
-                            {project.environments
-                              .slice(3)
-                              .map((item) => item.name)
-                              .join(', ')}
-                          </span>
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                  <div className="ops-card-footer">
-                    <span>
-                      {project.environments.length}{' '}
-                      {project.environments.length === 1 ? 'environment' : 'environments'}
-                    </span>
-                    <Icon name="arrow" size={15} />
-                  </div>
-                </article>
-              )
-            })}
-          </div>
+                          {project.environments.slice(0, 3).map((environment) => (
+                            <li key={environment.name}>{environment.name}</li>
+                          ))}
+                          {project.environments.length > 3 && (
+                            <li>
+                              <span aria-hidden="true">+{project.environments.length - 3}</span>
+                              <span className="sr-only">
+                                {project.environments.length - 3} more environments:{' '}
+                                {project.environments
+                                  .slice(3)
+                                  .map((item) => item.name)
+                                  .join(', ')}
+                              </span>
+                            </li>
+                          )}
+                        </ul>
+                      ) : (
+                        <span className="resource-card-absent">No environments</span>
+                      )
+                    }
+                    state={
+                      <div className="copy-id">
+                        <code title={project.name}>{project.name}</code>
+                        <Copy value={project.name} label={`Copy project ID ${project.name}`} />
+                      </div>
+                    }
+                  />
+                )
+              })}
+            </div>
+          </>
         )}
         {pages > 1 && !projects.error && (
           <div className="list-pagination">
