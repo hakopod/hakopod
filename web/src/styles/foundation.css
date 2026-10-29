@@ -10,11 +10,11 @@
 /* Light uses warm stone in both editions. Text colours that sit on the canvas are
    darkened so they keep 4.5:1 on it. */
 html.light {
-  --background: #d5cdc5;
-  --card: #f3efea;
-  --surface-2: #cbc2b9;
-  --surface-3: #c0b6ac;
-  --hairline: #a69d94;
+  --background: #e9e4dd;
+  --card: #f8f6f2;
+  --surface-2: #dfd8cf;
+  --surface-3: #d3cbc1;
+  --hairline: #c4bab0;
   --muted: #4f4a44;
   --destructive: #9a3324;
   --warn: #6b4704;
