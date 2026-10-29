@@ -808,24 +808,20 @@ a.resource-note:focus-visible {
   background: var(--background);
   margin-bottom: 22px;
 }
-/* Deployment methods remain readable instead of squeezing long labels. */
+/* Deployment methods fit their labels on one line and wrap only when the row runs out. */
 .segmented-control.deployment-methods {
-  @apply grid grid-cols-1;
-  @variant sm {
-    @apply grid-cols-2;
-  }
-  @variant xl {
-    @apply grid-cols-4;
-    &[data-method-count='2'] {
-      @apply grid-cols-2;
-    }
-    &[data-method-count='3'] {
-      @apply grid-cols-3;
-    }
-    &[data-method-count='5'] {
-      @apply grid-cols-5;
-    }
-  }
+  display: inline-flex;
+  max-width: 100%;
+  margin-bottom: var(--space-4);
+}
+.segmented-control.deployment-methods button {
+  flex: 0 1 auto;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+}
+.segmented-control.deployment-methods .selected {
+  background: var(--surface-2);
+  color: var(--foreground);
 }
 .segmented-control button {
   display: flex;

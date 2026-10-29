@@ -1741,18 +1741,100 @@ html.light .project-monogram {
 .ops-topology .inspector-actions {
   gap: 8px;
 }
+/* The file name is the editor's title bar, so the editor reads as one object. */
+.toml-editor-frame {
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
 .toml-editor-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
+  min-height: 36px;
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface-2);
+  font: 12px/1 var(--font-mono);
+  color: var(--muted);
 }
 .toml-editor-heading label {
   margin: 0;
 }
+.deploy-toml-field .toml-editor-frame .code-editor {
+  min-height: 400px;
+  border: 0;
+  border-radius: 0;
+  resize: vertical;
+}
 .deploy-toml-field .code-editor {
   min-height: 400px;
   resize: vertical;
+}
+
+/* Environment files: a titled block whose actions sit beside the title. */
+.env-files {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin-top: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hairline);
+}
+.env-files-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.env-files-heading h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+.env-files-heading .field-help {
+  margin: 0;
+}
+.env-files-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+.env-files-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.env-files-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.env-files-list li > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.env-files-paste {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+}
+.env-files-paste-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+@media (max-width: 639px) {
+  .env-files-heading {
+    flex-direction: column;
+  }
 }
 .dialog-content.toml-editor-dialog:not(.sheet) {
   width: calc(100vw - 48px);
@@ -2076,4 +2158,10 @@ html.light .project-monogram {
 .ops-topology .topology-node.button {
   @apply normal-case tracking-normal;
   color: var(--foreground);
+}
+.toml-editor-frame > .toml-editor-surface {
+  border: 0;
+}
+.toml-editor-frame:focus-within {
+  border-color: var(--muted);
 }
