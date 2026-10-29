@@ -1,0 +1,72 @@
+{
+  "bootstrap": {
+    "commit": "93c8caf011098ce5bc2fd00f06bd5fc6fa59c6a6",
+    "reviewed_release": "v0.1.0-alpha.70",
+    "tag": "v0.1.0-alpha.69",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py",
+      "release/verify-vitess-runtime.py"
+    ]
+  },
+  "control_plane_commit": "3c9a3a454c95b0118de92d9bd298140d14cd3157",
+  "predecessor": {
+    "commit": "93c8caf011098ce5bc2fd00f06bd5fc6fa59c6a6",
+    "review_sha256": "2f986f76ad9baac8d6899c3f4877cd3de70fb08949c6ba77ff68fe43b438adc1",
+    "tag": "v0.1.0-alpha.69"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "http_evidence_sha256": "7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545",
+    "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274",
+    "native_manifest_sha256": "64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestPodMessageWaitsForStartedContainersBeforeBlamingReadiness",
+      "TestPodMessageReportsRecentOutOfMemoryRestarts"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40833651957"
+  },
+  "reviewed_release": "v0.1.0-alpha.70",
+  "runtime": "vitess",
+  "schema_version": 3,
+  "scopes": {
+    "http_harness": {
+      "baseline_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb",
+      "changes": [],
+      "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
+    },
+    "runtime": {
+      "baseline_sha256": "5f78653d328a6d24f80cc1abb738dd856d39674edb123c411f3ce3d7191aa0d4",
+      "changes": [
+        {
+          "after": "452df37d69ec58f1c12e27e301ef18832b55fd4976c60e69f7c45b1e29e657d2",
+          "before": "a21560a35a0c20097ce51c8142b166590d4a344e5b31bb01e47ad568f005a80c",
+          "path": "internal/cluster/observe.go",
+          "reason": "Reviewed control-plane change (readiness diagnostics wait for started containers, and release preparation; chain the alpha.70 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "3e6a989b22ad72791b434a3d32a159aab9242ea9ca03cd819fe7892ee977208e",
+          "before": "6e2bef36f7bd2d7801d8e35a1fbc74851eca21b484867608d98e27afc5badc40",
+          "path": "internal/cluster/observe_diagnostics_test.go",
+          "reason": "Reviewed control-plane change (readiness diagnostics wait for started containers, and release preparation; chain the alpha.70 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "08906a59bbe55f79ad4f01f6905a8c82789536b3ae1df5a1b34dc49039f5651e",
+          "before": "2448216f2c2a4e7f1675684d609792adb4155b80ab3d66deef0579fe8cf0f7fe",
+          "path": "release/runtime-source-compatibility.py",
+          "reason": "Reviewed control-plane change (readiness diagnostics wait for started containers, and release preparation; chain the alpha.70 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        },
+        {
+          "after": "c5a16d780ccc1c09c3ad0530cc039e3d45b21d3c3ebcae856aa2e4df14150e64",
+          "before": "ba1aceec8d7fef357ef98a6299cabc623ff3d3fb3dc1f5790956d3e14f5f8e2f",
+          "path": "release/verify-vitess-runtime.py",
+          "reason": "Reviewed control-plane change (readiness diagnostics wait for started containers, and release preparation; chain the alpha.70 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+        }
+      ],
+      "current_sha256": "c91395efee40a7262843c108b21f7d2693ae5816a18f74ad20a8277314e2fa51"
+    }
+  }
+}
