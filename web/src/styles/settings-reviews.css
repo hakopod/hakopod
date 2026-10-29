@@ -264,3 +264,14 @@ html[data-edition='cloud'] .dialog-content:is(.focused-dialog, .review-dialog) .
   line-height: var(--type-section-line);
   font-weight: var(--type-section-weight);
 }
+/* Domain setup rows: the value wraps and its copy control stays beside it. */
+.domain-copy-row {
+  @apply flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1;
+}
+.domain-copy-row > code {
+  @apply min-w-0;
+  overflow-wrap: anywhere;
+}
+.domain-record .review-facts {
+  @apply my-3;
+}

@@ -4,14 +4,15 @@ import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
-import { message } from '../lib/api'
+import { message, timestamp } from '../lib/api'
 import { useScope, useResourceScope } from '../lib/scope'
 import type { components } from '../lib/api.generated'
 import type { Plan } from '../lib/types'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { DiffTable } from '../components/deploy-dialog'
 import { Button } from '../components/ui/button'
-import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import { Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import { CopyValue, ReviewFacts } from '../components/operation-review'
 // The provider listing for an application deliberately carries no credential and
 // no zone filter, only the id, name and kind a chooser needs.
 type DNSProviderChoice = components['schemas']['DNSProviderSummary'] & { id: string }
@@ -368,7 +369,14 @@ function ApplicationDomains() {
                 <Empty
                   icon="globe"
                   title="No custom domains"
-                  description="Add a hostname to begin DNS ownership verification."
+                  description="This application is reachable only at its generated hostname."
+                  action={
+                    canWrite && (
+                      <Button asChild variant="primary">
+                        <a href="#add-domain">Add a domain</a>
+                      </Button>
+                    )
+                  }
                 />
               ) : (
                 domains.data.items.map((domain) => (
@@ -388,30 +396,63 @@ function ApplicationDomains() {
                         }
                         small
                       />
+                      {/* Configured is not ready: DNS resolution and TLS are observed elsewhere. */}
                     </div>
-                    <dl className="service-definition-list">
-                      <div>
-                        <dt>TXT name</dt>
-                        <dd>
-                          <code>{domain.verification_name}</code>
-                          <Copy value={domain.verification_name} />
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>TXT value</dt>
-                        <dd className="break-text">
-                          <code>{domain.verification_value}</code>
-                          <Copy value={domain.verification_value} />
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>CNAME target</dt>
-                        <dd>
-                          <code>{domain.target}</code>
-                          <Copy value={domain.target} />
-                        </dd>
-                      </div>
-                    </dl>
+                    <ReviewFacts
+                      label={`${domain.hostname} setup`}
+                      facts={[
+                        [
+                          'TXT name',
+                          <span className="domain-copy-row" key="txt-name">
+                            <code>{domain.verification_name}</code>
+                            <CopyValue
+                              value={domain.verification_name}
+                              what={`TXT name for ${domain.hostname}`}
+                            />
+                          </span>,
+                        ],
+                        [
+                          'TXT value',
+                          <span className="domain-copy-row" key="txt-value">
+                            <code>{domain.verification_value}</code>
+                            <CopyValue
+                              value={domain.verification_value}
+                              what={`TXT value for ${domain.hostname}`}
+                            />
+                          </span>,
+                        ],
+                        [
+                          'CNAME target',
+                          <span className="domain-copy-row" key="cname">
+                            <code>{domain.target}</code>
+                            <CopyValue
+                              value={domain.target}
+                              what={`CNAME target for ${domain.hostname}`}
+                            />
+                          </span>,
+                        ],
+                        [
+                          'Ownership',
+                          domain.verified
+                            ? domain.verified_at
+                              ? `Verified ${timestamp(domain.verified_at)}`
+                              : 'Verified'
+                            : 'Not verified. Add both records, then verify DNS.',
+                        ],
+                        [
+                          'Routing',
+                          domain.active
+                            ? 'Mapped in the current revision'
+                            : domain.verified
+                              ? 'Inactive until you review activation'
+                              : 'Inactive until ownership is verified',
+                        ],
+                        [
+                          'TLS',
+                          'Not observed on this page. Check certificate readiness on the service after activation.',
+                        ],
+                      ]}
+                    />
                     {canWrite && (
                       <div className="toolbar-actions">
                         {providers.length > 0 && (
@@ -496,69 +537,71 @@ function ApplicationDomains() {
               )}
             </FormSection>
             {canWrite && (
-              <FormSection
-                title="Add a domain"
-                description="Choose the public service that will receive traffic for this hostname."
-                icon="plus"
-              >
-                <form
-                  className="auth-form"
-                  onSubmit={async (event) => {
-                    event.preventDefault()
-                    if (busy || !selected) return
-                    setBusy(true)
-                    setError('')
-                    try {
-                      await unwrap(
-                        client.POST('/applications/{id}/domains', {
-                          params: { path: { id: applicationId } },
-                          body: { hostname, service: selected },
-                        }),
-                      )
-                      setHostname('')
-                      void domains.refetch()
-                    } catch (err) {
-                      setError(message(err))
-                    } finally {
-                      setBusy(false)
-                    }
-                  }}
+              <div id="add-domain" className="scroll-mt-4">
+                <FormSection
+                  title="Add a domain"
+                  description="Choose the public service that will receive traffic for this hostname."
+                  icon="plus"
                 >
-                  <label>
-                    Hostname
-                    <Input
-                      value={hostname}
-                      onChange={(event) => setHostname(event.target.value)}
-                      placeholder="app.example.com"
-                      maxLength={253}
-                      required
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                    />
-                  </label>
-                  <label>
-                    Public service
-                    <SelectField
-                      label="Public service"
-                      value={selected}
-                      onValueChange={(value) => setService(value)}
-                      required
-                      options={
-                        publicServices.map((name) => ({
-                          value: name,
-                          label: name,
-                        })) ?? []
+                  <form
+                    className="auth-form"
+                    onSubmit={async (event) => {
+                      event.preventDefault()
+                      if (busy || !selected) return
+                      setBusy(true)
+                      setError('')
+                      try {
+                        await unwrap(
+                          client.POST('/applications/{id}/domains', {
+                            params: { path: { id: applicationId } },
+                            body: { hostname, service: selected },
+                          }),
+                        )
+                        setHostname('')
+                        void domains.refetch()
+                      } catch (err) {
+                        setError(message(err))
+                      } finally {
+                        setBusy(false)
                       }
-                    />
-                  </label>
-                  {!publicServices.length && (
-                    <Note>Configure a public HTTP service before adding a domain.</Note>
-                  )}
-                  <Button type="submit" variant="primary" disabled={busy || !selected}>
-                    {busy ? 'Creating proof…' : 'Create DNS verification'}
-                  </Button>
-                </form>
-              </FormSection>
+                    }}
+                  >
+                    <label>
+                      Hostname
+                      <Input
+                        value={hostname}
+                        onChange={(event) => setHostname(event.target.value)}
+                        placeholder="app.example.com"
+                        maxLength={253}
+                        required
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                      />
+                    </label>
+                    <label>
+                      Public service
+                      <SelectField
+                        label="Public service"
+                        value={selected}
+                        onValueChange={(value) => setService(value)}
+                        required
+                        options={
+                          publicServices.map((name) => ({
+                            value: name,
+                            label: name,
+                          })) ?? []
+                        }
+                      />
+                    </label>
+                    {!publicServices.length && (
+                      <Note>Configure a public HTTP service before adding a domain.</Note>
+                    )}
+                    <Button type="submit" variant="primary" disabled={busy || !selected}>
+                      {busy ? 'Creating proof…' : 'Create DNS verification'}
+                    </Button>
+                  </form>
+                </FormSection>
+              </div>
             )}
           </>
         )}
