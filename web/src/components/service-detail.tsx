@@ -40,6 +40,7 @@ import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status, RequestErr
 import { Logs } from './logs'
 import { Requests } from './requests'
 import { ResourceMetric, validMetricUsage } from './resource-metric'
+import { sampleWindow } from './node-metrics'
 
 const PodTerminal = lazy(() => import('./pod-terminal'))
 const ServiceSecrets = lazy(() =>
@@ -641,6 +642,7 @@ export function ServiceDetail({
                     ? `Sample ${Math.floor(sampleAge / 1000)}s old`
                     : 'No source sample'}
                 </span>
+                <span className="inspect-metric-window">{sampleWindow(samples)}</span>
                 {metrics && (
                   <span>
                     {metrics.pods_sampled} / {metrics.pods_expected} pods sampled

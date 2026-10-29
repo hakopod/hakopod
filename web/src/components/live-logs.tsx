@@ -139,7 +139,7 @@ export default function LiveLogs({
     <div className="ops-live-logs grid gap-3">
       <div className="inspect-log">
         <Brackets />
-        <div className="logs-toolbar inspect-log-toolbar">
+        <div className="inspect-log-toolbar">
           <div className="inline-field">
             <Icon name="box" size={15} />
             <SelectField
