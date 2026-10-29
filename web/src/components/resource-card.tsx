@@ -46,10 +46,12 @@ export function ResourceCard({
 export function ObservedState({
   status,
   observedAt,
+  freshness = 'Not observed',
   note,
 }: {
   status?: string
   observedAt?: string
+  freshness?: string
   note?: string
 }) {
   return (
@@ -62,7 +64,7 @@ export function ObservedState({
               Observed {relative(observedAt).toLowerCase()}
             </time>
           ) : (
-            'Not observed'
+            freshness
           )}
         </span>
       </div>

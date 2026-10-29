@@ -177,7 +177,7 @@ function BuildList() {
                       {build.auto_deploy ? 'Automatic deployment' : 'Manual deployment review'}
                     </>
                   }
-                  actions={<Copy value={build.id} label={`Copy build ID ${build.id}`} />}
+                  actions={<Copy value={build.id} label={`Copy build ID ${build.id}`} iconOnly />}
                 />
               ))}
             </ResourceRows>

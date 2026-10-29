@@ -203,7 +203,11 @@ function Projects() {
                     state={
                       <div className="copy-id">
                         <code title={project.name}>{project.name}</code>
-                        <Copy value={project.name} label={`Copy project ID ${project.name}`} />
+                        <Copy
+                          value={project.name}
+                          label={`Copy project ID ${project.name}`}
+                          iconOnly
+                        />
                       </div>
                     }
                   />
