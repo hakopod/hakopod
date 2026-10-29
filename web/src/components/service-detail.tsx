@@ -33,6 +33,7 @@ import {
 } from '../lib/runtime-metrics'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
+import { InspectorSheet } from './inspector-sheet'
 import { Badge } from './ui/surfaces'
 import { Icon } from './icons'
 import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, Status, RequestError } from './shared'
@@ -1408,146 +1409,26 @@ function PodList({
       {(runtime.truncated || (!compact && runtime.pods.length > 40)) && (
         <Note>This response is limited. Inspect the cluster for additional pods or events.</Note>
       )}
-      <Dialog
+      <InspectorSheet
         open={Boolean(pod)}
         onOpenChange={(open) => {
           if (!open) setInspected('')
         }}
+        kind="pod"
         title={pod?.name || 'Pod'}
         description="Observed containers, allocations, conditions, and recent events."
-        sheet
-      >
-        {pod && (
-          <>
-            <div className="dialog-body ops-pod-inspector">
-              <div className="ops-object">
-                <Status value={pod.ready ? 'ready' : pod.phase} />
-                <Copy value={pod.name} label="Copy pod name" />
-              </div>
-              <dl className="service-definition-list">
-                <div>
-                  <dt>Node</dt>
-                  <dd className="mono">{pod.node_name || 'Not assigned'}</dd>
-                </div>
-                <div>
-                  <dt>Pod IP</dt>
-                  <dd>
-                    {pod.pod_ip ? (
-                      <span className="copyable-address">
-                        <code>{pod.pod_ip}</code>
-                        <Copy value={pod.pod_ip} />
-                      </span>
-                    ) : (
-                      'Not assigned'
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Created</dt>
-                  <dd>
-                    <time title={pod.created_at}>{timestamp(pod.created_at)}</time>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Observed</dt>
-                  <dd>{timestamp(runtime.observed_at)}</dd>
-                </div>
-              </dl>
-              <h3>Containers</h3>
-              {pod.containers.map((container) => (
-                <section className="ops-inspector-section" key={container.name}>
-                  <div className="ops-object">
-                    <Status value={container.ready ? 'ready' : container.state} small />
-                    <h3>{container.name}</h3>
-                  </div>
-                  {(container.reason || container.message) && (
-                    <p className="field-help">
-                      {container.reason}
-                      {container.message ? ` · ${container.message}` : ''}
-                    </p>
-                  )}
-                  <dl className="service-definition-list">
-                    <div>
-                      <dt>Readiness / restarts</dt>
-                      <dd>
-                        {container.ready ? 'Ready' : 'Not ready'} · {container.restarts} restarts
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>CPU request / limit</dt>
-                      <dd className="mono">
-                        {container.resources.requests.cpu || 'Unspecified'} /{' '}
-                        {container.resources.limits.cpu || 'Unspecified'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Memory request / limit</dt>
-                      <dd className="mono">
-                        {container.resources.requests.memory || 'Unspecified'} /{' '}
-                        {container.resources.limits.memory || 'Unspecified'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Observed usage</dt>
-                      <dd className="mono">
-                        {container.cpu_millicores === undefined
-                          ? 'CPU unavailable'
-                          : `${container.cpu_millicores.toFixed(1)} mCPU`}{' '}
-                        / {memory(container.memory_bytes)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Image</dt>
-                      <dd>
-                        <code className="break-text">{container.image_id || container.image}</code>
-                        <Copy value={container.image_id || container.image} label="Copy image" />
-                      </dd>
-                    </div>
-                  </dl>
-                </section>
-              ))}
-              <h3>Conditions</h3>
-              {pod.conditions.length ? (
-                <div className="ops-event-list">
-                  {pod.conditions.map((condition) => (
-                    <div key={condition.type}>
-                      <div className="ops-object">
-                        <Status value={condition.status === 'True' ? 'ready' : 'pending'} small />
-                        <strong>{condition.type}</strong>
-                      </div>
-                      <p>
-                        {condition.reason}
-                        {condition.message ? ` · ${condition.message}` : ''}
-                      </p>
-                      <time title={condition.last_transition_time}>
-                        {timestamp(condition.last_transition_time)}
-                      </time>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="field-help">No conditions returned.</p>
-              )}
-              <h3>Recent events</h3>
-              {pod.events.length ? (
-                <div className="ops-event-list">
-                  {pod.events.slice(-12).map((event, index) => (
-                    <div key={`${event.reason}-${index}`}>
-                      <div className="ops-object">
-                        <Icon name={event.type === 'Warning' ? 'alert' : 'info'} size={14} />
-                        <strong>{event.reason}</strong>
-                        <span className="muted-text">×{event.count}</span>
-                      </div>
-                      <p>{event.message}</p>
-                      <time title={event.last_seen}>{timestamp(event.last_seen)}</time>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="field-help">No recent events returned.</p>
-              )}
-            </div>
-            <div className="dialog-footer">
+        state={
+          pod && (
+            <>
+              <Status value={pod.ready ? 'ready' : pod.phase} small />
+              <span>Observed {relative(runtime.observed_at)}</span>
+              <Copy value={pod.name} label="Copy pod name" />
+            </>
+          )
+        }
+        footer={
+          pod && (
+            <>
               <Button variant="ghost" onClick={() => setInspected('')}>
                 Close
               </Button>
@@ -1564,10 +1445,137 @@ function PodList({
                   Open terminal
                 </Button>
               )}
-            </div>
-          </>
+            </>
+          )
+        }
+      >
+        {pod && (
+          <div className="ops-pod-inspector">
+            <dl className="service-definition-list">
+              <div>
+                <dt>Node</dt>
+                <dd className="mono">{pod.node_name || 'Not assigned'}</dd>
+              </div>
+              <div>
+                <dt>Pod IP</dt>
+                <dd>
+                  {pod.pod_ip ? (
+                    <span className="copyable-address">
+                      <code>{pod.pod_ip}</code>
+                      <Copy value={pod.pod_ip} />
+                    </span>
+                  ) : (
+                    'Not assigned'
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>
+                  <time title={pod.created_at}>{timestamp(pod.created_at)}</time>
+                </dd>
+              </div>
+              <div>
+                <dt>Observed</dt>
+                <dd>{timestamp(runtime.observed_at)}</dd>
+              </div>
+            </dl>
+            <h3>Containers</h3>
+            {pod.containers.map((container) => (
+              <section className="ops-inspector-section" key={container.name}>
+                <div className="ops-object">
+                  <Status value={container.ready ? 'ready' : container.state} small />
+                  <h3>{container.name}</h3>
+                </div>
+                {(container.reason || container.message) && (
+                  <p className="field-help">
+                    {container.reason}
+                    {container.message ? ` · ${container.message}` : ''}
+                  </p>
+                )}
+                <dl className="service-definition-list">
+                  <div>
+                    <dt>Readiness / restarts</dt>
+                    <dd>
+                      {container.ready ? 'Ready' : 'Not ready'} · {container.restarts} restarts
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>CPU request / limit</dt>
+                    <dd className="mono">
+                      {container.resources.requests.cpu || 'Unspecified'} /{' '}
+                      {container.resources.limits.cpu || 'Unspecified'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Memory request / limit</dt>
+                    <dd className="mono">
+                      {container.resources.requests.memory || 'Unspecified'} /{' '}
+                      {container.resources.limits.memory || 'Unspecified'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Observed usage</dt>
+                    <dd className="mono">
+                      {container.cpu_millicores === undefined
+                        ? 'CPU unavailable'
+                        : `${container.cpu_millicores.toFixed(1)} mCPU`}{' '}
+                      / {memory(container.memory_bytes)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Image</dt>
+                    <dd>
+                      <code className="break-text">{container.image_id || container.image}</code>
+                      <Copy value={container.image_id || container.image} label="Copy image" />
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            ))}
+            <h3>Conditions</h3>
+            {pod.conditions.length ? (
+              <div className="ops-event-list">
+                {pod.conditions.map((condition) => (
+                  <div key={condition.type}>
+                    <div className="ops-object">
+                      <Status value={condition.status === 'True' ? 'ready' : 'pending'} small />
+                      <strong>{condition.type}</strong>
+                    </div>
+                    <p>
+                      {condition.reason}
+                      {condition.message ? ` · ${condition.message}` : ''}
+                    </p>
+                    <time title={condition.last_transition_time}>
+                      {timestamp(condition.last_transition_time)}
+                    </time>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="field-help">No conditions returned.</p>
+            )}
+            <h3>Recent events</h3>
+            {pod.events.length ? (
+              <div className="ops-event-list">
+                {pod.events.slice(-12).map((event, index) => (
+                  <div key={`${event.reason}-${index}`}>
+                    <div className="ops-object">
+                      <Icon name={event.type === 'Warning' ? 'alert' : 'info'} size={14} />
+                      <strong>{event.reason}</strong>
+                      <span className="muted-text">×{event.count}</span>
+                    </div>
+                    <p>{event.message}</p>
+                    <time title={event.last_seen}>{timestamp(event.last_seen)}</time>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="field-help">No recent events returned.</p>
+            )}
+          </div>
         )}
-      </Dialog>
+      </InspectorSheet>
     </>
   )
 }

@@ -13,6 +13,7 @@
 @import './styles/databases.css';
 @import './styles/database-create.css';
 @import './styles/resources.css';
+@import './styles/inspect.css';
 
 /* Match the source set for browser and server builds. */
 @source './';
