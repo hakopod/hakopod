@@ -132,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerLoginProviderRoutes(routes)
 	s.registerProfileRoutes(routes)
 	s.registerDomainRoutes(routes)
+	s.registerDraftRoutes(routes)
 	s.registerBackupRoutes(routes)
 	s.registerDatabaseRoutes(routes)
 	s.registerDatabaseQueryRoutes(routes)
@@ -739,6 +740,11 @@ func (s *Server) plan(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	s.planInput(w, r, in, nil)
+}
+
+// planInput reviews in exactly as POST /plan does; extra fields are added to the plan.
+func (s *Server) planInput(w http.ResponseWriter, r *http.Request, in input, extra map[string]any) {
 	next, current, ok := s.prepare(w, r, in, "deployments:write")
 	if !ok {
 		return
@@ -768,20 +774,29 @@ func (s *Server) plan(w http.ResponseWriter, r *http.Request) {
 	if in.Provenance == nil {
 		in.Provenance = map[string]store.SourceBuild{}
 	}
-	s.writeDeploymentPlan(w, r, in.Project, in.Environment, next, map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles, "provenance": in.Provenance})
+	plan := map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles, "provenance": in.Provenance}
+	maps.Copy(plan, extra)
+	s.writeDeploymentPlan(w, r, in.Project, in.Environment, next, plan)
 }
 func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 	var in input
 	if !decode(w, r, &in) {
 		return
 	}
+	if d, ok := s.deployInput(w, r, in); ok {
+		write(w, 202, d)
+	}
+}
+
+// deployInput accepts in exactly as POST /deployments does, writing any failure.
+func (s *Server) deployInput(w http.ResponseWriter, r *http.Request, in input) (store.Deployment, bool) {
 	if in.ExpectedRevision == nil {
 		problem(w, 400, "missing_revision", "expected_revision is required; review a plan first")
-		return
+		return store.Deployment{}, false
 	}
 	next, _, ok := s.prepare(w, r, in, "deployments:write")
 	if !ok {
-		return
+		return store.Deployment{}, false
 	}
 	d, err := s.Store.AcceptWithVolumeCleanup(r.Context(), who(r), in.Project, in.Environment, next, *in.ExpectedRevision, r.Header.Get("Idempotency-Key"), in.Provenance, in.DeleteServiceVolumes)
 	if err != nil {
@@ -790,9 +805,9 @@ func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 		} else {
 			problem(w, 400, "invalid_deployment", err.Error())
 		}
-		return
+		return store.Deployment{}, false
 	}
-	write(w, 202, d)
+	return d, true
 }
 func (s *Server) authorizedDeployment(w http.ResponseWriter, r *http.Request, permission string) (store.Deployment, store.Application, bool) {
 	d, err := s.Store.Deployment(r.Context(), r.PathValue("id"))
