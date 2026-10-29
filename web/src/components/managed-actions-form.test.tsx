@@ -12,6 +12,7 @@ import { canAccess, ScopeContext } from '../lib/scope'
 import type { Application, Identity } from '../lib/types'
 import { specToTOML } from '../lib/toml'
 import { ManagedActionsForm } from './managed-actions-form'
+import { ManagedActionsStatus } from './managed-actions-status'
 import { DeploymentForm } from './deploy-dialog'
 import { actionsRemovalMessage } from '../lib/actions-provider'
 import {
@@ -190,7 +191,7 @@ test('native pools preserve targets in guided setup while unavailable deployment
     saved.spec.services.runner.image = 'registry.example/native@sha256:' + 'b'.repeat(64)
     const before = structuredClone(saved)
     const html = render(saved)
-    assert.match(html, /Connect your jobs/)
+    assert.match(html, /Provider and source scope/)
     assert.match(
       html,
       new RegExp(`${provider === 'gitlab' ? 'GitLab' : 'Bitbucket'} execution is not available`),
@@ -362,4 +363,64 @@ test('native setup exposes only approved choices for the loaded pool and never f
   assert.match(choice, /checked=""/)
   assert.doesNotMatch(matched, /No approved runner matches|unrelated-application|unrelated-service/)
   assert.deepEqual(saved, before)
+})
+
+test('pool cards report stale observations as unknown, never as zero running jobs', () => {
+  const saved = application()
+  saved.spec.services.runner.replicas = 4
+  const slot = (id: string, phase: string, updated_at: string) => ({
+    id,
+    application_id: saved.id,
+    service: 'runner',
+    runner_id: 1,
+    phase,
+    created_at: updated_at,
+    updated_at,
+  })
+  const card = (slots: ReturnType<typeof slot>[]) => {
+    const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    cache.setQueryData(['managed-actions', saved.id], {
+      items: [
+        {
+          pool: {
+            application_id: saved.id,
+            service: 'runner',
+            project: saved.project,
+            environment: saved.environment,
+            application_name: saved.name,
+            revision: 3,
+            config: saved.spec.services.runner,
+            removed: false,
+            message: '',
+            updated_at: '2026-09-29T00:00:00Z',
+          },
+          slots,
+        },
+      ],
+    })
+    const router = createRouter({
+      routeTree: createRootRoute(),
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    })
+    try {
+      return renderToStaticMarkup(
+        <QueryClientProvider client={cache}>
+          <RouterContextProvider router={router}>
+            <ManagedActionsStatus application={saved} service="runner" />
+          </RouterContextProvider>
+        </QueryClientProvider>,
+      )
+    } finally {
+      cache.clear()
+    }
+  }
+  const stale = card([slot('a', 'busy', '2026-09-29T00:00:00Z')])
+  assert.match(stale, /Observation out of date/)
+  assert.match(stale, />Unknown</)
+  assert.doesNotMatch(stale, /0 of 4/)
+  const now = new Date().toISOString()
+  const live = card([slot('a', 'busy', now), slot('b', 'online', now)])
+  assert.match(live, /Running 1 job/)
+  assert.match(live, /1 of 4 slots/)
+  assert.match(live, /GitHub · Automatic architecture · Any eligible node/)
 })

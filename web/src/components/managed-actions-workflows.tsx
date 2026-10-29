@@ -159,6 +159,7 @@ export function ManagedActionsWorkflows({
           Starting / cleanup
         </span>
         <span className="muted-text">{pool?.pool.config.replicas ?? '—'} configured slots</span>
+        <span className="muted-text">Observed in the last 2 minutes</span>
       </div>
       {pools.error && <ErrorState error={pools.error} retry={() => void pools.refetch()} />}
       {slots.length !== fresh.length && (
@@ -258,13 +259,19 @@ export function ManagedActionsWorkflows({
                       <button
                         type="button"
                         aria-current={selected.slot_id === item.slot_id ? 'true' : undefined}
-                        className={`flex w-full min-w-0 items-start gap-2 text-left px-2 py-3 rounded-sm focus-visible:outline-2 ${selected.slot_id === item.slot_id ? 'text-[var(--navigation-active)]' : 'muted-text'}`}
+                        className={`runner-job-row rounded-[var(--radius-control)] focus-visible:outline-2 ${selected.slot_id === item.slot_id ? 'text-[var(--navigation-active)]' : 'muted-text'}`}
                         onClick={() => select({ run, job: item.slot_id })}
                       >
                         <StateIcon status={status} />
-                        <span className="min-w-0">
-                          <span className="block text-sm wrap-anywhere">{item.display.name}</span>
-                          <span className="text-xs">{label(status)}</span>
+                        <span className="text-sm wrap-anywhere">{item.display.name}</span>
+                        <span className="text-xs">{label(status)}</span>
+                        <span className="text-xs tabular-nums">
+                          {item.display.details?.started_at
+                            ? jobDuration(
+                                item.display.details.started_at,
+                                item.display.details.completed_at,
+                              )
+                            : '—'}
                         </span>
                       </button>
                     </li>
@@ -423,7 +430,7 @@ export function WorkflowJob({
         </Note>
       )}
       <div
-        className="min-w-0 overflow-hidden rounded-lg border border-[var(--hairline)]"
+        className="min-w-0 overflow-hidden rounded-[var(--radius-card)] border border-[var(--hairline)]"
         aria-label="Job steps and output"
       >
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] px-3 py-2">

@@ -13,6 +13,7 @@ import { SelectField } from './ui/select'
 import { FormPage } from './form-page'
 import { Empty, ErrorState, HeadingHelp, Loading, Note, RequestError } from './shared'
 import { DeploymentSecrets } from './deployment-secrets'
+import { ServiceIcon } from './service-icon'
 import { ManagedActionsTokenHelp } from './managed-actions-token-help'
 import { DeploymentForm, DiffTable } from './deploy-dialog'
 import { actionsProvider } from '../lib/actions-provider'
@@ -31,6 +32,7 @@ import {
   RunnerFact,
   RunnerField,
   RunnerPlacement,
+  RunnerPolicyRows,
   RunnerPoolSummary,
   RunnerResourceFields,
   RunnerSteps,
@@ -202,7 +204,7 @@ function RunnerPoolForm({
           params: { query: { project, environment, application: name, runtime: 'actions' } },
         }),
       ),
-    enabled: !!project && !!environment && !!name && canWrite && step >= 1,
+    enabled: !!project && !!environment && !!name && canWrite && step >= 2,
     staleTime: 30_000,
   })
   const selectedNode = nodes.data?.items.find((node) => node.name === nodeName)
@@ -359,19 +361,27 @@ function RunnerPoolForm({
   }
   async function advance(event: FormEvent) {
     event.preventDefault()
-    if (step === 1 && invalidNode) {
-      setError('Choose an eligible node for this architecture, or use Automatic placement.')
-      return
-    }
     if (step === 1 && provider !== 'github' && !architecture) {
       setError('Choose AMD64 or ARM64 for this runner image.')
       return
     }
-    if (step === 1 && !resourcesValid) {
-      setError('Choose a resource preset or increase the values to meet this provider’s minimums.')
+    if (step === 1 && workflowLabels.length === 0 && provider !== 'bitbucket') {
+      setError('Add at least one workflow label.')
       return
     }
-    if (step < 2) move(step + 1)
+    if (step === 1 && runnerLabelError(workflowLabels, provider)) {
+      setError(runnerLabelError(workflowLabels, provider))
+      return
+    }
+    if (step === 2 && invalidNode) {
+      setError('Choose an eligible node for this architecture, or use Automatic placement.')
+      return
+    }
+    if (step === 2 && !resourcesValid) {
+      setError('Choose a pool preset or increase the values to meet this provider’s minimums.')
+      return
+    }
+    if (step < 3) move(step + 1)
     else await review(event)
   }
   async function review(event: FormEvent) {
@@ -456,8 +466,8 @@ function RunnerPoolForm({
           'The application changed. Reload its latest revision before reviewing again.',
         )
       setPlan(result)
-      setStep(3)
-      setVisited(3)
+      setStep(4)
+      setVisited(4)
       key.current = crypto.randomUUID()
     } catch (err) {
       setError(message(err))
@@ -585,6 +595,53 @@ function RunnerPoolForm({
         return `${subject}${field} will use updated configuration.`
       return `${subject}${field} changes from ${readablePlanValue(change.before)} to ${readablePlanValue(change.after)}.`
     }) || []
+  const nativeArchitectures = providerCapability?.build.native_architectures || []
+  // Only describe emulation when the installation reports that it supports it.
+  const emulation = !!(binding?.cross_architecture || providerCapability?.build.cross_architecture)
+  const sharedCache = provider === 'gitlab' && cacheEnabled && cacheAvailable
+  const persistentCache =
+    provider === 'gitlab' ? sharedCache : !!providerCapability?.cache.persistent
+  const cacheRows = [
+    {
+      label: 'Scope',
+      value:
+        lifecycle === 'dedicated'
+          ? `Dedicated to ${targetLabel || 'the selected repository'}. Other repositories never use this runner or its disk.`
+          : provider === 'github'
+            ? `Runners serve ${runnerScope === 'organization' ? `repositories in ${organization || 'the organization'}` : repository || 'the selected repository'}. No local files pass between jobs.`
+            : `Runners serve GitLab ${gitlabScope} ${gitlabID || '(not set)'}${gitlabHost === 'self-managed' && trustPolicy ? ` under trust policy ${trustPolicy}` : ''}. No local files pass between jobs.`,
+    },
+    {
+      label: 'Quota',
+      value: `${workspaceSize} GiB workspace per ${lifecycle === 'dedicated' ? 'runner' : 'job slot'}, shared by source, tools and Docker images.`,
+    },
+    {
+      label: 'Expiry',
+      value:
+        lifecycle === 'dedicated'
+          ? 'Kept while this runner stays assigned; removed when it is replaced or deleted.'
+          : `Deleted when each job ends. Idle runners are replaced within ${timeout} minutes.`,
+    },
+    {
+      label: 'Shared cache',
+      value: persistentCache
+        ? `${providerCapability?.cache.backend || 'Installation-approved storage'}. Storage credentials stay with the runner manager.`
+        : provider === 'github'
+          ? 'None on the runner. Use actions/cache or your setup action, keyed by architecture and lockfile hash; GitHub applies its own cache quota and expiry. Docker layers can use a registry cache.'
+          : provider === 'gitlab'
+            ? 'None. Docker build layers can use a registry cache.'
+            : 'None on the runner. Configure caches in bitbucket-pipelines.yml and use a registry cache for Docker layers.',
+    },
+    {
+      label: 'Start state',
+      value:
+        lifecycle === 'dedicated'
+          ? 'Can be warm between steps on the same runner; cold after the runner is replaced.'
+          : persistentCache
+            ? 'Workspace starts cold; jobs restore from the shared cache when their keys match.'
+            : 'Cold. Every job starts with an empty workspace.',
+    },
+  ]
   const summary = {
     provider: providerName,
     target: targetLabel,
@@ -593,7 +650,7 @@ function RunnerPoolForm({
     replicas,
     placement: nodeName,
     resources: reservationLabel,
-    workspace: `${workspaceSize} GiB${lifecycle !== 'dedicated' ? ` · ${timeout} minute lifetime` : ' · Retained for this repository'}`,
+    workspace: `${workspaceSize} GiB${lifecycle !== 'dedicated' ? ` · ${timeout} minute lifetime` : ' · Retained for this repository'} · ${persistentCache ? 'Shared cache' : 'No shared cache'}`,
     labels: runnerWorkflowLabels(workflowLabels, provider, architecture),
   }
   return (
@@ -667,7 +724,35 @@ function RunnerPoolForm({
                       className="grid min-w-0 gap-4 focus-visible:outline-2"
                     >
                       <RunnerSection title="Review runner pool">
-                        <div className="grid gap-2 rounded-md border border-[var(--hairline)] p-3 text-sm">
+                        <RunnerPolicyRows
+                          label={original ? 'What this updates' : 'What this creates'}
+                          rows={[
+                            {
+                              label: original ? 'Updates' : 'Creates',
+                              value: original
+                                ? `Runner service ${runnerName} in ${name}`
+                                : `Application ${name} with runner service ${runnerName}`,
+                            },
+                            { label: 'Scope', value: `${project} / ${environment}` },
+                            {
+                              label: 'Runners',
+                              value: `${original ? 'Keeps' : 'Registers'} ${replicas} ${providerName} ${replicas === '1' ? 'runner' : 'runners'} for ${targetLabel}`,
+                            },
+                            {
+                              label: 'Image',
+                              value: `${architecture ? architecture.toUpperCase() : 'Automatic architecture'}${runnerImage ? ` · ${runnerImage.split('@')[0]}` : ''}`,
+                            },
+                            {
+                              label: 'Placement',
+                              value: `${nodeName || 'Automatic'} · ${reservationLabel}`,
+                            },
+                            {
+                              label: 'Cache',
+                              value: `${workspaceSize} GiB workspace · ${persistentCache ? 'shared cache' : 'no shared cache'}`,
+                            },
+                          ]}
+                        />
+                        <div className="grid gap-2 rounded-[var(--radius-card)] border border-[var(--hairline)] p-3 text-sm">
                           <h3 className="font-semibold">What will change</h3>
                           <ul className="grid list-disc gap-1 pl-5">
                             {(reviewChanges.length
@@ -755,8 +840,8 @@ function RunnerPoolForm({
                           }
                         />
                         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-3">
-                          <Button disabled={busy} onClick={() => move(2)}>
-                            Back to workflow
+                          <Button disabled={busy} onClick={() => move(3)}>
+                            Back to cache policy
                           </Button>
                           <Button
                             variant="primary"
@@ -764,7 +849,9 @@ function RunnerPoolForm({
                             onClick={() => void deploy()}
                           >
                             {busy
-                              ? 'Submitting…'
+                              ? original
+                                ? 'Updating runner pool…'
+                                : 'Creating runner pool…'
                               : original
                                 ? 'Update runner pool'
                                 : 'Create runner pool'}
@@ -785,11 +872,11 @@ function RunnerPoolForm({
                       <div
                         ref={stepFocus}
                         tabIndex={-1}
-                        aria-label={`${['Provider connection', 'Runner compute', 'Workflow settings'][step]} step`}
+                        aria-label={`${['Provider and source scope', 'Runner image', 'Capacity and placement', 'Cache policy'][step]} step`}
                         className="min-w-0 focus-visible:outline-2"
                       >
                         {step === 0 && (
-                          <RunnerSection title="Connect your jobs">
+                          <RunnerSection title="Provider and source scope">
                             {original ? (
                               <RunnerFact label="CI provider">{providerName}</RunnerFact>
                             ) : (
@@ -798,19 +885,25 @@ function RunnerPoolForm({
                                 value={provider}
                                 onChange={chooseProvider}
                                 disabled={busy}
-                                options={[
-                                  { value: 'github', label: 'GitHub', detail: 'GitHub Actions' },
-                                  {
-                                    value: 'gitlab',
-                                    label: 'GitLab',
-                                    detail: 'GitLab.com or self-managed',
-                                  },
-                                  {
-                                    value: 'bitbucket',
-                                    label: 'Bitbucket',
-                                    detail: 'Bitbucket Cloud Pipelines',
-                                  },
-                                ]}
+                                options={(
+                                  [
+                                    ['github', 'GitHub', 'GitHub Actions'],
+                                    ['gitlab', 'GitLab', 'GitLab.com or self-managed'],
+                                    ['bitbucket', 'Bitbucket', 'Bitbucket Cloud Pipelines'],
+                                  ] as const
+                                ).map(([value, label, detail]) => {
+                                  const capability = capabilities.data?.providers?.find(
+                                    (item) => item.provider === value,
+                                  )
+                                  return {
+                                    value,
+                                    label,
+                                    icon: <ServiceIcon name={value} size={20} />,
+                                    detail: (capability ? capability.available : value === 'github')
+                                      ? detail
+                                      : `${detail} · Not available here yet`,
+                                  }
+                                })}
                               />
                             )}
                             {!providerAvailable && (
@@ -1027,7 +1120,7 @@ function RunnerPoolForm({
                                     sandbox between pipeline steps.
                                   </p>
                                 )}
-                                <div className="rounded-lg bg-[var(--surface-2)] p-4">
+                                <div className="rounded-[var(--radius-card)] bg-[var(--surface-2)] p-4">
                                   <div className="flex items-center gap-2 text-sm font-medium">
                                     Connect securely
                                     <HeadingHelp title="Runner credentials">
@@ -1131,7 +1224,7 @@ function RunnerPoolForm({
                           </RunnerSection>
                         )}
                         {step === 1 && (
-                          <RunnerSection title="Choose your compute">
+                          <RunnerSection title="Runner image and architecture">
                             <RunnerChoices
                               compact
                               label="Architecture"
@@ -1142,12 +1235,75 @@ function RunnerPoolForm({
                                 ...(provider === 'github'
                                   ? [{ value: '', label: 'Automatic' }]
                                   : []),
-                                { value: 'amd64', label: 'AMD64' },
-                                { value: 'arm64', label: 'ARM64' },
+                                ...['amd64', 'arm64'].map((value) => ({
+                                  value,
+                                  label: value.toUpperCase(),
+                                  detail:
+                                    nativeArchitectures.length &&
+                                    !nativeArchitectures.includes(value)
+                                      ? emulation
+                                        ? 'Emulated build'
+                                        : 'No native support'
+                                      : undefined,
+                                })),
                               ]}
                             />
+                            <RunnerPolicyRows
+                              label="Runner image"
+                              rows={[
+                                {
+                                  label: 'Image',
+                                  value: runnerImage ? (
+                                    <code className="wrap-anywhere">{runnerImage}</code>
+                                  ) : provider === 'github' ? (
+                                    'Unavailable. The installation has not published a runner image.'
+                                  ) : (
+                                    'Comes from the approved pool for this architecture.'
+                                  ),
+                                },
+                                ...(emulation
+                                  ? [
+                                      {
+                                        label: 'Emulation',
+                                        value:
+                                          providerCapability?.build.reason ||
+                                          `Builds for ${nativeArchitectures.length ? 'non-native architectures' : 'another architecture'} run under emulation and take longer.`,
+                                      },
+                                    ]
+                                  : []),
+                              ]}
+                            />
+                            {provider !== 'github' && bindingReason && (
+                              <p className="text-sm muted-text" role="status">
+                                {bindingReason}
+                              </p>
+                            )}
+                            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                              <RunnerLabels
+                                value={labels}
+                                onChange={setLabels}
+                                disabled={busy}
+                                label={
+                                  provider === 'gitlab'
+                                    ? 'Pipeline tags'
+                                    : provider === 'bitbucket'
+                                      ? 'Custom labels'
+                                      : 'Workflow labels'
+                                }
+                                provider={provider}
+                              />
+                              <RunnerWorkflowGuide
+                                labels={workflowLabels}
+                                provider={provider}
+                                architecture={architecture}
+                              />
+                            </div>
+                          </RunnerSection>
+                        )}
+                        {step === 2 && (
+                          <RunnerSection title="Capacity and placement">
                             <RunnerChoices
-                              label="Resources per job"
+                              label="Pool preset"
                               value={resourcePreset}
                               onChange={resourceChoice}
                               disabled={busy}
@@ -1188,7 +1344,6 @@ function RunnerPoolForm({
                                 {providerName} requires at least {minimum.cpu_request} CPU and{' '}
                                 {minimum.memory_request} memory reserved per runner, with limits of{' '}
                                 {minimum.cpu_limit} CPU and {minimum.memory_limit} memory or more.
-                                Minimum workspace: {workspaceMinimum} GiB.
                               </p>
                             )}
                             {!resourcesValid && (
@@ -1197,15 +1352,22 @@ function RunnerPoolForm({
                                 resources to meet these minimums.
                               </Note>
                             )}
-                            {provider !== 'github' && bindingReason && (
-                              <p className="text-sm muted-text" role="status">
-                                {bindingReason}
-                              </p>
+                            {resourcePreset === 'custom' && (
+                              <RunnerResourceFields
+                                effective={effectiveResources}
+                                minimum={minimum}
+                                expanded
+                                disabled={busy || !effective}
+                                onChange={(key, value) =>
+                                  setResources((current) => ({ ...current, [key]: value }))
+                                }
+                              />
                             )}
                             <div className="grid min-w-0 gap-x-4 gap-y-3 lg:grid-cols-2">
                               <RunnerCapacity
                                 value={replicas}
                                 reservationLabel={reservationLabel}
+                                providerName={providerName}
                                 maximum={Math.max(
                                   Number(original?.replicas || 0),
                                   dashboardEdition.cloud ? 3 : 10,
@@ -1225,74 +1387,66 @@ function RunnerPoolForm({
                                 onRetry={() => void nodes.refetch()}
                               />
                             </div>
-                            {resourcePreset === 'custom' && (
-                              <RunnerResourceFields
-                                effective={effectiveResources}
-                                minimum={minimum}
-                                expanded
-                                disabled={busy || !effective}
-                                onChange={(key, value) =>
-                                  setResources((current) => ({ ...current, [key]: value }))
-                                }
-                              />
-                            )}
                           </RunnerSection>
                         )}
-                        {step === 2 && (
-                          <RunnerSection title="Prepare your workflow">
-                            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-                              <div className="grid content-start gap-4">
-                                <RunnerLabels
-                                  value={labels}
-                                  onChange={setLabels}
-                                  disabled={busy}
-                                  label={
-                                    provider === 'gitlab'
-                                      ? 'Pipeline tags'
-                                      : provider === 'bitbucket'
-                                        ? 'Custom labels'
-                                        : 'Workflow labels'
-                                  }
-                                  provider={provider}
-                                />
+                        {step === 3 && (
+                          <RunnerSection title="Cache policy">
+                            <RunnerPolicyRows label="Cache policy" rows={cacheRows} />
+                            {providerCapability?.cache.reason && (
+                              <p className="text-xs muted-text">
+                                {providerCapability.cache.reason}
+                              </p>
+                            )}
+                            <RunnerChoices
+                              compact
+                              label={
+                                lifecycle === 'dedicated'
+                                  ? 'Runner workspace quota'
+                                  : 'Workspace quota per job'
+                              }
+                              value={workspaceSize}
+                              onChange={setWorkspaceSize}
+                              disabled={busy}
+                              options={[
+                                ...new Set([
+                                  workspaceSize,
+                                  String(workspaceMinimum),
+                                  '2',
+                                  '8',
+                                  '16',
+                                ]),
+                              ]
+                                .sort((a, b) => Number(a) - Number(b))
+                                .map((value) => ({
+                                  value,
+                                  label: `${value} GiB`,
+                                  disabled: Number(value) < workspaceMinimum,
+                                }))}
+                            />
+                            <span className="text-xs muted-text">
+                              Minimum {workspaceMinimum} GiB.{' '}
+                              {lifecycle === 'dedicated'
+                                ? 'Source, tools and Docker images share the runner disk. The sandbox is reused for this repository; local files are not a durable cache.'
+                                : 'Source, tools and Docker images share this disk. It is deleted after each job.'}
+                            </span>
+                            {lifecycle !== 'dedicated' && (
+                              <div className="grid gap-2">
                                 <RunnerChoices
                                   compact
-                                  label={
-                                    lifecycle === 'dedicated'
-                                      ? 'Runner workspace'
-                                      : 'Temporary workspace'
-                                  }
-                                  value={workspaceSize}
-                                  onChange={setWorkspaceSize}
+                                  label="Maximum runner lifetime"
+                                  value={timeout}
+                                  onChange={setTimeout}
                                   disabled={busy}
-                                  options={[
-                                    ...new Set([
-                                      workspaceSize,
-                                      String(workspaceMinimum),
-                                      '2',
-                                      '8',
-                                      '16',
-                                    ]),
-                                  ]
+                                  options={[...new Set([timeout, '30', '60', '120', '360'])]
                                     .sort((a, b) => Number(a) - Number(b))
-                                    .map((value) => ({
-                                      value,
-                                      label: `${value} GiB`,
-                                      disabled: Number(value) < workspaceMinimum,
-                                    }))}
+                                    .map((value) => ({ value, label: `${value} minutes` }))}
                                 />
-                                <span className="text-xs muted-text">
-                                  {lifecycle === 'dedicated'
-                                    ? 'Source, tools and Docker images share the runner disk. The sandbox is reused for this repository; local files are not a durable cache.'
-                                    : 'Source, tools and Docker images share this disk. It is deleted after each job.'}
-                                </span>
+                                <p className="text-xs muted-text">
+                                  Includes startup, waiting for a job and execution. The workspace
+                                  expires with the runner.
+                                </p>
                               </div>
-                              <RunnerWorkflowGuide
-                                labels={workflowLabels}
-                                provider={provider}
-                                architecture={architecture}
-                              />
-                            </div>
+                            )}
                             {provider === 'gitlab' && (
                               <div className="grid gap-3">
                                 <RunnerChoices
@@ -1304,7 +1458,7 @@ function RunnerPoolForm({
                                     {
                                       value: 'none',
                                       label: 'No shared cache',
-                                      detail: 'Do not configure shared dependency storage',
+                                      detail: 'Every job starts cold',
                                     },
                                     {
                                       value: 'shared',
@@ -1325,11 +1479,6 @@ function RunnerPoolForm({
                                       'Your saved cache choice is preserved; disable it or select a matching approval before deploying.'}
                                   </p>
                                 )}
-                                {providerCapability?.cache.reason && (
-                                  <p className="text-xs muted-text">
-                                    {providerCapability.cache.reason}
-                                  </p>
-                                )}
                                 {cacheEnabled && (
                                   <label className="grid gap-2 text-sm">
                                     Cache credential
@@ -1347,26 +1496,6 @@ function RunnerPoolForm({
                                   </label>
                                 )}
                               </div>
-                            )}
-                            {lifecycle !== 'dedicated' && (
-                              <details className="group border-t border-[var(--hairline)]">
-                                <RunnerDisclosureSummary>Job lifetime</RunnerDisclosureSummary>
-                                <div className="pb-3">
-                                  <RunnerChoices
-                                    compact
-                                    label="Maximum runner lifetime"
-                                    value={timeout}
-                                    onChange={setTimeout}
-                                    disabled={busy}
-                                    options={[...new Set([timeout, '30', '60', '120', '360'])]
-                                      .sort((a, b) => Number(a) - Number(b))
-                                      .map((value) => ({ value, label: `${value} minutes` }))}
-                                  />
-                                  <p className="mt-2 text-xs muted-text">
-                                    Includes startup, waiting for a job and execution.
-                                  </p>
-                                </div>
-                              </details>
                             )}
                             {!ready && (
                               <Note>
@@ -1396,15 +1525,13 @@ function RunnerPoolForm({
                         <Button
                           type="submit"
                           variant="primary"
-                          disabled={busy || !canDraft || (step === 2 && !ready)}
+                          disabled={busy || !canDraft || (step === 3 && !ready)}
+                          aria-busy={busy || undefined}
                         >
                           {busy
-                            ? 'Checking capacity…'
-                            : step === 0
-                              ? 'Choose compute'
-                              : step === 1
-                                ? 'Set up workflow'
-                                : 'Review runner pool'}
+                            ? 'Preparing review…'
+                            : ['Choose image', 'Set capacity', 'Set cache policy'][step] ||
+                              'Review runner pool'}
                         </Button>
                       </div>
                     </form>

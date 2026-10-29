@@ -1,0 +1,145 @@
+/* Runner pool setup and status. Editions differ through foundation tokens and brackets only. */
+
+.runner-steps {
+  @apply grid grid-cols-5 gap-1 border-b border-[var(--hairline)] pb-3 sm:flex sm:gap-6;
+}
+.runner-steps > button {
+  @apply flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-transparent! px-1 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 disabled:bg-transparent! disabled:opacity-45! sm:text-sm;
+}
+
+/* Choice cards and chips: radio inputs stay native; the visible card follows their state. */
+.runner-choice-card {
+  position: relative;
+  border-radius: var(--radius-card);
+}
+.runner-choice-card.runner-chip {
+  border-radius: var(--radius-control);
+}
+.runner-choice-card > .brackets {
+  inset: 5px;
+}
+.runner-choice-card.runner-chip > .brackets {
+  inset: -3px;
+}
+.runner-choice > input:is(:checked, :focus-visible) + .runner-choice-card > .brackets,
+.runner-choice:hover > input:enabled + .runner-choice-card > .brackets {
+  opacity: 1;
+}
+.runner-choice-card > .service-brand-icon {
+  @apply mt-0.5 shrink-0;
+}
+
+.runner-policy {
+  @apply grid min-w-0 border-y border-[var(--hairline)] text-sm;
+}
+.runner-policy > div {
+  @apply grid min-w-0 gap-1 border-t border-[var(--hairline)] py-2.5 first:border-t-0 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4;
+}
+.runner-policy dt {
+  color: var(--muted);
+}
+.runner-policy dd {
+  @apply min-w-0 wrap-anywhere;
+}
+
+/* Pool cards keep a fixed anatomy so a grid of pools aligns row by row. */
+.runner-pool-grid {
+  @apply grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,22rem)_minmax(0,1fr)];
+}
+.runner-pool-card {
+  @apply grid min-w-0 gap-2 border border-[var(--hairline)] p-4;
+  border-radius: var(--radius-card);
+  background: var(--card);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+.runner-pool-card:hover,
+.runner-pool-card:focus-within {
+  border-color: var(--muted);
+  background: var(--surface-2);
+}
+.runner-pool-card > .brackets {
+  inset: 5px;
+}
+.runner-pool-card:focus-within > .brackets {
+  opacity: 1;
+}
+.runner-pool-card-head {
+  @apply flex min-w-0 items-center gap-2;
+}
+.runner-pool-card-head h2 {
+  @apply flex min-w-0 items-center gap-2;
+  font-size: var(--type-card-size);
+  line-height: var(--type-card-line);
+  font-weight: var(--type-card-weight);
+}
+.runner-pool-type {
+  @apply flex size-8 shrink-0 items-center justify-center border border-[var(--hairline)];
+  border-radius: var(--radius-control);
+}
+.runner-pool-name {
+  color: inherit;
+  text-decoration: none;
+}
+.runner-pool-name:hover {
+  text-decoration: underline;
+}
+.runner-pool-meta,
+.runner-pool-scope {
+  @apply min-w-0 text-sm;
+}
+.runner-pool-scope {
+  color: var(--muted);
+}
+.runner-pool-state {
+  @apply flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm;
+}
+.runner-pool-dot {
+  @apply size-2 shrink-0 rounded-full;
+  background: var(--muted);
+}
+.runner-pool-state[data-tone='success'] .runner-pool-dot {
+  background: var(--success);
+}
+.runner-pool-state[data-tone='warning'] .runner-pool-dot {
+  background: var(--warning, var(--destructive));
+}
+.runner-pool-state[data-tone='unknown'] .runner-pool-dot {
+  @apply border border-[var(--muted)] bg-transparent;
+}
+.runner-pool-metric {
+  @apply grid min-w-0 gap-1 border-t border-[var(--hairline)] pt-3 text-sm;
+}
+.runner-meter {
+  @apply block h-1 overflow-hidden bg-[var(--surface-3)];
+  border-radius: var(--radius-control);
+}
+.runner-meter > i {
+  @apply block h-full;
+  background: var(--accent);
+}
+
+/* Rows reserve their slots so state and time stay aligned while names wrap. */
+.runner-row {
+  @apply grid min-w-0 gap-1 border-t border-[var(--hairline)] py-2 text-xs sm:grid-cols-[minmax(0,1fr)_11rem_9rem] sm:gap-4;
+}
+.runner-job-row {
+  @apply grid min-h-11 w-full min-w-0 items-start gap-x-2 px-2 py-3 text-left;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'icon name time'
+    '. state .';
+}
+.runner-job-row > :nth-child(1) {
+  grid-area: icon;
+}
+.runner-job-row > :nth-child(2) {
+  grid-area: name;
+}
+.runner-job-row > :nth-child(3) {
+  grid-area: state;
+}
+.runner-job-row > :nth-child(4) {
+  grid-area: time;
+}
