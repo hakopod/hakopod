@@ -513,8 +513,8 @@ capacity and failure evidence. Do not extrapolate this workload's timings to a
 larger fleet or an application's compiler, dependency graph and registry.
 
 The slot budget includes the sandbox and is split between its containers. In
-this 2-core fixture, the runner container has a 475m CPU limit and the Docker
-sidecar has 1425m, with 100m reserved for the sandbox. A shell compilation and a
+this 2-core fixture, the runner container and the Docker sidecar each have a
+950m CPU limit, with 100m reserved for the sandbox. A shell compilation and a
 BuildKit compilation therefore have different CPU ceilings. The pod's declared
 2-core total is not a 2-core limit for each container. Startup timings on these
 fresh CI nodes also include cold image pulls; a node with cached pinned images
