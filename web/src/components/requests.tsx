@@ -7,7 +7,7 @@ import { timestamp } from '../lib/api'
 import { useProjects } from '../lib/projects'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Dialog } from './ui/dialog'
+import { InspectorSheet } from './inspector-sheet'
 import { SelectField } from './ui/select'
 import { Copy, Empty, ErrorState, HeadingHelp, Loading, Status } from './shared'
 
@@ -361,24 +361,47 @@ export function Requests({
           </div>
         </>
       )}
-      <Dialog
+      <InspectorSheet
         open={!!selected}
         onOpenChange={(open) => {
           if (!open) setSelected(null)
         }}
-        title="Request details"
+        kind="request"
+        title={selected ? `${selected.method} ${selected.path || '/'}` : 'Request details'}
         description="Observed ingress data. Timings are milliseconds; unavailable measurements are marked explicitly."
-        wide
-      >
-        {selected && (
-          <div className="flex max-h-[65vh] min-w-0 flex-col gap-4 overflow-y-auto p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <strong>{selected.method}</strong>
+        state={
+          selected && (
+            <>
               <HTTPStatus value={selected.status} />
               <span>{ms(selected.duration_ms)}</span>
-              <Copy value={JSON.stringify(selected, null, 2)} />
-            </div>
-            <div className="break-all rounded-md bg-[var(--surface-2)] p-3 font-mono text-xs">
+              <time dateTime={selected.timestamp} title={selected.timestamp}>
+                {timestamp(selected.timestamp)}
+              </time>
+            </>
+          )
+        }
+        footer={
+          selected && (
+            <>
+              <Copy value={JSON.stringify(selected, null, 2)} label="Copy JSON" />
+              {selected.application_id && (
+                <Button asChild size="sm">
+                  <Link
+                    to="/applications/$applicationId"
+                    params={{ applicationId: selected.application_id }}
+                    search={{ service: selected.service, tab: 'requests' }}
+                  >
+                    Open service requests
+                  </Link>
+                </Button>
+              )}
+            </>
+          )
+        }
+      >
+        {selected && (
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="break-all rounded-[var(--radius-control)] bg-[var(--surface-2)] p-3 font-mono text-xs">
               {selected.host}
               {selected.path}
             </div>
@@ -416,20 +439,9 @@ export function Requests({
               flags indicate a normal completion. Other flags can explain timeouts or disconnects.
               No raw headers, query strings, cookies or bodies are retained.
             </p>
-            {selected.application_id && (
-              <Button asChild size="sm">
-                <Link
-                  to="/applications/$applicationId"
-                  params={{ applicationId: selected.application_id }}
-                  search={{ service: selected.service, tab: 'requests' }}
-                >
-                  Open service requests
-                </Link>
-              </Button>
-            )}
           </div>
         )}
-      </Dialog>
+      </InspectorSheet>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { PastPods, CutMark, HistoryStatus, HistoryUnavailable } from './log-history'
+import './deployment-log.test'
 import { Form } from './app-log-settings'
 import { SelectField } from './ui/select'
 import {

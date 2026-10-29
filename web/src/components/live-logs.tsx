@@ -2,7 +2,9 @@ import { RequestError } from './shared'
 import { editionFetch } from '../lib/client-edition'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Brackets } from '@hakopod/hatch-ui/components/brackets'
+import { logTimestamp } from '../lib/actions-logs'
 import { Icon } from './icons'
 import { Button } from './ui/button'
 import { Copy, Empty, Note } from './shared'
@@ -25,7 +27,11 @@ export default function LiveLogs({
   const [text, setText] = useState('')
   const [state, setState] = useState('Connecting')
   const [error, setError] = useState('')
-  const end = useRef<HTMLDivElement>(null)
+  const [search, setSearch] = useState('')
+  const [times, setTimes] = useState(true)
+  // Follow keeps the newest line in view only while the reader is already at the end.
+  const [pinned, setPinned] = useState(true)
+  const view = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const change = () => setVisible(!document.hidden)
     document.addEventListener('visibilitychange', change)
@@ -108,8 +114,11 @@ export default function LiveLogs({
     }
   }, [applicationId, service, follow, visible, restart])
   useEffect(() => {
-    if (follow) end.current?.scrollIntoView({ block: 'nearest' })
-  }, [text, follow])
+    if (follow && pinned && view.current) view.current.scrollTop = view.current.scrollHeight
+  }, [text, follow, pinned])
+  const lines = useMemo(() => (text ? text.replace(/\n$/, '').split('\n') : []), [text])
+  const query = search.trim().toLowerCase()
+  const shown = query ? lines.filter((line) => line.toLowerCase().includes(query)) : lines
   const download = () => {
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
     const link = document.createElement('a')
@@ -127,67 +136,138 @@ export default function LiveLogs({
       />
     )
   return (
-    <div className="ops-live-logs">
-      <div className="logs-toolbar">
-        <div className="inline-field">
-          <Icon name="box" size={15} />
-          <SelectField
-            label="Log service"
-            compact
-            value={service}
-            onValueChange={setService}
-            options={services.map((name) => ({ value: name, label: name }))}
-          />
-        </div>
-        <span className={`log-connection ${state === 'Live' && visible ? 'log-connected' : ''}`}>
-          <span className="status-dot" />
-          {visible ? state : 'Paused while tab is hidden'}
-        </span>
-        <div className="form-spacer" />
-        <label className="checkbox-row">
-          <Input
-            type="checkbox"
-            checked={wrap}
-            onChange={(event) => setWrap(event.target.checked)}
-          />
-          Wrap
-        </label>
-        <Copy value={text} label="Copy" />
-        <Button size="sm" variant="ghost" disabled={!text} onClick={download}>
-          Download
-        </Button>
-        <Button variant="primary" size="sm" onClick={() => setFollow((value) => !value)}>
-          <Icon name={follow ? 'pause' : 'play'} size={14} />
-          {follow ? 'Pause live' : 'Follow live'}
-        </Button>
-        <Button
-          size="icon"
-          aria-label="Reload logs"
-          onClick={() => setRestart((value) => value + 1)}
-        >
-          <Icon name="refresh" size={15} />
-        </Button>
-      </div>
-      <div className={`log-window ${wrap ? 'ops-log-wrap' : ''}`} role="log" aria-live="off">
-        {error ? (
-          <RequestError error={error} />
-        ) : text ? (
-          <pre>{text}</pre>
-        ) : (
-          <div className="log-placeholder">
-            <Icon name="terminal" size={22} />
-            <span>
-              {state === 'Connecting' || state === 'Loading recent logs'
-                ? 'Waiting for container output…'
-                : 'No log lines returned for this service.'}
+    <div className="ops-live-logs grid gap-3">
+      <div className="inspect-log">
+        <Brackets />
+        <div className="logs-toolbar inspect-log-toolbar">
+          <div className="inline-field">
+            <Icon name="box" size={15} />
+            <SelectField
+              label="Log service"
+              compact
+              value={service}
+              onValueChange={setService}
+              options={services.map((name) => ({ value: name, label: name }))}
+            />
+          </div>
+          <span
+            className={`log-connection ${state === 'Live' && visible ? 'log-connected' : ''}`}
+            role="status"
+          >
+            <span className="status-dot" />
+            {visible ? state : 'Paused while tab is hidden'}
+          </span>
+          <label className="inspect-log-search">
+            <Icon name="search" size={15} />
+            <span className="sr-only">Search live logs</span>
+            <Input
+              type="search"
+              value={search}
+              placeholder="Search output"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          {query && (
+            <span className="inspect-log-count" role="status">
+              {shown.length} of {lines.length} lines
             </span>
+          )}
+          <label className="checkbox-row">
+            <Input
+              type="checkbox"
+              checked={wrap}
+              onChange={(event) => setWrap(event.target.checked)}
+            />
+            Wrap
+          </label>
+          <label className="checkbox-row">
+            <Input
+              type="checkbox"
+              checked={times}
+              onChange={(event) => setTimes(event.target.checked)}
+            />
+            Timestamps
+          </label>
+          <Copy value={text} label="Copy" />
+          <Button size="sm" variant="ghost" disabled={!text} onClick={download}>
+            Download
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setFollow((value) => !value)}>
+            <Icon name={follow ? 'pause' : 'play'} size={14} />
+            {follow ? 'Pause live' : 'Follow live'}
+          </Button>
+          <Button
+            size="icon"
+            aria-label="Reload logs"
+            onClick={() => setRestart((value) => value + 1)}
+          >
+            <Icon name="refresh" size={15} />
+          </Button>
+        </div>
+        <div
+          ref={view}
+          className={`inspect-log-view ${wrap ? 'inspect-log-wrap' : ''} ${times ? '' : 'inspect-log-no-time'}`}
+          role="log"
+          aria-label={`Container output for ${service}`}
+          aria-live="off"
+          tabIndex={0}
+          onScroll={(event) => {
+            const node = event.currentTarget
+            setPinned(node.scrollHeight - node.scrollTop - node.clientHeight < 24)
+          }}
+        >
+          {error ? (
+            <div className="inspect-log-empty">
+              <RequestError error={error} />
+            </div>
+          ) : shown.length ? (
+            shown.map((line, index) => {
+              const parsed = logTimestamp(line)
+              return (
+                <div className="inspect-log-row" key={index}>
+                  {parsed ? (
+                    <time
+                      dateTime={new Date(parsed.timestamp).toISOString()}
+                      title={new Date(parsed.timestamp).toISOString()}
+                    >
+                      {new Date(parsed.timestamp).toLocaleTimeString(undefined, { hour12: false })}
+                    </time>
+                  ) : (
+                    <time />
+                  )}
+                  <span>{parsed ? parsed.text : line}</span>
+                </div>
+              )
+            })
+          ) : (
+            <p className="inspect-log-empty">
+              {query && lines.length
+                ? 'No lines match this search.'
+                : state === 'Connecting' || state === 'Loading recent logs'
+                  ? 'Waiting for container output…'
+                  : 'No log lines returned for this service.'}
+            </p>
+          )}
+        </div>
+        {follow && !pinned && (
+          <div className="inspect-log-footer">
+            <span>Following is paused while you read earlier output.</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setPinned(true)
+                if (view.current) view.current.scrollTop = view.current.scrollHeight
+              }}
+            >
+              Jump to latest
+            </Button>
           </div>
         )}
-        <div ref={end} />
-      </div>
-      <div className="log-footer">
-        <span>Ephemeral container logs</span>
-        <span>Last 1,000 lines · 256 KiB maximum · Starts with 100 lines</span>
+        <div className="inspect-log-footer">
+          <span>Ephemeral container logs</span>
+          <span>Last 1,000 lines · 256 KiB maximum · Starts with 100 lines</span>
+        </div>
       </div>
       <Note>
         Logs are read directly from Kubernetes and are not retained by Hakopod. Application output

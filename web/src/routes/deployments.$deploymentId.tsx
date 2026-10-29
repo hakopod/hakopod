@@ -24,6 +24,7 @@ import {
   RequestError,
 } from '../components/shared'
 import { DiffTable } from '../components/deploy-dialog'
+import { DeploymentLog } from '../components/deployment-log'
 
 export const Route = createFileRoute('/deployments/$deploymentId')({ component: DeploymentDetail })
 function DeploymentDetail() {
@@ -420,7 +421,7 @@ function DeploymentDetail() {
           <Tabs.Root value={tab} onValueChange={setTab}>
             <Tabs.List ref={navigationRoot} className="tab-list" aria-label="Deployment inspection">
               <Tabs.Trigger className="tab-trigger" value="events">
-                Events
+                Log
               </Tabs.Trigger>
               <Tabs.Trigger className="tab-trigger" value="changes">
                 Changes
@@ -430,74 +431,7 @@ function DeploymentDetail() {
               </Tabs.Trigger>
             </Tabs.List>
             <Tabs.Content className="tab-content" value="events">
-              <div className="ops-event-toolbar">
-                <p>
-                  {activeDeployment(release.status)
-                    ? 'Observing the reconciler every 2.5 seconds.'
-                    : 'Events retained with this release.'}
-                </p>
-                <Copy
-                  value={(release.events || [])
-                    .slice(-200)
-                    .map(
-                      (event) =>
-                        `${event.time} ${event.type} ${event.service || ''} ${event.message}`,
-                    )
-                    .join('\n')}
-                  label="Copy events"
-                />
-              </div>
-              <div
-                className="ops-deployment-events"
-                role="log"
-                aria-label="Recorded deployment events"
-                aria-live="off"
-              >
-                <div className="ops-deployment-event">
-                  <time dateTime={release.created_at} title={release.created_at}>
-                    {timestamp(release.created_at)}
-                  </time>
-                  <span className="ops-event-type">
-                    <Icon name="check" size={14} />
-                    accepted
-                  </span>
-                  <span>Revision {release.revision} persisted by the management API.</span>
-                </div>
-                {(release.events || []).slice(-200).map((event, index) => (
-                  <div
-                    className={`ops-deployment-event ${/fail|error/.test(event.type) ? 'ops-event-error' : ''}`}
-                    key={event.id || index}
-                  >
-                    <time dateTime={event.time} title={event.time}>
-                      {timestamp(event.time)}
-                    </time>
-                    <span className="ops-event-type">
-                      <Icon
-                        name={
-                          /fail|error/.test(event.type)
-                            ? 'alert'
-                            : /success|ready|complete/.test(event.type)
-                              ? 'check'
-                              : 'activity'
-                        }
-                        size={14}
-                      />
-                      {event.type.replaceAll('_', ' ')}
-                    </span>
-                    <span>
-                      {event.service && <code className="ops-event-service">{event.service}</code>}
-                      {event.message}
-                    </span>
-                  </div>
-                ))}
-                {!(release.events || []).length && (
-                  <p className="ops-event-empty">
-                    {activeDeployment(release.status)
-                      ? 'Waiting for the reconciler’s first event.'
-                      : 'No additional events were recorded.'}
-                  </p>
-                )}
-              </div>
+              <DeploymentLog key={release.id} release={release} />
             </Tabs.Content>
             <Tabs.Content className="tab-content" value="changes">
               <div className="section-toolbar">

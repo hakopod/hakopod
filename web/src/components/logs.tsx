@@ -4,7 +4,7 @@ import { Textarea } from './ui/textarea'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Badge, Tooltip } from './ui/surfaces'
-import { Dialog } from './ui/dialog'
+import { InspectorSheet } from './inspector-sheet'
 import { Icon } from './icons'
 import { Button } from './ui/button'
 import { Copy, Empty, ErrorState, Loading, Note } from './shared'
@@ -582,14 +582,11 @@ export function Logs({
                 <div className={`log-results ${wrap ? 'log-wrap' : ''}`} role="log" aria-live="off">
                   {entries.length ? (
                     entries.map((entry, index) => (
-                      <button
-                        type="button"
+                      <div
                         className="ops-log-line"
                         key={`${entry.timestamp}-${entry.pod}-${index}`}
-                        onClick={() => setSelected(entry)}
-                        aria-label={`Inspect ${entry.severity || 'default'} log from ${entry.pod} at ${entry.timestamp || 'unknown time'}`}
                       >
-                        <time title={entry.timestamp}>
+                        <time dateTime={entry.timestamp} title={entry.timestamp}>
                           {entry.timestamp
                             ? new Date(entry.timestamp).toLocaleTimeString(undefined, {
                                 hour12: false,
@@ -610,8 +607,16 @@ export function Logs({
                           {entry.message}
                           <CutMark truncated={entry.truncated} />
                         </span>
-                        <Icon name="chevron" size={12} />
-                      </button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="ops-log-inspect"
+                          onClick={() => setSelected(entry)}
+                          aria-label={`Inspect ${entry.severity || 'default'} log from ${entry.pod} at ${entry.timestamp || 'unknown time'}`}
+                        >
+                          <Icon name="chevron" size={14} />
+                        </Button>
+                      </div>
                     ))
                   ) : (
                     <Empty
@@ -693,71 +698,80 @@ export function Logs({
           )}
         </>
       )}
-      <Dialog
-        sheet
+      <InspectorSheet
         open={Boolean(selected)}
         onOpenChange={(open) => {
           if (!open) setSelected(null)
         }}
+        kind="log entry"
         title="Log entry"
         description={
           installation
             ? 'Structured fields from the selected API log entry.'
             : 'Structured fields returned by the selected container.'
         }
-      >
-        {selected && (
-          <>
-            <div className="dialog-body ops-log-inspector">
+        state={
+          selected && (
+            <>
               <Badge>{selected.severity || 'DEFAULT'}</Badge>
-              <dl className="service-definition-list">
-                <div>
-                  <dt>Timestamp</dt>
-                  <dd className="mono">{selected.timestamp || 'Unavailable'}</dd>
-                </div>
-                <div>
-                  <dt>Service</dt>
-                  <dd>
-                    <code>{selected.service}</code>
-                    <Copy value={selected.service} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>{installation ? 'Source' : 'Pod'}</dt>
-                  <dd className="break-text">
-                    <code>{selected.pod}</code>
-                    <Copy value={selected.pod} />
-                  </dd>
-                </div>
-                {!installation && (
-                  <div>
-                    <dt>Container</dt>
-                    <dd>
-                      <code>{selected.container}</code>
-                    </dd>
-                  </div>
-                )}
-              </dl>
-              <h3>Message</h3>
-              <pre className="ops-inspector-code">{selected.message}</pre>
-              {Object.keys(selected.fields).length > 0 && (
-                <>
-                  <h3>Structured fields</h3>
-                  <pre className="ops-inspector-code">
-                    {JSON.stringify(selected.fields, null, 2)}
-                  </pre>
-                </>
-              )}
-            </div>
-            <div className="dialog-footer">
+              <time dateTime={selected.timestamp} title={selected.timestamp}>
+                {selected.timestamp ? timestamp(selected.timestamp) : 'Time unavailable'}
+              </time>
+            </>
+          )
+        }
+        footer={
+          selected && (
+            <>
               <Button variant="ghost" onClick={() => setSelected(null)}>
                 Close
               </Button>
               <Copy value={JSON.stringify(selected, null, 2)} label="Copy JSON" />
-            </div>
-          </>
+            </>
+          )
+        }
+      >
+        {selected && (
+          <div className="ops-log-inspector">
+            <dl className="service-definition-list">
+              <div>
+                <dt>Timestamp</dt>
+                <dd className="mono">{selected.timestamp || 'Unavailable'}</dd>
+              </div>
+              <div>
+                <dt>Service</dt>
+                <dd>
+                  <code>{selected.service}</code>
+                  <Copy value={selected.service} />
+                </dd>
+              </div>
+              <div>
+                <dt>{installation ? 'Source' : 'Pod'}</dt>
+                <dd className="break-text">
+                  <code>{selected.pod}</code>
+                  <Copy value={selected.pod} />
+                </dd>
+              </div>
+              {!installation && (
+                <div>
+                  <dt>Container</dt>
+                  <dd>
+                    <code>{selected.container}</code>
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <h3>Message</h3>
+            <pre className="ops-inspector-code">{selected.message}</pre>
+            {Object.keys(selected.fields).length > 0 && (
+              <>
+                <h3>Structured fields</h3>
+                <pre className="ops-inspector-code">{JSON.stringify(selected.fields, null, 2)}</pre>
+              </>
+            )}
+          </div>
         )}
-      </Dialog>
+      </InspectorSheet>
     </section>
   )
 }
