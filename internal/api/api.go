@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -31,6 +30,8 @@ import (
 )
 
 type Server struct {
+	// access caches the installation access policy for accessGate.
+	access accessState
 	// appLogs reads stored application logs; built lazily by appLogReader.
 	appLogs            *applogs.Store
 	appLogsOnce        sync.Once
@@ -128,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	routes := http.NewServeMux()
 	s.registerAuthRoutes(mux, routes)
+	s.registerAccessRoutes(mux, routes)
 	s.registerLicenseRoutes(routes)
 	s.registerLoginProviderRoutes(routes)
 	s.registerProfileRoutes(routes)
@@ -237,6 +239,9 @@ func (s *Server) Handler() http.Handler {
 			problem(w, 503, "busy", "request concurrency limit reached; retry with backoff")
 			return
 		}
+		if !s.accessGate(w, r) {
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -326,7 +331,7 @@ func (s *Server) rate(ip string) bool {
 }
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		ip := requestIP(r)
 		if !s.rate(ip) {
 			w.Header().Set("Retry-After", "2")
 			problem(w, 429, "rate_limit", "request rate exceeded")

@@ -11395,6 +11395,150 @@
         "summary": "Send a test message with the installation's SMTP configuration."
       }
     },
+    "/installation/access": {
+      "get": {
+        "operationId": "getInstallationAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationAccess"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation owner in a browser session required"
+          }
+        },
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Read the management access policy and the address seen for this request."
+      },
+      "put": {
+        "operationId": "putInstallationAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationAccess"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation owner in a browser session required"
+          },
+          "409": {
+            "description": "Revision changed, the confirmation window ended, or the policy would block this network"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationAccessInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Save the management access policy; it reverts unless confirmed within five minutes."
+      }
+    },
+    "/installation/access/confirm": {
+      "post": {
+        "operationId": "confirmInstallationAccess",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationAccess"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Self-hosted installation owner in a browser session required"
+          },
+          "409": {
+            "description": "Revision changed, the confirmation window ended, or the policy would block this network"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallationAccessConfirmInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Confirm a pending management access policy from an allowed network."
+      }
+    },
     "/license": {
       "get": {
         "operationId": "getLicenseStatus",
@@ -32859,6 +33003,119 @@
         "required": [
           "sent",
           "recipient"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessPolicy": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_ip_source": {
+            "type": "string",
+            "enum": [
+              "connection",
+              "trusted_proxy"
+            ]
+          },
+          "trusted_proxy_cidrs": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "string",
+              "maxLength": 43
+            }
+          },
+          "client_ip_header": {
+            "type": "string",
+            "enum": [
+              "",
+              "X-Forwarded-For",
+              "X-Real-IP",
+              "CF-Connecting-IP"
+            ]
+          },
+          "allow_cidrs": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "string",
+              "maxLength": 43
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "client_ip_source",
+          "trusted_proxy_cidrs",
+          "client_ip_header",
+          "allow_cidrs"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccess": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "policy": {
+            "$ref": "#/components/schemas/InstallationAccessPolicy"
+          },
+          "pending_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Set while a saved policy waits for confirmation; it reverts after this time."
+          },
+          "client_ip": {
+            "type": "string",
+            "description": "The address the installation sees for this request."
+          },
+          "licensed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revision",
+          "policy",
+          "client_ip",
+          "licensed"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessInput": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "policy": {
+            "$ref": "#/components/schemas/InstallationAccessPolicy"
+          },
+          "confirm_from_elsewhere": {
+            "type": "boolean",
+            "description": "Save even though the policy blocks this request's network; confirm from an allowed network within five minutes."
+          }
+        },
+        "required": [
+          "expected_revision",
+          "policy"
+        ],
+        "additionalProperties": false
+      },
+      "InstallationAccessConfirmInput": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "revision"
         ],
         "additionalProperties": false
       },

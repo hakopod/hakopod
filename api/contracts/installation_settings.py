@@ -50,3 +50,35 @@ for path, method, operation, response, request in [
         item["responses"]["409"] = {"description": "Configuration revision changed"}
     if "{provider}" in path:
         item["parameters"].append({"name": "provider", "in": "path", "required": True, "schema": provider_names})
+
+cidrs = {"type": "array", "maxItems": 256, "items": {**S, "maxLength": 43}}
+schemas["InstallationAccessPolicy"] = obj({
+    "enabled": B,
+    "client_ip_source": {"type": "string", "enum": ["connection", "trusted_proxy"]},
+    "trusted_proxy_cidrs": cidrs,
+    "client_ip_header": {"type": "string", "enum": ["", "X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP"]},
+    "allow_cidrs": cidrs,
+}, ["enabled", "client_ip_source", "trusted_proxy_cidrs", "client_ip_header", "allow_cidrs"])
+schemas["InstallationAccess"] = obj({
+    "revision": revision, "policy": ref("InstallationAccessPolicy"),
+    "pending_until": {**S, "format": "date-time", "description": "Set while a saved policy waits for confirmation; it reverts after this time."},
+    "client_ip": {**S, "description": "The address the installation sees for this request."},
+    "licensed": B,
+}, ["revision", "policy", "client_ip", "licensed"])
+schemas["InstallationAccessInput"] = obj({
+    "expected_revision": revision, "policy": ref("InstallationAccessPolicy"),
+    "confirm_from_elsewhere": {**B, "description": "Save even though the policy blocks this request's network; confirm from an allowed network within five minutes."},
+}, ["expected_revision", "policy"])
+schemas["InstallationAccessConfirmInput"] = obj({"revision": revision}, ["revision"])
+for name in ["InstallationAccessPolicy", "InstallationAccess", "InstallationAccessInput", "InstallationAccessConfirmInput"]:
+    schemas[name]["additionalProperties"] = False
+for path, method, operation, response, request in [
+    ("/installation/access", "get", "getInstallationAccess", "InstallationAccess", None),
+    ("/installation/access", "put", "putInstallationAccess", "InstallationAccess", "InstallationAccessInput"),
+    ("/installation/access/confirm", "post", "confirmInstallationAccess", "InstallationAccess", "InstallationAccessConfirmInput"),
+]:
+    route(path, method, operation, ref(response), ref(request) if request else None)
+    item = paths[path][method]
+    item["responses"]["403"] = {"description": "Self-hosted installation owner in a browser session required"}
+    if method != "get":
+        item["responses"]["409"] = {"description": "Revision changed, the confirmation window ended, or the policy would block this network"}
