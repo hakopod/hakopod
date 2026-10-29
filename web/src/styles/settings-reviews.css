@@ -232,3 +232,35 @@ html[data-edition='cloud'] .dialog-content:is(.focused-dialog, .review-dialog) .
     @apply justify-start pl-7;
   }
 }
+.created-key > .copy-value {
+  @apply mt-3 -ml-2;
+}
+/* Members and accounts: identity, role or state, actions. */
+.settings-row.settings-row-member {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'identity status actions';
+}
+.settings-row-member .settings-row-status .select-field-wrap {
+  min-width: 8rem;
+}
+@media (max-width: 767px) {
+  .settings-row.settings-row-member {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity actions'
+      'status status';
+  }
+  .settings-row-member .settings-row-status {
+    @apply w-full pl-7;
+  }
+}
+/* Provider marks sit only beside the provider's name. */
+.secret-provider-kind {
+  @apply inline-flex items-center gap-2 whitespace-nowrap;
+}
+/* Settings section titles follow the edition type roles. */
+.settings-page .settings-content :is(.section-toolbar h2, .hako-section-heading-title h2) {
+  font-size: var(--type-section-size);
+  line-height: var(--type-section-line);
+  font-weight: var(--type-section-weight);
+}

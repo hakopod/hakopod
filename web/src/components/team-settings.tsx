@@ -15,6 +15,7 @@ import { useScope } from '../lib/scope'
 import type { components } from '../lib/api.generated'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
+import { focusedDialog, ReviewFacts, ReviewNotice } from './operation-review'
 import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 
 export default function TeamSettings() {
@@ -181,69 +182,75 @@ export default function TeamSettings() {
       ) : !teams.data?.items.length ? (
         <Empty title="No teams yet" description="Create your first team to invite collaborators." />
       ) : (
-        <section className="grid gap-0" aria-label="Team members">
+        <section aria-label="Team members">
           {members.isPending ? (
             <Loading rows={2} />
           ) : members.error ? (
             <ErrorState error={members.error} />
           ) : (
-            members.data?.items.map((member) => (
-              <div className="settings-list-row" key={member.id}>
-                <div className="member-identity">
-                  <Avatar name={member.name} url={member.avatar_url} />
-                  <div>
-                    <strong>
-                      {member.name}
-                      {member.username && <span className="muted-text"> @{member.username}</span>}
-                    </strong>
-                    <small>{member.email}</small>
+            <ul className="settings-rows">
+              {members.data?.items.map((member) => (
+                <li className="settings-row settings-row-member" key={member.id}>
+                  <div className="settings-row-identity">
+                    <Avatar name={member.name} url={member.avatar_url} />
+                    <div>
+                      <strong>
+                        {member.name}
+                        {member.username && <span className="muted-text"> @{member.username}</span>}
+                      </strong>
+                      <small>{member.email}</small>
+                    </div>
                   </div>
-                </div>
-                {canTeam && member.role !== 'owner' ? (
-                  <RoleEditor
-                    key={`${member.id}-${member.role}`}
-                    role={member.role}
-                    subject={member.name || member.email || member.id}
-                    scopeName={`team ${current?.name || team}`}
-                    roles={hasFeature('teams') ? ['admin', 'member'] : [member.role]}
-                    onSave={async (role) => {
-                      await unwrap(
-                        client.PUT('/teams/{id}/members/{user}', {
-                          params: { path: { id: team, user: member.id } },
-                          body: { role },
-                        }),
-                      )
-                      refresh()
-                    }}
-                  />
-                ) : (
-                  <span className="label-chip">{member.role}</span>
-                )}
-                {hasFeature('teams') && (canTeam || member.id === scope.identity.id) && (
-                  <Menu
-                    trigger={
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Actions for ${member.name || member.email}`}
+                  <div className="settings-row-status">
+                    {canTeam && member.role !== 'owner' ? (
+                      <RoleEditor
+                        key={`${member.id}-${member.role}`}
+                        role={member.role}
+                        subject={member.name || member.email || member.id}
+                        scopeName={`team ${current?.name || team}`}
+                        roles={hasFeature('teams') ? ['admin', 'member'] : [member.role]}
+                        onSave={async (role) => {
+                          await unwrap(
+                            client.PUT('/teams/{id}/members/{user}', {
+                              params: { path: { id: team, user: member.id } },
+                              body: { role },
+                            }),
+                          )
+                          refresh()
+                        }}
+                      />
+                    ) : (
+                      <span className="label-chip">{member.role}</span>
+                    )}
+                  </div>
+                  <div className="settings-row-actions">
+                    {hasFeature('teams') && (canTeam || member.id === scope.identity.id) && (
+                      <Menu
+                        trigger={
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Actions for ${member.name || member.email}`}
+                          >
+                            <MoreHorizontal size={16} />
+                          </Button>
+                        }
                       >
-                        <MoreHorizontal size={16} />
-                      </Button>
-                    }
-                  >
-                    <MenuItem
-                      onSelect={() => {
-                        setUsernameMember(member)
-                        setUsername(member.username || '')
-                        setUsernameError('')
-                      }}
-                    >
-                      Edit team username
-                    </MenuItem>
-                  </Menu>
-                )}
-              </div>
-            ))
+                        <MenuItem
+                          onSelect={() => {
+                            setUsernameMember(member)
+                            setUsername(member.username || '')
+                            setUsernameError('')
+                          }}
+                        >
+                          Edit team username
+                        </MenuItem>
+                      </Menu>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}
@@ -291,38 +298,48 @@ export default function TeamSettings() {
         ) : (
           <section className="grid gap-3" aria-label="Project members">
             {project.data?.items.length ? (
-              project.data.items.map((member) => (
-                <div className="settings-list-row" key={member.identity_id || member.team_id}>
-                  <div>
-                    <strong>{member.name}</strong>
-                    <small>{member.team_id ? 'Team' : 'Member'}</small>
-                  </div>
-                  {canShareProject ? (
-                    <RoleEditor
-                      key={`${member.identity_id || member.team_id}-${member.role}`}
-                      role={member.role}
-                      subject={member.name || member.identity_id || member.team_id || 'member'}
-                      scopeName={`project ${scope.project}`}
-                      roles={hasFeature('project_rbac') ? projectRoles : [member.role]}
-                      onSave={async (role) => {
-                        await unwrap(
-                          client.PUT('/projects/{project}/members', {
-                            params: { path: { project: scope.project } },
-                            body: {
-                              identity_id: member.identity_id,
-                              team_id: member.team_id,
-                              role,
-                            },
-                          }),
-                        )
-                        refresh()
-                      }}
-                    />
-                  ) : (
-                    <span className="label-chip">{member.role}</span>
-                  )}
-                </div>
-              ))
+              <ul className="settings-rows">
+                {project.data.items.map((member) => (
+                  <li
+                    className="settings-row settings-row-member"
+                    key={member.identity_id || member.team_id}
+                  >
+                    <div className="settings-row-identity">
+                      <Icon name={member.team_id ? 'grid' : 'user'} size={16} />
+                      <div>
+                        <strong>{member.name}</strong>
+                        <small>{member.team_id ? 'Team' : 'Member'}</small>
+                      </div>
+                    </div>
+                    <div className="settings-row-status">
+                      {canShareProject ? (
+                        <RoleEditor
+                          key={`${member.identity_id || member.team_id}-${member.role}`}
+                          role={member.role}
+                          subject={member.name || member.identity_id || member.team_id || 'member'}
+                          scopeName={`project ${scope.project}`}
+                          roles={hasFeature('project_rbac') ? projectRoles : [member.role]}
+                          onSave={async (role) => {
+                            await unwrap(
+                              client.PUT('/projects/{project}/members', {
+                                params: { path: { project: scope.project } },
+                                body: {
+                                  identity_id: member.identity_id,
+                                  team_id: member.team_id,
+                                  role,
+                                },
+                              }),
+                            )
+                            refresh()
+                          }}
+                        />
+                      ) : (
+                        <span className="label-chip">{member.role}</span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <p className="field-help">
                 No direct members or teams. Installation administrators retain access.
@@ -427,6 +444,7 @@ export default function TeamSettings() {
         onOpenChange={(open) => {
           if (!open && !busy) setUsernameMember(null)
         }}
+        className={focusedDialog}
         title="Team username"
         description={`A unique username for ${usernameMember?.name || 'this member'} in ${current?.name || 'this team'}.`}
       >
@@ -486,14 +504,23 @@ export default function TeamSettings() {
         onOpenChange={(open) => {
           if (!busy && !open) setRemoveTeam(null)
         }}
+        className={focusedDialog}
         title={`Delete ${removeTeam?.name || 'this team'}?`}
-        description="Remove the team, its memberships, project grants, and pending team invitations. Individual accounts remain."
+        description="This cannot be undone. Members lose access granted through this team."
       >
-        <div className="dialog-body field-stack">
-          <p>
-            This also removes team access to every project. This cleanup remains available on Free.
-          </p>
-          <label>
+        <div className="dialog-body">
+          <ReviewFacts
+            facts={[
+              ['Team', removeTeam?.name],
+              [
+                'Removed',
+                'Memberships, project grants in every project and pending team invitations.',
+              ],
+              ['Kept', 'Individual accounts and access granted outside this team.'],
+            ]}
+          />
+          <p className="field-help">This cleanup remains available on Free.</p>
+          <label className="grid gap-1.5">
             Type <code>{removeTeam?.name}</code> to delete this team
             <Input
               value={confirmation}
@@ -507,7 +534,7 @@ export default function TeamSettings() {
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRemoveTeam(null)}>
-            Keep team
+            Cancel
           </Button>
           <Button
             variant="danger"
@@ -530,7 +557,7 @@ export default function TeamSettings() {
               }
             }}
           >
-            Delete team
+            {busy ? 'Deleting…' : `Delete ${removeTeam?.name || 'team'}`}
           </Button>
         </div>
       </Dialog>
@@ -547,6 +574,7 @@ export default function TeamSettings() {
         onOpenChange={(open) => {
           if (!busy) setAdding(open)
         }}
+        className={focusedDialog}
         title="Create a team"
         description="You become this team’s owner."
       >
@@ -616,9 +644,8 @@ function RoleEditor({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [confirmation, setConfirmation] = useState('')
   const save = async (value: string) => {
-    if (busy || (!value && confirmation !== subject)) return
+    if (busy) return
     setBusy(true)
     setError('')
     try {
@@ -640,7 +667,6 @@ function RoleEditor({
           if (busy || next === role) return
           if (!next) {
             setError('')
-            setConfirmation('')
             setConfirmOpen(true)
           } else if (next.startsWith('custom:')) setCustomReview(true)
           else void save(next)
@@ -684,7 +710,7 @@ function RoleEditor({
         {error && !confirmOpen && !customReview && <RequestError error={error} />}
       </form>
       <Dialog
-        className="wrap-anywhere"
+        className={`${focusedDialog} wrap-anywhere`}
         open={customReview}
         onOpenChange={(open) => {
           if (!busy) setCustomReview(open)
@@ -693,18 +719,24 @@ function RoleEditor({
         description={`Apply this role to ${subject} in ${scopeName}. Other memberships may grant additional access.`}
       >
         <div className="dialog-body">
-          <p>{customRoles.data?.items.find((r) => r.id === next)?.name}</p>
-          <ul>
-            {customRoles.data?.items
-              .find((r) => r.id === next)
-              ?.permissions.map((p) => (
-                <li key={p}>{rolePermissions.find((x) => x.id === p)?.name || p}</li>
-              ))}
-          </ul>
+          <ReviewFacts
+            facts={[
+              ['Member', subject],
+              ['Scope', scopeName],
+              ['Role', customRoles.data?.items.find((r) => r.id === next)?.name || next],
+              [
+                'Permissions',
+                customRoles.data?.items
+                  .find((r) => r.id === next)
+                  ?.permissions.map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
+                  .join(' · '),
+              ],
+            ]}
+          />
           {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
-          <Button variant="ghost" disabled={busy} onClick={() => setCustomReview(false)}>
+          <Button disabled={busy} onClick={() => setCustomReview(false)}>
             Cancel
           </Button>
           <Button
@@ -714,41 +746,41 @@ function RoleEditor({
               await save(next)
             }}
           >
-            Apply permissions
+            {busy ? 'Applying…' : `Apply role to ${subject}`}
           </Button>
         </div>
       </Dialog>
       <Dialog
         open={confirmOpen}
+        className={focusedDialog}
         onOpenChange={(open) => {
           if (!busy) setConfirmOpen(open)
         }}
         title={`Remove ${subject}’s access?`}
-        description={`Remove this membership from ${scopeName}. Other memberships and the account remain.`}
+        description={`New requests from ${subject} in ${scopeName} are denied.`}
       >
-        <div className="dialog-body field-stack">
-          <label>
-            Type <code>{subject}</code> to remove this membership
-            <Input
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Confirm member name"
-            />
-          </label>
+        <div className="dialog-body">
+          <ReviewFacts
+            facts={[
+              ['Member', subject],
+              ['Scope', scopeName],
+              ['Removed', `The ${role} membership.`],
+              ['Kept', 'The account and its other memberships. You can invite them again later.'],
+            ]}
+          />
           {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
-          <Button variant="ghost" disabled={busy} onClick={() => setConfirmOpen(false)}>
-            Keep access
+          <Button disabled={busy} onClick={() => setConfirmOpen(false)}>
+            Cancel
           </Button>
           <Button
             variant="danger"
-            disabled={busy || confirmation !== subject}
+            aria-busy={busy || undefined}
+            disabled={busy}
             onClick={() => void save('')}
           >
-            {busy ? 'Removing…' : 'Remove access'}
+            {busy ? 'Removing…' : `Remove ${subject}`}
           </Button>
         </div>
       </Dialog>
@@ -936,11 +968,10 @@ export function InstallationUsers() {
   const [changeAction, setChangeAction] = useState<
     'grant-admin' | 'remove-admin' | 'enable' | 'disable'
   >('enable')
-  const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const removingAccess = changeAction === 'remove-admin' || changeAction === 'disable'
-  const confirmationTarget = change?.name || change?.email || change?.id || ''
+  const subject = change?.name || change?.email || change?.id || ''
   return (
     <>
       <div className="section-toolbar">
@@ -958,83 +989,105 @@ export function InstallationUsers() {
       ) : users.error ? (
         <ErrorState error={users.error} />
       ) : (
-        <div className="panel settings-session-list">
+        <ul className="settings-rows" aria-label="Installation accounts">
           {users.data?.items.map((user) => (
-            <div className="settings-list-row" key={user.id}>
-              <div>
-                <strong>
-                  {user.name}
-                  {user.owner ? ' · Owner' : ''}
-                </strong>
-                <small>
-                  {user.email} ·{' '}
-                  {user.disabled ? 'Disabled' : user.admin ? 'Administrator' : 'Member'}
-                </small>
+            <li className="settings-row settings-row-member" key={user.id}>
+              <div className="settings-row-identity">
+                <Icon name="user" size={16} />
+                <div>
+                  <strong>{user.name}</strong>
+                  <small>{user.email}</small>
+                </div>
               </div>
-              {!user.owner && (
-                <Menu
-                  trigger={
-                    <Button
-                      variant="ghost"
-                      size="icon"
+              <span
+                className={`settings-row-status settings-state settings-state-${user.disabled ? 'muted' : 'ok'}`}
+              >
+                {user.disabled
+                  ? 'Disabled'
+                  : user.owner
+                    ? 'Owner'
+                    : user.admin
+                      ? 'Administrator'
+                      : 'Member'}
+              </span>
+              <div className="settings-row-actions">
+                {!user.owner && (
+                  <Menu
+                    trigger={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={busy}
+                        aria-label={`Actions for ${user.name || user.email}`}
+                      >
+                        <MoreHorizontal size={16} strokeWidth={1.75} />
+                      </Button>
+                    }
+                  >
+                    <MenuItem
+                      destructive={user.admin}
                       disabled={busy}
-                      aria-label={`Actions for ${user.name || user.email}`}
+                      onSelect={() => {
+                        setError('')
+                        setChangeAction(user.admin ? 'remove-admin' : 'grant-admin')
+                        setChange({ ...user, admin: !user.admin })
+                      }}
                     >
-                      <MoreHorizontal size={16} strokeWidth={1.75} />
-                    </Button>
-                  }
-                >
-                  <MenuItem
-                    destructive={user.admin}
-                    disabled={busy}
-                    onSelect={() => {
-                      setError('')
-                      setConfirmation('')
-                      setChangeAction(user.admin ? 'remove-admin' : 'grant-admin')
-                      setChange({ ...user, admin: !user.admin })
-                    }}
-                  >
-                    {user.admin ? 'Remove admin' : 'Make admin'}
-                  </MenuItem>
-                  <MenuItem
-                    destructive={!user.disabled}
-                    disabled={busy}
-                    onSelect={() => {
-                      setError('')
-                      setConfirmation('')
-                      setChangeAction(user.disabled ? 'enable' : 'disable')
-                      setChange({ ...user, disabled: !user.disabled })
-                    }}
-                  >
-                    {user.disabled ? 'Enable' : 'Disable'}
-                  </MenuItem>
-                </Menu>
-              )}
-            </div>
+                      {user.admin ? 'Remove admin' : 'Make admin'}
+                    </MenuItem>
+                    <MenuItem
+                      destructive={!user.disabled}
+                      disabled={busy}
+                      onSelect={() => {
+                        setError('')
+                        setChangeAction(user.disabled ? 'enable' : 'disable')
+                        setChange({ ...user, disabled: !user.disabled })
+                      }}
+                    >
+                      {user.disabled ? 'Enable' : 'Disable'}
+                    </MenuItem>
+                  </Menu>
+                )}
+              </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
       <Dialog
         open={Boolean(change)}
         onOpenChange={(open) => {
           if (!busy && !open) setChange(null)
         }}
-        title={`Update ${change?.name || 'account'}?`}
-        description={`Result: ${change?.disabled ? 'disabled account' : 'enabled account'}, ${change?.admin ? 'installation administrator' : 'member'}.`}
+        className={focusedDialog}
+        title={`${userAction(changeAction, subject)}?`}
+        description={
+          removingAccess
+            ? 'Takes effect on their next request. You can reverse it later.'
+            : 'Takes effect on their next request.'
+        }
       >
-        <div className="dialog-body field-stack">
-          {removingAccess && (
-            <label>
-              Type <code>{confirmationTarget}</code> to{' '}
-              {changeAction === 'disable' ? 'disable this account' : 'remove administrator access'}
-              <Input
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                aria-label="Confirm account name"
-              />
-            </label>
+        <div className="dialog-body">
+          <ReviewFacts
+            facts={[
+              [
+                'Account',
+                change
+                  ? `${subject}${change.email && change.email !== subject ? ` · ${change.email}` : ''}`
+                  : '',
+              ],
+              ['Sign-in', change?.disabled ? 'Blocked' : 'Allowed'],
+              [
+                'Access',
+                change?.admin
+                  ? 'Installation administrator across every project'
+                  : 'Member; project and team roles still apply',
+              ],
+            ]}
+          />
+          {changeAction === 'disable' && (
+            <ReviewNotice tone="warn" title="This account can no longer sign in">
+              Re-enable it here to restore access.
+            </ReviewNotice>
           )}
           {error && <RequestError error={error} />}
         </div>
@@ -1044,9 +1097,10 @@ export function InstallationUsers() {
           </Button>
           <Button
             variant={removingAccess ? 'danger' : 'primary'}
-            disabled={busy || !change || (removingAccess && confirmation !== confirmationTarget)}
+            aria-busy={busy || undefined}
+            disabled={busy || !change}
             onClick={async () => {
-              if (!change || busy || (removingAccess && confirmation !== confirmationTarget)) return
+              if (!change || busy) return
               setBusy(true)
               setError('')
               try {
@@ -1065,18 +1119,17 @@ export function InstallationUsers() {
               }
             }}
           >
-            {busy
-              ? 'Updating…'
-              : changeAction === 'disable'
-                ? 'Disable account'
-                : changeAction === 'enable'
-                  ? 'Enable account'
-                  : changeAction === 'remove-admin'
-                    ? 'Remove administrator'
-                    : 'Make administrator'}
+            {busy ? 'Updating…' : userAction(changeAction, subject)}
           </Button>
         </div>
       </Dialog>
     </>
   )
+}
+
+function userAction(action: 'grant-admin' | 'remove-admin' | 'enable' | 'disable', name: string) {
+  if (action === 'disable') return `Disable ${name}`
+  if (action === 'enable') return `Enable ${name}`
+  if (action === 'remove-admin') return `Remove administrator access from ${name}`
+  return `Make ${name} an administrator`
 }

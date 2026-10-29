@@ -6,10 +6,10 @@ import { message, timestamp } from '../lib/api'
 import { providerNames, scopeSummary, type SecretProvider } from '../lib/secret-providers'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
-import { Input } from './ui/input'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { SecretProviderIcon } from './secret-provider-icon'
+import { focusedDialog, ReviewFacts, ReviewNotice } from './operation-review'
 import { Empty, ErrorState, HeadingHelp, Loading, Note, PageHeader, RequestError } from './shared'
 
 export function SecretProviders({
@@ -28,7 +28,6 @@ export function SecretProviders({
     gcTime: 0,
   })
   const [removing, setRemoving] = useState<SecretProvider | null>(null)
-  const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   if (!scope.identity.admin)
@@ -86,36 +85,36 @@ export function SecretProviders({
         <Empty
           icon="lock"
           title="No external secret providers"
-          description="Connect a provider to use its secrets in application TOML."
+          description="Applications can only use native secrets until a provider is connected."
+          action={add}
         />
       ) : (
-        <div className="grid gap-0">
+        <ul className="settings-rows" aria-label="Secret providers">
           {items.map((provider) => (
-            <div
-              className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--hairline)] py-4 last:border-b-0"
-              key={provider.name}
-            >
-              <div className="flex min-w-0 flex-1 gap-3">
-                <div className="mt-1 shrink-0">
-                  <SecretProviderIcon kind={provider.kind} />
-                </div>
-                <div className="grid min-w-0 gap-1">
-                  <strong className="break-all">{provider.name}</strong>
-                  <span className="text-sm">{providerNames[provider.kind]}</span>
-                  <span className="muted-text break-all text-sm">{provider.endpoint}</span>
-                  <p className="m-0 break-words text-sm">
-                    {provider.scopes.map(scopeSummary).join(' · ')}
-                  </p>
-                  <small className="muted-text">
-                    Revision {provider.revision} · updated {timestamp(provider.updated_at)}
-                  </small>
+            <li className="settings-row" key={provider.name}>
+              <div className="settings-row-identity">
+                <Icon name="lock" size={16} />
+                <div>
+                  <strong>{provider.name}</strong>
+                  <small>{provider.endpoint}</small>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <span className="settings-row-status secret-provider-kind">
+                <SecretProviderIcon kind={provider.kind} />
+                {providerNames[provider.kind]}
+              </span>
+              <div className="settings-row-meta">
+                <span>{provider.scopes.map(scopeSummary).join(' · ') || 'No project access'}</span>
+                <span>
+                  Revision {provider.revision} · updated {timestamp(provider.updated_at)}
+                </span>
+              </div>
+              <div className="settings-row-actions">
                 <Button asChild size="sm">
                   <Link
                     to="/settings/secret-providers/$providerName/edit"
                     params={{ providerName: provider.name }}
+                    aria-label={`Edit ${provider.name}`}
                   >
                     Edit
                   </Link>
@@ -126,29 +125,29 @@ export function SecretProviders({
                   aria-label={`Delete ${provider.name}`}
                   onClick={() => {
                     setRemoving(provider)
-                    setConfirmation('')
                     setError('')
                   }}
                 >
                   <Icon name="trash" size={15} />
                 </Button>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
       <Dialog
         open={Boolean(removing)}
+        className={focusedDialog}
         onOpenChange={(open) => {
           if (!busy && !open) setRemoving(null)
         }}
         title={`Delete ${removing?.name || 'provider'}?`}
-        description="Remove its saved credentials and access grants. Providers still referenced by applications cannot be deleted."
+        description="Its saved credentials are erased and cannot be shown again."
       >
         <form
           onSubmit={async (event) => {
             event.preventDefault()
-            if (!removing || confirmation !== removing.name || busy) return
+            if (!removing || busy) return
             setBusy(true)
             setError('')
             try {
@@ -168,29 +167,39 @@ export function SecretProviders({
             }
           }}
         >
-          <div className="dialog-body field-stack">
-            <label className="min-w-0 break-all">
-              Type {removing?.name} to confirm
-              <Input
-                required
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                autoComplete="off"
+          <div className="dialog-body">
+            {removing && (
+              <ReviewFacts
+                facts={[
+                  [
+                    'Provider',
+                    <>
+                      {removing.name} · {providerNames[removing.kind]} · revision{' '}
+                      {removing.revision}
+                    </>,
+                  ],
+                  ['Endpoint', removing.endpoint],
+                  ['Removed', 'Saved credentials and project access grants.'],
+                  [
+                    'Kept',
+                    'Secrets stored in the provider itself, and native application secrets.',
+                  ],
+                ]}
               />
-            </label>
+            )}
+            <ReviewNotice title="Providers in use cannot be deleted">
+              If an application still references this provider, the server refuses the deletion and
+              nothing changes.
+            </ReviewNotice>
             {error && <RequestError error={error} />}
           </div>
           <div className="dialog-footer">
             <Button type="button" disabled={busy} onClick={() => setRemoving(null)}>
-              Keep provider
+              Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="danger"
-              disabled={busy || confirmation !== removing?.name}
-            >
+            <Button type="submit" variant="danger" aria-busy={busy || undefined} disabled={busy}>
               <Icon name="trash" size={15} />
-              {busy ? 'Deleting…' : 'Delete provider'}
+              {busy ? 'Deleting…' : `Delete ${removing?.name || 'provider'}`}
             </Button>
           </div>
         </form>

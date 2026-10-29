@@ -11,6 +11,7 @@ import {
 import { parentNavigation } from '../lib/navigation'
 import { SecretProviderReview } from './secret-provider-review'
 import { SecretProviderScopes } from './secret-provider-scopes'
+import './operation-review.test'
 
 const credentials = {
   token: 'private-vault-token',
