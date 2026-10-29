@@ -1,24 +1,35 @@
 import { useSyncExternalStore } from 'react'
-import { accentForeground, accentText, DEFAULT_ACCENT, validAccent } from './appearance-color'
+import { accentForeground, accentText, cloudSurfaces, DEFAULT_ACCENT, validAccent } from './appearance-color'
 
 export type Theme = 'dark' | 'light'
 const themeEvent = 'hakopod-theme-change'
+const defaultAccent = () => document.documentElement.dataset.edition === 'cloud' ? '#AC99FF' : DEFAULT_ACCENT
 
 function currentTheme(): Theme {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
 }
 
 function currentAccent() {
-  return document.documentElement.dataset.accent || DEFAULT_ACCENT
+  return document.documentElement.dataset.accent || defaultAccent()
 }
 
 function applyAccent(color: string) {
   const root = document.documentElement
-  const accent = validAccent(color) ? color.toUpperCase() : DEFAULT_ACCENT
+  const accent = validAccent(color) ? color.toUpperCase() : defaultAccent()
   root.dataset.accent = accent
   root.style.setProperty('--action', accent)
   root.style.setProperty('--action-fg', accentForeground(accent))
   root.style.setProperty('--action-text', accentText(accent, currentTheme()))
+  if (root.dataset.edition === 'cloud') {
+    const surfaces = cloudSurfaces(accent, currentTheme())
+    for (const [name, value] of Object.entries(surfaces)) {
+      const token = name === 'surface2' ? 'surface-2' : name === 'surface3' ? 'surface-3' : name
+      root.style.setProperty('--' + token, value)
+    }
+    root.style.setProperty('--state', accentText(accent, currentTheme()))
+    root.style.setProperty('--state-dim', surfaces.surface3)
+    root.style.setProperty('--hatch-base', surfaces.card)
+  }
 }
 
 function applyTheme(theme: Theme) {
@@ -57,9 +68,9 @@ function subscribe(listener: () => void) {
   // The connection screen mounts this store before authenticated content appears.
   // Initialize once; a blocked storage write must not reset this visit's selection.
   if (!document.documentElement.dataset.accent) {
-    let accent = DEFAULT_ACCENT
+    let accent = defaultAccent()
     try {
-      accent = localStorage.getItem('hakopod-accent') || DEFAULT_ACCENT
+      accent = localStorage.getItem('hakopod-accent') || defaultAccent()
     } catch {}
     applyAccent(accent)
   }
@@ -69,7 +80,7 @@ function subscribe(listener: () => void) {
       listener()
     }
     if (event.key === 'hakopod-accent' || event.key === null) {
-      applyAccent(event.newValue || DEFAULT_ACCENT)
+      applyAccent(event.newValue || defaultAccent())
       listener()
     }
   }

@@ -1326,3 +1326,28 @@ html[data-accent] .button-primary:hover {
     grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   }
 }
+
+
+/* Cloud's persistent navigation shares the authorized destination list. */
+.hako-cloud-sidebar { display: none; }
+@media (min-width: 1024px) {
+  html[data-edition='cloud'] .hako-shell { --cloud-rail: 200px; @apply pl-[var(--cloud-rail)]; }
+  html[data-edition='cloud'] .hako-shell[data-sidebar-collapsed] { --cloud-rail: 60px; }
+  .hako-cloud-sidebar { @apply fixed inset-y-0 left-0 z-20 flex w-[var(--cloud-rail)] flex-col border-r; background: var(--card); border-color: var(--hairline); }
+  .hako-cloud-sidebar-brand { @apply relative flex h-11 shrink-0 items-center gap-1 px-2; border-bottom: 1px solid var(--hairline); }
+  .hako-cloud-sidebar-brand .hako-edition-brand { display: none; }
+  .hako-cloud-sidebar nav { @apply flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3; }
+  .hako-cloud-sidebar .hako-nav-link { @apply flex min-h-9 items-center gap-2 px-2 py-1.5 text-[13px]; }
+  .hako-cloud-sidebar-bottom { @apply flex flex-col gap-1 p-2; }
+  html[data-edition='cloud'] .hako-global-header { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: 'scope tools'; min-height: 44px; }
+  html[data-edition='cloud'] .hako-global-header :is(.hako-brand-group,.hako-global-nav) { display: none; }
+  [data-sidebar-collapsed] .hako-cloud-sidebar-brand { @apply justify-center p-0; }
+  [data-sidebar-collapsed] .hako-cloud-sidebar-brand > button { @apply absolute left-full top-1.5 ml-1; background: var(--background); }
+  [data-sidebar-collapsed] .hako-cloud-sidebar .hako-nav-link { @apply justify-center; }
+  [data-sidebar-collapsed] .hako-cloud-sidebar .hako-nav-link > span { display: none; }
+  .hako-cloud-sidebar .hako-nav-link > .brackets { display: none; }
+  [data-sidebar-collapsed] .hako-cloud-sidebar-bottom { display: none; }
+}
+html[data-edition='cloud'] .hako-page-heading.page-heading { @apply py-2.5; }
+html[data-edition='cloud'] .hako-page-heading.page-heading h1 { @apply text-lg leading-6; }
+html[data-edition='cloud'] .button { @apply text-[13px]; }
