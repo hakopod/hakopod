@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { components } from '../lib/api.generated'
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -13,10 +13,18 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
-import { Badge, Card } from './ui/surfaces'
+import { Badge } from './ui/surfaces'
 import { FormPage, FormHint, FormSection } from './form-page'
 import { InstallationReviewRows, useInstallationFormFocus } from './installation-form-fields'
-import { Copy, Empty, ErrorState, HeadingHelp, Loading, Note, RequestError, Status } from './shared'
+import { Copy, Empty, ErrorState, Loading, Note, RequestError, Status } from './shared'
+import { focusedDialog, plural, ReviewFacts } from './operation-review'
+import {
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRows,
+  SettingsSection,
+  SettingsState,
+} from './settings-section'
 
 type SlackEvent = string
 type SlackChannel = { id: string; name: string; is_private?: boolean }
@@ -108,64 +116,46 @@ function useSlackEntitlement() {
   }
 }
 
-function InstallationSlackUnavailable({ state }: { state: SlackIntegration }) {
+// Why Slack cannot be used here, in one visible sentence, plus the one action that helps.
+function useSlackUnavailable(state: SlackIntegration) {
   const { license, enabled } = useSlackEntitlement()
+  if (dashboardEdition.cloud) {
+    if (state.reason === 'license_required' || state.reason === 'pro_required')
+      return {
+        reason: 'Requires an active Hakopod Cloud Pro plan for this workspace.',
+        action: (
+          <Button asChild size="sm" variant="primary">
+            <a href="/workspaces/plans">View Cloud plans</a>
+          </Button>
+        ),
+      }
+    return {
+      reason:
+        state.reason === 'operator_configuration_required'
+          ? 'Waiting for Cloud operator configuration.'
+          : state.reason === 'node_upgrade_required'
+            ? 'Needs an upgrade on this workspace node.'
+            : state.reason === 'relay_configuration_required'
+              ? 'Needs this workspace node’s relay configuration.'
+              : 'Not available for this workspace yet.',
+    }
+  }
   if (!license.isPending && !license.error && !enabled)
-    return (
-      <Card className="feature-lock slack-feature-lock">
-        <div className="feature-lock-symbol">
-          <Icon name="lock" size={23} />
-        </div>
-        <div>
-          <h2>Slack requires Hakopod Pro</h2>
-          <p>
-            Activate Hakopod Pro on this installation to connect Slack and receive notifications.
-          </p>
-        </div>
-        <Button asChild className="slack-feature-lock-action" variant="outline" size="sm">
+    return {
+      reason: 'Requires Hakopod Pro on this installation.',
+      action: (
+        <Button asChild size="sm">
           <Link to="/settings" search={{ tab: 'license' }}>
             View license
           </Link>
         </Button>
-      </Card>
-    )
-  return (
-    <Note>
-      {state.reason
-        ? `Slack notifications are unavailable: ${state.reason.replaceAll('_', ' ')}.`
-        : 'Slack notifications are not available for this installation. Check the active Pro license and Slack setup.'}
-    </Note>
-  )
-}
-
-function CloudSlackUnavailable({ state }: { state: SlackIntegration }) {
-  const proRequired = state.reason === 'license_required' || state.reason === 'pro_required'
-  if (!proRequired)
-    return (
-      <Note>
-        {state.reason === 'operator_configuration_required'
-          ? 'Slack notifications are waiting for Cloud operator configuration.'
-          : state.reason === 'node_upgrade_required'
-            ? 'Slack notifications need an upgrade on this workspace node.'
-            : state.reason === 'relay_configuration_required'
-              ? 'Slack notifications need this workspace node’s relay configuration.'
-              : 'Slack notifications are not available for this workspace yet.'}
-      </Note>
-    )
-  return (
-    <Card className="feature-lock slack-feature-lock">
-      <div className="feature-lock-symbol">
-        <Icon name="lock" size={23} />
-      </div>
-      <div>
-        <h2>Slack requires Cloud Pro</h2>
-        <p role="status">This workspace needs an active Hakopod Cloud Pro plan.</p>
-      </div>
-      <Button asChild className="slack-feature-lock-action" variant="primary" size="sm">
-        <a href="/workspaces/plans">View Cloud plans</a>
-      </Button>
-    </Card>
-  )
+      ),
+    }
+  return {
+    reason: state.reason
+      ? `Unavailable: ${state.reason.replaceAll('_', ' ')}.`
+      : 'Not available. Check the active Pro license and Slack setup.',
+  }
 }
 
 function hasSearchMarker(value: unknown) {
@@ -173,106 +163,113 @@ function hasSearchMarker(value: unknown) {
 }
 
 function SlackUnavailable({ state }: { state: SlackIntegration }) {
-  return dashboardEdition.cloud ? (
-    <CloudSlackUnavailable state={state} />
-  ) : (
-    <InstallationSlackUnavailable state={state} />
+  const { reason, action } = useSlackUnavailable(state)
+  return (
+    <SettingsEmpty title="Slack notifications are unavailable" action={action}>
+      {reason}
+    </SettingsEmpty>
   )
 }
 
 export function SlackSettingsPanel() {
   const allowed = useSlackAccess()
   const query = useSlackIntegration()
-  if (!allowed)
-    return (
-      <section className="grid gap-3" aria-label="Available integrations">
-        <IntegrationCatalogGrid>
-          <IntegrationCatalogCard
-            name="Slack"
-            badge={<Badge tone="accent">PRO</Badge>}
-            description="Send selected Hakopod events to one Slack channel."
-          >
-            <Note>
-              {dashboardEdition.cloud
-                ? 'A workspace owner can connect Slack and choose notification delivery.'
-                : 'An installation administrator can connect Slack and choose notification delivery.'}
-            </Note>
-          </IntegrationCatalogCard>
-        </IntegrationCatalogGrid>
-      </section>
-    )
-  if (query.isPending) return <Loading />
-  if (query.error || !query.data)
-    return <ErrorState error={query.error} retry={() => void query.refetch()} />
-  const state = query.data as SlackIntegration
-  return <SlackCatalogEntry state={state} />
-}
-
-function IntegrationCatalogGrid({ children }: { children: ReactNode }) {
-  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{children}</div>
-}
-
-function IntegrationCatalogCard({
-  name,
-  description,
-  badge,
-  children,
-}: {
-  name: string
-  description: string
-  badge?: ReactNode
-  children: ReactNode
-}) {
+  const state = query.data as SlackIntegration | undefined
   return (
-    <Card className="grid min-w-0 content-start gap-3 p-4">
-      <div className="flex min-w-0 items-start gap-3">
-        <SlackLogo className="size-9 shrink-0" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="min-w-0 text-base font-medium [overflow-wrap:anywhere]">{name}</h2>
-            {badge}
-          </div>
-          <p className="muted-text m-0 mt-1 text-sm">{description}</p>
-        </div>
-      </div>
-      {children}
-    </Card>
+    <SettingsSection
+      title="Integrations"
+      help="Send selected Hakopod events to tools your team already uses. Provider credentials stay on the server."
+      state={
+        !allowed
+          ? dashboardEdition.cloud
+            ? 'Managed by workspace owners'
+            : 'Managed by installation administrators'
+          : state
+            ? state.configured
+              ? `Slack connected to ${state.team?.name || 'a workspace'}`
+              : state.available
+                ? 'Slack not connected'
+                : 'Slack unavailable'
+            : undefined
+      }
+    >
+      {!allowed ? (
+        <SettingsRows label="Integrations">
+          <SettingsRow
+            mark={<SlackLogo className="size-4 shrink-0" />}
+            name={<SlackName />}
+            detail="Send selected Hakopod events to one Slack channel."
+            meta={
+              dashboardEdition.cloud
+                ? 'A workspace owner connects Slack.'
+                : 'An installation administrator connects Slack.'
+            }
+          />
+        </SettingsRows>
+      ) : query.isPending ? (
+        <Loading />
+      ) : query.error || !state ? (
+        <ErrorState error={query.error} retry={() => void query.refetch()} />
+      ) : (
+        <SettingsRows label="Integrations">
+          <SlackRow state={state} />
+        </SettingsRows>
+      )}
+    </SettingsSection>
   )
 }
 
-function SlackCatalogEntry({ state }: { state: SlackIntegration }) {
-  const unavailable = !state.available
-  const connection = state.configured
-    ? `${state.team?.name || 'Slack workspace'}${state.channel ? ` · #${state.channel.name}` : ''}`
-    : unavailable
-      ? 'Unavailable'
-      : 'Not connected'
+function SlackName() {
   return (
-    <section className="grid gap-3" aria-label="Available integrations">
-      <IntegrationCatalogGrid>
-        <IntegrationCatalogCard
-          name="Slack"
-          badge={<Badge tone="accent">PRO</Badge>}
-          description="Send selected Hakopod events to one Slack channel."
-        >
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <Status
-              value={unavailable ? 'unavailable' : state.configured ? 'connected' : 'not connected'}
-              small
-            />
-            <span className="min-w-0 [overflow-wrap:anywhere]">{connection}</span>
-          </div>
-          <div>
-            <Button asChild size="sm" variant="primary">
-              <Link to="/settings/integrations/slack" search={{ configure: undefined, connected: undefined }}>
+    <span className="inline-flex flex-wrap items-center gap-2">
+      Slack <Badge tone="accent">PRO</Badge>
+    </span>
+  )
+}
+
+function SlackRow({ state }: { state: SlackIntegration }) {
+  const unavailable = useSlackUnavailable(state)
+  return (
+    <SettingsRow
+      mark={<SlackLogo className="size-4 shrink-0" />}
+      name={<SlackName />}
+      detail={
+        state.configured
+          ? `${state.team?.name || 'Slack workspace'}${state.channel ? ` · #${state.channel.name}` : ''}`
+          : 'Send selected Hakopod events to one Slack channel.'
+      }
+      status={
+        !state.available ? (
+          <SettingsState tone="warn">Unavailable</SettingsState>
+        ) : state.configured ? (
+          <SettingsState tone="ok">Connected</SettingsState>
+        ) : (
+          <SettingsState tone="muted">Not connected</SettingsState>
+        )
+      }
+      meta={
+        !state.available
+          ? unavailable.reason
+          : state.configured
+            ? plural(state.events.length, 'event')
+            : undefined
+      }
+      actions={
+        <>
+          {!state.available && unavailable.action}
+          {(state.available || state.configured) && (
+            <Button asChild size="sm" variant={state.configured ? 'outline' : 'primary'}>
+              <Link
+                to="/settings/integrations/slack"
+                search={{ configure: undefined, connected: undefined }}
+              >
                 {state.configured ? 'Manage' : 'Set up Slack'}
               </Link>
             </Button>
-          </div>
-        </IntegrationCatalogCard>
-      </IntegrationCatalogGrid>
-      {unavailable && <SlackUnavailable state={state} />}
-    </section>
+          )}
+        </>
+      }
+    />
   )
 }
 
@@ -292,26 +289,6 @@ function SlackOverview({ state }: { state: SlackIntegration }) {
     void cache.invalidateQueries({ queryKey: ['slack-deliveries', scope] })
     if (workspace.id) void cache.invalidateQueries({ queryKey: ['cloud-workspace', workspace.id] })
   }
-  const startConnect = async () => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    try {
-      const result = await unwrap(client.POST('/integrations/slack/connect', { body: {} }))
-      const target = new URL(result.authorization_url)
-      if (
-        target.origin !== 'https://slack.com' ||
-        target.pathname !== '/oauth/v2/authorize' ||
-        target.username ||
-        target.password
-      )
-        throw new Error('Slack returned an unsupported authorization address.')
-      window.location.assign(target.href)
-    } catch (cause) {
-      setError(message(cause))
-      setBusy(false)
-    }
-  }
   const test = async () => {
     if (busy) return
     setBusy(true)
@@ -330,123 +307,93 @@ function SlackOverview({ state }: { state: SlackIntegration }) {
       setBusy(false)
     }
   }
-  const connectionRows: [string, ReactNode][] = [
-    ['Workspace', state.team?.name || 'Connected workspace'],
-    ['Channel', state.channel ? `#${state.channel.name}` : 'Choose a channel'],
-    [
-      'Events',
-      state.events.length
-        ? state.events.map((event) => eventLabel(event, eventCatalog)).join(', ')
-        : 'None selected',
-    ],
-  ]
-  const disconnectButton = (
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      disabled={busy}
-      onClick={() => setDisconnecting(true)}
-    >
-      Disconnect
-    </Button>
-  )
   return (
-    <div className="grid gap-4">
-      <div className="section-toolbar">
-        <div className="hako-section-heading-title">
-          <h2 className="inline-flex items-center gap-2">
-            <SlackLogo className="size-5 shrink-0" />
-            Connection
-          </h2>
-          <HeadingHelp title="Slack connection">
-            Send selected Hakopod events to one Slack channel. Slack credentials stay on the server.
-          </HeadingHelp>
-        </div>
-        {state.available && (
-          <Button asChild size="sm" variant="primary">
-            <Link to="/settings/integrations/slack" search={{ configure: true, connected: undefined }}>
-              {state.configured ? 'Configure' : 'Set up Slack'}
-            </Link>
-          </Button>
-        )}
-      </div>
-      {!state.available ? (
-        <>
-          <SlackUnavailable state={state} />
-          {state.configured && (
-            <Card className="grid gap-4 p-4">
-              <InstallationReviewRows rows={connectionRows} />
-              <div className="flex flex-wrap gap-2">{disconnectButton}</div>
-            </Card>
-          )}
-        </>
-      ) : !state.configured ? (
-        <Card className="grid gap-3 p-4">
-          <div>
-            <strong className="inline-flex items-center gap-2">
-              <SlackLogo className="size-5 shrink-0" />
-              {state.mode === 'cloud' ? 'Hakopod Cloud Slack app' : 'Your Slack app'}
-            </strong>
-            <p className="muted-text m-0 mt-1 text-sm">
-              {state.mode === 'cloud'
-                ? 'Authorize the published Hakopod Cloud app in the Slack workspace that should receive notifications.'
-                : 'Create an app from the generated manifest, save its credentials, then authorize its Slack workspace.'}
-            </p>
-          </div>
-          {state.mode === 'cloud' && (
-            <div>
-              <Button
-                type="button"
-                size="sm"
-                variant="primary"
-                disabled={busy || !state.setup_available}
-                onClick={() => void startConnect()}
-              >
-                {busy ? 'Opening Slack…' : 'Connect Slack'}
-              </Button>
-            </div>
-          )}
-          {!state.setup_available && <Note>Slack setup is not ready for this installation.</Note>}
-        </Card>
-      ) : (
-        <Card className="grid gap-4 p-4">
-          <InstallationReviewRows rows={connectionRows} />
-          <div className="flex flex-wrap gap-2">
+    <>
+      <SettingsSection
+        title="Connection"
+        help="Send selected Hakopod events to one Slack channel. Slack credentials stay on the server."
+        state={
+          state.available
+            ? `Connected to ${state.team?.name || 'a Slack workspace'}`
+            : 'Connected, but notifications are unavailable'
+        }
+        actions={
+          <>
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              disabled={busy || !state.channel}
-              onClick={() => void test()}
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setDisconnecting(true)}
             >
-              {busy ? 'Requesting test…' : 'Send test'}
+              Disconnect
             </Button>
-            {disconnectButton}
-          </div>
-          {testStatus && (
-            <p role="status" className="m-0 text-sm">
-              {testStatus}
-            </p>
-          )}
-        </Card>
-      )}
-      {state.configured && deliveries.data && (
+            {state.available && (
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy || !state.channel}
+                onClick={() => void test()}
+              >
+                {busy ? 'Requesting test…' : 'Send test'}
+              </Button>
+            )}
+            {state.available && (
+              <Button asChild size="sm" variant="primary">
+                <Link
+                  to="/settings/integrations/slack"
+                  search={{ configure: true, connected: undefined }}
+                >
+                  Configure
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      >
+        {!state.available && <SlackUnavailable state={state} />}
+        <InstallationReviewRows
+          rows={[
+            ['Workspace', state.team?.name || 'Connected workspace'],
+            ['Channel', state.channel ? `#${state.channel.name}` : 'No channel chosen'],
+            [
+              'Events',
+              state.events.length
+                ? state.events.map((event) => eventLabel(event, eventCatalog)).join(', ')
+                : 'None selected',
+            ],
+          ]}
+        />
+        {testStatus && (
+          <p role="status" className="m-0 text-sm">
+            {testStatus}
+          </p>
+        )}
+        {error && <RequestError error={error} />}
+      </SettingsSection>
+      {deliveries.data && (
         <DeliveryList deliveries={deliveries.data.items} eventCatalog={eventCatalog} />
       )}
-      {state.configured && deliveries.error && (
-        <RequestError error={deliveries.error} remember="slack-deliveries" />
-      )}
-      {error && <RequestError error={error} />}
+      {deliveries.error && <RequestError error={deliveries.error} remember="slack-deliveries" />}
       <Dialog
         open={disconnecting}
+        className={focusedDialog}
         onOpenChange={(open) => {
           if (!busy) setDisconnecting(open)
         }}
         title="Disconnect Slack?"
         description="Future selected Hakopod events will no longer be sent to this Slack workspace."
       >
-        {error && <RequestError error={error} />}
+        <div className="dialog-body">
+          <ReviewFacts
+            facts={[
+              ['Workspace', state.team?.name || 'Connected workspace'],
+              ['Channel', state.channel ? `#${state.channel.name}` : 'No channel chosen'],
+              ['Events stopped', plural(state.events.length, 'event')],
+            ]}
+          />
+          {error && <RequestError error={error} />}
+        </div>
         <div className="dialog-footer">
           <Button type="button" disabled={busy} onClick={() => setDisconnecting(false)}>
             Keep connected
@@ -466,7 +413,7 @@ function SlackOverview({ state }: { state: SlackIntegration }) {
                 )
                 setDisconnecting(false)
                 refresh()
-                await navigate({ to: '/settings/integrations' })
+                await navigate({ to: '/settings', search: { tab: 'integrations' } })
               } catch (cause) {
                 setError(message(cause))
                 if (cause instanceof APIError && (cause.status === 403 || cause.status === 409))
@@ -481,7 +428,7 @@ function SlackOverview({ state }: { state: SlackIntegration }) {
           </Button>
         </div>
       </Dialog>
-    </div>
+    </>
   )
 }
 
@@ -492,50 +439,36 @@ function DeliveryList({
   deliveries: SlackDelivery[]
   eventCatalog: SlackEventCatalogEntry[]
 }) {
-  if (deliveries.length === 0) return null
   return (
-    <section className="grid gap-3" aria-labelledby="slack-deliveries-heading">
-      <div className="hako-section-heading-title">
-        <h2 id="slack-deliveries-heading">Recent deliveries</h2>
-        <HeadingHelp title="Recent deliveries">
-          Recent delivery attempts are shown here. A queued test has not yet been received by Slack.
-        </HeadingHelp>
-      </div>
-      <div
-        className="table-container focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--navigation-active)]"
-        tabIndex={0}
-        role="region"
-        aria-labelledby="slack-deliveries-heading"
-      >
-        <table>
-          <thead>
-            <tr>
-              <th>Event</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Details</th>
-            </tr>
-          </thead>
-          <tbody>
-            {deliveries.map((delivery) => (
-              <tr key={delivery.id}>
-                <td>
-                  {delivery.event === 'test' ? 'Test delivery' : eventLabel(delivery.event, eventCatalog)}
-                </td>
-                <td>
-                  <Status value={delivery.status} small />
-                </td>
-                <td>{timestamp(delivery.created_at)}</td>
-                <td className="break-words">
-                  {delivery.last_error ||
-                    `${delivery.attempts} attempt${delivery.attempts === 1 ? '' : 's'}`}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <SettingsSection
+      title="Recent deliveries"
+      help="Recent delivery attempts. A queued test has not yet been received by Slack."
+      state={deliveries.length ? plural(deliveries.length, 'recent attempt') : 'Nothing sent yet'}
+    >
+      {!deliveries.length ? (
+        <SettingsEmpty title="No deliveries yet">
+          Send a test to check the channel before real events arrive.
+        </SettingsEmpty>
+      ) : (
+        <SettingsRows label="Recent Slack deliveries">
+          {deliveries.map((delivery) => (
+            <SettingsRow
+              key={delivery.id}
+              name={
+                delivery.event === 'test'
+                  ? 'Test delivery'
+                  : eventLabel(delivery.event, eventCatalog)
+              }
+              detail={
+                delivery.last_error || plural(delivery.attempts, 'attempt')
+              }
+              status={<Status value={delivery.status} small />}
+              meta={timestamp(delivery.created_at)}
+            />
+          ))}
+        </SettingsRows>
+      )}
+    </SettingsSection>
   )
 }
 
@@ -1138,7 +1071,9 @@ function SlackConfiguration({ state }: { state: SlackIntegration }) {
               disabled={busy}
               onClick={() =>
                 void navigate({
-                  to: state.configured ? '/settings/integrations/slack' : '/settings/integrations',
+                  ...(state.configured
+                    ? { to: '/settings/integrations/slack' }
+                    : { to: '/settings', search: { tab: 'integrations' } }),
                 })
               }
             >
