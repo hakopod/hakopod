@@ -203,7 +203,9 @@
   align-items: center;
   gap: 4px 16px;
   min-height: 56px;
-  padding: 10px 8px;
+  /* Text sits on the content edge; the hover surface bleeds out by the same amount. */
+  margin-inline: calc(-1 * var(--space-2));
+  padding: var(--space-2);
   border-radius: var(--radius-control);
   transition: background-color 120ms ease;
 }

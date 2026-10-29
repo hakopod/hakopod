@@ -20,11 +20,25 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Toast } from './ui/toast'
 
-export function ApplicationSecurity({ applicationId }: { applicationId: string }) {
+export function ApplicationSecurity({
+  applicationId,
+  attentionOnly = false,
+}: {
+  applicationId: string
+  /** Render nothing while loading or when the check is complete with no findings. */
+  attentionOnly?: boolean
+}) {
   const query = useApplicationSecurity(applicationId)
   if (query.error instanceof APIError && query.error.status === 404) return null
   if (query.error) return <ErrorState error={query.error} retry={() => query.refetch()} />
-  if (!query.data) return <Loading rows={1} />
+  if (!query.data) return attentionOnly ? null : <Loading rows={1} />
+  if (
+    attentionOnly &&
+    !query.data.findings.length &&
+    !query.data.incomplete?.length &&
+    !query.data.unknown_services?.length
+  )
+    return null
   return <ApplicationSecurityView security={query.data} />
 }
 
