@@ -203,12 +203,30 @@ func (c *Client) podMessage(ctx context.Context, t Target, service string) strin
 			if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionFalse {
 				return boundedMessage(condition.Reason + ": " + condition.Message)
 			}
-			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionFalse && pod.Status.Phase == corev1.PodRunning {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionFalse && pod.Status.Phase == corev1.PodRunning && settledUnready(pod) {
 				return "readiness check has not passed; verify the configured port and healthcheck path"
 			}
 		}
 	}
 	return ""
+}
+
+// settledUnready reports whether an unready container has had time to pass
+// its readiness check. Readiness probes start only after the startup probe,
+// so a pod still starting, or started moments ago, is not blamed for them.
+// ponytail: a container whose startup probe passes after 30s running can be
+// blamed for a few seconds before its first readiness probes run.
+func settledUnready(pod corev1.Pod) bool {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Ready {
+			continue
+		}
+		running := status.State.Running
+		if status.Started == nil || !*status.Started || running == nil || time.Since(running.StartedAt.Time) < 30*time.Second {
+			return false
+		}
+	}
+	return true
 }
 
 func boundedMessage(message string) string {
