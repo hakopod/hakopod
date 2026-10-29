@@ -56,3 +56,23 @@ func TestPodMessageReportsRecentOutOfMemoryRestarts(t *testing.T) {
 		})
 	}
 }
+
+func TestPodMessageWaitsForStartedContainersBeforeBlamingReadiness(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		started bool
+		age     time.Duration
+		blame   bool
+	}{{"starting", false, time.Hour, false}, {"just started", true, 5 * time.Second, false}, {"settled", true, time.Minute, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			target := testTarget(t)
+			status := corev1.ContainerStatus{Name: "api", Started: &tc.started, State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: metav1.NewTime(time.Now().Add(-tc.age))}}}
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-new", Namespace: Namespace(target.ApplicationID), Labels: map[string]string{managedBy: "hakopod", ownerKey: ownerID(target.ApplicationID), serviceKey: "api"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{status}, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}}}}
+			c := &Client{kube: fake.NewClientset(pod)}
+			message := c.podMessage(context.Background(), target, "api")
+			if strings.Contains(message, "readiness check") != tc.blame {
+				t.Fatalf("unexpected diagnostic: %q", message)
+			}
+		})
+	}
+}
