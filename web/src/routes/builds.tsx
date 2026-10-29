@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { Icon } from '../components/icons'
-import { Copy, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Copy, Loading, PageHeader } from '../components/shared'
 import { Button } from '../components/ui/button'
 import {
   ResourceEmpty,
@@ -15,6 +15,10 @@ import {
   ResourceRows,
   StaleNotice,
 } from '../components/resource-card'
+import { ProviderMark, WorkflowStatus, buildMethodLabel } from '../components/build-summary'
+
+// Filters earn their place only once the list is long enough to scan.
+const filterThreshold = 6
 
 export const Route = createFileRoute('/builds')({ component: Builds })
 function Builds() {
@@ -38,21 +42,25 @@ function BuildList() {
     gcTime: 0,
   })
   const items = builds.data?.items || []
+  const providers = new Set(items.map((build) => build.provider))
   const filtered = items.filter(
     (build) =>
       `${build.name} ${build.service} ${build.repository}`
         .toLowerCase()
-        .includes(search.toLowerCase()) &&
+        .includes(search.trim().toLowerCase()) &&
       (provider === 'all' || build.provider === provider),
   )
+  const canWrite = scope.can('deployments:write')
   return (
-    <div className="ops-page">
+    <div className="ops-page builds-page">
       <PageHeader
         eyebrow="WORKSPACE / SOURCE BUILDS"
         title="Source builds"
-        description="Build container images with GitHub Actions or GitLab CI, using Dockerfiles or Cloud Native Buildpacks."
+        description="Each source build turns a repository branch into a verified image. Builds run in your GitHub Actions or GitLab CI account and use its runners and registry; Hakopod has no always-running builder."
         action={
-          scope.can('deployments:write') && (
+          // An empty list offers its one action in the empty state instead.
+          canWrite &&
+          !(builds.data && !items.length) && (
             <Button asChild variant="primary">
               <Link to="/builds/new">
                 <Icon name="plus" size={15} />
@@ -62,40 +70,38 @@ function BuildList() {
           )
         }
       />
-      <section className="ops-resource-list resource-section" aria-label="Source builds">
-        <div className="resource-toolbar">
-          <div className="ops-search-input">
-            <Icon name="search" size={15} />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              aria-label="Filter source builds"
-              placeholder="Find build or repository…"
-            />
+      <section className="resource-section builds-section" aria-labelledby="builds-heading">
+        <div className="section-toolbar builds-toolbar">
+          <div className="builds-heading">
+            <h2 id="builds-heading">Build configurations</h2>
+            {items.length > 0 && <span className="builds-count">{items.length}</span>}
           </div>
-          <SelectField
-            label={'Git provider'}
-            className="compact-select"
-            value={provider}
-            onValueChange={(value) => setProvider(value)}
-            options={[
-              {
-                value: 'all',
-                label: 'All providers',
-              },
-              {
-                value: 'github',
-                label: 'GitHub',
-              },
-              {
-                value: 'gitlab',
-                label: 'GitLab',
-              },
-            ]}
-          />
-          <span className="form-spacer" />
-          {!builds.isPending && !builds.error && (
-            <span className="muted-text">{items.length} build configurations</span>
+          {items.length >= filterThreshold && (
+            <div className="builds-filters">
+              <div className="ops-search-input">
+                <Icon name="search" size={15} />
+                <Input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  aria-label="Filter source builds"
+                  placeholder="Find build or repository…"
+                />
+              </div>
+              {providers.size > 1 && (
+                <SelectField
+                  label="Git provider"
+                  className="compact-select"
+                  value={provider}
+                  onValueChange={setProvider}
+                  options={[
+                    { value: 'all', label: 'All providers' },
+                    { value: 'github', label: 'GitHub' },
+                    { value: 'gitlab', label: 'GitLab' },
+                  ]}
+                />
+              )}
+            </div>
           )}
         </div>
         {builds.isPending ? (
@@ -109,12 +115,12 @@ function BuildList() {
         ) : !items.length ? (
           <ResourceEmpty
             icon="code"
-            title="No source builds"
-            description="A source build turns a repository into a verified image you can deploy."
+            title={`No source builds in ${scope.project} / ${scope.environment}`}
+            description="A source build turns a repository branch into a verified image you can deploy."
             action={
-              scope.can('deployments:write') && (
-                <Button asChild>
-                  <Link to="/builds/new">Create source build</Link>
+              canWrite && (
+                <Button asChild variant="primary">
+                  <Link to="/builds/new">Build from a repository</Link>
                 </Button>
               )
             }
@@ -122,15 +128,26 @@ function BuildList() {
         ) : !filtered.length ? (
           <ResourceEmpty
             icon="search"
-            title="No matching source builds"
-            description="Change the name or provider filter."
+            title="No builds match these filters"
+            action={
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSearch('')
+                  setProvider('all')
+                }}
+              >
+                Clear filters
+              </Button>
+            }
           />
         ) : (
           <>
             {builds.error && (
               <StaleNotice updatedAt={builds.dataUpdatedAt} retry={() => void builds.refetch()} />
             )}
-            <ResourceRows label="Source build configurations">
+            <ResourceRows label="Source build configurations" className="builds-rows">
               {filtered.map((build) => (
                 <ResourceRow
                   key={build.id}
@@ -145,50 +162,46 @@ function BuildList() {
                   }
                   detail={
                     <>
-                      <span className="inline-flex min-w-0 items-center gap-1">
-                        <Icon name={build.provider === 'gitlab' ? 'gitlab' : 'github'} size={14} />
+                      <span className="builds-repository">
+                        <ProviderMark provider={build.provider} />
                         <code>{build.repository}</code>
                       </span>
-                      <code>{build.branch}</code>
+                      <span className="builds-branch">
+                        <Icon name="branch" size={13} />
+                        <code>{build.branch}</code>
+                      </span>
                       <span>
-                        {build.mode === 'framework'
-                          ? `${build.framework?.framework} · ${build.framework?.runtime}`
-                          : build.mode === 'buildpacks'
-                            ? `Buildpacks · ${build.preset}`
-                            : 'Dockerfile'}{' '}
-                        · {build.architecture}
+                        {buildMethodLabel(build)} · Linux {build.architecture.toUpperCase()}
                       </span>
                     </>
                   }
                   status={
-                    <Status
-                      value={
-                        build.installed_revision === build.revision
-                          ? 'installed'
-                          : 'installation required'
-                      }
-                      small
-                    />
+                    <span className="builds-state">
+                      <WorkflowStatus build={build} />
+                      <span>Configuration r{build.revision}</span>
+                    </span>
                   }
                   meta={
-                    <>
-                      {build.auto_build ? 'Build on push' : 'Manual build'}
-                      <br />
-                      {build.auto_deploy ? 'Automatic deployment' : 'Manual deployment review'}
-                    </>
+                    <span className="builds-automation">
+                      <span>{build.auto_build ? 'Builds on push' : 'Manual builds'}</span>
+                      <span>
+                        {build.auto_deploy ? 'Deploys automatically' : 'Deploys after review'}
+                      </span>
+                    </span>
                   }
-                  actions={<Copy value={build.id} label={`Copy build ID ${build.id}`} iconOnly />}
+                  actions={
+                    <Copy
+                      value={build.id}
+                      label={`Copy build ID for ${build.name} / ${build.service}`}
+                      iconOnly
+                    />
+                  }
                 />
               ))}
             </ResourceRows>
           </>
         )}
       </section>
-      <Note>
-        Builds use the selected Git provider’s runner capacity and container registry. Hakopod has
-        no always-running builder and does not load application build tools into the management
-        process.
-      </Note>
     </div>
   )
 }

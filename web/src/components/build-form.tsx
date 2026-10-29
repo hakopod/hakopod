@@ -1,15 +1,14 @@
 import { useEditionFeatures } from '../lib/dashboard-edition'
-import { buildSteps, buildErrorStep, validateVisibleFields } from '../lib/build-onboarding'
+import { validateVisibleFields } from '../lib/build-onboarding'
 import { Icon } from './icons'
 import { ComputeNotice } from './compute-notice'
-import { fieldError, fieldGroupError } from '../lib/form-errors'
+import { fieldError, fieldGroupError, validationLines } from '../lib/form-errors'
 import { useGitConnections, useGitProviderSetup } from '../lib/git-connections'
 import { GitRepositoryField } from './git-repository-field'
 import { saveEnvironment } from '../lib/save-environment'
 import { EnvironmentFields } from './runtime-settings-fields'
 import { environmentRows, isSecretEnvironment, splitEnvironment } from '../lib/service-environment'
 import { formatProcessCommand, parseProcessCommand } from '../lib/process-command'
-import { GitDeploymentPaths } from './git-deployment-paths'
 import {
   FrameworkBuildFields,
   defaultFrameworkPlan,
@@ -21,8 +20,8 @@ import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { formatBuildArgs, parseBuildArgs } from '../lib/build-args'
 import { SelectField } from './ui/select'
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from '../lib/api.generated'
 import type { Application } from '../lib/types'
@@ -30,10 +29,47 @@ import { client, unwrap } from '../lib/client'
 import { message } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
-import { FormPage, FormHint, FormSection } from './form-page'
+import { FormPage } from './form-page'
 import { HeadingHelp, Note, RequestError } from './shared'
+import { ChoiceCards, FlowSteps, PendingButton, nameFromImage, plural } from './create-flow'
+import { ProviderMark, providerName, providerRunner } from './build-summary'
 
 type Build = components['schemas']['BuildConfig']
+type Source = 'build' | 'config' | 'image'
+
+const steps = ['Source', 'Recipe', 'Service', 'Runtime', 'Review'] as const
+const reviewStep = steps.length - 1
+
+// API field paths, grouped by the step that owns the field. Only explicit paths move the
+// user back; permissions, network and capacity failures stay on the current step.
+const stepFields = [
+  ['provider', 'connection_id', 'repository', 'branch', 'context_path', 'submodules'],
+  ['mode', 'preset', 'architecture', 'dockerfile', 'build_args', 'build_secrets', 'framework'],
+  ['name', 'application', 'service', 'port', 'size', 'registry_credential', 'reuse_services'],
+  ['command', 'args', 'env', 'secrets'],
+]
+export function buildFlowErrorStep(error: string, service: string): number | undefined {
+  for (let step = 0; step < stepFields.length; step++)
+    for (const path of stepFields[step]) {
+      if (fieldError(error, path, `services.${service}.${path}`)) return step
+      if (
+        validationLines(error).some(
+          (line) =>
+            (line.startsWith(`${path}.`) || line.startsWith(`services.${service}.${path}.`)) &&
+            line.includes(':'),
+        )
+      )
+        return step
+    }
+}
+
+const methodLabel = (mode: Build['mode']) =>
+  mode === 'framework'
+    ? 'Framework recipe'
+    : mode === 'buildpacks'
+      ? 'Cloud Native Buildpacks'
+      : 'Dockerfile'
+
 export default function BuildForm({
   build,
   application,
@@ -46,20 +82,19 @@ export default function BuildForm({
   const scope = useScope()
   const features = useEditionFeatures()
   const [step, setStep] = useState(0)
-  const [furthest, setFurthest] = useState(0)
+  const [source, setSource] = useState<Source>('build')
   const stepHeading = useRef<HTMLDivElement>(null)
+  const firstStep = useRef(true)
   const formRef = useRef<HTMLFormElement>(null)
-  const showStep = (next: number) => {
-    setStep(next)
-    setFurthest((previous) => Math.max(previous, next))
-  }
   const gitSetup = useGitProviderSetup()
   const gitConnections = useGitConnections()
   const navigate = useNavigate()
   const cache = useQueryClient()
+  const canManageGit = scope.identity.admin || scope.identity.can_manage_git
   const project = build?.project || application?.project || scope.project
   const environment = build?.environment || application?.environment || scope.environment
   const [name, setName] = useState(build?.name || application?.name || '')
+  const nameEdited = useRef(Boolean(build || application))
   const [service, setService] = useState(
     build?.service || Object.keys(application?.spec.services || {})[0] || 'web',
   )
@@ -132,12 +167,18 @@ export default function BuildForm({
         item.configured,
     )
   const linked = Boolean(build?.application_id || application)
+  // Only an administrator sees connections; without one that can run builds, say so up front.
+  const noBuildConnection =
+    canManageGit &&
+    Boolean(gitConnections.data) &&
+    !gitConnections.data?.items.some(
+      (item) => item.provider === provider && item.enabled && item.capabilities.builds,
+    )
+  // Detection reads the repository; the application and service names do not change its result.
   const sourceFingerprint = JSON.stringify([
     boundApplicationId,
     project,
     environment,
-    name,
-    service,
     provider,
     connectionId,
     repository,
@@ -149,12 +190,8 @@ export default function BuildForm({
   const recipeEdited = useRef(Boolean(build))
   const lastDetectedSource = useRef('')
   const detection = suggestion?.source === sourceFingerprint ? suggestion.result : undefined
-  const canDetect = Boolean(
-    name &&
-    repository &&
-    branch &&
-    (scope.identity.admin || scope.identity.can_manage_git || boundApplicationId),
-  )
+  const canDetect = Boolean(name && repository && branch && (canManageGit || boundApplicationId))
+  const servicePort = mode === 'framework' && framework.runtime === 'static' ? 8080 : port
   const applyDetection = (result: components['schemas']['BuildDetection']) => {
     setMode(result.mode)
     if (result.framework) {
@@ -211,14 +248,20 @@ export default function BuildForm({
         }
         invalid.focus()
       }
-    } else if (!build) stepHeading.current?.focus()
-  }, [step, build, error])
+    } else if (!firstStep.current) {
+      // The status line announces the step; focus moves to the visible page heading.
+      const heading = formRef.current?.closest('.form-page')?.querySelector<HTMLElement>('h1')
+      if (heading) {
+        heading.tabIndex = -1
+        heading.focus()
+      }
+    }
+    firstStep.current = false
+  }, [step, error])
   const fail = (cause: unknown) => {
     const text = message(cause)
-    if (!build) {
-      const fieldStep = buildErrorStep(text, service)
-      if (fieldStep !== undefined) showStep(fieldStep)
-    }
+    const fieldStep = buildFlowErrorStep(text, service)
+    if (fieldStep !== undefined) setStep(fieldStep)
     setError(text)
   }
   const parseField = <T,>(path: string, read: () => T): T => {
@@ -228,7 +271,7 @@ export default function BuildForm({
       throw new Error(`${path}: ${message(cause)}`)
     }
   }
-  const validateDraft = () => {
+  const validateRecipe = () => {
     parseField('build_args', () => parseBuildArgs(buildArgs))
     parseField('build_secrets', () => parseBuildSecrets(buildSecrets))
     if (mode === 'buildpacks' && buildSecrets.trim())
@@ -239,10 +282,14 @@ export default function BuildForm({
       throw new Error(
         'architecture: Hosted Free runs AMD64 images. Choose AMD64 or connect your own server.',
       )
+  }
+  const validateService = () => {
     if (features.hostedFree && !linked && size !== 'small')
       throw new Error(
         'size: Hosted Free supports the small profile. Choose small or connect your own server.',
       )
+  }
+  const validateRuntime = () => {
     if (runtimeMode === 'override') {
       parseField('command', () => parseProcessCommand(runtimeCommand))
       parseField('args', () => parseProcessCommand(runtimeArgs))
@@ -255,6 +302,40 @@ export default function BuildForm({
   const runtimeSecrets = runtimeEnv.filter(
     (row) => (row.name || row.value) && isSecretEnvironment(row),
   ).length
+  const runner = providerRunner(provider)
+  const leaving = step === 0 && !build && source !== 'build'
+  const primaryLabel = leaving
+    ? source === 'config'
+      ? 'Import repository configuration'
+      : 'Configure image services'
+    : step < reviewStep
+      ? step === 3
+        ? 'Review build'
+        : `Continue to ${steps[step + 1].toLowerCase()}`
+      : build
+        ? 'Save build changes'
+        : 'Create build'
+  const pendingLabel = detecting
+    ? 'Reading repository…'
+    : build
+      ? 'Saving changes…'
+      : 'Creating build…'
+  const showStep = (next: number) => {
+    setError('')
+    setStep(next)
+  }
+  const edit = (target: number) => (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      disabled={busy}
+      onClick={() => showStep(target)}
+    >
+      Edit
+      <span className="sr-only"> {steps[target].toLowerCase()}</span>
+    </Button>
+  )
   return (
     <FormPage
       breadcrumbs={[
@@ -262,115 +343,52 @@ export default function BuildForm({
         ...(build ? [{ label: build.name, to: `/builds/${build.id}` }] : []),
         { label: build ? 'Edit build' : 'New source build' },
       ]}
-      icon="branch"
-      help={
-        <>
-          {(build || step > 0) && (
-            <FormHint title="Build summary">
-              <dl className="grid min-w-0 gap-3 text-sm [&_dd]:[overflow-wrap:anywhere] [&_dt]:text-[var(--muted)]">
-                <div>
-                  <dt>Repository</dt>
-                  <dd>
-                    {repository} · {branch}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Build directory</dt>
-                  <dd>
-                    <code>{context}</code>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Submodules</dt>
-                  <dd>{submodules ? 'Checked out recursively' : 'Not checked out'}</dd>
-                </div>
-                <div>
-                  <dt>Recipe</dt>
-                  <dd>
-                    {mode === 'framework'
-                      ? frameworkLabel(framework.framework)
-                      : mode === 'dockerfile'
-                        ? 'Dockerfile'
-                        : 'Cloud Native Buildpacks'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Build location</dt>
-                  <dd>{provider === 'github' ? 'GitHub Actions' : 'GitLab CI'}</dd>
-                </div>
-                <div>
-                  <dt>Deployment</dt>
-                  <dd>
-                    {linked
-                      ? 'Keep linked service resources and networking'
-                      : 'Deploy a verified build to create the application'}
-                  </dd>
-                </div>
-              </dl>
-            </FormHint>
-          )}
-          <FormHint title="Keep builds in Git">
-            The reviewed workflow runs in your provider account. Hakopod deploys its verified image
-            digest.
-          </FormHint>
-          <FormHint title="Private images">
-            {managedRegistryAvailable
-              ? 'Hakopod can supply the private registry and scoped pull credentials. Leave Registry on its automatic option to use it.'
-              : 'For private images in an external registry, save a credential with pull access or select an existing credential.'}
-          </FormHint>
-        </>
+      title={
+        build
+          ? `Edit ${build.name} / ${build.service} build`
+          : step === reviewStep
+            ? `Review ${name} / ${service} build`
+            : 'New source build'
       }
-      title={build ? 'Edit source build' : 'Build an application from source'}
-      description={`${project} / ${environment} · Build with a framework recipe, Dockerfile or Cloud Native Buildpacks.`}
+      description={`${project} / ${environment}. Builds run in your ${runner} account; Hakopod deploys the verified image digest.`}
     >
-      {!build && (scope.identity.admin || scope.identity.can_manage_git) && (
-        <GitDeploymentPaths active="build" />
-      )}
-      <ComputeNotice creatingApplication={!linked} />
-      {
-        <nav aria-label="Source build steps" className="flex flex-wrap gap-2 py-3">
-          {buildSteps.map((label, index) => (
-            <Button
-              key={label}
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-current={step === index ? 'step' : undefined}
-              disabled={busy || detecting || index > furthest}
-              className={`bg-transparent! border-transparent! ${step === index ? 'text-[var(--navigation-active)]!' : ''}`}
-              onClick={() => {
-                if (index > step && formRef.current && !validateVisibleFields(formRef.current))
-                  return
-                setError('')
-                showStep(index)
-              }}
-            >
-              {index + 1}. {label}
-            </Button>
-          ))}
-        </nav>
-      }
+      <FlowSteps
+        steps={steps}
+        current={step}
+        disabled={busy || detecting}
+        onSelect={(index) => showStep(index)}
+      />
       <form
         ref={formRef}
+        className="build-flow"
         noValidate
+        aria-busy={busy || detecting || undefined}
         onSubmit={async (e) => {
           e.preventDefault()
           if (busy || detecting) return
+          if (leaving) {
+            void navigate(
+              source === 'config'
+                ? { to: '/applications/import' }
+                : { to: '/applications/new', search: { mode: 'form' } },
+            )
+            return
+          }
           if (!validateVisibleFields(e.currentTarget)) return
           setError('')
           try {
-            if (step < 3) {
-              if (!build && step === 0 && lastDetectedSource.current !== sourceFingerprint)
+            if (step < reviewStep) {
+              if (step === 0 && !build && lastDetectedSource.current !== sourceFingerprint)
                 await detectRepository(true)
-              if (step === 1) {
-                parseField('build_args', () => parseBuildArgs(buildArgs))
-                parseField('build_secrets', () => parseBuildSecrets(buildSecrets))
-              }
-              if (step === 2) validateDraft()
-              showStep(step + 1)
+              if (step === 1) validateRecipe()
+              if (step === 2) validateService()
+              if (step === 3) validateRuntime()
+              setStep(step + 1)
               return
             }
-            validateDraft()
+            validateRecipe()
+            validateService()
+            validateRuntime()
             setBusy(true)
             const savedRuntime = runtimeEnvEnabled
               ? await saveEnvironment(
@@ -410,12 +428,9 @@ export default function BuildForm({
               env: savedRuntime?.env,
               secrets: savedRuntime?.secrets,
               build_args: parseBuildArgs(buildArgs),
-              framework:
-                mode === 'framework'
-                  ? { ...framework, port: framework.runtime === 'static' ? 8080 : port }
-                  : undefined,
+              framework: mode === 'framework' ? { ...framework, port: servicePort } : undefined,
               build_secrets: parseBuildSecrets(buildSecrets),
-              port: mode === 'framework' && framework.runtime === 'static' ? 8080 : port,
+              port: servicePort,
               public: isPublic,
               size,
               registry_credential: registry,
@@ -444,257 +459,302 @@ export default function BuildForm({
           }
         }}
       >
-        <div className="form-body auth-form">
-          <div ref={stepHeading} tabIndex={-1} className="sr-only" role="status">
-            Step {step + 1} of {buildSteps.length}: {buildSteps[step]}
+        <div className="form-body create-flow build-flow-body">
+          <div ref={stepHeading} className="sr-only" role="status">
+            Step {step + 1} of {steps.length}: {steps[step]}
           </div>
+          <ComputeNotice creatingApplication={!linked} />
           {error && <RequestError error={error} />}
+
+          {/* Source: what to deploy, then only that source's fields. */}
           <fieldset
             disabled={busy || detecting || step !== 0}
-            className={step === 0 ? 'grid min-w-0 gap-4' : 'hidden'}
+            className={step === 0 ? 'build-flow-step' : 'hidden'}
           >
-            <FormSection
-              title="Repository"
-              description="Select the application, provider, and source branch."
-              icon="branch"
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label>
-                  Application name
-                  <Input
-                    value={name}
-                    error={fieldError(error, 'name', 'application')}
-                    readOnly={Boolean(build || application)}
-                    onChange={(e) => setName(e.target.value)}
-                    pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
-                    data-build-source
-                    title="Use up to 40 lowercase letters, numbers or hyphens. Start with a letter and end with a letter or number."
-                    maxLength={40}
-                    required
-                  />
-                </label>
-                <label>
-                  Service
-                  {application ? (
-                    <SelectField
-                      label="Service"
-                      value={service}
-                      error={fieldError(error, 'service', `services.${service}.service`)}
-                      onValueChange={(value) => setService(value)}
-                      options={
-                        Object.keys(application.spec.services).map((item) => ({
-                          value: item,
-                          label: item,
-                        })) ?? []
-                      }
-                    />
-                  ) : (
-                    <Input
-                      value={service}
-                      error={fieldError(error, 'service')}
-                      readOnly={Boolean(build)}
-                      onChange={(e) => setService(e.target.value)}
-                      pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
-                      maxLength={40}
-                      required
-                    />
-                  )}
-                </label>
-              </div>
-              <label>
-                Git provider
-                <SelectField
-                  label="Git provider"
-                  value={provider}
-                  error={fieldError(error, 'provider')}
-                  onValueChange={(value) => {
-                    setProvider(value as 'github' | 'gitlab')
-                    setConnectionId('')
-                  }}
-                  options={[
+            {!build && canManageGit && (
+              <FlowSection title="What do you want to deploy?">
+                <ChoiceCards
+                  label="What do you want to deploy?"
+                  value={source}
+                  onChange={setSource}
+                  choices={[
                     {
-                      value: 'github',
-                      label: 'GitHub Actions',
+                      value: 'build',
+                      title: 'Source code',
+                      description:
+                        'Build an image from a repository branch with a framework recipe, Dockerfile or Buildpacks.',
+                      icon: <Icon name="branch" size={18} />,
                     },
                     {
-                      value: 'gitlab',
-                      label: 'GitLab CI + GitLab Container Registry',
+                      value: 'config',
+                      title: 'Repository with hakopod.toml',
+                      description: 'Deploy the Hakopod configuration committed in a repository.',
+                      icon: <Icon name="code" size={18} />,
+                    },
+                    {
+                      value: 'image',
+                      title: 'Existing container image',
+                      description: 'Run an image you already publish, pinned by digest.',
+                      icon: <Icon name="box" size={18} />,
                     },
                   ]}
                 />
-              </label>
-              <GitConnectionField
-                provider={provider}
-                value={connectionId}
-                onValueChange={setConnectionId}
-                builds
-                error={fieldError(error, 'connection_id')}
-              />
-              <div className="grid items-start gap-4 sm:grid-cols-2">
-                <GitRepositoryField
-                  provider={provider}
-                  connectionId={connectionId}
-                  value={repository}
-                  onChange={setRepository}
-                  onBranchChange={setBranch}
-                  error={fieldError(error, 'repository')}
-                />
-                <label>
-                  Source branch
-                  <Input
-                    value={branch}
-                    error={fieldError(error, 'branch', `services.${service}.branch`)}
-                    onChange={(e) => setBranch(e.target.value)}
-                    maxLength={200}
-                    required
-                  />
-                  <span className="field-help">
-                    Build this branch. Use the same branch when installing the repository workflow.
-                  </span>
-                </label>
+              </FlowSection>
+            )}
+            {source !== 'build' && !build ? (
+              <div className="create-source-detail">
+                <p>
+                  {source === 'config'
+                    ? 'Choose the repository and branch that contain hakopod.toml. Hakopod reads it and reviews the services before anything is created.'
+                    : 'Add one or more services and choose each image, placement and variables. Nothing is created until the final review.'}
+                </p>
               </div>
-              <details className="form-disclosure" open={context !== '.' || undefined}>
-                <summary>
-                  Repository subdirectory <span className="muted-text">Optional</span>
-                </summary>
-                <label>
-                  Build context
-                  <Input
-                    value={context}
-                    onChange={(e) => setContext(e.target.value)}
-                    maxLength={200}
-                    required
-                    error={fieldError(error, 'context_path')}
+            ) : (
+              <>
+                <FlowSection
+                  title="Where builds run"
+                  help="The workflow runs in your provider account and uses its runner minutes and container registry."
+                >
+                  <ChoiceCards
+                    compact
+                    label="Where builds run"
+                    value={provider}
+                    onChange={(value) => {
+                      setProvider(value)
+                      setConnectionId('')
+                    }}
+                    choices={[
+                      {
+                        value: 'github',
+                        title: 'GitHub Actions',
+                        description: 'A workflow file in your GitHub repository.',
+                        icon: <ProviderMark provider="github" size={18} />,
+                      },
+                      {
+                        value: 'gitlab',
+                        title: 'GitLab CI',
+                        description: 'A pipeline that pushes to GitLab Container Registry.',
+                        icon: <ProviderMark provider="gitlab" size={18} />,
+                      },
+                    ]}
                   />
-                  <span className="field-help">
-                    Use . for the repository root, or the directory containing this app in a
-                    monorepo.
-                  </span>
-                </label>
-              </details>
-              <details className="form-disclosure" open={!submodules || undefined}>
-                <summary>Git submodules</summary>
-                <div className="flex min-w-0 flex-wrap items-center gap-1">
-                  <label className="checkbox-row">
+                  {fieldError(error, 'provider') && (
+                    <p className="field-error" role="alert">
+                      {fieldError(error, 'provider')}
+                    </p>
+                  )}
+                </FlowSection>
+                <FlowSection title="Repository">
+                  {noBuildConnection && (
+                    <div className="create-source-detail" role="status">
+                      <p>
+                        No {providerName(provider)} connection can run builds yet. Connect{' '}
+                        {providerName(provider)} with build access, then return here.
+                      </p>
+                      <Button asChild size="sm" className="justify-self-start">
+                        <Link to="/settings/git/connections/new" search={{ provider }}>
+                          <ProviderMark provider={provider} />
+                          Connect {providerName(provider)}
+                        </Link>
+                      </Button>
+                    </div>
+                  )}
+                  <GitConnectionField
+                    provider={provider}
+                    value={connectionId}
+                    onValueChange={setConnectionId}
+                    builds
+                    error={fieldError(error, 'connection_id')}
+                  />
+                  <GitRepositoryField
+                    provider={provider}
+                    connectionId={connectionId}
+                    value={repository}
+                    onChange={(value) => {
+                      setRepository(value)
+                      if (!nameEdited.current) setName(nameFromImage(value))
+                    }}
+                    onBranchChange={setBranch}
+                    error={fieldError(error, 'repository')}
+                  />
+                  <label>
+                    Branch
                     <Input
-                      type="checkbox"
-                      checked={submodules}
-                      onChange={(e) => setSubmodules(e.target.checked)}
+                      value={branch}
+                      error={fieldError(error, 'branch', `services.${service}.branch`)}
+                      onChange={(e) => setBranch(e.target.value)}
+                      maxLength={200}
+                      required
                     />
-                    Check out submodules recursively
+                    <span className="field-help">
+                      Builds use this branch. Install the workflow on the same branch.
+                    </span>
                   </label>
-                  <HeadingHelp title="Git submodules">
-                    The workflow token is scoped to the repository that runs it, so a private
-                    submodule in another repository is not checked out.
-                  </HeadingHelp>
-                </div>
-              </details>
-            </FormSection>
+                  <details
+                    className="form-disclosure"
+                    open={context !== '.' || !submodules || undefined}
+                  >
+                    <summary>
+                      Repository options{' '}
+                      <span className="muted-text">
+                        {context === '.' ? 'Repository root' : context} ·{' '}
+                        {submodules ? 'Submodules included' : 'No submodules'}
+                      </span>
+                    </summary>
+                    <div className="create-fields">
+                      <label>
+                        Build directory
+                        <Input
+                          value={context}
+                          onChange={(e) => setContext(e.target.value)}
+                          maxLength={200}
+                          required
+                          error={fieldError(error, 'context_path')}
+                        />
+                        <span className="field-help">
+                          Use . for the repository root, or the directory that contains this app in
+                          a monorepo.
+                        </span>
+                      </label>
+                      <div className="flex min-w-0 flex-wrap items-center gap-1">
+                        <label className="checkbox-row">
+                          <Input
+                            type="checkbox"
+                            checked={submodules}
+                            onChange={(e) => setSubmodules(e.target.checked)}
+                          />
+                          Check out Git submodules recursively
+                        </label>
+                        <HeadingHelp title="Git submodules">
+                          The workflow token is scoped to the repository that runs it, so a private
+                          submodule in another repository is not checked out.
+                        </HeadingHelp>
+                      </div>
+                    </div>
+                  </details>
+                </FlowSection>
+              </>
+            )}
           </fieldset>
+
+          {/* Recipe: how the image is built. */}
           <fieldset
             disabled={busy || step !== 1}
-            className={step === 1 ? 'grid min-w-0 gap-4' : 'hidden'}
+            className={step === 1 ? 'build-flow-step' : 'hidden'}
           >
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
-              <div className="grid min-w-0 gap-1 text-sm" aria-live="polite">
-                <strong className="break-all">{repository || 'Choose a repository'}</strong>
-                <span className="break-all text-[var(--muted)]">
-                  {branch} · {context} · {provider === 'github' ? 'GitHub Actions' : 'GitLab CI'}
-                </span>
-                {detecting ? (
-                  <span>Reading repository…</span>
-                ) : detection ? (
+            <div className="build-detection" aria-live="polite">
+              <div className="build-detection-source">
+                <ProviderMark provider={provider} size={16} />
+                <div>
+                  <strong>{repository || 'No repository chosen'}</strong>
                   <span>
-                    Detected{' '}
-                    {detection.framework
-                      ? frameworkLabel(detection.framework.framework)
-                      : 'Dockerfile'}{' '}
-                    at commit <code>{detection.commit_sha.slice(0, 12)}</code>
+                    {branch} · {context === '.' ? 'repository root' : context} · {runner}
                   </span>
-                ) : suggestion ? (
-                  <span>Source changed. Detect again to refresh the recipe.</span>
-                ) : (
-                  <span>Choose a recipe or detect settings from your repository.</span>
-                )}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <p className="build-detection-result">
+                {detecting ? (
+                  'Reading repository…'
+                ) : detectionError ? (
+                  <span className="build-detection-error" role="alert">
+                    Detection failed: {detectionError.replace(/\.?\s*$/, '.')} Retry, or choose the
+                    build method yourself.
+                  </span>
+                ) : detection ? (
+                  <>
+                    Detected{' '}
+                    <strong>
+                      {detection.framework
+                        ? frameworkLabel(detection.framework.framework)
+                        : methodLabel(detection.mode)}
+                    </strong>{' '}
+                    at commit <code>{detection.commit_sha.slice(0, 12)}</code>
+                  </>
+                ) : suggestion ? (
+                  'The source changed after detection. Detect again to refresh the suggestion.'
+                ) : canDetect ? (
+                  'Not detected yet. Choose a method or detect it from the repository.'
+                ) : (
+                  'Detection needs an approved repository. Choose the build method yourself.'
+                )}
+              </p>
+              <div className="build-detection-actions">
                 {detection && (mode !== 'framework' || !detection.framework) && (
                   <Button
                     type="button"
+                    size="sm"
                     disabled={busy || detecting}
                     onClick={() => applyDetection(detection)}
                   >
                     Use detected settings
                   </Button>
                 )}
-                <Button
+                <PendingButton
                   type="button"
-                  disabled={busy || detecting || !canDetect}
+                  size="sm"
+                  pending={detecting}
+                  pendingLabel="Detecting…"
+                  disabled={busy || !canDetect}
                   onClick={() => void detectRepository()}
                 >
-                  {detecting ? 'Detecting…' : detection ? 'Detect again' : 'Detect framework'}
-                </Button>
+                  {detectionError
+                    ? 'Retry detection'
+                    : detection
+                      ? 'Detect again'
+                      : 'Detect from repository'}
+                </PendingButton>
               </div>
             </div>
-            {!(scope.identity.admin || scope.identity.can_manage_git) && (
-              <p className="field-help">
-                Detection uses this application's approved source repository. Ask your workspace
-                owner to approve a new repository, or enter a reviewed recipe.
-              </p>
-            )}
-            {detectionError && (
-              <div role="status">
-                <RequestError error={detectionError} />
-                <p className="field-help">
-                  You can retry detection or configure the build recipe manually.
-                </p>
-              </div>
-            )}
             {detection && detection.warnings.length > 0 && (
-              <details className="form-disclosure" open>
-                <summary>Review detection notes ({detection.warnings.length})</summary>
-                <ul className="grid gap-2 text-sm">
+              <Note>
+                <ul className="build-detection-notes">
                   {detection.warnings.map((note) => (
                     <li key={note}>{note}</li>
                   ))}
                 </ul>
-              </details>
+              </Note>
             )}
-            <FormSection
-              title="Build recipe"
-              description="Paths are relative to the repository root."
-              icon="code"
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label>
-                  Build method
-                  <SelectField
-                    label="Build method"
-                    value={mode}
-                    error={fieldError(error, 'mode', `services.${service}.mode`)}
-                    onValueChange={(value) => {
-                      recipeEdited.current = true
-                      setMode(value as Build['mode'])
-                      if (value === 'framework') setPort(framework.port)
-                    }}
-                    options={[
-                      {
-                        value: 'dockerfile',
-                        label: 'Dockerfile',
-                      },
-                      {
-                        value: 'buildpacks',
-                        label: 'Cloud Native Buildpacks',
-                      },
-                      { value: 'framework', label: 'Framework recipe' },
-                    ]}
-                  />
-                </label>
-              </div>
-              {mode === 'framework' && (
+            <FlowSection title="Build method">
+              <ChoiceCards
+                label="Build method"
+                value={mode}
+                onChange={(value) => {
+                  recipeEdited.current = true
+                  setMode(value)
+                  if (value === 'framework') setPort(framework.port)
+                }}
+                choices={[
+                  {
+                    value: 'framework',
+                    title: 'Framework recipe',
+                    description: 'Generated install, build and start steps for a known framework.',
+                    icon: <Icon name="grid" size={18} />,
+                  },
+                  {
+                    value: 'dockerfile',
+                    title: 'Dockerfile',
+                    description: 'Build the Dockerfile committed in your repository.',
+                    icon: <Icon name="code" size={18} />,
+                  },
+                  {
+                    value: 'buildpacks',
+                    title: 'Cloud Native Buildpacks',
+                    description: 'Detect the language and build without a Dockerfile.',
+                    icon: <Icon name="box" size={18} />,
+                  },
+                ]}
+              />
+              {fieldError(error, 'mode', `services.${service}.mode`) && (
+                <p className="field-error" role="alert">
+                  {fieldError(error, 'mode', `services.${service}.mode`)}
+                </p>
+              )}
+            </FlowSection>
+            {mode === 'framework' && (
+              <FlowSection title="Framework">
                 <FrameworkBuildFields
                   key={sourceFingerprint}
-                  value={{ ...framework, port: framework.runtime === 'static' ? 8080 : port }}
+                  value={{ ...framework, port: servicePort }}
                   detected={detection?.framework}
                   error={error}
                   onChange={(next) => {
@@ -703,57 +763,76 @@ export default function BuildForm({
                     setPort(next.port)
                   }}
                 />
-              )}
-              {linked &&
-                mode === 'framework' &&
-                Boolean(reuseApplication?.spec.services[service]?.port) &&
-                reuseApplication?.spec.services[service]?.port !==
-                  (framework.runtime === 'static' ? 8080 : port) && (
-                  <Note>
-                    The linked service routes traffic to port{' '}
-                    {reuseApplication?.spec.services[service]?.port}, but this recipe listens on
-                    port {framework.runtime === 'static' ? 8080 : port}. Match the server port or
-                    update the service networking before deploying.
-                  </Note>
-                )}
-              {mode === 'dockerfile' ? (
-                <label>
-                  Dockerfile path
-                  <Input
-                    value={dockerfile}
-                    error={fieldError(error, 'dockerfile', `services.${service}.dockerfile`)}
-                    onChange={(e) => setDockerfile(e.target.value)}
-                    maxLength={200}
-                    required
-                  />
-                </label>
-              ) : mode === 'buildpacks' ? (
-                <label>
-                  Buildpack preset
-                  <SelectField
-                    label="Buildpack preset"
-                    value={preset}
-                    error={fieldError(error, 'preset', `services.${service}.preset`)}
-                    onValueChange={(value) => setPreset(value as Build['preset'])}
-                    options={
-                      ['auto', 'nodejs', 'python', 'go', 'java', 'dotnet', 'ruby', 'static'].map(
-                        (value) => ({
-                          value: value,
-                          label: value,
-                        }),
-                      ) ?? []
-                    }
-                  />
-                </label>
-              ) : null}
-              <details
-                className="form-disclosure"
-                open={Boolean(fieldError(error, 'architecture')) || undefined}
-              >
-                <summary>
-                  Build architecture{' '}
-                  <span className="muted-text">{architecture || 'Infer from cluster'}</span>
-                </summary>
+                {linked &&
+                  Boolean(reuseApplication?.spec.services[service]?.port) &&
+                  reuseApplication?.spec.services[service]?.port !== servicePort && (
+                    <Note>
+                      The linked service routes traffic to port{' '}
+                      {reuseApplication?.spec.services[service]?.port}, but this recipe listens on
+                      port {servicePort}. Match the server port or update the service networking
+                      before deploying.
+                    </Note>
+                  )}
+              </FlowSection>
+            )}
+            {mode === 'dockerfile' && (
+              <label>
+                Dockerfile path
+                <Input
+                  value={dockerfile}
+                  error={fieldError(error, 'dockerfile', `services.${service}.dockerfile`)}
+                  onChange={(e) => setDockerfile(e.target.value)}
+                  maxLength={200}
+                  required
+                />
+                <span className="field-help">Relative to the repository root.</span>
+              </label>
+            )}
+            {mode === 'buildpacks' && (
+              <label>
+                Buildpack preset
+                <SelectField
+                  label="Buildpack preset"
+                  value={preset}
+                  error={fieldError(error, 'preset', `services.${service}.preset`)}
+                  onValueChange={(value) => setPreset(value as Build['preset'])}
+                  options={[
+                    'auto',
+                    'nodejs',
+                    'python',
+                    'go',
+                    'java',
+                    'dotnet',
+                    'ruby',
+                    'static',
+                  ].map((value) => ({
+                    value,
+                    label: value === 'auto' ? 'Detect automatically' : value,
+                  }))}
+                />
+              </label>
+            )}
+            <details
+              className="form-disclosure"
+              open={
+                Boolean(
+                  buildArgs ||
+                  buildSecrets ||
+                  fieldError(error, 'architecture') ||
+                  fieldGroupError(error, 'build_args') ||
+                  fieldError(error, 'build_secrets'),
+                ) || undefined
+              }
+            >
+              <summary>
+                Advanced build options{' '}
+                <span className="muted-text">
+                  {architecture ? `Linux ${architecture.toUpperCase()}` : 'Architecture inferred'}
+                  {buildArgs.trim() && ' · public values'}
+                  {buildSecrets.trim() && ' · secret references'}
+                </span>
+              </summary>
+              <div className="create-fields">
                 <label>
                   Target architecture
                   <SelectField
@@ -762,14 +841,8 @@ export default function BuildForm({
                     error={fieldError(error, 'architecture', `services.${service}.architecture`)}
                     onValueChange={(value) => setArchitecture(value as Build['architecture'] | '')}
                     options={[
-                      {
-                        value: '',
-                        label: 'Infer from a uniform cluster',
-                      },
-                      {
-                        value: 'amd64',
-                        label: 'Linux AMD64',
-                      },
+                      { value: '', label: 'Infer from a uniform cluster' },
+                      { value: 'amd64', label: 'Linux AMD64' },
                       {
                         value: 'arm64',
                         label: features.hostedCompute
@@ -780,16 +853,6 @@ export default function BuildForm({
                     ]}
                   />
                 </label>
-              </details>
-              <details
-                className="form-disclosure"
-                open={
-                  Boolean(buildArgs) || Boolean(fieldGroupError(error, 'build_args')) || undefined
-                }
-              >
-                <summary>
-                  Public build values <span className="muted-text">Optional</span>
-                </summary>
                 <label>
                   Public build values
                   <Textarea
@@ -802,29 +865,12 @@ export default function BuildForm({
                     spellCheck={false}
                   />
                   <span id="build-args-help" className="field-help">
-                    One NAME=value per line. Public values are baked into the image; never enter
-                    secrets. Save changes, then review and reinstall the workflow before building.
+                    One NAME=value per line. These values are baked into the image, so never enter
+                    secrets here.
                   </span>
                 </label>
-              </details>
-            </FormSection>
-            <details
-              className="form-disclosure"
-              open={
-                Boolean(buildSecrets) || Boolean(fieldError(error, 'build_secrets')) || undefined
-              }
-            >
-              <summary>
-                Build secrets{' '}
-                <span className="muted-text">Optional · private dependencies and build tools</span>
-              </summary>
-              <FormSection
-                title="Build secrets"
-                description="Reference secrets already configured in your repository's GitHub Actions settings or GitLab CI variables."
-                icon="lock"
-              >
                 <label>
-                  Secret references
+                  Build secret references
                   <Textarea
                     rows={3}
                     value={buildSecrets}
@@ -832,91 +878,103 @@ export default function BuildForm({
                     onChange={(e) => setBuildSecrets(e.target.value)}
                     placeholder="npm_token=NPM_TOKEN"
                     aria-describedby="build-secrets-help"
+                    spellCheck={false}
                   />
+                  <span id="build-secrets-help" className="field-help">
+                    One mount_id=CI_SECRET_NAME per line, naming a secret already saved in{' '}
+                    {provider === 'gitlab' ? 'GitLab CI variables' : 'GitHub Actions secrets'}.
+                    Never enter a secret value. Dockerfile builds read /run/secrets/mount_id;
+                    framework steps also receive the named variable. Buildpacks do not support
+                    secret mounts.
+                  </span>
                 </label>
-                <p id="build-secrets-help" className="muted-text">
-                  Configure secret values in GitHub Actions secrets or GitLab CI variables first.
-                  Enter mount_id=CI_SECRET_NAME, never a secret value. Dockerfile builds read
-                  /run/secrets/mount_id; framework build steps also receive the named variable.
-                  Buildpacks do not support secret mounts.
-                </p>
-              </FormSection>
+              </div>
             </details>
           </fieldset>
+
+          {/* Service: where the image runs. */}
           <fieldset
             disabled={busy || step !== 2}
-            className={step === 2 ? 'grid min-w-0 gap-4' : 'hidden'}
+            className={step === 2 ? 'build-flow-step' : 'hidden'}
           >
-            <FormSection
-              title="Runtime"
-              description="Choose resource and image-pull settings."
-              icon="box"
+            <FlowSection
+              title={linked ? 'Service that receives the image' : 'New application'}
+              help={
+                linked
+                  ? 'A successful build replaces this service’s image. Its resources and networking stay controlled by the application configuration.'
+                  : 'The application is created when you deploy the first verified build. No container image is needed now.'
+              }
             >
-              <SelectField
-                label="Runtime command"
-                value={runtimeMode}
-                onValueChange={(value) => setRuntimeMode(value as typeof runtimeMode)}
-                options={[
-                  ...(linked ? [{ value: 'preserve', label: 'Keep service settings' }] : []),
-                  { value: 'default', label: 'Use image defaults' },
-                  { value: 'override', label: 'Override runtime command' },
-                ]}
-              />
-              {runtimeMode === 'preserve' && (
-                <p className="field-help">
-                  The current service command and arguments are retained when this build is
-                  deployed.
-                </p>
-              )}
-              {runtimeMode === 'default' && (
-                <p className="field-help">
-                  Use the image ENTRYPOINT and CMD. Deploying this build clears any existing service
-                  command override.
-                </p>
-              )}
-              {runtimeMode === 'override' && (
-                <div className="grid gap-4">
+              <div className="create-fields">
+                <label>
+                  Application name
+                  <Input
+                    value={name}
+                    error={fieldError(error, 'name', 'application')}
+                    readOnly={Boolean(build || application)}
+                    onChange={(e) => {
+                      nameEdited.current = true
+                      setName(e.target.value)
+                    }}
+                    pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
+                    title="Use up to 40 lowercase letters, numbers or hyphens. Start with a letter and end with a letter or number."
+                    maxLength={40}
+                    required
+                  />
+                  {!build && !application && (
+                    <span className="field-help">Lowercase letters, numbers and hyphens.</span>
+                  )}
+                </label>
+                {application ? (
                   <label>
-                    Command
-                    <Input
-                      value={runtimeCommand}
-                      error={fieldError(error, 'command', `services.${service}.command`)}
-                      onChange={(event) => setRuntimeCommand(event.target.value)}
-                      placeholder="uvicorn"
-                      maxLength={8192}
+                    Service
+                    <SelectField
+                      label="Service"
+                      value={service}
+                      error={fieldError(error, 'service', `services.${service}.service`)}
+                      onValueChange={setService}
+                      options={Object.keys(application.spec.services).map((item) => ({
+                        value: item,
+                        label: item,
+                      }))}
                     />
                   </label>
+                ) : (
                   <label>
-                    Arguments
+                    Service
                     <Input
-                      value={runtimeArgs}
-                      error={fieldError(error, 'args', `services.${service}.args`)}
-                      onChange={(event) => setRuntimeArgs(event.target.value)}
-                      placeholder="main:app --host 0.0.0.0 --port 8000"
-                      maxLength={16384}
+                      value={service}
+                      error={fieldError(error, 'service')}
+                      readOnly={Boolean(build)}
+                      onChange={(e) => setService(e.target.value)}
+                      pattern="[a-z]([a-z0-9\-]{0,38}[a-z0-9])?"
+                      maxLength={40}
+                      required
                     />
                   </label>
-                  <p className="field-help">
-                    Command replaces the image ENTRYPOINT; arguments replace CMD. Leave either blank
-                    to use that image default. Quotes group arguments; use an explicit shell for
-                    shell expressions. The override is applied when this build is deployed.
-                  </p>
-                </div>
-              )}
+                )}
+              </div>
               {!linked && (
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="create-fields">
                   <label>
                     Service port
                     <Input
                       type="number"
                       min={1}
                       max={65535}
-                      value={mode === 'framework' && framework.runtime === 'static' ? 8080 : port}
+                      value={servicePort}
                       error={fieldError(error, 'port', `services.${service}.port`)}
                       readOnly={mode === 'framework' && framework.runtime === 'static'}
                       onChange={(e) => setPort(Number(e.target.value))}
                       required
                     />
+                    {mode === 'framework' && (
+                      <span className="field-help">
+                        {framework.runtime === 'static'
+                          ? 'Static files are served on 8080.'
+                          : 'Matches the recipe’s server port.'}
+                      </span>
+                    )}
                   </label>
                   <label>
                     Resource profile
@@ -924,17 +982,15 @@ export default function BuildForm({
                       label="Resource profile"
                       value={size}
                       error={fieldError(error, 'size', `services.${service}.size`)}
-                      onValueChange={(value) => setSize(value)}
-                      options={
-                        ['small', 'medium', 'large'].map((value) => ({
-                          value: value,
-                          label:
-                            features.hostedFree && value !== 'small'
-                              ? `${value} · Requires your own server`
-                              : value,
-                          disabled: features.hostedFree && value !== 'small',
-                        })) ?? []
-                      }
+                      onValueChange={setSize}
+                      options={['small', 'medium', 'large'].map((value) => ({
+                        value,
+                        label:
+                          features.hostedFree && value !== 'small'
+                            ? `${value} · Requires your own server`
+                            : value,
+                        disabled: features.hostedFree && value !== 'small',
+                      }))}
                     />
                   </label>
                 </div>
@@ -946,17 +1002,206 @@ export default function BuildForm({
                     checked={isPublic}
                     onChange={(e) => setPublic(e.target.checked)}
                   />
-                  Expose the service publicly
+                  Expose the service publicly over HTTP
                 </label>
               )}
+            </FlowSection>
+            {boundApplicationId && !features.hostedCompute && (
+              <FlowSection
+                title="Reuse this image"
+                help="Selected services receive the same verified image on deployment. Each keeps its own run command, variables, ports and volumes."
+              >
+                {linkedApp.error && (
+                  <Note>
+                    The application services could not be loaded. Your saved selections are kept;
+                    reload before changing them.
+                  </Note>
+                )}
+                {Object.keys(reuseApplication?.spec.services || {}).filter(
+                  (item) => item !== service,
+                ).length === 0 ? (
+                  <p className="field-help">This application has no other services.</p>
+                ) : (
+                  <div className="build-checks">
+                    {Object.keys(reuseApplication?.spec.services || {})
+                      .filter((item) => item !== service)
+                      .map((item) => (
+                        <label key={item} className="checkbox-row">
+                          <Input
+                            type="checkbox"
+                            checked={reuseServices.includes(item)}
+                            onChange={(event) =>
+                              setReuseServices((current) =>
+                                event.target.checked
+                                  ? [...current, item]
+                                  : current.filter((value) => value !== item),
+                              )
+                            }
+                          />
+                          <code>{item}</code>
+                        </label>
+                      ))}
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="justify-self-start"
+                  disabled={linkedApp.isFetching}
+                  onClick={() => void linkedApp.refetch()}
+                >
+                  <Icon name="refresh" size={14} />
+                  Refresh services
+                </Button>
+              </FlowSection>
+            )}
+            <details
+              className="form-disclosure"
+              open={Boolean(registry || fieldError(error, 'registry_credential')) || undefined}
+            >
+              <summary>
+                Image registry{' '}
+                <span className="muted-text">
+                  {registry ||
+                    (managedRegistryAvailable ? 'Hakopod private registry' : 'Automatic')}
+                </span>
+              </summary>
+              <div className="create-fields">
+                <label>
+                  Pull credential
+                  <SelectField
+                    label="Pull credential"
+                    value={registry}
+                    error={fieldError(
+                      error,
+                      'registry_credential',
+                      `services.${service}.registry_credential`,
+                    )}
+                    onValueChange={setRegistry}
+                    options={[
+                      {
+                        value: '',
+                        label: managedRegistryAvailable
+                          ? 'Automatic · Hakopod private registry'
+                          : 'Automatic · public or matching saved credential',
+                      },
+                      ...(registry && !registries.data?.items.some((item) => item.name === registry)
+                        ? [{ value: registry, label: registry }]
+                        : []),
+                      ...(registries.data?.items.map((item) => ({
+                        value: item.name,
+                        label: `${item.name} · ${item.registry}`,
+                      })) ?? []),
+                    ]}
+                  />
+                </label>
+                <p className="field-help">
+                  {managedRegistryAvailable
+                    ? 'GitHub App builds push to the Hakopod private registry and pull credentials are set up for you. Choosing a saved credential uses your own registry instead.'
+                    : 'Saved credentials that match the image registry are tried automatically. Choose one to try it first.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" asChild>
+                    <a
+                      href="/infrastructure/registries/new"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Add registry credential
+                      <Icon name="external" size={13} />
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={registries.isFetching}
+                    onClick={() => void registries.refetch()}
+                  >
+                    <Icon name="refresh" size={14} />
+                    Refresh credentials
+                  </Button>
+                </div>
+              </div>
+            </details>
+          </fieldset>
+
+          {/* Runtime: how the deployed container starts, and what happens on push. */}
+          <fieldset
+            disabled={busy || step !== 3}
+            className={step === 3 ? 'build-flow-step' : 'hidden'}
+          >
+            <FlowSection title="Run command">
+              <ChoiceCards
+                compact
+                label="Run command"
+                value={runtimeMode}
+                onChange={setRuntimeMode}
+                choices={[
+                  ...(linked
+                    ? [
+                        {
+                          value: 'preserve' as const,
+                          title: 'Keep service settings',
+                          description: 'The service keeps its current command and arguments.',
+                        },
+                      ]
+                    : []),
+                  {
+                    value: 'default' as const,
+                    title: 'Image defaults',
+                    description: linked
+                      ? 'Use ENTRYPOINT and CMD; clears the service override.'
+                      : 'Use the image ENTRYPOINT and CMD.',
+                  },
+                  {
+                    value: 'override' as const,
+                    title: 'Custom command',
+                    description: 'Replace the entrypoint, the arguments, or both.',
+                  },
+                ]}
+              />
+              {runtimeMode === 'override' && (
+                <div className="create-fields">
+                  <label>
+                    Command
+                    <Input
+                      value={runtimeCommand}
+                      error={fieldError(error, 'command', `services.${service}.command`)}
+                      onChange={(event) => setRuntimeCommand(event.target.value)}
+                      placeholder="uvicorn"
+                      maxLength={8192}
+                    />
+                    <span className="field-help">Replaces ENTRYPOINT. Leave blank to keep it.</span>
+                  </label>
+                  <label>
+                    Arguments
+                    <Input
+                      value={runtimeArgs}
+                      error={fieldError(error, 'args', `services.${service}.args`)}
+                      onChange={(event) => setRuntimeArgs(event.target.value)}
+                      placeholder="main:app --host 0.0.0.0 --port 8000"
+                      maxLength={16384}
+                    />
+                    <span className="field-help">
+                      Replaces CMD. Quotes group arguments; use an explicit shell for shell
+                      expressions.
+                    </span>
+                  </label>
+                </div>
+              )}
+            </FlowSection>
+            <FlowSection title="Variables and secrets">
               {boundApplicationId && (
-                <label className="checkbox-label">
+                <label className="checkbox-row">
                   <Input
                     type="checkbox"
                     checked={runtimeEnvEnabled}
                     onChange={(event) => setRuntimeEnvEnabled(event.target.checked)}
                   />
-                  Replace service environment variables on deployment
+                  Replace the service’s variables when this build is deployed
                 </label>
               )}
               {runtimeEnvEnabled ? (
@@ -972,331 +1217,268 @@ export default function BuildForm({
                   disabled={busy}
                 />
               ) : (
-                <p className="field-help">Existing service environment variables are retained.</p>
+                <p className="field-help">The service keeps its current variables and secrets.</p>
               )}
-              <details
-                className="form-disclosure"
-                open={
-                  Boolean(registry) ||
-                  Boolean(fieldError(error, 'registry_credential')) ||
-                  undefined
-                }
-              >
-                <summary>
-                  Image registry <span className="muted-text">Automatic unless changed</span>
-                </summary>
-                <label>
-                  Runtime registry credential
-                  <SelectField
-                    label="Runtime registry credential"
-                    value={registry}
-                    error={fieldError(
-                      error,
-                      'registry_credential',
-                      `services.${service}.registry_credential`,
-                    )}
-                    onValueChange={(value) => setRegistry(value)}
-                    options={[
-                      {
-                        value: '',
-                        label: managedRegistryAvailable
-                          ? 'Automatic · Hakopod private registry'
-                          : 'Automatic · public or matching saved credential',
-                      },
-                      ...(registry && !registries.data?.items.some((item) => item.name === registry)
-                        ? [{ value: registry, label: registry }]
-                        : []),
-                      ...(registries.data?.items.map((item) => ({
-                        value: item.name,
-                        label: item.name + ' · ' + item.registry,
-                      })) ?? []),
-                    ]}
+            </FlowSection>
+            <FlowSection title="Automation">
+              <div className="build-checks">
+                <label className="checkbox-row">
+                  <Input
+                    type="checkbox"
+                    checked={automatic}
+                    onChange={(e) => {
+                      setAutomatic(e.target.checked)
+                      if (!e.target.checked) setAutoDeploy(false)
+                    }}
                   />
-                  <span className="field-help">
-                    {managedRegistryAvailable
-                      ? 'GitHub App builds use the Hakopod private registry automatically. Worker pull credentials are configured for you. Choosing a saved credential uses your own registry instead.'
-                      : 'Matching saved registry credentials are tried automatically for private images. You can choose which credential to try first.'}
-                  </span>
+                  Build on every push to {branch || 'the branch'}
                 </label>
-                <Button type="button" asChild>
-                  <a
-                    href="/infrastructure/registries/new"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Create registry credential <Icon name="external" size={14} />
-                  </a>
-                </Button>
-                <span className="field-help">
-                  Opens in a new tab so your build draft stays here. Return and refresh the
-                  credential list after saving.
-                </span>
-                <Button
-                  type="button"
-                  disabled={registries.isFetching}
-                  onClick={() => void registries.refetch()}
-                >
-                  Refresh credentials
-                </Button>
-              </details>
-            </FormSection>
-            {boundApplicationId && !features.hostedCompute && (
-              <FormSection
-                title="Reuse this image"
-                description="Build once for your web process, workers and migrations."
-                icon="box"
-              >
-                <p className="field-help">
-                  Selected services receive the same verified image on deployment. Each keeps its
-                  own run command, variables, ports and volumes.
-                </p>
-                {linkedApp.error && (
-                  <Note>
-                    The application services could not be loaded. Your saved selections are
-                    retained; reload before changing them.
-                  </Note>
-                )}
-                {Object.keys(reuseApplication?.spec.services || {})
-                  .filter((name) => name !== service)
-                  .map((name) => (
-                    <label key={name} className="checkbox-label">
-                      <Input
-                        type="checkbox"
-                        checked={reuseServices.includes(name)}
-                        disabled={busy}
-                        onChange={(event) =>
-                          setReuseServices((current) =>
-                            event.target.checked
-                              ? [...current, name]
-                              : current.filter((value) => value !== name),
-                          )
-                        }
-                      />
-                      <span>{name}</span>
-                    </label>
-                  ))}
-                {reuseApplication && (
-                  <Button type="button" asChild>
-                    <a
-                      href={`/applications/${reuseApplication.id}/configure`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Add another service <Icon name="external" size={14} />
-                    </a>
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  disabled={linkedApp.isFetching}
-                  onClick={() => void linkedApp.refetch()}
-                >
-                  Refresh services
-                </Button>
-              </FormSection>
-            )}
-            <FormSection
-              title="Automation"
-              description="Choose how verified commits become deployments."
-              icon="refresh"
-            >
-              <label className="checkbox-row">
-                <Input
-                  type="checkbox"
-                  checked={automatic}
-                  onChange={(e) => {
-                    setAutomatic(e.target.checked)
-                    if (!e.target.checked) setAutoDeploy(false)
-                  }}
-                />
-                Build automatically on pushes to this source branch
-              </label>
-              <label className="checkbox-row">
-                <Input
-                  type="checkbox"
-                  checked={autoDeploy}
-                  disabled={!automatic}
-                  onChange={(e) => setAutoDeploy(e.target.checked)}
-                />
-                Deploy successful verified builds automatically
-              </label>
-              <Note>
-                {linked
-                  ? 'A successful build replaces the selected service image. Existing service resources and networking remain controlled by its application configuration.'
-                  : 'The application is created when a verified build image is deployed. No container image is needed now.'}{' '}
-                Saving build settings prepares a workflow preview. A repository manager explicitly
-                installs the reviewed workflow in {provider === 'gitlab' ? 'GitLab' : 'GitHub'}.
-              </Note>
-              {provider === 'gitlab' && (
-                <Note>
-                  Hakopod manages one .gitlab-ci.yml entrypoint per repository. Installation refuses
-                  an existing unowned CI file or a file owned by another build. Configure Pipeline
-                  events on the project webhook for automatic deployment.
-                </Note>
-              )}
+                <label className="checkbox-row">
+                  <Input
+                    type="checkbox"
+                    checked={autoDeploy}
+                    disabled={!automatic}
+                    onChange={(e) => setAutoDeploy(e.target.checked)}
+                  />
+                  Deploy successful verified builds automatically
+                </label>
+              </div>
               {automatic && (
-                <Note>
-                  Automatic builds require the installed workflow. Automatic deployment additionally
-                  needs the{' '}
+                <p className="field-help">
+                  Push builds need the installed workflow. Automatic deployment also needs the{' '}
                   {provider === 'gitlab'
                     ? 'authenticated GitLab Pipeline Hook'
                     : 'signed GitHub workflow event'}{' '}
-                  integration and your continuing project authority.
-                </Note>
+                  and your continuing project access.
+                </p>
               )}
-            </FormSection>
+            </FlowSection>
           </fieldset>
-          {step === 3 && (
-            <FormSection title={build ? 'Review build changes' : 'Review source build'}>
-              <dl className="grid min-w-0 gap-3 text-sm sm:grid-cols-2 [&_dd]:break-words [&_dt]:text-[var(--muted)]">
-                <div>
-                  <dt>Application / service</dt>
-                  <dd>
-                    {name} / {service}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Repository</dt>
-                  <dd>
-                    {repository} · {branch}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Build method</dt>
-                  <dd>
+
+          {step === reviewStep && (
+            <div className="build-flow-step">
+              <div className="review-services build-review">
+                <ReviewCard
+                  title="Source"
+                  icon={<ProviderMark provider={provider} />}
+                  edit={edit(0)}
+                >
+                  <Fact label="Repository">
+                    <code>{repository}</code>
+                  </Fact>
+                  <Fact label="Branch">
+                    <code>{branch}</code>
+                  </Fact>
+                  <Fact label="Build directory">
+                    {context === '.' ? 'Repository root' : <code>{context}</code>}
+                    {submodules ? ' · with submodules' : ' · no submodules'}
+                  </Fact>
+                  <Fact label="Runs in">{runner}</Fact>
+                </ReviewCard>
+                <ReviewCard title="Build" icon={<Icon name="code" size={16} />} edit={edit(1)}>
+                  <Fact label="Method">
                     {mode === 'framework'
-                      ? frameworkLabel(framework.framework)
+                      ? `${frameworkLabel(framework.framework)} · ${framework.package_manager}${!build && !detection && !recipeEdited.current ? ' · default recipe, not detected' : ''}`
                       : mode === 'buildpacks'
-                        ? 'Cloud Native Buildpacks'
-                        : 'Dockerfile'}{' '}
-                    · {context}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Submodules</dt>
-                  <dd>{submodules ? 'Checked out recursively' : 'Not checked out'}</dd>
-                </div>
-                <div>
-                  <dt>Architecture</dt>
-                  <dd>{architecture || 'Infer from cluster'}</dd>
-                </div>
-                <div>
-                  <dt>Recipe</dt>
-                  <dd>
-                    {mode === 'dockerfile'
-                      ? dockerfile
-                      : mode === 'buildpacks'
-                        ? preset
-                        : `${framework.package_manager} · ${framework.runtime}`}
-                  </dd>
-                </div>
-                {mode === 'framework' && (
-                  <div className="sm:col-span-2">
-                    <dt>Build commands</dt>
-                    <dd className="grid gap-1 break-all">
-                      <code>{framework.install_command}</code>
-                      <code>{framework.build_command}</code>
-                      <code>
-                        {framework.runtime === 'static'
-                          ? `Serve ${framework.output_directory} on port 8080`
-                          : `${framework.start_command} · port ${port}`}
-                      </code>
-                    </dd>
-                  </div>
-                )}
-                <div>
-                  <dt>Image registry</dt>
-                  <dd>
-                    {registry ||
-                      (managedRegistryAvailable
-                        ? 'Hakopod private registry'
-                        : 'Automatic matching credentials')}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Resources and access</dt>
-                  <dd>
+                        ? `Buildpacks · ${preset}`
+                        : 'Dockerfile'}
+                  </Fact>
+                  {mode === 'dockerfile' && (
+                    <Fact label="Dockerfile">
+                      <code>{dockerfile}</code>
+                    </Fact>
+                  )}
+                  {mode === 'framework' && (
+                    <Fact label="Commands">
+                      <span className="build-review-commands">
+                        <code>{framework.install_command}</code>
+                        <code>{framework.build_command}</code>
+                        <code>
+                          {framework.runtime === 'static'
+                            ? `serve ${framework.output_directory}`
+                            : framework.start_command}
+                        </code>
+                      </span>
+                    </Fact>
+                  )}
+                  <Fact label="Architecture">
+                    {architecture ? `Linux ${architecture.toUpperCase()}` : 'Inferred from cluster'}
+                  </Fact>
+                  {(buildArgs.trim() || buildSecrets.trim()) && (
+                    <Fact label="Build inputs">
+                      {plural(
+                        buildArgs.split('\n').filter((line) => line.trim()).length,
+                        'public value',
+                      )}{' '}
+                      ·{' '}
+                      {plural(
+                        buildSecrets.split('\n').filter((line) => line.trim()).length,
+                        'secret reference',
+                      )}
+                    </Fact>
+                  )}
+                </ReviewCard>
+                <ReviewCard title="Service" icon={<Icon name="box" size={16} />} edit={edit(2)}>
+                  <Fact label="Deploys to">
+                    {project} / {environment} / <strong>{name}</strong> / {service}
+                  </Fact>
+                  <Fact label="Resources">
                     {linked
-                      ? 'Keep existing service resources and networking'
-                      : `${size} · ${isPublic ? 'Public HTTP' : 'Private'} · port ${mode === 'framework' && framework.runtime === 'static' ? 8080 : port}`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Run command</dt>
-                  <dd>
+                      ? 'Kept from the application'
+                      : `${size} · port ${servicePort} · ${isPublic ? 'public HTTP' : 'private'}`}
+                  </Fact>
+                  <Fact label="Pull credential">
+                    {registry ||
+                      (managedRegistryAvailable ? 'Hakopod private registry' : 'Automatic')}
+                  </Fact>
+                  {reuseServices.length > 0 && (
+                    <Fact label="Also updates">{reuseServices.join(', ')}</Fact>
+                  )}
+                </ReviewCard>
+                <ReviewCard
+                  title="Runtime"
+                  icon={<Icon name="terminal" size={16} />}
+                  edit={edit(3)}
+                >
+                  <Fact label="Run command">
                     {runtimeMode === 'preserve' ? (
                       'Keep service settings'
                     ) : runtimeMode === 'default' ? (
-                      'Use image defaults'
+                      'Image defaults'
                     ) : (
-                      <code className="whitespace-pre-wrap break-all">
-                        {runtimeCommand || '(image command)'} {runtimeArgs || '(image arguments)'}
+                      <code>
+                        {runtimeCommand || '(image entrypoint)'} {runtimeArgs || '(image command)'}
                       </code>
                     )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Variables and secrets</dt>
-                  <dd>
+                  </Fact>
+                  <Fact label="Variables">
                     {runtimeEnvEnabled
-                      ? `${runtimeVariables} ${runtimeVariables === 1 ? 'variable' : 'variables'} · ${runtimeSecrets} ${runtimeSecrets === 1 ? 'secret' : 'secrets'} · values hidden`
-                      : 'Keep existing variables and secrets'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Automation</dt>
-                  <dd>
+                      ? `${plural(runtimeVariables, 'variable')} · ${plural(runtimeSecrets, 'secret')}`
+                      : 'Keep current variables and secrets'}
+                  </Fact>
+                  <Fact label="Automation">
                     {automatic
                       ? autoDeploy
-                        ? 'Build and deploy verified commits'
-                        : 'Build on pushes; deploy manually'
+                        ? 'Build and deploy on push'
+                        : 'Build on push, deploy after review'
                       : 'Manual builds and deployments'}
-                  </dd>
-                </div>
-                {reuseServices.length > 0 && (
-                  <div>
-                    <dt>Also update these services</dt>
-                    <dd>{reuseServices.join(', ')}</dd>
-                  </div>
+                  </Fact>
+                </ReviewCard>
+              </div>
+              <section className="build-next" aria-labelledby="build-next-heading">
+                <h2 id="build-next-heading">What happens next</h2>
+                <ol>
+                  <li>
+                    {build
+                      ? 'Hakopod saves a new configuration revision. Nothing is deployed.'
+                      : 'Hakopod saves the build configuration. Nothing is deployed.'}
+                  </li>
+                  <li>
+                    You review the generated {runner} workflow, and a repository manager commits it
+                    to <code>{repository}</code>
+                    {provider === 'gitlab' ? ' as the managed .gitlab-ci.yml.' : '.'}
+                  </li>
+                  <li>
+                    {automatic
+                      ? `Each push to ${branch} builds an image. Hakopod verifies its digest${autoDeploy ? ' and deploys it.' : '; you review the deployment.'}`
+                      : 'You run a build, then review deploying its verified image.'}
+                  </li>
+                </ol>
+                {provider === 'gitlab' && (
+                  <p className="field-help">
+                    Installation refuses an existing .gitlab-ci.yml that Hakopod does not manage, or
+                    one owned by another build. Configure Pipeline events on the project webhook for
+                    automatic deployment.
+                  </p>
                 )}
-              </dl>
-              <Note>
-                {build
-                  ? 'Saving applies these build configuration changes. It does not deploy your service.'
-                  : 'Saving prepares a workflow for review. Next, install it in your repository to start building. This does not deploy your service yet.'}
-              </Note>
-            </FormSection>
+              </section>
+            </div>
           )}
         </div>
-        <div className="form-footer">
-          <Button type="button" disabled={busy || detecting} onClick={onClose}>
-            Cancel
-          </Button>
-          {step > 0 && (
+        <div className="form-footer deploy-footer">
+          <span className="dialog-footer-note">
+            <Icon name="lock" size={13} />
+            {step === reviewStep
+              ? 'Only the reviewed configuration is saved'
+              : 'Nothing is saved until the review'}
+          </span>
+          <div className="deploy-footer-actions">
             <Button
               type="button"
               disabled={busy || detecting}
-              onClick={() => {
-                setError('')
-                showStep(step - 1)
-              }}
+              onClick={() => (step > 0 ? showStep(step - 1) : onClose())}
             >
-              Back
+              {step > 0 ? 'Back' : 'Cancel'}
             </Button>
-          )}
-          <Button type="submit" variant="primary" disabled={busy || detecting}>
-            {busy
-              ? 'Saving…'
-              : build
-                ? step === 3
-                  ? 'Save build configuration'
-                  : `Continue to ${buildSteps[step + 1].toLowerCase()}`
-                : step === 3
-                  ? 'Save and review workflow'
-                  : `Continue to ${buildSteps[step + 1].toLowerCase()}`}
-          </Button>
+            <PendingButton
+              type="submit"
+              variant="primary"
+              pending={busy || detecting}
+              pendingLabel={pendingLabel}
+              disabled={step === 0 && !build && !leaving && noBuildConnection}
+            >
+              {primaryLabel}
+              {step < reviewStep && <Icon name="arrow" size={15} />}
+            </PendingButton>
+          </div>
         </div>
       </form>
     </FormPage>
+  )
+}
+
+function FlowSection({
+  title,
+  help,
+  children,
+}: {
+  title: string
+  help?: string
+  children: ReactNode
+}) {
+  return (
+    <section className="create-section build-flow-section">
+      <div className="create-section-heading">
+        <div className="hako-section-heading-title">
+          <h2>{title}</h2>
+          {help && <HeadingHelp title={title}>{help}</HeadingHelp>}
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function ReviewCard({
+  title,
+  icon,
+  edit,
+  children,
+}: {
+  title: string
+  icon: ReactNode
+  edit: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="review-service" aria-label={title}>
+      <header>
+        <div className="build-review-icon" aria-hidden="true">
+          {icon}
+        </div>
+        <strong>{title}</strong>
+        <span>{edit}</span>
+      </header>
+      <dl>{children}</dl>
+    </section>
+  )
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
   )
 }

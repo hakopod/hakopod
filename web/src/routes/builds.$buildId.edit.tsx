@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import BuildForm from '../components/build-form'
-import { Empty, ErrorState, Loading } from '../components/shared'
+import { ErrorState, Loading, PageHeader } from '../components/shared'
+import { ResourceEmpty } from '../components/resource-card'
 import { client, unwrap } from '../lib/client'
 import { useScope, useResourceScope } from '../lib/scope'
 
@@ -21,11 +22,14 @@ function EditBuild() {
   if (build.error || !build.data) return <ErrorState error={build.error} />
   if (!scope.can('deployments:write'))
     return (
-      <Empty
-        icon="lock"
-        title="Deployment access required"
-        description="Your project role does not allow build configuration changes."
-      />
+      <div className="ops-page builds-page">
+        <PageHeader title="Edit source build" />
+        <ResourceEmpty
+          icon="lock"
+          title="Deployment access required"
+          description="Your role in this project does not allow build configuration changes. Ask a project administrator for access."
+        />
+      </div>
     )
   return (
     <BuildForm
