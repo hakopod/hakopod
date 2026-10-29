@@ -29,6 +29,8 @@ import {
   type InspectTab,
 } from '../components/application-workspace'
 import { ServiceInspector } from '../components/service-inspector'
+import { DraftReview } from '../components/draft-review'
+import { useApplicationDraft } from '../lib/drafts'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import {
@@ -166,6 +168,8 @@ function ApplicationDetail() {
   const [powerService, setPowerService] = useState('')
   const [deletingService, setDeletingService] = useState('')
   const [movingService, setMovingService] = useState('')
+  const [reviewing, setReviewing] = useState(false)
+  const staged = useApplicationDraft(applicationId)
   const serviceMenuTriggers = useRef<Record<string, HTMLButtonElement | null>>({})
   const application = useQuery({
     queryKey: ['application', applicationId],
@@ -344,19 +348,25 @@ function ApplicationDetail() {
               </Link>
             </Button>
           )}
-          {canDeploy && (
-            <Button
-              variant="primary"
-              onClick={() =>
-                void navigate({
-                  to: '/applications/$applicationId/configure',
-                  params: { applicationId },
-                  search: { mode: 'form' },
-                })
-              }
-            >
-              Deploy changes
+          {staged.data ? (
+            <Button variant="primary" onClick={() => setReviewing(true)}>
+              Review {staged.data.changes.length}{' '}
+              {staged.data.changes.length === 1 ? 'change' : 'changes'}
             </Button>
+          ) : (
+            canDeploy && (
+              <Button
+                onClick={() =>
+                  void navigate({
+                    to: '/applications/$applicationId/configure',
+                    params: { applicationId },
+                    search: { mode: 'form' },
+                  })
+                }
+              >
+                Edit configuration
+              </Button>
+            )
           )}
           <Menu
             trigger={
@@ -413,6 +423,18 @@ function ApplicationDetail() {
             Configure DNS and activate domains
           </Link>
         </Note>
+      )}
+      {staged.data && staged.data.conflicts.length > 0 && (
+        <Note>
+          Staged changes conflict with revision {staged.data.current_revision} in{' '}
+          {staged.data.conflicts.join(', ')}.{' '}
+          <button type="button" className="text-link" onClick={() => setReviewing(true)}>
+            Review them
+          </button>
+        </Note>
+      )}
+      {reviewing && staged.data && (
+        <DraftReview app={app} draft={staged.data} onClose={() => setReviewing(false)} />
       )}
       <Suspense fallback={null}>
         <SampleBanner applicationId={app.id} />

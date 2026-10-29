@@ -20,6 +20,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Application, Plan, Service, Spec } from '../lib/types'
 import { APIError, message } from '../lib/api'
+import { draftKey } from '../lib/drafts'
 import { client, unwrap } from '../lib/client'
 import { useScope } from '../lib/scope'
 import { specToTOML } from '../lib/toml'
@@ -88,9 +89,15 @@ export function DeploymentForm({
   serviceName,
   removeService,
   addedService,
+  draftRevision,
 }: {
   onClose: () => void
   application?: Application
+  /**
+   * The staged draft's revision for an existing application (0 when none is staged).
+   * When set, a reviewed change is added to the draft by default; deploying now stays available.
+   */
+  draftRevision?: number
   initialMode?: 'form' | 'toml' | 'compose'
   // New applications start by choosing where the release comes from.
   chooseSource?: boolean
@@ -395,6 +402,41 @@ export function DeploymentForm({
       setBusy(false)
     }
   }
+  // Values that cannot be stored (uploaded env files) must be deployed directly.
+  const canStage =
+    Boolean(application) && draftRevision !== undefined && !(mode === 'toml' && envFiles.length)
+  async function stage() {
+    if (!plan || !application || draftRevision === undefined) return
+    setBusy(true)
+    setError('')
+    try {
+      await unwrap(
+        client.PUT('/applications/{id}/draft', {
+          params: { path: { id: application.id } },
+          // Always the whole configuration: it already starts from the staged draft, while a
+          // service-targeted plan merges into the live revision and would drop other staged edits.
+          body: {
+            ...(mode === 'form' ? { spec: await formSpec() } : { toml }),
+            expected_draft_revision: draftRevision,
+          },
+        }),
+      )
+      void queryClient.invalidateQueries({ queryKey: draftKey(application.id) })
+      onClose()
+      void navigate({
+        to: '/applications/$applicationId',
+        params: { applicationId: application.id },
+      })
+    } catch (err) {
+      setError(
+        err instanceof APIError && err.status === 409
+          ? 'Someone else changed the staged changes. Go back to the application to review them, then edit again.'
+          : message(err),
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
   async function deploy() {
     if (!plan || plan.missing_secrets?.length) return
     setBusy(true)
@@ -491,9 +533,11 @@ export function DeploymentForm({
           ? `Review ${plural(draftCount, 'service')}`
           : 'Review configuration'
   const pendingLabel = plan
-    ? isNew
-      ? `Creating ${plural(reviewCount, 'service')}…`
-      : 'Deploying…'
+    ? canStage
+      ? 'Adding to changes…'
+      : isNew
+        ? `Creating ${plural(reviewCount, 'service')}…`
+        : 'Deploying…'
     : mode === 'form'
       ? `Checking ${plural(draftCount, 'service')}…`
       : 'Checking configuration…'
@@ -967,6 +1011,14 @@ export function DeploymentForm({
                 ? 'Back to source'
                 : 'Cancel'}
           </Button>
+          {plan && canStage && (
+            <Button
+              disabled={busy || Boolean(plan.missing_secrets?.length)}
+              onClick={() => void deploy()}
+            >
+              Deploy now
+            </Button>
+          )}
           <PendingButton
             variant="primary"
             pending={busy && step === 'configure'}
@@ -975,15 +1027,17 @@ export function DeploymentForm({
               busy ||
               (step === 'source' && !chosenSource) ||
               (step === 'configure' &&
-                (Boolean(plan?.missing_secrets?.length) ||
+                ((Boolean(plan?.missing_secrets?.length) && !canStage) ||
                   mode === 'compose' ||
                   (!plan && mode === 'toml' && !toml.trim())))
             }
             onClick={() =>
-              step === 'source' ? continueFromSource() : void (plan ? deploy() : review())
+              step === 'source'
+                ? continueFromSource()
+                : void (plan ? (canStage ? stage() : deploy()) : review())
             }
           >
-            {primaryLabel}
+            {plan && canStage ? 'Add to changes' : primaryLabel}
             <Icon name="arrow" size={15} />
           </PendingButton>
         </div>
