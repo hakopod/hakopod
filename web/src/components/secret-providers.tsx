@@ -9,16 +9,11 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
 import { SecretProviderIcon } from './secret-provider-icon'
-import { focusedDialog, ReviewFacts, ReviewNotice } from './operation-review'
-import { Empty, ErrorState, HeadingHelp, Loading, Note, PageHeader, RequestError } from './shared'
+import { focusedDialog, plural, ReviewFacts, ReviewNotice } from './operation-review'
+import { ErrorState, Loading, Note, RequestError } from './shared'
+import { SettingsEmpty, SettingsRow, SettingsRows, SettingsSection } from './settings-section'
 
-export function SecretProviders({
-  saved,
-  standalone = false,
-}: {
-  saved?: string
-  standalone?: boolean
-}) {
+export function SecretProviders({ saved }: { saved?: string }) {
   const scope = useScope()
   const cache = useQueryClient()
   const providers = useQuery({
@@ -32,11 +27,11 @@ export function SecretProviders({
   const [error, setError] = useState('')
   if (!scope.identity.admin)
     return (
-      <Empty
-        icon="lock"
-        title="Administrator access required"
-        description="Secret providers are configured by installation administrators."
-      />
+      <SettingsSection title="Secret providers" state="Administrator access required">
+        <SettingsEmpty title="Not available to your role">
+          Secret providers are configured by installation administrators.
+        </SettingsEmpty>
+      </SettingsSection>
     )
   const items = (providers.data?.items || []).filter(
     (item): item is SecretProvider => 'endpoint' in item,
@@ -49,28 +44,22 @@ export function SecretProviders({
       </Link>
     </Button>
   )
+  const unused = items.filter((provider) => !provider.scopes.length).length
   return (
-    <>
-      {standalone ? (
-        <PageHeader
-          title="Secret providers"
-          description="Connect Vault/OpenBao or Infisical and grant access to selected projects."
-          action={add}
-        />
-      ) : (
-        <div className="section-toolbar">
-          <div className="hako-section-heading-title">
-            <h2>Secret providers</h2>
-            <HeadingHelp title="Secret providers">
-              Connect Vault/OpenBao or Infisical and grant access to selected projects. Native
-              application secrets remain available.
-            </HeadingHelp>
-          </div>
-          {add}
-        </div>
-      )}
+    <SettingsSection
+      title="Secret providers"
+      help="Connect Vault/OpenBao or Infisical and grant access to selected projects. Native application secrets remain available."
+      state={
+        providers.data
+          ? items.length
+            ? `${plural(items.length, 'provider')}${unused ? ` · ${unused} without project access` : ''}`
+            : 'Native application secrets only'
+          : undefined
+      }
+      actions={items.length > 0 && add}
+    >
       {saved && (
-        <div role="status" className="mb-3">
+        <div role="status">
           <Note>
             <span className="break-all">{saved}</span> saved. External values are read on the next
             deployment; restart affected services after rotating a secret.
@@ -82,58 +71,60 @@ export function SecretProviders({
       ) : providers.error ? (
         <ErrorState error={providers.error} retry={() => void providers.refetch()} />
       ) : items.length === 0 ? (
-        <Empty
-          icon="lock"
-          title="No external secret providers"
-          description="Applications can only use native secrets until a provider is connected."
-          action={add}
-        />
+        <SettingsEmpty title="No external secret providers" action={add}>
+          Applications can only use native secrets until a provider is connected.
+        </SettingsEmpty>
       ) : (
-        <ul className="settings-rows" aria-label="Secret providers">
+        <SettingsRows label="Secret providers">
           {items.map((provider) => (
-            <li className="settings-row" key={provider.name}>
-              <div className="settings-row-identity">
-                <Icon name="lock" size={16} />
-                <div>
-                  <strong>{provider.name}</strong>
-                  <small>{provider.endpoint}</small>
-                </div>
-              </div>
-              <span className="settings-row-status secret-provider-kind">
-                <SecretProviderIcon kind={provider.kind} />
-                {providerNames[provider.kind]}
-              </span>
-              <div className="settings-row-meta">
-                <span>{provider.scopes.map(scopeSummary).join(' · ') || 'No project access'}</span>
-                <span>
-                  Revision {provider.revision} · updated {timestamp(provider.updated_at)}
+            <SettingsRow
+              key={provider.name}
+              mark={<Icon name="lock" size={16} />}
+              name={provider.name}
+              detail={provider.endpoint}
+              status={
+                <span className="secret-provider-kind">
+                  <SecretProviderIcon kind={provider.kind} />
+                  {providerNames[provider.kind]}
                 </span>
-              </div>
-              <div className="settings-row-actions">
-                <Button asChild size="sm">
-                  <Link
-                    to="/settings/secret-providers/$providerName/edit"
-                    params={{ providerName: provider.name }}
-                    aria-label={`Edit ${provider.name}`}
+              }
+              meta={
+                <>
+                  <span>
+                    {provider.scopes.map(scopeSummary).join(' · ') || 'No project access'}
+                  </span>
+                  <span>
+                    Revision {provider.revision} · updated {timestamp(provider.updated_at)}
+                  </span>
+                </>
+              }
+              actions={
+                <>
+                  <Button asChild size="sm">
+                    <Link
+                      to="/settings/secret-providers/$providerName/edit"
+                      params={{ providerName: provider.name }}
+                      aria-label={`Edit ${provider.name}`}
+                    >
+                      Edit
+                    </Link>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Delete ${provider.name}`}
+                    onClick={() => {
+                      setRemoving(provider)
+                      setError('')
+                    }}
                   >
-                    Edit
-                  </Link>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Delete ${provider.name}`}
-                  onClick={() => {
-                    setRemoving(provider)
-                    setError('')
-                  }}
-                >
-                  <Icon name="trash" size={15} />
-                </Button>
-              </div>
-            </li>
+                    <Icon name="trash" size={15} />
+                  </Button>
+                </>
+              }
+            />
           ))}
-        </ul>
+        </SettingsRows>
       )}
       <Dialog
         open={Boolean(removing)}
@@ -204,6 +195,6 @@ export function SecretProviders({
           </div>
         </form>
       </Dialog>
-    </>
+    </SettingsSection>
   )
 }

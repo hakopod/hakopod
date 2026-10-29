@@ -45,13 +45,9 @@
   line-height: var(--type-meta-line);
   overflow-wrap: anywhere;
 }
-.settings-section-3 + .settings-section-3,
-.settings-section-2 + .settings-section-2 {
+.settings-section-3 + .settings-section-3 {
   @apply border-t pt-6;
   border-color: var(--hairline);
-}
-.settings-hub-panel > .settings-section-2 + .settings-section-2 {
-  @apply border-0 pt-0;
 }
 .settings-empty {
   @apply flex flex-wrap items-center justify-between gap-x-4 gap-y-3 py-3;
@@ -481,18 +477,48 @@
   }
 }
 
-.team-settings .section-toolbar {
-  @apply mb-0 flex-wrap gap-3;
+
+/* fork1: personal, teams, people */
+/* Member-style rows have no metadata slot; an empty one must not add a grid track. */
+.settings-row-member > .settings-row-meta:empty {
+  @apply hidden;
 }
-.team-settings .settings-list-row {
-  @apply grid min-h-14 grid-cols-[minmax(0,1fr)_auto] gap-3 px-0 py-3;
-  @variant sm {
-    @apply grid-cols-[minmax(0,1fr)_auto_auto];
+.settings-row-member .settings-row-identity > .profile-avatar {
+  @apply mt-0 shrink-0;
+}
+/* Appearance keeps its theme cards inside the shared section anatomy. */
+.settings-section.hako-appearance,
+.settings-section.hako-accent-settings {
+  @apply gap-0;
+}
+.hako-appearance > .hako-accent-settings {
+  @apply mt-6 pt-6;
+}
+.hako-appearance .settings-section-head :is(h2, h3) {
+  @apply mb-0;
+}
+
+/* Feature rows keep fixed state and plan columns so they align down the list. */
+.settings-row.settings-row-feature {
+  grid-template-columns: minmax(0, 1fr) 6rem 3rem;
+  grid-template-areas: 'identity status meta';
+}
+.settings-row-feature > .settings-row-actions {
+  @apply hidden;
+}
+@media (max-width: 767px) {
+  .settings-row.settings-row-feature {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity status'
+      'meta meta';
   }
 }
-.team-settings .role-editor {
-  @apply order-1 col-span-2;
-  @variant sm {
-    @apply order-none col-span-1;
-  }
+
+/* fork3: installation providers */
+.settings-log-form {
+  @apply grid max-w-2xl gap-3;
+}
+.settings-section .review-facts + .note {
+  @apply mt-3;
 }

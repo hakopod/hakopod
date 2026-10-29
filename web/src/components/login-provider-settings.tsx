@@ -1,7 +1,7 @@
 import { useEditionFeatures } from '../lib/dashboard-edition'
 import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { APIError, message } from '../lib/api'
 import { useLicense } from '../lib/license'
@@ -24,13 +24,13 @@ import {
 } from './installation-form-fields'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Card, Badge } from './ui/surfaces'
-import { Copy, ErrorState, HeadingHelp, Loading, Note, RequestError } from './shared'
+import { Copy, ErrorState, Loading, Note, RequestError } from './shared'
+import { SettingsRow, SettingsRows, SettingsSection, SettingsState } from './settings-section'
 import { ServiceIcon } from './service-icon'
 import { Icon } from './icons'
 
-function useProvider(provider: LoginProvider) {
-  return useQuery({
+function providerQuery(provider: LoginProvider) {
+  return queryOptions({
     queryKey: ['installation-login-provider', provider],
     queryFn: ({ signal }) =>
       unwrap(
@@ -44,94 +44,118 @@ function useProvider(provider: LoginProvider) {
     retry: false,
   })
 }
+function useProvider(provider: LoginProvider) {
+  return useQuery(providerQuery(provider))
+}
 function ProviderMark({ provider }: { provider: LoginProvider }) {
   return provider === 'oidc' ? (
-    <Icon name="shield" size={24} />
+    <Icon name="shield" size={16} />
   ) : (
-    <ServiceIcon name={provider} size={24} />
+    <ServiceIcon name={provider} size={16} loading="eager" />
   )
 }
 export function LoginProviderSettingsPanel() {
-  return (
-    <InstallationAccess>
-      <div className="grid gap-4">
-        <div className="hako-section-heading-title">
-          <h2>Sign-in providers</h2>
-          <HeadingHelp title="Sign-in providers">
-            Connect an identity provider for existing users. Self-hosted installations keep public
-            signup closed.
-          </HeadingHelp>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {loginProviders.map((provider) => (
-            <ProviderCard key={provider} provider={provider} />
-          ))}
-        </div>
-      </div>
-    </InstallationAccess>
-  )
-}
-function ProviderCard({ provider }: { provider: LoginProvider }) {
-  const query = useProvider(provider)
+  const queries = useQueries({ queries: loginProviders.map(providerQuery) })
   const license = useLicense()
   const features = useEditionFeatures()
-  const entitled =
+  const entitled = (provider: LoginProvider) =>
     features.operator ||
     Boolean(
       license.data?.catalog.find((item) => item.id === loginProviderFeature(provider))?.enabled,
     )
+  const loaded = queries.every((query) => query.data)
+  const enabled = loginProviders.filter(
+    (provider, index) => queries[index].data?.enabled && entitled(provider),
+  )
   return (
-    <Card className="grid content-start gap-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <ProviderMark provider={provider} />
-          <h3 className="m-0">{loginProviderNames[provider]}</h3>
-        </div>
-        <Badge tone={entitled ? 'neutral' : 'accent'}>
-          {provider === 'oidc' ? 'Enterprise' : 'Pro'}
-        </Badge>
-      </div>
-      {query.isPending ? (
-        <Loading rows={1} />
-      ) : query.error ? (
-        <ErrorState error={query.error} retry={() => void query.refetch()} />
-      ) : (
-        <>
-          <p className="m-0 text-sm">
-            {license.isPending
-              ? 'Checking license…'
-              : license.error
-                ? 'License status unavailable'
-                : !entitled
-                  ? 'License required for sign-in'
-                  : query.data?.enabled
-                    ? 'Sign-in enabled'
-                    : 'Sign-in disabled'}
-          </p>
-          {query.data?.enabled && !entitled && !license.isPending && !license.error && (
-            <p className="field-help">
-              The saved provider stays disabled for sign-in until its entitlement is restored. You
-              can turn it off below.
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" asChild>
-              <Link to="/settings/login-providers/$provider" params={{ provider }}>
-                {entitled ? 'Configure' : 'View settings'}
+    <InstallationAccess>
+      <SettingsSection
+        title="Sign-in providers"
+        help="Connect an identity provider for existing users. Self-hosted installations keep public signup closed."
+        state={
+          loaded && !license.isPending
+            ? enabled.length
+              ? `${enabled.map((provider) => loginProviderNames[provider]).join(', ')} enabled · public signup stays closed`
+              : 'Email and password only · public signup stays closed'
+            : undefined
+        }
+        actions={
+          loaded &&
+          !license.isPending &&
+          loginProviders.some((provider) => !entitled(provider)) && (
+            <Button asChild>
+              <Link to="/settings" search={{ tab: 'license' }}>
+                View license
               </Link>
             </Button>
-            {!entitled && (
-              <Button size="sm" variant="outline" asChild>
-                <Link to="/settings" search={{ tab: 'license' }}>
-                  View license
-                </Link>
-              </Button>
-            )}
-          </div>
-        </>
-      )}
-      {license.error && <ErrorState error={license.error} retry={() => void license.refetch()} />}
-    </Card>
+          )
+        }
+      >
+        {license.error && (
+          <ErrorState error={license.error} retry={() => void license.refetch()} />
+        )}
+        <SettingsRows label="Sign-in providers">
+          {loginProviders.map((provider, index) => {
+            const query = queries[index]
+            const allowed = entitled(provider)
+            const plan = provider === 'oidc' ? 'Enterprise' : 'Pro'
+            return (
+              <SettingsRow
+                key={provider}
+                mark={<ProviderMark provider={provider} />}
+                name={loginProviderNames[provider]}
+                detail={`${plan} plan`}
+                status={
+                  query.isPending || license.isPending ? (
+                    <SettingsState tone="muted">Checking…</SettingsState>
+                  ) : query.error ? (
+                    <SettingsState tone="danger">Unavailable</SettingsState>
+                  ) : license.error ? (
+                    <SettingsState tone="muted">License unknown</SettingsState>
+                  ) : !allowed ? (
+                    <SettingsState tone="warn">License required</SettingsState>
+                  ) : query.data?.enabled ? (
+                    <SettingsState tone="ok">Enabled</SettingsState>
+                  ) : (
+                    <SettingsState tone="muted">Disabled</SettingsState>
+                  )
+                }
+                meta={
+                  query.error
+                    ? message(query.error)
+                    : query.data?.enabled && !allowed && !license.isPending && !license.error
+                      ? 'Saved but off for sign-in until the entitlement is restored.'
+                      : query.data
+                        ? query.data.secret_configured
+                          ? 'Client secret stored'
+                          : 'No client secret stored'
+                        : undefined
+                }
+                actions={
+                  query.error ? (
+                    <Button size="sm" onClick={() => void query.refetch()}>
+                      Retry
+                    </Button>
+                  ) : (
+                    <>
+                      <Button size="sm" asChild>
+                        <Link
+                          to="/settings/login-providers/$provider"
+                          params={{ provider }}
+                          aria-label={`${allowed ? 'Configure' : 'View'} ${loginProviderNames[provider]} sign-in`}
+                        >
+                          {allowed ? 'Configure' : 'View'}
+                        </Link>
+                      </Button>
+                    </>
+                  )
+                }
+              />
+            )
+          })}
+        </SettingsRows>
+      </SettingsSection>
+    </InstallationAccess>
   )
 }
 export function LoginProviderEditor({ provider }: { provider: LoginProvider }) {

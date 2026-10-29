@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import type { SecretAction } from '../lib/installation-settings'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
+import { ReviewFacts } from './operation-review'
 
 export function InstallationCredential({
   label,
@@ -55,22 +56,21 @@ export function InstallationCredential({
           />
         </label>
       )}
-      <p className="field-help">Stored credentials are never returned to the browser.</p>
+      <p className="field-help">
+        {action === 'replace'
+          ? configured
+            ? 'The new value replaces the stored one when you save and is used from then on. Revoke the old one at its source afterwards.'
+            : 'Credentials are write-only and never shown again after saving.'
+          : action === 'clear'
+            ? 'Saving erases the stored credential; anything that needs it stops working until a new one is added.'
+            : 'Stored credentials are write-only and never returned to the browser.'}
+      </p>
     </div>
   )
 }
 
 export function InstallationReviewRows({ rows }: { rows: [string, ReactNode][] }) {
-  return (
-    <dl className="m-0 grid gap-3">
-      {rows.map(([label, value]) => (
-        <div key={label} className="grid gap-1 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-3">
-          <dt className="muted-text text-sm">{label}</dt>
-          <dd className="m-0 min-w-0 break-words text-sm">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  )
+  return <ReviewFacts facts={rows} />
 }
 
 export function credentialSummary(action: SecretAction, configured: boolean) {

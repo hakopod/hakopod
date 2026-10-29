@@ -5,7 +5,8 @@ import { APIError, message } from '../lib/api'
 import { retentionNote, validateLogSettings } from '../lib/app-logs'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { ErrorState, HeadingHelp, Loading, Note } from './shared'
+import { ErrorState, Loading, Note, RequestError } from './shared'
+import { SettingsSection } from './settings-section'
 import type { components } from '../lib/api.generated'
 
 type Settings = components['schemas']['AppLogSettings']
@@ -72,78 +73,78 @@ export function Form({ initial }: { initial: Settings }) {
     }
   }
   return (
-    <form
-      className="grid gap-3"
-      onSubmit={(e) => {
-        e.preventDefault()
-        void save()
-      }}
+    <SettingsSection
+      title="Application logs"
+      help="Hakopod collects application logs into stored history. Shorter retention or a smaller limit prunes older lines at the next periodic cleanup."
+      state={
+        saved.enabled
+          ? retentionNote(saved.retention_days, saved.max_mib_per_app)
+          : 'Collection off · stored history is still pruned to the saved limits'
+      }
     >
-      <div className="hako-section-heading-title">
-        <h2>Application logs</h2>
-        <HeadingHelp title="Application logs">
-          {retentionNote(saved.retention_days, saved.max_mib_per_app)}
-        </HeadingHelp>
-      </div>
-      <label className="checkbox-row">
-        <Input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        Enabled
-      </label>
-      <div className="grid gap-1 text-sm">
-        <label htmlFor="app-log-days">Retention (days)</label>
-        <Input
-          id="app-log-days"
-          inputMode="numeric"
-          value={days}
-          aria-invalid={Boolean(problems.retention)}
-          aria-describedby={problems.retention ? 'app-log-days-error' : undefined}
-          onChange={(e) => setDays(e.target.value)}
-        />
-        {problems.retention && (
-          <p id="app-log-days-error" role="alert" className="m-0 text-destructive">
-            {problems.retention}
-          </p>
+      <form
+        className="settings-log-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void save()
+        }}
+      >
+        <label className="checkbox-row">
+          <Input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Collect application logs
+        </label>
+        <div className="form-grid-two">
+          <div className="grid gap-1 text-sm">
+            <label htmlFor="app-log-days">Retention (days)</label>
+            <Input
+              id="app-log-days"
+              inputMode="numeric"
+              value={days}
+              aria-invalid={Boolean(problems.retention)}
+              aria-describedby={problems.retention ? 'app-log-days-error' : undefined}
+              onChange={(e) => setDays(e.target.value)}
+            />
+            {problems.retention && (
+              <p id="app-log-days-error" role="alert" className="m-0 text-destructive">
+                {problems.retention}
+              </p>
+            )}
+          </div>
+          <div className="grid gap-1 text-sm">
+            <label htmlFor="app-log-mib">Max MiB per application</label>
+            <Input
+              id="app-log-mib"
+              inputMode="numeric"
+              value={mib}
+              aria-invalid={Boolean(problems.size)}
+              aria-describedby={problems.size ? 'app-log-mib-error' : undefined}
+              onChange={(e) => setMib(e.target.value)}
+            />
+            {problems.size && (
+              <p id="app-log-mib-error" role="alert" className="m-0 text-destructive">
+                {problems.size}
+              </p>
+            )}
+          </div>
+        </div>
+        {conflict && (
+          <Note>
+            These settings were changed by someone else. Your values are kept; review them and save
+            again. Currently saved: {saved.retention_days} days, {saved.max_mib_per_app} MiB.
+          </Note>
         )}
-      </div>
-      <div className="grid gap-1 text-sm">
-        <label htmlFor="app-log-mib">Max MiB per app</label>
-        <Input
-          id="app-log-mib"
-          inputMode="numeric"
-          value={mib}
-          aria-invalid={Boolean(problems.size)}
-          aria-describedby={problems.size ? 'app-log-mib-error' : undefined}
-          onChange={(e) => setMib(e.target.value)}
-        />
-        {problems.size && (
-          <p id="app-log-mib-error" role="alert" className="m-0 text-destructive">
-            {problems.size}
-          </p>
-        )}
-      </div>
-      {conflict && (
-        <Note>
-          These settings were changed by someone else. Your values are kept; review them and save
-          again. Currently saved: {saved.retention_days} days, {saved.max_mib_per_app} MiB.
-        </Note>
-      )}
-      {error && <Note>{error}</Note>}
-      {ok && (
-        <p role="status" className="m-0 text-sm">
-          Saved.
-        </p>
-      )}
-      <div>
-        <Button
-          type="submit"
-          variant="primary"
-          size="sm"
-          className="max-sm:min-h-11"
-          disabled={busy || invalid}
-        >
-          {busy ? 'Saving…' : 'Save'}
-        </Button>
-      </div>
-    </form>
+        {error && <RequestError error={error} />}
+        <div className="settings-inline-controls">
+          <Button type="submit" variant="primary" disabled={busy || invalid}>
+            {busy ? 'Saving…' : 'Save log retention'}
+          </Button>
+          {ok && (
+            <p role="status" className="m-0 text-sm">
+              Saved.
+            </p>
+          )}
+        </div>
+      </form>
+    </SettingsSection>
   )
 }
