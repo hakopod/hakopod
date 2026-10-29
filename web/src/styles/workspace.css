@@ -231,3 +231,118 @@
     min-height: 44px;
   }
 }
+
+/* Health in one sentence, on the meta line. */
+.app-health-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-1);
+  margin: 0;
+  color: var(--foreground);
+}
+.app-health-dot {
+  width: 8px;
+  height: 8px;
+  margin-right: var(--space-1);
+  border-radius: 50%;
+  background: var(--success);
+}
+.app-health-line-failing .app-health-dot {
+  background: var(--destructive);
+}
+
+/* Needs attention: the failing service, its last error and the fixes. */
+.app-attention {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--destructive) 35%, var(--hairline));
+  border-radius: var(--radius-card);
+  background: var(--error-surface);
+}
+.app-attention > svg {
+  margin-top: 2px;
+  color: var(--destructive);
+}
+.app-attention-body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.app-attention-body > * {
+  margin: 0;
+}
+.app-attention h2 {
+  font-size: var(--type-card-size);
+  line-height: var(--type-card-line);
+  font-weight: var(--type-card-weight);
+}
+.app-attention-more,
+.app-attention-detail {
+  color: var(--muted);
+}
+.app-attention-log code {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.app-attention-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* Cards | Graph toggle beside the Services heading. */
+.app-view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.app-view-toggle button {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--type-meta-size);
+  cursor: pointer;
+}
+.app-view-toggle button[aria-pressed='true'] {
+  background: var(--surface-2);
+  color: var(--foreground);
+}
+.app-view-toggle button:focus-visible {
+  outline: 2px solid var(--navigation-active);
+  outline-offset: -2px;
+}
+
+/* Activity rows: what changed, and the error when a release failed. */
+.app-activity-detail {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.app-activity-error {
+  color: var(--destructive);
+  overflow-wrap: anywhere;
+}
+.app-activity-meta {
+  color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 639px) {
+  .app-view-toggle button {
+    min-height: 44px;
+  }
+}
