@@ -26261,6 +26261,34 @@
               "properties": {
                 "name": {
                   "type": "string"
+                },
+                "summary": {
+                  "type": "object",
+                  "properties": {
+                    "applications": {
+                      "type": "integer"
+                    },
+                    "services": {
+                      "type": "integer"
+                    },
+                    "failed": {
+                      "type": "integer"
+                    },
+                    "deploying": {
+                      "type": "integer"
+                    },
+                    "last_deployed_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "applications",
+                    "services",
+                    "failed",
+                    "deploying"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

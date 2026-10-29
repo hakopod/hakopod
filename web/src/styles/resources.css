@@ -374,6 +374,20 @@ html[data-edition] .resource-row .resource-row-link:focus-visible {
   min-width: 0;
 }
 
+/* Wide screens: rows share the list's columns, so a row without an action still lines up. */
+@media (min-width: 1024px) {
+  .resource-rows {
+    grid-template-columns: minmax(0, 1fr) minmax(112px, max-content) var(
+        --resource-row-meta,
+        144px
+      ) minmax(44px, max-content);
+    column-gap: 16px;
+  }
+  .resource-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+}
 @media (max-width: 1023px) {
   .resource-row {
     grid-template-columns: minmax(0, 1fr) minmax(96px, max-content) minmax(44px, max-content);

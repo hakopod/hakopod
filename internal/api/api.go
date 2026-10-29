@@ -401,14 +401,33 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 	for _, role := range p.ProjectRoles {
 		visible = append(visible, role.Project)
 	}
-	rows, err := s.Store.Pool.Query(r.Context(), "SELECT e.project,e.name,p.display_name,p.description,p.metadata_revision,EXISTS(SELECT 1 FROM personal_workspaces w WHERE w.project=e.project) FROM environments e JOIN projects p ON p.name=e.project WHERE ($1 OR e.project=ANY($2::text[])) AND ($3='' OR e.name=$3) ORDER BY e.project,e.name LIMIT 200", p.IsAdmin(), visible, p.Environment)
+	rows, err := s.Store.Pool.Query(r.Context(), `SELECT e.project,e.name,p.display_name,p.description,p.metadata_revision,EXISTS(SELECT 1 FROM personal_workspaces w WHERE w.project=e.project),
+		a.applications,a.services,a.failed,a.deploying,a.last_deployed_at
+		FROM environments e JOIN projects p ON p.name=e.project
+		CROSS JOIN LATERAL (SELECT count(*) AS applications,
+			COALESCE(sum((SELECT count(*) FROM jsonb_object_keys(CASE WHEN jsonb_typeof(x.spec->'services')='object' THEN x.spec->'services' ELSE '{}'::jsonb END))),0)::bigint AS services,
+			count(*) FILTER (WHERE x.status='failed') AS failed,
+			count(*) FILTER (WHERE x.status IN ('queued','running')) AS deploying,
+			(SELECT max(d.created_at) FROM deployments d JOIN applications y ON y.id=d.application_id WHERE y.project=e.project AND y.environment=e.name) AS last_deployed_at
+			FROM applications x WHERE x.project=e.project AND x.environment=e.name) a
+		WHERE ($1 OR e.project=ANY($2::text[])) AND ($3='' OR e.name=$3) ORDER BY e.project,e.name LIMIT 200`, p.IsAdmin(), visible, p.Environment)
 	if err != nil {
 		failure(w, err)
 		return
 	}
 	defer rows.Close()
+	// Counts come from stored release state, so the overview never asks the
+	// cluster. An application-scoped key sees no counts for its environment.
+	type summary struct {
+		Applications   int64      `json:"applications"`
+		Services       int64      `json:"services"`
+		Failed         int64      `json:"failed"`
+		Deploying      int64      `json:"deploying"`
+		LastDeployedAt *time.Time `json:"last_deployed_at,omitempty"`
+	}
 	type env struct {
-		Name string `json:"name"`
+		Name    string   `json:"name"`
+		Summary *summary `json:"summary,omitempty"`
 	}
 	type project struct {
 		MetadataRevision int64  `json:"metadata_revision"`
@@ -424,7 +443,8 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 		var a, b, displayName, description string
 		var personal bool
 		var metadataRevision int64
-		if err = rows.Scan(&a, &b, &displayName, &description, &metadataRevision, &personal); err != nil {
+		var sum summary
+		if err = rows.Scan(&a, &b, &displayName, &description, &metadataRevision, &personal, &sum.Applications, &sum.Services, &sum.Failed, &sum.Deploying, &sum.LastDeployedAt); err != nil {
 			failure(w, err)
 			return
 		}
@@ -439,7 +459,11 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 			}
 			out = append(out, project{MetadataRevision: metadataRevision, ID: a, Name: a, DisplayName: displayName, Description: description, Personal: personal, Environments: []env{}})
 		}
-		out[len(out)-1].Environments = append(out[len(out)-1].Environments, env{Name: b})
+		item := env{Name: b}
+		if p.Application == "" {
+			item.Summary = &sum
+		}
+		out[len(out)-1].Environments = append(out[len(out)-1].Environments, item)
 	}
 	if err = rows.Err(); err != nil {
 		failure(w, err)
