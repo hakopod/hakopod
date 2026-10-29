@@ -33,7 +33,9 @@ export function useBackupNames() {
         ? item.name
         : destinations.isPending
           ? 'Loading destination…'
-          : `Removed destination ${id.slice(0, 8)}`
+          : destinations.error
+            ? `Destination ${id.slice(0, 8)} (details unavailable)`
+            : `Removed destination ${id.slice(0, 8)}`
     },
     bucket(id: string) {
       const item = destinationItems.find((destination) => destination.id === id)

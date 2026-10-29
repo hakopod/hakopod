@@ -281,7 +281,7 @@ export function VirtualNetworkConnect({
                       <p className="network-flow-lead">
                         {leaving
                           ? `${serviceName} and these services can no longer reach each other over ${segment}:`
-                          : `${serviceName} and these services can reach each other over ${segment}:`}
+                          : `${serviceName} and these services can reach each other over ${segment}, subject to each service’s peer restrictions:`}
                       </p>
                       <ul className="network-chip-list" aria-label="Services in this segment">
                         {peers.map((peer) => (

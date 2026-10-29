@@ -24,9 +24,6 @@ a.backup-row-error {
 .backup-destination-fields > .backup-field-wide {
   grid-column: 1 / -1;
 }
-.backup-schedule-fields {
-  max-width: 36rem;
-}
 .backup-number-field {
   @apply block;
   max-width: 36rem;

@@ -89,11 +89,13 @@ function NetworkDetail() {
     )
   const segments = Object.entries(detail.spec.segments)
   const canConnect = scope.can('deployments:write')
+  // The API lists at most 256 connections; beyond that counts are a lower bound.
+  const connectedCount = `${detail.connections.length}${detail.truncated ? '+' : ''}`
   return (
     <div className="ops-page virtual-network-detail">
       <PageHeader
         title={networkName}
-        description={detail.spec.description || 'Private application network'}
+        description={`${detail.spec.description ? `${detail.spec.description}. ` : ''}Services connected to the same segment can reach each other at their private addresses, subject to each service’s peer restrictions. A service reaches only the segments it has joined.`}
         action={
           <div className="toolbar-actions">
             {detail.can_manage && (
@@ -123,8 +125,9 @@ function NetworkDetail() {
         </time>
         <span>
           {plural(segments.length, 'segment')} ·{' '}
-          {plural(detail.connections.length, 'connected service')}
-          {detail.truncated ? ' (first 256 shown)' : ''}
+          {connectedCount} connected{' '}
+          {detail.connections.length === 1 && !detail.truncated ? 'service' : 'services'}
+          {detail.truncated ? ' (first 256 listed)' : ''}
         </span>
         <Button
           variant="ghost"
@@ -139,10 +142,6 @@ function NetworkDetail() {
       {network.error && (
         <StaleNotice updatedAt={network.dataUpdatedAt} retry={() => void network.refetch()} />
       )}
-      <p className="network-reach-rule">
-        Services connected to the same segment can reach each other at their private addresses,
-        subject to each service’s peer restrictions. A service reaches only the segments it has joined.
-      </p>
       {segments.length > 0 && <NetworkTopology detail={detail} />}
       <div className="network-segments">
         {segments.map(([segment, grants]) => {
@@ -157,11 +156,13 @@ function NetworkDetail() {
               aria-labelledby={`segment-${segment}`}
             >
               <header className="network-segment-heading">
-                <Icon name="network" size={15} />
                 <h2 id={`segment-${segment}`}>{segment}</h2>
                 <span>
                   {plural(grants.applications.length, 'application')} allowed ·{' '}
-                  {plural(connected.length, 'service')} connected
+                  {detail.truncated
+                    ? `${connected.length}+ services`
+                    : plural(connected.length, 'service')}{' '}
+                  connected
                 </span>
               </header>
               {grants.applications.length || connected.length ? (
@@ -301,12 +302,13 @@ function NetworkDetail() {
         <div className="network-delete-row">
           <p>
             {detail.connections.length
-              ? `Disconnect all ${plural(detail.connections.length, 'service')} before deleting this network.`
+              ? `Disconnect its ${connectedCount} connected ${detail.connections.length === 1 && !detail.truncated ? 'service' : 'services'} before deleting. Deletion is refused while any application revision still references this network.`
               : 'No service is connected. Deleting removes the network and its grants.'}
           </p>
           <Button
             variant="danger"
             size="sm"
+            disabled={detail.connections.length > 0}
             onClick={() => {
               if (!deleteStale)
                 setDeleteBase({ id: detail.network.id, revision: detail.network.revision })
@@ -417,7 +419,17 @@ function NetworkDetail() {
               } catch (cause) {
                 if (!controller.signal.aborted) {
                   setError(message(cause))
-                  if (cause instanceof APIError && cause.status === 409) setDeleteStale(true)
+                  // 409 is also returned while an application still references the network;
+                  // only a changed identity or revision makes this review stale.
+                  if (cause instanceof APIError && cause.status === 409) {
+                    const current = await network.refetch()
+                    if (
+                      current.data &&
+                      (current.data.network.id !== deleteBase.id ||
+                        current.data.network.revision !== deleteBase.revision)
+                    )
+                      setDeleteStale(true)
+                  }
                 }
               } finally {
                 if (!controller.signal.aborted) setBusy(false)

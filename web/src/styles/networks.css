@@ -2,7 +2,7 @@
 
 /* Scope and review */
 .task-scope {
-  @apply inline-flex min-w-0 items-center gap-1.5;
+  @apply inline-flex min-w-0 items-center gap-2;
   font-size: var(--type-meta-size);
   line-height: var(--type-meta-line);
   color: var(--muted);
@@ -111,7 +111,7 @@
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
 }
 .network-grant-options > .checkbox-row {
-  @apply min-h-9 min-w-0;
+  @apply min-h-11 min-w-0;
   overflow-wrap: anywhere;
 }
 .network-primary-label {
@@ -152,7 +152,7 @@
   color: var(--error-text);
 }
 .network-chip-list {
-  @apply m-0 flex min-w-0 list-none flex-wrap gap-1.5 p-0;
+  @apply m-0 flex min-w-0 list-none flex-wrap gap-2 p-0;
 }
 .network-chip-list > .label-chip {
   @apply max-w-full;
@@ -178,8 +178,12 @@
   .network-segment-row {
     @apply p-3;
   }
+  /* Long specific actions wrap rather than lose the verb. */
+  .deploy-footer-actions > button:has(.network-primary-label) {
+    @apply h-auto min-h-11 py-2 text-left;
+  }
   .network-primary-label {
-    max-width: 11rem;
+    @apply max-w-none whitespace-normal;
   }
 }
 
@@ -188,25 +192,19 @@
   @apply mr-auto;
 }
 .network-row-segments {
-  @apply inline-flex min-w-0 flex-wrap gap-1.5;
+  @apply inline-flex min-w-0 flex-wrap gap-2;
 }
 
 /* Detail: segments are the layout, each listing who is allowed and who is attached. */
 .network-detail-meta {
   @apply flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--section-gap);
   font-size: var(--type-meta-size);
   line-height: var(--type-meta-line);
   color: var(--muted);
 }
 .network-detail-meta > button {
   @apply ml-auto;
-}
-.network-reach-rule {
-  @apply m-0;
-  max-width: 48rem;
-  margin-bottom: var(--space-4);
-  color: var(--muted);
 }
 .network-segments {
   @apply grid min-w-0;
@@ -322,11 +320,8 @@
   outline-offset: 2px;
 }
 .network-topology svg {
-  @apply block;
-  width: 100%;
-  height: auto;
-  min-width: 720px;
-  max-width: 1120px;
+  /* Drawn at its own pixel size so labels never shrink; the region scrolls instead. */
+  @apply block max-w-none;
 }
 .network-topology-edge {
   fill: none;
@@ -356,12 +351,12 @@
 }
 .network-topology-title {
   fill: var(--foreground);
-  font-size: 13px;
+  font-size: var(--type-label-size);
   font-weight: 500;
 }
 .network-topology-detail {
   fill: var(--muted);
-  font-size: 11px;
+  font-size: var(--type-meta-size);
 }
 .network-topology-node[data-state='ungranted'] .network-topology-detail {
   fill: var(--error-text);
@@ -375,7 +370,7 @@
   color: var(--muted);
 }
 .network-topology-legend > span {
-  @apply inline-flex items-center gap-1.5;
+  @apply inline-flex items-center gap-2;
 }
 .network-topology-legend i {
   @apply inline-block w-5;
@@ -384,4 +379,13 @@
 .network-topology-legend i[data-state='connected'] {
   border-top-style: solid;
   border-color: var(--state, var(--foreground));
+}
+
+.network-topology-note {
+  @apply m-0;
+  font-size: var(--type-meta-size);
+  color: var(--muted);
+}
+.task-consequence-label {
+  font-weight: var(--type-label-weight);
 }

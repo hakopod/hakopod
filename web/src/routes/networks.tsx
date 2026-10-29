@@ -170,7 +170,7 @@ function Networks() {
           </>
         )}
         <div className="resource-footnote">
-          <span>{plural(items.length, 'network')}</span>
+          <span>{networks.data ? plural(items.length, 'network') : 'Networks not loaded'}</span>
           <span>
             Grants are managed by{' '}
             {dashboardEdition.cloud ? 'workspace owners' : 'project administrators'}

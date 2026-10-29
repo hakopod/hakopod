@@ -105,12 +105,14 @@ export default function BackupRunForm({
                     </span>
                   </span>,
                 ],
-                [
-                  'Encrypted for',
-                  <span className="mono" title={storage.encryption_recipient}>
-                    {storage.encryption_recipient.slice(0, 16)}…
-                  </span>,
-                ],
+                engineManagedSource(source)
+                  ? ['Encryption', 'Written by the engine; not age-encrypted by Hakopod']
+                  : [
+                      'Encrypted for',
+                      <span className="mono" title={storage.encryption_recipient}>
+                        {storage.encryption_recipient.slice(0, 16)}…
+                      </span>,
+                    ],
               ]}
             />
             <Consequences>

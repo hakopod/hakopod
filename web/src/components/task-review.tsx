@@ -42,7 +42,10 @@ export function Consequence({
   return (
     <li data-tone={tone}>
       <Icon name={tone === 'warning' ? 'alert' : 'info'} size={14} />
-      <span>{children}</span>
+      <span>
+        {tone === 'warning' && <strong className="task-consequence-label">Warning: </strong>}
+        {children}
+      </span>
     </li>
   )
 }
