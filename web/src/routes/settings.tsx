@@ -18,9 +18,15 @@ import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
 import {
+  CopyValue,
+  DiscardPrompt,
+  focusedDialog,
+  ReviewFacts,
+  ReviewNotice,
+} from '../components/operation-review'
+import {
   PageHeader,
   HeadingHelp,
-  Copy,
   Empty,
   ErrorState,
   Loading,
@@ -217,7 +223,6 @@ function Keys() {
   const [createOpen, setCreateOpen] = useState(false)
   const [rotation, setRotation] = useState<APIKey | null>(null)
   const [revoke, setRevoke] = useState<APIKey | null>(null)
-  const [confirmName, setConfirmName] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const keys = useQuery({
@@ -254,96 +259,84 @@ function Keys() {
         <Empty
           icon="key"
           title="No API keys"
-          description="Create a scoped key for CLI and CI deployments."
+          description="CLI and CI deployments need a scoped key."
+          action={
+            <Button variant="primary" asChild>
+              <Link
+                to="/settings/keys/new"
+                search={{ project: scope.project, environment: scope.environment }}
+              >
+                Create API key
+              </Link>
+            </Button>
+          }
         />
       ) : (
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Key</th>
-                <th>Scope</th>
-                <th>Permissions</th>
-                <th>Expires</th>
-                <th>Last used</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {keys.data.items.map((key) => (
-                <tr key={key.id}>
-                  <td>
-                    <div className="key-name">
-                      <Icon name="key" size={16} />
-                      <div>
-                        <strong>{key.name}</strong>
-                        <code>{key.prefix || key.id.slice(0, 8)}…</code>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    {key.project ? (
-                      <span>
-                        {key.project}
-                        <br />
-                        <small className="muted-text">
-                          {key.environment}
-                          {key.application ? ` / ${key.application}` : ''}
-                        </small>
-                      </span>
-                    ) : (
-                      <span className="label-chip">Installation</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="permission-list">
-                      {key.permissions.map((permission) => (
-                        <code key={permission}>{permission}</code>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    {key.revoked_at ? (
-                      <span className="revoked-label">Revoked</span>
-                    ) : key.never_expires && key.expires_at === null ? (
-                      'Never expires'
-                    ) : (
-                      timestamp(key.expires_at)
-                    )}
-                  </td>
-                  <td>{timestamp(key.last_used_at)}</td>
-                  <td>
-                    {!key.revoked_at && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setRotation(key)
-                            setCreateOpen(true)
-                          }}
-                        >
-                          Rotate
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setRevoke(key)
-                            setConfirmName('')
-                            setError('')
-                          }}
-                        >
-                          Revoke
-                        </Button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="settings-rows" aria-label="API keys">
+          {keys.data.items.map((key) => {
+            const state = keyState(key)
+            return (
+              <li
+                className={`settings-row${key.revoked_at ? ' settings-row-revoked' : ''}`}
+                key={key.id}
+              >
+                <div className="settings-row-identity">
+                  <Icon name="key" size={16} />
+                  <div>
+                    <strong>{key.name}</strong>
+                    <small>
+                      <code>{key.prefix || key.id.slice(0, 8)}…</code> ·{' '}
+                      {key.permissions.join(', ')}
+                    </small>
+                  </div>
+                </div>
+                <span className={`settings-row-status settings-state settings-state-${state.tone}`}>
+                  {state.label}
+                </span>
+                <div className="settings-row-meta">
+                  <span>{keyScope(key)}</span>
+                  <span>
+                    {key.revoked_at
+                      ? `Revoked ${timestamp(key.revoked_at)}`
+                      : key.never_expires && key.expires_at === null
+                        ? 'Never expires'
+                        : `Expires ${timestamp(key.expires_at)}`}
+                  </span>
+                  <span>
+                    {key.last_used_at ? `Last used ${timestamp(key.last_used_at)}` : 'Never used'}
+                  </span>
+                </div>
+                <div className="settings-row-actions">
+                  {!key.revoked_at && (
+                    <>
+                      <Button
+                        size="sm"
+                        aria-label={`Rotate ${key.name}`}
+                        onClick={() => {
+                          setRotation(key)
+                          setCreateOpen(true)
+                        }}
+                      >
+                        Rotate
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Revoke ${key.name}`}
+                        onClick={() => {
+                          setRevoke(key)
+                          setError('')
+                        }}
+                      >
+                        Revoke
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
       )}
       <Note>
         API keys never receive Kubernetes credentials. Deployment access allows running code in
@@ -359,36 +352,49 @@ function Keys() {
       />
       <Dialog
         open={Boolean(revoke)}
+        className={focusedDialog}
         onOpenChange={(open) => {
           if (!busy && !open) setRevoke(null)
         }}
-        title={`Revoke “${revoke?.name || ''}”?`}
-        description="New requests using this key will be denied immediately."
+        title={`Revoke ${revoke?.name || 'API key'}?`}
+        description="New requests using this key are denied immediately. This cannot be undone."
       >
         <div className="dialog-body">
-          <Note>
-            Existing workloads remain running. Accepted operations revalidate authority before new
-            privileged steps.
-          </Note>
-          <label>
-            Type {revoke?.name} to revoke this key
-            <Input
-              value={confirmName}
-              autoComplete="off"
-              onChange={(event) => setConfirmName(event.target.value)}
+          {revoke && (
+            <ReviewFacts
+              facts={[
+                [
+                  'Key',
+                  <>
+                    {revoke.name} · <code>{revoke.prefix || revoke.id.slice(0, 8)}…</code>
+                  </>,
+                ],
+                ['Scope', keyScope(revoke)],
+                ['Permissions', revoke.permissions.join(', ')],
+                ['Last used', revoke.last_used_at ? timestamp(revoke.last_used_at) : 'Never used'],
+                [
+                  'Kept running',
+                  'Existing workloads. Accepted operations revalidate authority before new privileged steps.',
+                ],
+              ]}
             />
-          </label>
+          )}
+          <ReviewNotice tone="warn" title="Integrations using this key stop working">
+            Update CI and CLI configurations with another key first, or rotate this key to get a
+            replacement with the same scope.
+          </ReviewNotice>
           {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
           <Button disabled={busy} onClick={() => setRevoke(null)}>
-            Keep key
+            Cancel
           </Button>
           <Button
             variant="danger"
-            disabled={busy || confirmName !== revoke?.name}
+            aria-busy={busy || undefined}
+            disabled={busy}
             onClick={async () => {
-              if (!revoke || confirmName !== revoke.name || busy) return
+              if (!revoke || busy) return
               setBusy(true)
               setError('')
               try {
@@ -406,12 +412,24 @@ function Keys() {
               }
             }}
           >
-            {busy ? 'Revoking…' : 'Revoke API key'}
+            {busy ? 'Revoking…' : `Revoke ${revoke?.name || 'API key'}`}
           </Button>
         </div>
       </Dialog>
     </>
   )
+}
+
+function keyScope(key: APIKey) {
+  if (!key.project) return 'Installation'
+  return [key.project, key.environment, key.application].filter(Boolean).join(' / ')
+}
+
+export function keyState(key: APIKey, now = Date.now()) {
+  if (key.revoked_at) return { label: 'Revoked', tone: 'muted' } as const
+  if (key.expires_at && Date.parse(key.expires_at) <= now)
+    return { label: 'Expired', tone: 'danger' } as const
+  return { label: 'Active', tone: 'ok' } as const
 }
 export function CreateKey({
   open,
@@ -452,9 +470,11 @@ export function CreateKey({
   const [created, setCreated] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [discarding, setDiscarding] = useState(false)
   const close = (value: boolean) => {
     if (!busy) {
       onOpenChange(value)
+      setDiscarding(false)
       if (!value) {
         setCreated('')
         setName('')
@@ -463,11 +483,20 @@ export function CreateKey({
       }
     }
   }
+  // Escape and the close button must not drop a one-time key or a filled-in draft.
+  const dismiss = (value: boolean) => {
+    if (!value && (created || name || application || extraGrants.length || reviewing)) {
+      if (!busy) setDiscarding(true)
+      return
+    }
+    close(value)
+  }
   return (
     <KeyContainer
       page={page}
       open={open}
-      onOpenChange={close}
+      onOpenChange={dismiss}
+      className={focusedDialog}
       title={
         created
           ? 'Your API key is ready'
@@ -542,7 +571,7 @@ export function CreateKey({
             <>
               <div className="created-key">
                 <code>{created}</code>
-                <Copy value={created} label="Copy key" />
+                <CopyValue value={created} what="API key" />
               </div>
               <Note>
                 Store this key as HAKOPOD_API_KEY in your secret manager. Set HAKOPOD_API_URL to
@@ -697,36 +726,53 @@ export function CreateKey({
           )}
           {error && <RequestError error={error} />}
         </div>
-        <div className={page ? 'flex justify-end gap-3 py-4' : 'dialog-footer'}>
-          {created ? (
-            <Button type="button" variant="primary" onClick={() => close(false)}>
-              Done
-            </Button>
-          ) : (
-            <>
-              <Button
-                type="button"
-                disabled={busy}
-                onClick={() => (reviewing ? setReviewing(false) : close(false))}
-              >
-                {reviewing ? 'Back' : 'Cancel'}
+        {discarding ? (
+          <DiscardPrompt
+            discardLabel={created ? 'Close without copying' : 'Discard draft'}
+            keepLabel={created ? 'Keep key visible' : 'Keep editing'}
+            onKeep={() => setDiscarding(false)}
+            onDiscard={() => close(false)}
+          >
+            {created
+              ? 'This key is not shown again. Copy it before closing.'
+              : 'Close and discard this API key draft?'}
+          </DiscardPrompt>
+        ) : (
+          <div className={page ? 'flex justify-end gap-3 py-4' : 'dialog-footer'}>
+            {created ? (
+              <Button type="button" variant="primary" onClick={() => close(false)}>
+                Done
               </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                disabled={busy || (!rotation && (!permissions.length || !project || !environment))}
-              >
-                {busy
-                  ? 'Creating…'
-                  : !reviewing
-                    ? 'Review API key'
-                    : rotation
-                      ? 'Rotate API key'
-                      : 'Create API key'}
-              </Button>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => (reviewing ? setReviewing(false) : close(false))}
+                >
+                  {reviewing ? 'Back' : 'Cancel'}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={
+                    busy || (!rotation && (!permissions.length || !project || !environment))
+                  }
+                >
+                  {busy
+                    ? rotation
+                      ? 'Rotating…'
+                      : 'Creating…'
+                    : !reviewing
+                      ? 'Review API key'
+                      : rotation
+                        ? 'Rotate API key'
+                        : 'Create API key'}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </form>
     </KeyContainer>
   )
