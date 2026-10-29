@@ -22,6 +22,7 @@
 @import './styles/catalog.css';
 @import './styles/database-infrastructure.css';
 @import './styles/builds.css';
+@import './styles/backups.css';
 
 /* Match the source set for browser and server builds. */
 @source './';
