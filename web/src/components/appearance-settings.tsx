@@ -1,6 +1,6 @@
 import { dashboardEdition } from '../lib/dashboard-edition'
-import { HeadingHelp } from './shared'
 import { useEffect, useId, useState } from 'react'
+import { SettingsSection } from './settings-section'
 import { Brackets } from '@hakopod/hatch-ui/components/brackets'
 import { useAccent, useTheme } from '../lib/appearance'
 import {
@@ -19,7 +19,6 @@ export function AppearanceSettings() {
   const [draft, setDraft] = useState(accent)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
-  const titleId = useId()
   const colorId = useId()
   useEffect(() => setDraft(accent), [accent])
   const chooseAccent = (color: string) => {
@@ -36,15 +35,18 @@ export function AppearanceSettings() {
     )
   }
   return (
-    <section className="hako-appearance" aria-labelledby={titleId}>
-      <div>
-        <div className="hako-section-heading-title">
-          <h2 id={titleId}>Appearance</h2>
-          <HeadingHelp title="Appearance">
-            Choose the theme for this browser. Changes are saved automatically.
-          </HeadingHelp>
-        </div>
-      </div>
+    <SettingsSection
+      className="hako-appearance"
+      title="Appearance"
+      help="Theme and accent for this browser. Changes are saved automatically."
+      state={
+        <span role="status">
+          {theme === 'dark' ? 'Dark' : 'Light'} theme ·{' '}
+          {accentPresets.find((preset) => preset.color === accent)?.name || accent} accent · saved in
+          this browser
+        </span>
+      }
+    >
       <div className="hako-theme-options" role="group" aria-label="Color theme">
         {(['dark', 'light'] as const).map((value) => (
           <button
@@ -68,14 +70,17 @@ export function AppearanceSettings() {
           </button>
         ))}
       </div>
-      <p className="hako-theme-caption" role="status">
-        {theme === 'dark' ? 'Dark' : 'Light'} theme selected.
-      </p>
-      <section className="hako-accent-settings" aria-labelledby={`${titleId}-accent`}>
-        <div>
-          <h3 id={`${titleId}-accent`}>Accent color</h3>
-          <p>{dashboardEdition.cloud ? 'Personalize buttons, highlights and subtle surface tints in this browser.' : 'Personalize buttons and highlights. Text contrast adjusts automatically.'}</p>
-        </div>
+      <SettingsSection
+        level={3}
+        className="hako-accent-settings"
+        title="Accent color"
+        help={
+          dashboardEdition.cloud
+            ? 'Personalize buttons, highlights and subtle surface tints in this browser.'
+            : 'Personalize buttons and highlights. Text contrast adjusts automatically.'
+        }
+        state={status && <span role="status">{status}</span>}
+      >
         <div className="hako-accent-options" role="group" aria-label="Accent presets">
           {accentPresets.map(({ name, color }) => (
             <button
@@ -134,10 +139,7 @@ export function AppearanceSettings() {
             </p>
           )}
         </div>
-        <p className="hako-theme-caption" role="status">
-          {status || 'Saved with your theme on this browser.'}
-        </p>
-      </section>
-    </section>
+      </SettingsSection>
+    </SettingsSection>
   )
 }

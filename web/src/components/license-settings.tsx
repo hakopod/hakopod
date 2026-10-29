@@ -10,7 +10,9 @@ import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Icon } from './icons'
-import { HeadingHelp, Copy, ErrorState, Loading, Note, RequestError } from './shared'
+import { Copy, ErrorState, Loading, RequestError } from './shared'
+import { ReviewFacts } from './operation-review'
+import { SettingsRow, SettingsRows, SettingsSection, SettingsState } from './settings-section'
 export function FeatureLock({
   title = 'This capability requires Hakopod Pro',
 }: {
@@ -54,145 +56,130 @@ export default function LicenseSettings() {
     await cache.invalidateQueries({ queryKey: ['license'] })
     await cache.invalidateQueries({ queryKey: ['me'] })
   }
+  const available = current.catalog.filter((feature) => feature.enabled).length
+  const plan = current.plan === 'pro' ? 'Pro' : 'Free'
   return (
     <>
-      <div className="license-summary">
-        <Card className="license-plan">
-          <Icon name="shield" size={27} />
-          <div className="title-row">
-            <h2>Hakopod {current.plan === 'pro' ? 'Pro' : 'Free'}</h2>
-            <Badge tone={current.valid ? 'success' : 'neutral'}>
-              {current.state.replaceAll('_', ' ')}
-            </Badge>
-          </div>
-          <p>
-            {current.plan === 'pro'
-              ? `Licensed to ${current.licensed_to || 'this installation'}`
-              : 'Deploy and operate applications on your own infrastructure.'}
-          </p>
-          <dl>
-            <div>
-              <dt>Installation</dt>
-              <dd>
+      <SettingsSection
+        title="License"
+        help="Licensing is checked locally. Removing or expiring a license disables paid access grants; the installation administrator keeps recovery access."
+        state={[
+          `Hakopod ${plan}`,
+          current.state !== current.plan && current.state.replaceAll('_', ' '),
+          current.plan === 'pro' && `licensed to ${current.licensed_to || 'this installation'}`,
+          current.expires_at ? `expires ${timestamp(current.expires_at)}` : 'no expiry',
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        actions={
+          scope.identity.admin &&
+          current.license_id && (
+            <Button variant="ghost" disabled={busy} onClick={() => setRemove(true)}>
+              <Icon name="trash" size={15} />
+              Remove license
+            </Button>
+          )
+        }
+      >
+        <ReviewFacts
+          facts={[
+            [
+              'Installation',
+              <span className="copy-id" key="installation">
                 <code>{current.installation_id}</code>
-                <Copy value={current.installation_id} />
-              </dd>
-            </div>
-            {current.license_id && (
-              <div>
-                <dt>License</dt>
-                <dd>{current.license_id}</dd>
-              </div>
-            )}
-            <div>
-              <dt>Expires</dt>
-              <dd>{current.expires_at ? timestamp(current.expires_at) : 'No active expiry'}</dd>
-            </div>
-          </dl>
-        </Card>
-        <Card className="license-activation">
-          <h2>{scope.identity.admin ? 'Activate a license' : 'Installation license'}</h2>
-          {scope.identity.admin ? (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault()
-                if (busy) return
-                setBusy(true)
-                setError('')
-                try {
-                  await unwrap(
-                    client.PUT('/license', {
-                      body: { license: value.trim(), expected_revision: current.revision },
-                    }),
-                  )
-                  setValue('')
-                  await refresh()
-                } catch (err) {
-                  setError(message(err))
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              <label>
-                Signed license
-                <Textarea
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  rows={4}
-                  maxLength={16384}
-                  required
-                  placeholder="Paste the license issued for this installation"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-              <div className="toolbar-actions">
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={busy || !value.trim() || !current.issuer_configured}
-                >
-                  {busy ? 'Applying…' : 'Activate license'}
-                </Button>
-                {current.license_id && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => setRemove(true)}
-                  >
-                    Remove license
-                  </Button>
-                )}
-              </div>
-              {!current.issuer_configured && (
-                <p className="field-help">
-                  This installation needs a trusted Hakopod release with its built-in license
-                  verification key before a Pro license can be activated.
-                </p>
-              )}
-            </form>
-          ) : (
-            <p className="muted-text">
-              An installation administrator can activate or remove the license.
-            </p>
-          )}
-        </Card>
-      </div>
-      {error && <RequestError error={error} />}
-      <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>Feature catalog</h2>
-            <HeadingHelp title="Feature catalog">
-              Availability is verified by the management API.
-            </HeadingHelp>
-          </div>
-        </div>
-        <Badge>{current.catalog.filter((feature) => feature.enabled).length} available</Badge>
-      </div>
-      <div className="license-feature-grid">
-        {current.catalog.map((feature) => (
-          <Card
-            className={`license-feature ${feature.enabled ? '' : 'license-feature-locked'}`}
-            key={feature.id}
+                <Copy value={current.installation_id} label="Copy installation ID" iconOnly />
+              </span>,
+            ],
+            current.license_id && ['License', current.license_id],
+          ]}
+          label="License details"
+        />
+      </SettingsSection>
+      <SettingsSection
+        level={3}
+        title={current.license_id ? 'Replace license' : 'Activate a license'}
+        state={
+          !scope.identity.admin
+            ? 'An installation administrator can activate or remove the license.'
+            : !current.issuer_configured
+              ? 'This installation needs a trusted Hakopod release with its built-in license verification key before a Pro license can be activated.'
+              : undefined
+        }
+      >
+        {scope.identity.admin && (
+          <form
+            className="grid gap-3"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (busy) return
+              setBusy(true)
+              setError('')
+              try {
+                await unwrap(
+                  client.PUT('/license', {
+                    body: { license: value.trim(), expected_revision: current.revision },
+                  }),
+                )
+                setValue('')
+                await refresh()
+              } catch (err) {
+                setError(message(err))
+              } finally {
+                setBusy(false)
+              }
+            }}
           >
-            <Icon name={feature.enabled ? 'check' : 'lock'} size={19} />
+            <label className="grid gap-1.5">
+              Signed license
+              <Textarea
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                rows={4}
+                maxLength={16384}
+                required
+                placeholder="Paste the license issued for this installation"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
             <div>
-              <h3>{feature.name}</h3>
-              <p>{feature.description}</p>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={busy || !value.trim() || !current.issuer_configured}
+              >
+                {busy ? 'Applying…' : 'Activate license'}
+              </Button>
             </div>
-            <Badge tone={feature.plan === 'pro' ? 'accent' : 'neutral'}>
-              {feature.plan.toUpperCase()}
-            </Badge>
-          </Card>
-        ))}
-      </div>
-      <Note>
-        Licensing is checked locally. Removing or expiring a license disables paid access grants;
-        the installation administrator keeps recovery access.
-      </Note>
+          </form>
+        )}
+        {error && <RequestError error={error} />}
+      </SettingsSection>
+      <SettingsSection
+        level={3}
+        title="Features"
+        help="Availability is verified by the management API."
+        state={`${available} of ${current.catalog.length} available`}
+      >
+        <SettingsRows label="Features">
+          {current.catalog.map((feature) => (
+            <SettingsRow
+              key={feature.id}
+              className="settings-row-feature"
+              muted={!feature.enabled}
+              mark={<Icon name={feature.enabled ? 'check' : 'lock'} size={16} />}
+              name={feature.name}
+              detail={feature.description}
+              status={
+                <SettingsState tone={feature.enabled ? 'ok' : 'muted'}>
+                  {feature.enabled ? 'Available' : 'Locked'}
+                </SettingsState>
+              }
+              meta={feature.plan === 'pro' ? 'Pro' : 'Free'}
+            />
+          ))}
+        </SettingsRows>
+      </SettingsSection>
       <Dialog
         open={remove}
         onOpenChange={(open) => {

@@ -9,15 +9,26 @@ import { passkeyCredential } from '../lib/webauthn'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { HeadingHelp, Copy, ErrorState, Loading, Note, Status, RequestError } from './shared'
+import { Copy, ErrorState, Loading, Note, RequestError } from './shared'
+import { Icon } from './icons'
+import { focusedDialog, plural, ReviewFacts } from './operation-review'
+import {
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRows,
+  SettingsSection,
+  SettingsState,
+} from './settings-section'
+import type { components } from '../lib/api.generated'
+
+type Session = components['schemas']['HumanSession']
 
 export default function AccountSettings() {
   const { identity } = useScope()
   const cache = useQueryClient()
   const [action, setAction] = useState<'totp' | 'disable' | 'passkey' | null>(null)
   const [remove, setRemove] = useState<{ id: string; name: string } | null>(null)
-  const [revoke, setRevoke] = useState<{ id: string; current: boolean } | null>(null)
-  const [confirmation, setConfirmation] = useState('')
+  const [revoke, setRevoke] = useState<Session | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [verifyCode, setVerifyCode] = useState('')
@@ -40,158 +51,163 @@ export default function AccountSettings() {
     void cache.invalidateQueries({ queryKey: ['account-security'] })
     void cache.invalidateQueries({ queryKey: ['account-sessions'] })
   }
+  const role = identity.owner ? 'Super admin' : identity.admin ? 'Administrator' : 'Member'
+  const data = security.data
+  const sessionCount = sessions.data?.items.length
+  const summary = [
+    data && (data.totp_enabled ? 'Two-factor on' : 'Two-factor off'),
+    data && plural(data.passkeys.length, 'passkey'),
+    sessionCount !== undefined && plural(sessionCount, 'active session'),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const addPasskey = (
+    <Button disabled={!data?.password_enabled} onClick={() => setAction('passkey')}>
+      Add passkey
+    </Button>
+  )
   return (
     <>
-      <div className="section-toolbar">
-        <div>
-          <h2>Your account</h2>
-          <p>
-            {identity.name} · {identity.email}
-          </p>
-        </div>
-        <div className="toolbar-actions">
-          <Avatar name={identity.name || 'Member'} url={identity.avatar_url} />
-          <Status
-            value={identity.owner ? 'super admin' : identity.admin ? 'administrator' : 'member'}
+      <SettingsSection
+        title="Account security"
+        help="How you sign in, and the browser and CLI sessions issued to your account."
+        state={summary || undefined}
+      >
+        <SettingsRows label="Your account">
+          <SettingsRow
+            className="settings-row-member"
+            mark={<Avatar name={identity.name || 'Member'} url={identity.avatar_url} />}
+            name={identity.name || 'Member'}
+            detail={identity.email}
+            status={<span className="label-chip">{role}</span>}
+            actions={
+              <Button asChild size="sm">
+                <Link to="/settings/profile">Edit profile</Link>
+              </Button>
+            }
           />
-          <Button asChild size="sm">
-            <Link to="/settings/profile">Edit profile</Link>
-          </Button>
-        </div>
-      </div>
+        </SettingsRows>
+        {data?.organization_mfa_required && (
+          <Note>MFA is required by your organization. Keep at least one authenticator or passkey.</Note>
+        )}
+        {data && !data.mfa_verified && data.totp_enabled && (
+          <form
+            className="settings-inline-controls"
+            onSubmit={async (e) => {
+              e.preventDefault()
+              setBusy(true)
+              if (busy) return
+              setVerifyError('')
+              try {
+                await unwrap(client.POST('/auth/mfa/verify', { body: { code: verifyCode } }))
+                setVerifyCode('')
+                refresh()
+              } catch (e) {
+                setVerifyError(message(e))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            <label className="grid gap-1.5">
+              Verify this session
+              <Input
+                autoComplete="one-time-code"
+                required
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value)}
+                placeholder="Authenticator or recovery code"
+              />
+            </label>
+            <Button type="submit" variant="primary" disabled={busy}>
+              Verify MFA
+            </Button>
+            {verifyError && <RequestError error={verifyError} />}
+          </form>
+        )}
+        {data && !data.mfa_verified && !data.totp_enabled && (
+          <Note>
+            Set up an authenticator below, or sign out and sign in with an existing passkey, to
+            verify this session.
+          </Note>
+        )}
+        {data && !data.password_enabled && (
+          <Note>
+            Set a password before adding an authenticator or passkey.{' '}
+            <a href="/login/forgot">Set a password by email</a>. Existing passkeys still work for
+            sign-in.
+          </Note>
+        )}
+      </SettingsSection>
       {security.isPending ? (
         <Loading />
       ) : security.error ? (
         <ErrorState error={security.error} />
       ) : (
-        security.data && (
+        data && (
           <>
-            {security.data.organization_mfa_required && (
-              <Note>
-                MFA is required by your organization. Keep at least one authenticator or passkey.
-              </Note>
-            )}
-            {!security.data.mfa_verified && security.data.totp_enabled && (
-              <form
-                className="flex flex-wrap items-end gap-3 py-3"
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  setBusy(true)
-                  if (busy) return
-                  setVerifyError('')
-                  try {
-                    await unwrap(client.POST('/auth/mfa/verify', { body: { code: verifyCode } }))
-                    setVerifyCode('')
-                    refresh()
-                  } catch (e) {
-                    setVerifyError(message(e))
-                  } finally {
-                    setBusy(false)
-                  }
-                }}
-              >
-                <label className="grid gap-2">
-                  Verify this session
-                  <Input
-                    autoComplete="one-time-code"
-                    required
-                    value={verifyCode}
-                    onChange={(e) => setVerifyCode(e.target.value)}
-                    placeholder="Authenticator or recovery code"
-                  />
-                </label>
-                <Button type="submit" variant="primary" disabled={busy}>
-                  Verify MFA
-                </Button>
-                {verifyError && <RequestError error={verifyError} />}
-              </form>
-            )}
-            {!security.data.mfa_verified && !security.data.totp_enabled && (
-              <Note>
-                Set up an authenticator below, or sign out and sign in with an existing passkey, to
-                verify this session.
-              </Note>
-            )}
-            {!security.data.password_enabled && (
-              <Note>
-                Set a password before adding an authenticator or passkey.{' '}
-                <a href="/login/forgot">Set a password by email</a>. Existing passkeys still work
-                for sign-in.
-              </Note>
-            )}
-            <div className="security-grid">
-              <section className="panel service-summary-panel">
-                <div className="hako-section-heading-title">
-                  <h2>Two-factor authentication</h2>
-                  <HeadingHelp title="Two-factor authentication">
-                    Protect sign-in with an authenticator app.
-                  </HeadingHelp>
-                </div>
-                <p className="muted-text">
-                  {security.data.totp_enabled
-                    ? `Enabled · ${security.data.recovery_codes_remaining} recovery codes remaining`
-                    : 'Not enabled'}
-                </p>
+            <SettingsSection
+              level={3}
+              title="Two-factor authentication"
+              help="Protect sign-in with an authenticator app."
+              state={
+                data.totp_enabled
+                  ? `On · ${plural(data.recovery_codes_remaining, 'recovery code')} left`
+                  : 'Off'
+              }
+              actions={
                 <Button
                   disabled={
-                    !security.data.password_enabled ||
-                    Boolean(
-                      security.data.organization_mfa_required &&
-                      security.data.totp_enabled &&
-                      !security.data.passkeys.length,
-                    )
+                    !data.password_enabled ||
+                    Boolean(data.organization_mfa_required && data.totp_enabled && !data.passkeys.length)
                   }
-                  onClick={() => setAction(security.data.totp_enabled ? 'disable' : 'totp')}
+                  onClick={() => setAction(data.totp_enabled ? 'disable' : 'totp')}
                 >
-                  {security.data.totp_enabled ? 'Disable authenticator' : 'Set up authenticator'}
+                  {data.totp_enabled ? 'Disable authenticator' : 'Set up authenticator'}
                 </Button>
-              </section>
-              <section className="panel service-summary-panel">
-                <div className="section-toolbar">
-                  <div>
-                    <div className="hako-section-heading-title">
-                      <h2>Passkeys</h2>
-                      <HeadingHelp title="Passkeys">Use your device or a security key.</HeadingHelp>
-                    </div>
-                  </div>
-                  <Button
-                    disabled={!security.data.password_enabled}
-                    onClick={() => setAction('passkey')}
-                  >
-                    Add passkey
-                  </Button>
-                </div>
-                {security.data.passkeys.length ? (
-                  security.data.passkeys.map((key) => (
-                    <div className="settings-list-row" key={key.id}>
-                      <div>
-                        <strong>{key.name}</strong>
-                        <small>
-                          Added {timestamp(key.created_at)} · Last used{' '}
-                          {timestamp(key.last_used_at)}
-                        </small>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!security.data.password_enabled}
-                        aria-label={`Remove passkey ${key.name}`}
-                        onClick={() => setRemove(key)}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="field-help">No passkeys registered.</p>
-                )}
-              </section>
-            </div>
+              }
+            />
+            <SettingsSection
+              level={3}
+              title="Passkeys"
+              help="Sign in with this device or a security key."
+              state={data.passkeys.length ? plural(data.passkeys.length, 'passkey') : undefined}
+              actions={data.passkeys.length > 0 && addPasskey}
+            >
+              {data.passkeys.length ? (
+                <SettingsRows label="Passkeys">
+                  {data.passkeys.map((key) => (
+                    <SettingsRow
+                      key={key.id}
+                      mark={<Icon name="key" size={16} />}
+                      name={key.name}
+                      detail={`Added ${timestamp(key.created_at)}`}
+                      meta={key.last_used_at ? `Last used ${timestamp(key.last_used_at)}` : 'Never used'}
+                      actions={
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={!data.password_enabled}
+                          aria-label={`Remove passkey ${key.name}`}
+                          onClick={() => setRemove(key)}
+                        >
+                          Remove
+                        </Button>
+                      }
+                    />
+                  ))}
+                </SettingsRows>
+              ) : (
+                <SettingsEmpty title="No passkeys" action={addPasskey}>
+                  Add one to sign in without a password.
+                </SettingsEmpty>
+              )}
+            </SettingsSection>
             {action && (
               <SecurityAction
                 action={action}
                 accountLabel={identity.email || identity.name || identity.id}
-                mfa={security.data.totp_enabled}
+                mfa={data.totp_enabled}
                 onClose={() => setAction(null)}
                 onSuccess={refresh}
               />
@@ -201,7 +217,7 @@ export default function AccountSettings() {
                 action="remove"
                 accountLabel={identity.email || identity.name || identity.id}
                 passkey={remove}
-                mfa={security.data.totp_enabled}
+                mfa={data.totp_enabled}
                 onClose={() => setRemove(null)}
                 onSuccess={refresh}
               />
@@ -209,51 +225,47 @@ export default function AccountSettings() {
           </>
         )
       )}
-      <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>Active sessions</h2>
-            <HeadingHelp title="Active sessions">
-              Browser and CLI sessions issued to your account.
-            </HeadingHelp>
-          </div>
-        </div>
-      </div>
-      {sessions.isPending ? (
-        <Loading rows={2} />
-      ) : sessions.error ? (
-        <ErrorState error={sessions.error} />
-      ) : (
-        <div className="panel settings-session-list">
-          {sessions.data?.items.slice(0, 100).map((session) => (
-            <div className="settings-list-row" key={session.id}>
-              <div>
-                <strong>
-                  {session.kind}
-                  {session.current ? ' · This session' : ''}
-                </strong>
-                <small>
-                  Created {timestamp(session.created_at)} · Expires {timestamp(session.expires_at)}{' '}
-                  · Last used {timestamp(session.last_used_at)}
-                </small>
-              </div>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setError('')
-                  setConfirmation('')
-                  setRevoke(session)
-                }}
-                aria-label={`Revoke ${session.kind} session ${session.id}`}
-              >
-                Revoke
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
+      <SettingsSection
+        level={3}
+        title="Active sessions"
+        help="Browser and CLI sessions issued to your account."
+        state={sessionCount !== undefined ? plural(sessionCount, 'session') : undefined}
+      >
+        {sessions.isPending ? (
+          <Loading rows={2} />
+        ) : sessions.error ? (
+          <ErrorState error={sessions.error} />
+        ) : (
+          <SettingsRows label="Active sessions">
+            {sessions.data?.items.slice(0, 100).map((session) => (
+              <SettingsRow
+                key={session.id}
+                mark={<Icon name={session.kind === 'browser' ? 'globe' : 'terminal'} size={16} />}
+                name={<span className="capitalize">{session.kind}</span>}
+                detail={`Created ${timestamp(session.created_at)} · Expires ${timestamp(session.expires_at)}`}
+                status={session.current && <SettingsState tone="ok">This session</SettingsState>}
+                meta={session.last_used_at ? `Last used ${timestamp(session.last_used_at)}` : 'Never used'}
+                actions={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setError('')
+                      setRevoke(session)
+                    }}
+                    aria-label={`Revoke ${session.kind} session ${session.id}`}
+                  >
+                    Revoke
+                  </Button>
+                }
+              />
+            ))}
+          </SettingsRows>
+        )}
+      </SettingsSection>
       <Dialog
         open={Boolean(revoke)}
+        className={focusedDialog}
         onOpenChange={(open) => {
           if (!busy && !open) setRevoke(null)
         }}
@@ -265,16 +277,15 @@ export default function AccountSettings() {
         }
       >
         <div className="dialog-body">
-          <label>
-            Type <code>{revoke?.id}</code> to revoke this session
-            <Input
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Confirm session ID"
+          {revoke && (
+            <ReviewFacts
+              facts={[
+                ['Session', `${revoke.kind}${revoke.current ? ' · this session' : ''}`],
+                ['Created', timestamp(revoke.created_at)],
+                ['Last used', revoke.last_used_at ? timestamp(revoke.last_used_at) : 'Never used'],
+              ]}
             />
-          </label>
+          )}
           {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
@@ -283,9 +294,9 @@ export default function AccountSettings() {
           </Button>
           <Button
             variant="danger"
-            disabled={busy || !revoke || confirmation !== revoke.id}
+            disabled={busy || !revoke}
             onClick={async () => {
-              if (!revoke || busy || confirmation !== revoke.id) return
+              if (!revoke || busy) return
               setBusy(true)
               setError('')
               try {
@@ -306,7 +317,7 @@ export default function AccountSettings() {
               }
             }}
           >
-            Revoke session
+            {busy ? 'Revoking…' : revoke?.current ? 'Revoke and sign out' : 'Revoke session'}
           </Button>
         </div>
       </Dialog>

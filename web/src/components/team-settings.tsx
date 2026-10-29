@@ -15,8 +15,15 @@ import { useScope } from '../lib/scope'
 import type { components } from '../lib/api.generated'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { focusedDialog, ReviewFacts, ReviewNotice } from './operation-review'
-import { HeadingHelp, Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
+import { focusedDialog, plural, ReviewFacts, ReviewNotice } from './operation-review'
+import { Copy, ErrorState, Loading, Note, RequestError } from './shared'
+import {
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRows,
+  SettingsSection,
+  SettingsState,
+} from './settings-section'
 
 export default function TeamSettings() {
   const scope = useScope()
@@ -102,342 +109,308 @@ export default function TeamSettings() {
     void cache.invalidateQueries({ queryKey: ['project-members'] })
     void cache.invalidateQueries({ queryKey: ['projects'] })
   }
+  const memberCount = members.data?.items.length
+  const singleTeamLimit =
+    scope.identity.admin &&
+    teams.isSuccess &&
+    teams.data.items.length > 0 &&
+    authStatus.data?.deployment_mode === 'self-hosted' &&
+    !hasFeature('multi_team')
+  const createTeam = scope.identity.admin && (
+    <Button
+      variant="outline"
+      disabled={!mayCreateTeam}
+      onClick={() => {
+        setError('')
+        setAdding(true)
+      }}
+    >
+      Create team
+    </Button>
+  )
+  const inviteMember = current && canTeam && (
+    <Button variant="primary" disabled={!hasFeature('invitations')} onClick={() => setInvite('team')}>
+      Invite member
+    </Button>
+  )
+  const inviteProject = canShareProject && scope.project && (
+    <Button
+      variant="primary"
+      disabled={!hasFeature('invitations')}
+      onClick={() => setInvite('project')}
+    >
+      Invite to project
+    </Button>
+  )
+  const projectState = !scope.project
+    ? 'Choose a project to manage access.'
+    : !currentProject
+      ? projects.isSuccess
+        ? 'This project is unavailable. Choose another project to manage access.'
+        : undefined
+      : personalProject
+        ? `${scope.project} is a personal workspace. Personal workspaces cannot be shared with members or teams.`
+        : !canProject
+          ? `Project administrators manage access to ${scope.project}.`
+          : project.data?.items.length
+            ? `${scope.project} · ${plural(project.data.items.length, 'direct member or team', 'direct members or teams')}`
+            : scope.project
   return (
-    <div className="team-settings grid gap-4">
+    <>
       {license.error && <ErrorState error={license.error} retry={() => void license.refetch()} />}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <div className="hako-section-heading-title">
-            <h2>Teams</h2>
-            <HeadingHelp title="Teams">
-              Manage people together, then grant teams access to projects.
-            </HeadingHelp>
-          </div>
-          {!!teams.data?.items.length && (
-            <div className="w-full min-w-0 sm:w-52">
-              <SelectField
-                compact
-                label="Selected team"
-                value={team}
-                onValueChange={setSelected}
-                options={teams.data.items.map((item) => ({ value: item.id, label: item.name }))}
+      <SettingsSection
+        title="Teams"
+        help="Manage people together, then grant teams access to projects. Team roles control the team’s membership."
+        state={
+          teams.data &&
+          (current
+            ? `${current.name} · ${memberCount === undefined ? 'loading members' : plural(memberCount, 'member')}${singleTeamLimit ? ' · Free includes one team; a multi-team license adds more' : ''}`
+            : undefined)
+        }
+        actions={
+          !!teams.data?.items.length && (
+            <>
+              {teams.data.items.length > 1 && (
+                <div className="w-full min-w-0 sm:w-52">
+                  <SelectField
+                    compact
+                    label="Selected team"
+                    value={team}
+                    onValueChange={setSelected}
+                    options={teams.data.items.map((item) => ({ value: item.id, label: item.name }))}
+                  />
+                </div>
+              )}
+              {createTeam}
+              {inviteMember}
+              {current && scope.identity.admin && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Delete team ${current.name}`}
+                  onClick={() => {
+                    setError('')
+                    setConfirmation('')
+                    setRemoveTeam({ id: current.id, name: current.name })
+                  }}
+                >
+                  <Icon name="trash" size={16} />
+                </Button>
+              )}
+            </>
+          )
+        }
+      >
+        {teams.isPending ? (
+          <Loading rows={2} />
+        ) : teams.error ? (
+          <ErrorState error={teams.error} retry={() => void teams.refetch()} />
+        ) : !teams.data?.items.length ? (
+          <SettingsEmpty title="No teams" action={createTeam}>
+            Create a team to invite collaborators and share projects with them.
+          </SettingsEmpty>
+        ) : members.isPending ? (
+          <Loading rows={2} />
+        ) : members.error ? (
+          <ErrorState error={members.error} />
+        ) : !members.data?.items.length ? (
+          <SettingsEmpty title={`No members in ${current?.name || 'this team'}`} action={inviteMember}>
+            Invite people to work in this team’s projects.
+          </SettingsEmpty>
+        ) : (
+          <SettingsRows label="Team members">
+            {members.data.items.map((member) => (
+              <SettingsRow
+                key={member.id}
+                className="settings-row-member"
+                mark={<Avatar name={member.name} url={member.avatar_url} />}
+                name={
+                  <>
+                    {member.name}
+                    {member.username && <span className="muted-text"> @{member.username}</span>}
+                  </>
+                }
+                detail={member.email}
+                status={
+                  canTeam && member.role !== 'owner' ? (
+                    <RoleEditor
+                      key={`${member.id}-${member.role}`}
+                      role={member.role}
+                      subject={member.name || member.email || member.id}
+                      scopeName={`team ${current?.name || team}`}
+                      roles={hasFeature('teams') ? ['admin', 'member'] : [member.role]}
+                      onSave={async (role) => {
+                        await unwrap(
+                          client.PUT('/teams/{id}/members/{user}', {
+                            params: { path: { id: team, user: member.id } },
+                            body: { role },
+                          }),
+                        )
+                        refresh()
+                      }}
+                    />
+                  ) : (
+                    <span className="label-chip">{member.role}</span>
+                  )
+                }
+                actions={
+                  hasFeature('teams') &&
+                  (canTeam || member.id === scope.identity.id) && (
+                    <Menu
+                      trigger={
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Actions for ${member.name || member.email}`}
+                        >
+                          <MoreHorizontal size={16} />
+                        </Button>
+                      }
+                    >
+                      <MenuItem
+                        onSelect={() => {
+                          setUsernameMember(member)
+                          setUsername(member.username || '')
+                          setUsernameError('')
+                        }}
+                      >
+                        Edit team username
+                      </MenuItem>
+                    </Menu>
+                  )
+                }
               />
-            </div>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {scope.identity.admin && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!mayCreateTeam}
-              onClick={() => {
-                setError('')
-                setAdding(true)
-              }}
-            >
-              Create team
-            </Button>
-          )}
-          {current && canTeam && (
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={!hasFeature('invitations')}
-              onClick={() => setInvite('team')}
-            >
-              Invite member
-            </Button>
-          )}
-          {current && scope.identity.admin && (
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label={`Delete team ${current.name}`}
-              onClick={() => {
-                setError('')
-                setConfirmation('')
-                setRemoveTeam({ id: current.id, name: current.name })
-              }}
-            >
-              <Icon name="trash" size={16} />
-            </Button>
-          )}
-        </div>
-      </div>
-      {scope.identity.admin &&
-        teams.isSuccess &&
-        teams.data.items.length > 0 &&
-        authStatus.data?.deployment_mode === 'self-hosted' &&
-        !hasFeature('multi_team') && (
-          <p className="field-help">
-            Free includes one team. A multi-team license lets you create more teams. Existing
-            members and invitations remain available.
-          </p>
+            ))}
+          </SettingsRows>
         )}
-      {teams.isPending ? (
-        <Loading rows={2} />
-      ) : teams.error ? (
-        <ErrorState error={teams.error} retry={() => void teams.refetch()} />
-      ) : !teams.data?.items.length ? (
-        <Empty title="No teams yet" description="Create your first team to invite collaborators." />
-      ) : (
-        <section aria-label="Team members">
-          {members.isPending ? (
-            <Loading rows={2} />
-          ) : members.error ? (
-            <ErrorState error={members.error} />
-          ) : (
-            <ul className="settings-rows">
-              {members.data?.items.map((member) => (
-                <li className="settings-row settings-row-member" key={member.id}>
-                  <div className="settings-row-identity">
-                    <Avatar name={member.name} url={member.avatar_url} />
-                    <div>
-                      <strong>
-                        {member.name}
-                        {member.username && <span className="muted-text"> @{member.username}</span>}
-                      </strong>
-                      <small>{member.email}</small>
-                    </div>
-                  </div>
-                  <div className="settings-row-status">
-                    {canTeam && member.role !== 'owner' ? (
+      </SettingsSection>
+      <SettingsSection
+        title="Project access"
+        help="Viewers inspect applications and logs. Developers also deploy. Project administrators manage membership. Role changes apply to new requests."
+        state={projectState}
+        actions={!!project.data?.items.length && inviteProject}
+      >
+        {scope.project && projects.isPending ? (
+          <Loading rows={2} />
+        ) : scope.project && projects.error ? (
+          <ErrorState error={projects.error} retry={() => void projects.refetch()} />
+        ) : !canShareProject || !scope.project ? null : project.isPending ? (
+          <Loading rows={2} />
+        ) : project.error ? (
+          <ErrorState error={project.error} />
+        ) : (
+          <>
+            {project.data?.items.length ? (
+              <SettingsRows label="Project members">
+                {project.data.items.map((member) => (
+                  <SettingsRow
+                    key={member.identity_id || member.team_id}
+                    className="settings-row-member"
+                    mark={<Icon name={member.team_id ? 'grid' : 'user'} size={16} />}
+                    name={member.name}
+                    detail={member.team_id ? 'Team' : 'Member'}
+                    status={
                       <RoleEditor
-                        key={`${member.id}-${member.role}`}
+                        key={`${member.identity_id || member.team_id}-${member.role}`}
                         role={member.role}
-                        subject={member.name || member.email || member.id}
-                        scopeName={`team ${current?.name || team}`}
-                        roles={hasFeature('teams') ? ['admin', 'member'] : [member.role]}
+                        subject={member.name || member.identity_id || member.team_id || 'member'}
+                        scopeName={`project ${scope.project}`}
+                        roles={hasFeature('project_rbac') ? projectRoles : [member.role]}
                         onSave={async (role) => {
                           await unwrap(
-                            client.PUT('/teams/{id}/members/{user}', {
-                              params: { path: { id: team, user: member.id } },
-                              body: { role },
+                            client.PUT('/projects/{project}/members', {
+                              params: { path: { project: scope.project } },
+                              body: {
+                                identity_id: member.identity_id,
+                                team_id: member.team_id,
+                                role,
+                              },
                             }),
                           )
                           refresh()
                         }}
                       />
-                    ) : (
-                      <span className="label-chip">{member.role}</span>
-                    )}
-                  </div>
-                  <div className="settings-row-actions">
-                    {hasFeature('teams') && (canTeam || member.id === scope.identity.id) && (
-                      <Menu
-                        trigger={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`Actions for ${member.name || member.email}`}
-                          >
-                            <MoreHorizontal size={16} />
-                          </Button>
-                        }
-                      >
-                        <MenuItem
-                          onSelect={() => {
-                            setUsernameMember(member)
-                            setUsername(member.username || '')
-                            setUsernameError('')
-                          }}
-                        >
-                          Edit team username
-                        </MenuItem>
-                      </Menu>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-      <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>Project access</h2>
-            <HeadingHelp title="Project access">
-              Viewers inspect applications and logs. Developers also deploy. Project administrators
-              manage membership. Team roles control the team’s membership. Role changes apply to new
-              requests.
-            </HeadingHelp>
-          </div>
-          <span className="muted-text">{scope.project || 'Select a project'}</span>
-        </div>
-        {canShareProject && scope.project && (
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={!hasFeature('invitations')}
-            onClick={() => setInvite('project')}
-          >
-            Invite to project
-          </Button>
-        )}
-      </div>
-      {scope.project ? (
-        projects.isPending ? (
-          <Loading rows={2} />
-        ) : projects.error ? (
-          <ErrorState error={projects.error} retry={() => void projects.refetch()} />
-        ) : !currentProject ? (
-          <Note>This project is unavailable. Choose another project to manage access.</Note>
-        ) : personalProject ? (
-          <Note>
-            This personal workspace is private to its owner. Personal workspaces cannot be shared
-            with members or teams.
-          </Note>
-        ) : !canProject ? (
-          <Note>Project administrators manage access to this project.</Note>
-        ) : project.isPending ? (
-          <Loading rows={2} />
-        ) : project.error ? (
-          <ErrorState error={project.error} />
-        ) : (
-          <section className="grid gap-3" aria-label="Project members">
-            {project.data?.items.length ? (
-              <ul className="settings-rows">
-                {project.data.items.map((member) => (
-                  <li
-                    className="settings-row settings-row-member"
-                    key={member.identity_id || member.team_id}
-                  >
-                    <div className="settings-row-identity">
-                      <Icon name={member.team_id ? 'grid' : 'user'} size={16} />
-                      <div>
-                        <strong>{member.name}</strong>
-                        <small>{member.team_id ? 'Team' : 'Member'}</small>
-                      </div>
-                    </div>
-                    <div className="settings-row-status">
-                      {canShareProject ? (
-                        <RoleEditor
-                          key={`${member.identity_id || member.team_id}-${member.role}`}
-                          role={member.role}
-                          subject={member.name || member.identity_id || member.team_id || 'member'}
-                          scopeName={`project ${scope.project}`}
-                          roles={hasFeature('project_rbac') ? projectRoles : [member.role]}
-                          onSave={async (role) => {
-                            await unwrap(
-                              client.PUT('/projects/{project}/members', {
-                                params: { path: { project: scope.project } },
-                                body: {
-                                  identity_id: member.identity_id,
-                                  team_id: member.team_id,
-                                  role,
-                                },
-                              }),
-                            )
-                            refresh()
-                          }}
-                        />
-                      ) : (
-                        <span className="label-chip">{member.role}</span>
-                      )}
-                    </div>
-                  </li>
+                    }
+                  />
                 ))}
-              </ul>
+              </SettingsRows>
             ) : (
-              <p className="field-help">
-                No direct members or teams. Installation administrators retain access.
-              </p>
+              <SettingsEmpty title="No direct members or teams" action={inviteProject}>
+                Installation administrators keep access.
+              </SettingsEmpty>
             )}
-            {canShareProject &&
-              hasFeature('project_rbac') &&
-              hasFeature('teams') &&
-              Boolean(teams.data?.items.length) && (
-                <form
-                  className="inline-form"
-                  onSubmit={async (e) => {
-                    e.preventDefault()
-                    if (grantRole.startsWith('custom:') && !grantReview) {
-                      setGrantReview(true)
-                      return
-                    }
-                    setBusy(true)
-                    setError('')
-                    try {
-                      await unwrap(
-                        client.PUT('/projects/{project}/members', {
-                          params: { path: { project: scope.project } },
-                          body: { team_id: grant, role: grantRole },
-                        }),
-                      )
-                      setGrant('')
-                      setGrantReview(false)
-                      refresh()
-                    } catch (err) {
-                      setError(message(err))
-                    } finally {
-                      setBusy(false)
-                    }
+            {hasFeature('project_rbac') && hasFeature('teams') && Boolean(teams.data?.items.length) && (
+              <form
+                className="settings-inline-controls"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  if (grantRole.startsWith('custom:') && !grantReview) {
+                    setGrantReview(true)
+                    return
+                  }
+                  setBusy(true)
+                  setError('')
+                  try {
+                    await unwrap(
+                      client.PUT('/projects/{project}/members', {
+                        params: { path: { project: scope.project } },
+                        body: { team_id: grant, role: grantRole },
+                      }),
+                    )
+                    setGrant('')
+                    setGrantReview(false)
+                    refresh()
+                  } catch (err) {
+                    setError(message(err))
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              >
+                <SelectField
+                  label="Grant a team access"
+                  value={grant}
+                  onValueChange={(value) => {
+                    setGrant(value)
+                    setGrantReview(false)
                   }}
-                >
-                  <label>
-                    Team
-                    <SelectField
-                      label="Grant a team access"
-                      value={grant}
-                      onValueChange={(value) => {
-                        setGrant(value)
-                        setGrantReview(false)
-                      }}
-                      required
-                      options={[
-                        {
-                          value: '',
-                          label: 'Choose a team',
-                        },
-                        ...(teams.data?.items.map((item) => ({
-                          value: item.id,
-                          label: item.name,
-                        })) ?? []),
-                      ]}
-                    />
-                  </label>
-                  <label>
-                    Role
-                    <SelectField
-                      label="Role"
-                      value={grantRole}
-                      onValueChange={(value) => {
-                        setGrantRole(value)
-                        setGrantReview(false)
-                      }}
-                      options={
-                        projectRoles.map((role) => ({
-                          value: role,
-                          label: customRoles.data?.items.find((r) => r.id === role)?.name || role,
-                        })) ?? []
-                      }
-                    />
-                  </label>
-                  {grantReview && (
-                    <Note>
-                      Grant {customRoles.data?.items.find((r) => r.id === grantRole)?.name} to every
-                      member of this team in {scope.project}:{' '}
-                      {customRoles.data?.items
-                        .find((r) => r.id === grantRole)
-                        ?.permissions.map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
-                        .join(' · ')}
-                      . Other memberships can grant additional access.
-                    </Note>
-                  )}
-                  <Button type="submit" variant="primary" size="sm" disabled={busy || !grant}>
-                    {grantRole.startsWith('custom:') && !grantReview
-                      ? 'Review access'
-                      : 'Grant access'}
-                  </Button>
-                </form>
-              )}
-          </section>
-        )
-      ) : (
-        <Note>Choose a project to manage access.</Note>
-      )}
+                  required
+                  options={[
+                    { value: '', label: 'Choose a team' },
+                    ...(teams.data?.items.map((item) => ({ value: item.id, label: item.name })) ?? []),
+                  ]}
+                />
+                <SelectField
+                  label="Role"
+                  value={grantRole}
+                  onValueChange={(value) => {
+                    setGrantRole(value)
+                    setGrantReview(false)
+                  }}
+                  options={projectRoles.map((role) => ({
+                    value: role,
+                    label: customRoles.data?.items.find((r) => r.id === role)?.name || role,
+                  }))}
+                />
+                <Button type="submit" disabled={busy || !grant}>
+                  {grantRole.startsWith('custom:') && !grantReview ? 'Review access' : 'Grant access'}
+                </Button>
+                {grantReview && (
+                  <Note>
+                    Grant {customRoles.data?.items.find((r) => r.id === grantRole)?.name} to every
+                    member of this team in {scope.project}:{' '}
+                    {customRoles.data?.items
+                      .find((r) => r.id === grantRole)
+                      ?.permissions.map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
+                      .join(' · ')}
+                    . Other memberships can grant additional access.
+                  </Note>
+                )}
+              </form>
+            )}
+          </>
+        )}
+      </SettingsSection>
       {error && !removeTeam && !adding && <RequestError error={error} />}
       <Dialog
         open={Boolean(usernameMember)}
@@ -621,7 +594,7 @@ export default function TeamSettings() {
       </Dialog>
       <CustomRoles />
       <OrganizationSecurity />
-    </div>
+    </>
   )
 }
 
@@ -972,46 +945,51 @@ export function InstallationUsers() {
   const [busy, setBusy] = useState(false)
   const removingAccess = changeAction === 'remove-admin' || changeAction === 'disable'
   const subject = change?.name || change?.email || change?.id || ''
+  const items = users.data?.items || []
+  const admins = items.filter((user) => user.admin && !user.disabled).length
+  const disabled = items.filter((user) => user.disabled).length
   return (
-    <>
-      <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>Installation accounts</h2>
-            <HeadingHelp title="Installation accounts">
-              Administrators have access across projects. The owner account is protected.
-            </HeadingHelp>
-          </div>
-        </div>
-      </div>
+    <SettingsSection
+      title="People"
+      help="Every account that can sign in to this installation. Administrators have access across projects. The owner account is protected."
+      state={
+        users.data &&
+        [
+          plural(items.length, 'account'),
+          plural(admins, 'administrator'),
+          disabled ? `${disabled} disabled` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      }
+    >
       {users.isPending ? (
         <Loading />
       ) : users.error ? (
         <ErrorState error={users.error} />
       ) : (
-        <ul className="settings-rows" aria-label="Installation accounts">
-          {users.data?.items.map((user) => (
-            <li className="settings-row settings-row-member" key={user.id}>
-              <div className="settings-row-identity">
-                <Icon name="user" size={16} />
-                <div>
-                  <strong>{user.name}</strong>
-                  <small>{user.email}</small>
-                </div>
-              </div>
-              <span
-                className={`settings-row-status settings-state settings-state-${user.disabled ? 'muted' : 'ok'}`}
-              >
-                {user.disabled
-                  ? 'Disabled'
-                  : user.owner
-                    ? 'Owner'
-                    : user.admin
-                      ? 'Administrator'
-                      : 'Member'}
-              </span>
-              <div className="settings-row-actions">
-                {!user.owner && (
+        <SettingsRows label="Installation accounts">
+          {items.map((user) => (
+            <SettingsRow
+              key={user.id}
+              className="settings-row-member"
+              muted={user.disabled}
+              mark={<Icon name="user" size={16} />}
+              name={user.name}
+              detail={user.email}
+              status={
+                <SettingsState tone={user.disabled ? 'muted' : 'ok'}>
+                  {user.disabled
+                    ? 'Disabled'
+                    : user.owner
+                      ? 'Owner'
+                      : user.admin
+                        ? 'Administrator'
+                        : 'Member'}
+                </SettingsState>
+              }
+              actions={
+                !user.owner && (
                   <Menu
                     trigger={
                       <Button
@@ -1047,11 +1025,11 @@ export function InstallationUsers() {
                       {user.disabled ? 'Enable' : 'Disable'}
                     </MenuItem>
                   </Menu>
-                )}
-              </div>
-            </li>
+                )
+              }
+            />
           ))}
-        </ul>
+        </SettingsRows>
       )}
       <Dialog
         open={Boolean(change)}
@@ -1123,7 +1101,7 @@ export function InstallationUsers() {
           </Button>
         </div>
       </Dialog>
-    </>
+    </SettingsSection>
   )
 }
 

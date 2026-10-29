@@ -1,5 +1,4 @@
 import { SelectField } from '../components/ui/select'
-import { Input } from '../components/ui/input'
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -8,8 +7,11 @@ import { message, timestamp } from '../lib/api'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
-import { Empty, ErrorState, Loading, Note, RequestError } from '../components/shared'
+import { Empty, ErrorState, Loading, RequestError } from '../components/shared'
 import type { components } from '../lib/api.generated'
+import { Icon } from '../components/icons'
+import { focusedDialog, ReviewFacts } from '../components/operation-review'
+import { SettingsEmpty, SettingsRow, SettingsRows } from '../components/settings-section'
 export const Route = createFileRoute('/settings/host-access')({ component: HostAccess })
 function HostAccess() {
   const cache = useQueryClient()
@@ -19,7 +21,6 @@ function HostAccess() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [revoke, setRevoke] = useState<components['schemas']['HostGrant'] | null>(null)
-  const [confirmation, setConfirmation] = useState('')
   const access = useQuery({
     queryKey: ['host-access'],
     queryFn: ({ signal }) => unwrap(client.GET('/host-access', { signal })),
@@ -31,6 +32,7 @@ function HostAccess() {
     enabled: Boolean(access.data?.super_admin),
     gcTime: 0,
   })
+  const nameOf = (id: string) => users.data?.items.find((item) => item.id === id)?.name || id
   const refresh = () => {
     void access.refetch()
     void cache.invalidateQueries({ queryKey: ['me'] })
@@ -168,57 +170,57 @@ function HostAccess() {
         </FormSection>
         <FormSection title="Current grants" icon="terminal">
           {access.data.grants.length ? (
-            access.data.grants.map((grant) => (
-              <div className="settings-list-row" key={`${grant.identity_id}/${grant.node}`}>
-                <div>
-                  <strong>
-                    {users.data?.items.find((item) => item.id === grant.identity_id)?.name ||
-                      grant.identity_id}
-                  </strong>
-                  <small>
-                    {grant.node === '*' ? 'All nodes' : grant.node} · Expires{' '}
-                    {timestamp(grant.expires_at)}
-                  </small>
-                </div>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  aria-label={`Revoke host access for ${grant.identity_id} on ${grant.node === '*' ? 'all nodes' : grant.node}`}
-                  onClick={() => {
-                    setError('')
-                    setConfirmation('')
-                    setRevoke(grant)
-                  }}
-                >
-                  Revoke
-                </Button>
-              </div>
-            ))
+            <SettingsRows label="Current host grants">
+              {access.data.grants.map((grant) => (
+                <SettingsRow
+                  key={`${grant.identity_id}/${grant.node}`}
+                  mark={<Icon name="terminal" size={16} />}
+                  name={nameOf(grant.identity_id)}
+                  detail={grant.node === '*' ? 'All nodes' : grant.node}
+                  meta={`Expires ${timestamp(grant.expires_at)}`}
+                  actions={
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Revoke host access for ${nameOf(grant.identity_id)} on ${grant.node === '*' ? 'all nodes' : grant.node}`}
+                      onClick={() => {
+                        setError('')
+                        setRevoke(grant)
+                      }}
+                    >
+                      Revoke
+                    </Button>
+                  }
+                />
+              ))}
+            </SettingsRows>
           ) : (
-            <Note>No delegated host permissions. The super admin retains owner authority.</Note>
+            <SettingsEmpty title="No delegated host access">
+              The super admin keeps owner authority.
+            </SettingsEmpty>
           )}
         </FormSection>
         {error && !revoke && <RequestError error={error} />}
       </div>
       <Dialog
         open={Boolean(revoke)}
+        className={focusedDialog}
         onOpenChange={(open) => {
           if (!open && !busy) setRevoke(null)
         }}
         title="Revoke host access?"
-        description={`Remove ${users.data?.items.find((item) => item.id === revoke?.identity_id)?.name || revoke?.identity_id || 'this person'}’s terminal authority for ${revoke?.node === '*' ? 'all nodes' : revoke?.node || 'this node'}.`}
+        description={`Remove ${revoke ? nameOf(revoke.identity_id) : 'this person'}’s terminal authority for ${revoke?.node === '*' ? 'all nodes' : revoke?.node || 'this node'}.`}
       >
-        <div className="dialog-body field-stack">
-          <label>
-            Type <code>{revoke?.identity_id}</code> to revoke this grant
-            <Input
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Confirm account ID"
+        <div className="dialog-body">
+          {revoke && (
+            <ReviewFacts
+              facts={[
+                ['Person', nameOf(revoke.identity_id)],
+                ['Node', revoke.node === '*' ? 'All nodes' : revoke.node],
+                ['Expires', timestamp(revoke.expires_at)],
+              ]}
             />
-          </label>
+          )}
           {error && <RequestError error={error} />}
         </div>
         <div className="dialog-footer">
@@ -227,9 +229,9 @@ function HostAccess() {
           </Button>
           <Button
             variant="danger"
-            disabled={busy || !revoke || confirmation !== revoke.identity_id}
+            disabled={busy || !revoke}
             onClick={async () => {
-              if (!revoke || busy || confirmation !== revoke.identity_id) return
+              if (!revoke || busy) return
               setBusy(true)
               setError('')
               try {
@@ -247,7 +249,7 @@ function HostAccess() {
               }
             }}
           >
-            Revoke grant
+            {busy ? 'Revoking…' : 'Revoke host access'}
           </Button>
         </div>
       </Dialog>

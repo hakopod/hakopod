@@ -8,8 +8,11 @@ import { message } from '../lib/api'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Dialog } from './ui/dialog'
-import { PageHeader, HeadingHelp, ErrorState, Loading, Note, RequestError } from './shared'
+import { PageHeader, ErrorState, Loading, Note, RequestError } from './shared'
 import { Trash2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { plural, ReviewFacts, ReviewNotice } from './operation-review'
+import { SettingsEmpty, SettingsRow, SettingsRows, SettingsSection } from './settings-section'
 
 export const rolePermissions = [
   ...workloadGrants.filter(([grant]) =>
@@ -35,65 +38,64 @@ export function CustomRoles() {
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
   const enabled = license.data?.catalog.some((f) => f.id === 'custom_roles' && f.enabled)
+  const createRole = scope.identity.admin && (
+    <Button asChild variant="outline">
+      <Link to="/settings/roles/new">Create role</Link>
+    </Button>
+  )
   return (
-    <section className="grid min-w-0 gap-4 wrap-anywhere">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="hako-section-heading-title">
-          <h2>Custom roles</h2>
-          <HeadingHelp title="Custom roles">
-            Choose project permissions. Installation administration and membership management remain
-            with administrators.
-          </HeadingHelp>
-        </div>
-        {scope.identity.admin && (
-          <Button asChild size="sm" variant="outline">
-            <a href="/settings/roles/new">Create role</a>
-          </Button>
-        )}
-      </div>
-      {!enabled && (
-        <Note>
-          Pro custom roles require an explicit entitlement. Fixed roles remain available. Existing
-          custom assignments grant no access while the entitlement is inactive.
-        </Note>
-      )}
+    <SettingsSection
+      title="Custom roles"
+      help="Choose project permissions. Installation administration and membership management remain with administrators."
+      state={
+        enabled
+          ? !!roles.data?.items.length && plural(roles.data.items.length, 'custom role')
+          : 'Requires Pro. Fixed roles remain available; existing custom assignments grant no access while the entitlement is inactive.'
+      }
+      actions={!!roles.data?.items.length && createRole}
+    >
       {roles.isPending ? (
         <Loading />
       ) : roles.error ? (
         <ErrorState error={roles.error} />
+      ) : !roles.data?.items.length ? (
+        <SettingsEmpty title="No custom roles" action={enabled && createRole}>
+          Viewer, developer and admin cover most projects.
+        </SettingsEmpty>
       ) : (
-        roles.data?.items.map((role) => (
-          <div key={role.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <div className="min-w-0 wrap-anywhere">
-              <p>
-                {role.name} <span className="muted-text text-xs">Custom</span>
-              </p>
-              <p className="muted-text text-sm">
-                {role.permissions
-                  .map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
-                  .join(' · ')}
-              </p>
-            </div>
-            {scope.identity.admin && (
-              <div className="flex gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <a href={`/settings/roles/${encodeURIComponent(role.id)}/edit`}>Edit</a>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  aria-label={`Delete ${role.name}`}
-                  onClick={() => {
-                    setError('')
-                    setRemoval(role)
-                  }}
-                >
-                  <Trash2 size={16} />
-                </Button>
-              </div>
-            )}
-          </div>
-        ))
+        <SettingsRows label="Custom roles">
+          {roles.data.items.map((role) => (
+            <SettingsRow
+              key={role.id}
+              name={role.name}
+              detail={role.permissions
+                .map((p) => rolePermissions.find((x) => x.id === p)?.name || p)
+                .join(' · ')}
+              actions={
+                scope.identity.admin && (
+                  <>
+                    <Button asChild size="sm">
+                      <Link to="/settings/roles/$role/edit" params={{ role: role.id }}>
+                        Edit
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${role.name}`}
+                      onClick={() => {
+                        setError('')
+                        setRemoval(role)
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </>
+                )
+              }
+            />
+          ))}
+        </SettingsRows>
       )}
       <Dialog
         className="wrap-anywhere"
@@ -137,7 +139,7 @@ export function CustomRoles() {
           </Button>
         </div>
       </Dialog>
-    </section>
+    </SettingsSection>
   )
 }
 
@@ -289,15 +291,30 @@ export function OrganizationSecurity() {
     [error, setError] = useState('')
   if (!scope.identity.admin || scope.identity.mfa_required) return null
   const enabled = license.data?.catalog.some((f) => f.id === 'team_mfa' && f.enabled)
+  const data = query.data
   return (
-    <section className="grid gap-4 py-6">
-      <div className="hako-section-heading-title">
-        <h2>Organization MFA</h2>
-        <HeadingHelp title="Organization MFA">
-          Require every human browser and CLI session to verify an authenticator or passkey. Scoped
-          machine credentials remain independent.
-        </HeadingHelp>
-      </div>
+    <SettingsSection
+      title="Organization MFA"
+      help="Require every human browser and CLI session to verify an authenticator or passkey. Scoped machine credentials remain independent."
+      state={
+        data &&
+        `${data.require_mfa ? 'Required' : 'Optional'} · ${data.ready_members} of ${data.members} people have a factor enrolled${!enabled && !data.require_mfa ? ' · Requires Pro to enable' : ''}`
+      }
+      actions={
+        data && (
+          <Button
+            variant="outline"
+            disabled={!data.require_mfa && (!enabled || !scope.identity.mfa_verified)}
+            onClick={() => {
+              setError('')
+              setReview(true)
+            }}
+          >
+            {data.require_mfa ? 'Review disabling requirement' : 'Review MFA requirement'}
+          </Button>
+        )
+      }
+    >
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -305,38 +322,12 @@ export function OrganizationSecurity() {
       ) : (
         query.data && (
           <>
-            <p>
-              {query.data.require_mfa
-                ? 'Required for this installation'
-                : 'Optional for this installation'}{' '}
-              · {query.data.ready_members} of {query.data.members} people have a factor enrolled.
-            </p>
-            <Note>
-              Existing unverified sessions must complete MFA before accessing workloads. People can
-              still set up their personal authenticator. License expiry does not switch off an
-              enabled policy.
-            </Note>
-            {!enabled && !query.data.require_mfa && (
-              <Note>A Pro license with organization MFA is required to enable this policy.</Note>
-            )}
-            {!scope.identity.mfa_verified && (
+            {!scope.identity.mfa_verified && !query.data.require_mfa && (
               <Note>
-                Verify your own MFA session in <a href="/settings?tab=account">Account security</a>{' '}
+                Verify your own MFA session in <Link to="/settings" search={{ tab: 'account' }}>Account security</Link>{' '}
                 before enabling this policy.
               </Note>
             )}
-            <div>
-              <Button
-                variant="outline"
-                disabled={!query.data.require_mfa && (!enabled || !scope.identity.mfa_verified)}
-                onClick={() => {
-                  setError('')
-                  setReview(true)
-                }}
-              >
-                {query.data.require_mfa ? 'Review disabling requirement' : 'Review MFA requirement'}
-              </Button>
-            </div>
             <Dialog
               className="wrap-anywhere"
               open={review}
@@ -350,7 +341,21 @@ export function OrganizationSecurity() {
                   : 'Unverified sessions will lose workload access immediately. Personal security setup remains available.'
               }
             >
-              <div className="dialog-body">{error && <RequestError error={error} />}</div>
+              <div className="dialog-body">
+                <ReviewFacts
+                  facts={[
+                    ['Policy', query.data.require_mfa ? 'Required → optional' : 'Optional → required'],
+                    ['Enrolled', `${query.data.ready_members} of ${query.data.members} people`],
+                  ]}
+                />
+                {!query.data.require_mfa && (
+                  <ReviewNotice tone="warn" title="Unverified sessions must complete MFA">
+                    They lose workload access until they verify. People can still set up their
+                    personal authenticator. License expiry does not switch off an enabled policy.
+                  </ReviewNotice>
+                )}
+                {error && <RequestError error={error} />}
+              </div>
               <div className="dialog-footer">
                 <Button variant="ghost" disabled={busy} onClick={() => setReview(false)}>
                   Cancel
@@ -380,13 +385,13 @@ export function OrganizationSecurity() {
                     }
                   }}
                 >
-                  Confirm policy
+                  {busy ? 'Saving…' : query.data.require_mfa ? 'Make MFA optional' : 'Require MFA'}
                 </Button>
               </div>
             </Dialog>
           </>
         )
       )}
-    </section>
+    </SettingsSection>
   )
 }
