@@ -55,11 +55,11 @@ export function accentText(color: string, theme: 'dark' | 'light') {
 }
 
 
-// Cloud surfaces are fixed graphite (dark) and warm stone (light); the accent stays on actions only.
+// Cloud surfaces are fixed graphite (dark) and cool paper (light); the accent stays on actions only.
 export function cloudSurfaces(_color: string, theme: 'dark' | 'light') {
   return theme === 'dark'
     ? { background: '#070709', card: '#0E0C13', popover: '#15111D',
         surface2: '#15111D', surface3: '#1C1629', hairline: '#282133' }
-    : { background: '#E9E4DD', card: '#F8F6F2', popover: '#F8F6F2',
-        surface2: '#DFD8CF', surface3: '#D3CBC1', hairline: '#C4BAB0' }
+    : { background: '#F7F7F8', card: '#FFFFFF', popover: '#FFFFFF',
+        surface2: '#F2F2F4', surface3: '#E8E8EC', hairline: '#E4E4E7' }
 }

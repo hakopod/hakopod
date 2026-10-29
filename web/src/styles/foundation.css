@@ -12,17 +12,57 @@
 .light {
   --card: #fafafa;
 }
-/* Light uses warm stone in both editions. Text colours that sit on the canvas are
-   darkened so they keep 4.5:1 on it. */
+/* Light is cool paper in both editions: a near-white canvas, white cards lifted by a soft
+   shadow, grey chips and ink text. Status colours keep 4.5:1 on white. */
 html.light {
-  --background: #e9e4dd;
-  --card: #f8f6f2;
-  --surface-2: #dfd8cf;
-  --surface-3: #d3cbc1;
-  --hairline: #c4bab0;
-  --muted: #4f4a44;
-  --destructive: #9a3324;
-  --warn: #6b4704;
+  --background: #f7f7f8;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --surface-2: #f2f2f4;
+  --surface-3: #e8e8ec;
+  --hairline: #e4e4e7;
+  --foreground: #18181b;
+  --muted: #63636b;
+  --text-3: #8b8b93;
+  --state: #15803d;
+  --state-dim: #dcfce7;
+  --success: #15803d;
+  --info: #4f46e5;
+  --warn: #b45309;
+  --destructive: #b42318;
+  --hatch-base: #f7f7f8;
+  --overlay: rgb(24 24 27 / 40%);
+  --card-shadow: 0 1px 2px rgb(24 24 27 / 4%), 0 1px 3px rgb(24 24 27 / 5%);
+}
+/* Light actions: ink primary, white secondary with a hairline, as in the reference design. */
+html.light .button-primary {
+  background: var(--foreground);
+  color: #ffffff;
+}
+html.light .button-primary:hover {
+  background: #2e2e33;
+  filter: none;
+}
+html.light .button-secondary {
+  border-color: var(--hairline);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgb(24 24 27 / 4%);
+}
+html.light .button-secondary:hover {
+  background: var(--surface-2);
+}
+html.light
+  :is(
+    .panel,
+    .ops-catalog-card,
+    .guided-empty,
+    .settings-panel,
+    .form-page-main > .form-body,
+    .hako-form-page .form-footer,
+    .app-attention
+  ) {
+  box-shadow: var(--card-shadow);
 }
 /* Mirrors cloudSurfaces() dark, so the first paint matches before the accent script runs. */
 html[data-edition='cloud']:not(.light) {
