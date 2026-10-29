@@ -147,7 +147,7 @@ class ActionsRuntimeTests(unittest.TestCase):
 
     def test_install_withdraws_both_labels_and_hands_off_lock_only_after_verification(self):
         for profile, failure in [(actions_runtime.WORKSPACE_PROFILE, value)
-                for value in (None, 'node-before', 'restart', 'config', 'runtimeclass', 'node', 'restore', 'probe')] + [('vfs', None)]:
+                for value in (None, 'node-before', 'restart', 'config', 'runtimeclass', 'node', 'restore', 'probe')] + [('vfs', None), (None, None), (None, 'probe-fallback')]:
             with self.subTest(profile=profile, failure=failure), tempfile.TemporaryDirectory() as temp:
                 base = Path(temp) / 'actions-runtime'; base.mkdir()
                 template = Path(temp) / 'containerd/config-v3.toml.tmpl'; template.parent.mkdir()
@@ -213,7 +213,7 @@ class ActionsRuntimeTests(unittest.TestCase):
                         events.append('restart')
                         if failure == 'restart':
                             raise RuntimeError('restart failed')
-                        generated = actions_runtime.runtime_section(base / actions_runtime.VERSION, profile)
+                        generated = actions_runtime.runtime_section(base / actions_runtime.VERSION, profile or actions_runtime.WORKSPACE_PROFILE)
                         if failure == 'config':
                             generated = generated.replace('io.containerd.runsc.v1', 'io.containerd.runc.v2')
                         (template.parent / 'config.toml').write_text(
@@ -232,6 +232,8 @@ class ActionsRuntimeTests(unittest.TestCase):
                         self.assertFalse((base / 'workspace-profile').exists())
                         if failure == 'probe':
                             raise RuntimeError('probe failed')
+                        if failure == 'probe-fallback':
+                            raise actions_runtime.subprocess.CalledProcessError(1, args)
                     return SimpleNamespace(stdout=b'', stderr=b'')
 
                 original_write = actions_runtime.atomic_write
@@ -261,7 +263,12 @@ class ActionsRuntimeTests(unittest.TestCase):
                      patch.object(actions_runtime, 'atomic_write', side_effect=write), \
                      patch.object(actions_runtime.subprocess, 'check_output', side_effect=['/opt/hakopod/tools/k3s --config /etc/hakopod/k3s.yaml', 'k3d-hakopod-dev']), \
                      patch.object(actions_runtime.subprocess, 'run', side_effect=run):
-                    if failure:
+                    if failure == 'probe-fallback':
+                        actions_runtime.install({'node_name': 'node'}, {'id': 'install-id'}, ['kubectl'], read, profile)
+                        self.assertIn('probe', events)
+                        self.assertIn('restore', events)
+                        self.assertNotIn('persist', events)
+                    elif failure:
                         with self.assertRaises((RuntimeError, ValueError)):
                             actions_runtime.install({'node_name': 'node'}, {'id': 'install-id'}, ['kubectl'], read,
                                                     profile)
@@ -279,7 +286,7 @@ class ActionsRuntimeTests(unittest.TestCase):
                         self.assertLess(events.index('withdraw'), events.index('restart'))
                         self.assertLess(events.index('runtimeclass-check'), events.index('restore'))
                         self.assertEqual(events.count('binary-check'), 2)
-                        self.assertEqual((base / 'workspace-profile').read_text(), profile + '\n')
+                        self.assertEqual((base / 'workspace-profile').read_text(), (profile or actions_runtime.WORKSPACE_PROFILE) + '\n')
                         if profile == 'vfs':
                             self.assertNotIn('probe', events)
                             self.assertLess(events.index('persist'), events.index('unlock'))

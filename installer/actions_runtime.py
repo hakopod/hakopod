@@ -18,6 +18,7 @@ import shutil
 import stat
 import time
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
@@ -438,6 +439,7 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance, a
     if template.is_symlink() or BASE.is_symlink():
         raise ValueError('Refusing a symlink in the runtime configuration')
     profile_path = BASE / 'workspace-profile'
+    defaulted = False
     if workspace_profile is None:
         workspace_profile = 'vfs'
         if profile_path.exists() or profile_path.is_symlink():
@@ -445,6 +447,10 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance, a
             if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 64:
                 raise ValueError('Saved Actions workspace profile has invalid ownership')
             workspace_profile = read_runtime_text(profile_path, 64).strip()
+        elif not agent:
+            # A first server installation tries the faster shared workspace.
+            # A failed qualification probe leaves the node on VFS.
+            workspace_profile, defaulted = WORKSPACE_PROFILE, True
     if workspace_profile not in ('vfs', WORKSPACE_PROFILE):
         raise ValueError('Unknown Actions workspace profile')
     existing = read('get', 'runtimeclass', 'hakopod-actions', '--ignore-not-found')
@@ -547,10 +553,17 @@ def install_locked(config, marker, kube, read, workspace_profile, maintenance, a
             # The ordinary probe acquires the same local lock itself. Keep the
             # outer installation lock while handing off this narrower lock.
             maintenance.close()
-            subprocess.run(['/opt/hakopod/current/hakopod-server', 'actions-workspace-probe',
-                            '--kubeconfig', '/etc/hakopod/admin-kubeconfig', '--context', context,
-                            '--node', config['node_name'], '--installation-id', ident,
-                            '--workspace-profile', workspace_profile], check=True, timeout=1000)
+            try:
+                subprocess.run(['/opt/hakopod/current/hakopod-server', 'actions-workspace-probe',
+                                '--kubeconfig', '/etc/hakopod/admin-kubeconfig', '--context', context,
+                                '--node', config['node_name'], '--installation-id', ident,
+                                '--workspace-profile', workspace_profile], check=True, timeout=1000)
+            except subprocess.CalledProcessError:
+                if not defaulted:
+                    raise
+                # Nothing is saved, so the next maintenance run qualifies again.
+                print('The shared workspace probe failed. Managed Actions uses the VFS workspace on this node.', file=sys.stderr)
+                return
         atomic_write(profile_path, workspace_profile + '\n', 0o600)
 
 
