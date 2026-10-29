@@ -56,4 +56,27 @@ address, and caches each decision for five seconds. The API makes the same
 check itself for any request that reaches it directly. If the policy cannot be
 read, requests are refused with `503`.
 
-A host firewall layer and VPN connectors are planned as later phases.
+## Host firewall
+
+The allowlist above is enforced by Hakopod's own processes. To also close the
+ports in the server's firewall, install the module once and tick **Also close
+the dashboard port and the Kubernetes API** in Settings:
+
+```bash
+sudo python3 ./installer/modules.py private-access
+```
+
+The module needs `nftables`. It adds one table, `inet hakopod_access`, and a
+root timer that brings it in line with the saved policy every ten seconds:
+
+- The dashboard port (in `https` dashboard mode) and the K3s API on `6443`
+  accept only the allowed networks, loopback, current cluster nodes and the
+  cluster Pod and Service networks (`10.42.0.0/16`, `10.43.0.0/16`).
+- HAProxy's `80` and `443`, kubelet, flannel and everything else are untouched.
+- A new agent node must come from an allowed network until it has joined.
+- An unconfirmed policy reverts in the firewall within ten seconds of reverting
+  in the API. A reset turns the firewall off on the next tick; for an instant
+  way out, run `sudo nft delete table inet hakopod_access`.
+- If the timer cannot read the policy, it keeps the current rules.
+
+VPN connectors are planned as a later phase.

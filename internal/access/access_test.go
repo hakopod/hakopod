@@ -14,6 +14,7 @@ func TestNormalizeRejectsUnsafePolicies(t *testing.T) {
 		"proxy CIDRs on direct":    {Enabled: true, AllowCIDRs: []string{"10.0.0.0/8"}, TrustedProxyCIDRs: []string{"192.0.2.0/24"}},
 		"unknown header":           {Enabled: true, AllowCIDRs: []string{"10.0.0.0/8"}, ClientIPSource: SourceTrustedProxy, TrustedProxyCIDRs: []string{"192.0.2.0/24"}, ClientIPHeader: "Forwarded"},
 		"unknown client IP source": {Enabled: true, AllowCIDRs: []string{"10.0.0.0/8"}, ClientIPSource: "header"},
+		"firewall while off":       {Firewall: true},
 	} {
 		if _, err := p.Normalize(); err == nil {
 			t.Errorf("%s: accepted %+v", name, p)

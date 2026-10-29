@@ -67,6 +67,7 @@ function AccessPolicyForm({ current }: { current: Access }) {
   )
   const [proxies, setProxies] = useState(policy.trusted_proxy_cidrs.join('\n'))
   const [header, setHeader] = useState<Policy['client_ip_header']>(policy.client_ip_header || '')
+  const [firewall, setFirewall] = useState(Boolean(policy.firewall))
   const [elsewhere, setElsewhere] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -99,6 +100,7 @@ function AccessPolicyForm({ current }: { current: Access }) {
               client_ip_source: source,
               trusted_proxy_cidrs: source === 'trusted_proxy' ? lines(proxies) : [],
               client_ip_header: source === 'trusted_proxy' ? header : '',
+              firewall: enabled && firewall,
             },
           },
         }),
@@ -229,6 +231,19 @@ function AccessPolicyForm({ current }: { current: Access }) {
             />
           </>
         )}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={firewall}
+            disabled={!enabled}
+            onChange={(event) => setFirewall(event.target.checked)}
+          />
+          Also close the dashboard port and the Kubernetes API (6443) in the server firewall
+        </label>
+        <p className="field-help m-0">
+          Needs the private-access installer module on the server. Cluster nodes and the cluster
+          network stay allowed; add the networks of any new agent nodes before they join.
+        </p>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
