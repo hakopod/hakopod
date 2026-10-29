@@ -10,9 +10,10 @@ import { SecretForm } from './application-secrets'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/input'
-import { Copy, Empty, ErrorState, Note, RequestError } from './shared'
+import { Copy, ErrorState, Note, RequestError } from './shared'
 import { Icon } from './icons'
 import { secretReference } from '../lib/secret-reference'
+import { GuidedEmpty } from './resource-card'
 
 export function ServiceSecrets({
   application,
@@ -162,10 +163,31 @@ export function ServiceSecrets({
           })}
         </div>
       ) : (
-        <Empty
+        <GuidedEmpty
+          compact
           icon="lock"
-          title="No secrets bound to this service"
+          title="Give this service a secret"
           description="Save a value, then bind its reference to an environment variable in this service’s reviewed configuration."
+          steps={[
+            { title: 'Save a value', detail: 'Stored as an application secret.' },
+            { title: 'Bind it to a variable', detail: 'In this service’s configuration.' },
+            { title: 'Deploy the change', detail: 'Through a reviewed deployment.' },
+          ]}
+          primary={
+            canWrite && (
+              <Button
+                variant="primary"
+                disabled={!metadataReady}
+                onClick={() => {
+                  setName('')
+                  setError('')
+                  setCreate(true)
+                }}
+              >
+                Add secret
+              </Button>
+            )
+          }
         />
       )}
       <Dialog

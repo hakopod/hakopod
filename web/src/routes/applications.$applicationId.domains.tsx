@@ -11,8 +11,9 @@ import type { Plan } from '../lib/types'
 import { FormPage, FormSection, FormHint } from '../components/form-page'
 import { DiffTable } from '../components/deploy-dialog'
 import { Button } from '../components/ui/button'
-import { Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import { ErrorState, Loading, Note, Status } from '../components/shared'
 import { CopyValue, ReviewFacts } from '../components/operation-review'
+import { GuidedEmpty } from '../components/resource-card'
 // The provider listing for an application deliberately carries no credential and
 // no zone filter, only the id, name and kind a chooser needs.
 type DNSProviderChoice = components['schemas']['DNSProviderSummary'] & { id: string }
@@ -366,11 +367,20 @@ function ApplicationDomains() {
                 </div>
               )}
               {!domains.data?.items.length ? (
-                <Empty
+                <GuidedEmpty
+                  compact
                   icon="globe"
-                  title="No custom domains"
-                  description="This application is reachable only at its generated hostname."
-                  action={
+                  title="Use your own domain"
+                  description="This application answers only at its generated hostname until you add a domain."
+                  steps={[
+                    { title: 'Add the hostname', detail: 'Choose the service it routes to.' },
+                    {
+                      title: 'Create the DNS record',
+                      detail: 'Use the record shown for the domain.',
+                    },
+                    { title: 'Traffic switches over', detail: 'Once the record verifies.' },
+                  ]}
+                  primary={
                     canWrite && (
                       <Button asChild variant="primary">
                         <a href="#add-domain">Add a domain</a>

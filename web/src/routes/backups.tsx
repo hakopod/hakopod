@@ -34,7 +34,6 @@ import {
 } from '../components/shared'
 import {
   GuidedEmpty,
-  ResourceEmpty,
   ResourceError,
   ResourceRow,
   ResourceRows,
@@ -248,16 +247,22 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
             ]}
           />
         ) : (
-          <ResourceEmpty
+          <GuidedEmpty
+            compact
             icon="archive"
-            title={artifacts ? 'No stored backups' : 'No backup has run yet'}
+            title={artifacts ? 'No stored backups yet' : 'No backup has run yet'}
             description={
               artifacts
                 ? 'Each successful backup is kept here until you delete it or its schedule’s retention removes it.'
-                : 'Run a backup by hand, or create a schedule to back up a database on an interval.'
+                : 'Run a backup by hand now, or let a schedule back up a database on an interval.'
             }
-            action={
-              <Button asChild>
+            secondary={
+              <Button asChild variant="ghost">
+                <Link to="/backups/schedules/new">Create schedule</Link>
+              </Button>
+            }
+            primary={
+              <Button asChild variant="primary">
                 <Link to="/backups/new">Run backup</Link>
               </Button>
             }
@@ -560,12 +565,17 @@ function Destinations() {
           subject="backup destinations"
         />
       ) : !destinations.data?.items.length ? (
-        <ResourceEmpty
-          icon="archive"
-          title="No object storage"
+        <GuidedEmpty
+          compact
+          icon="server"
+          title="Add a bucket for backups"
           description="Backups need an S3-compatible bucket. Nothing can be backed up until one is added."
-          action={
-            <Button asChild>
+          steps={[
+            { title: 'Enter the endpoint and bucket', detail: 'Any S3-compatible service.' },
+            { title: 'Add credentials', detail: 'Stored on the server, never shown again.' },
+          ]}
+          primary={
+            <Button asChild variant="primary">
               <Link to="/backups/destinations/new">Add object storage</Link>
             </Button>
           }
@@ -700,12 +710,18 @@ function Schedules() {
           subject="backup schedules"
         />
       ) : !schedules.data?.items.length ? (
-        <ResourceEmpty
+        <GuidedEmpty
+          compact
           icon="clock"
-          title="No schedules"
-          description="Nothing is backed up automatically. A schedule backs up one database on an interval."
-          action={
-            <Button asChild>
+          title="Back up automatically"
+          description="Nothing is backed up automatically yet. A schedule backs up one database on an interval."
+          steps={[
+            { title: 'Pick a database', detail: 'Choose what to back up.' },
+            { title: 'Set the interval', detail: 'How often to back up.' },
+            { title: 'Set retention', detail: 'How many copies to keep.' },
+          ]}
+          primary={
+            <Button asChild variant="primary">
               <Link to="/backups/schedules/new">Create schedule</Link>
             </Button>
           }

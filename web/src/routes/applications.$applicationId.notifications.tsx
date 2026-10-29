@@ -12,7 +12,8 @@ import { SelectField } from '../components/ui/select'
 import { Dialog } from '../components/ui/dialog'
 import { Icon } from '../components/icons'
 import { SlackLogo } from '../components/slack-logo'
-import { Empty, ErrorState, Loading, Note, RequestError } from '../components/shared'
+import { ErrorState, Loading, Note, RequestError } from '../components/shared'
+import { GuidedEmpty } from '../components/resource-card'
 
 type Target = components['schemas']['NotificationTarget']
 type Kind = Target['kind']
@@ -259,10 +260,11 @@ export function Notifications() {
           </Note>
         )}
         {data.items.length === 0 ? (
-          <Empty
-            title="No notification destinations"
-            description="Add email, Slack, Discord or a signed webhook to receive deployment results."
-            icon="bell"
+          <GuidedEmpty
+            compact
+            icon="info"
+            title="Hear how each deployment went"
+            description="Send deployment results to email, Slack, Discord or a signed webhook. Add a destination below."
           />
         ) : (
           <div className="flex flex-col divide-y divide-border">

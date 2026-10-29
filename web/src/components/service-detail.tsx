@@ -41,6 +41,7 @@ import { Logs } from './logs'
 import { Requests } from './requests'
 import { ResourceMetric, validMetricUsage } from './resource-metric'
 import { sampleWindow } from './node-metrics'
+import { GuidedEmpty } from './resource-card'
 
 const PodTerminal = lazy(() => import('./pod-terminal'))
 const ServiceSecrets = lazy(() =>
@@ -1001,10 +1002,24 @@ export function ServiceDetail({
               </table>
             </div>
           ) : (
-            <Empty
+            <GuidedEmpty
+              compact
               icon="code"
-              title="No plain variables"
-              description="Add variables through a reviewed deployment for this service."
+              title="No plain variables yet"
+              description="Add settings such as LOG_LEVEL or PORT through a reviewed deployment for this service."
+              primary={
+                scope.can('deployments:write') && (
+                  <Button asChild>
+                    <Link
+                      to="/applications/$applicationId/environment"
+                      params={{ applicationId: application.id }}
+                      search={{ service: serviceName }}
+                    >
+                      Edit variables
+                    </Link>
+                  </Button>
+                )
+              }
             />
           )}
           <p className="field-help">

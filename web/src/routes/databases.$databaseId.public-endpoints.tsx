@@ -12,7 +12,7 @@ import {
   type DatabasePublicEndpointRoute,
 } from '../lib/databases'
 import { canAccess, useResourceScope, useScope } from '../lib/scope'
-import { Copy, Empty, ErrorState, Loading, Note, Status } from '../components/shared'
+import { Copy, ErrorState, Loading, Note, Status } from '../components/shared'
 import { FormError, FormPage, FormSection } from '../components/form-page'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -32,6 +32,7 @@ import {
   databasePublicEndpointRoutingLabel,
   parseDatabasePublicEndpointCIDRs,
 } from '../lib/database-public-endpoints'
+import { GuidedEmpty } from '../components/resource-card'
 
 export const Route = createFileRoute('/databases/$databaseId/public-endpoints')({
   validateSearch: (search: Record<string, unknown>): { operation?: string } => ({
@@ -315,9 +316,11 @@ function Page() {
           {endpoints.isPending ? (
             <Loading />
           ) : !rows.length ? (
-            <Empty
-              title="No public endpoints"
-              description="This database accepts connections only through private application bindings."
+            <GuidedEmpty
+              compact
+              icon="lock"
+              title="Private only"
+              description="This database accepts connections only through private application bindings. Nothing outside the cluster can reach it."
             />
           ) : (
             <ul className="grid gap-3">

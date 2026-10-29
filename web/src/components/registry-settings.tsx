@@ -11,7 +11,8 @@ import { message, timestamp } from '../lib/api'
 import { useScope } from '../lib/scope'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { Empty, ErrorState, Loading, Note, Status, RequestError } from './shared'
+import { ErrorState, Loading, Note, Status, RequestError } from './shared'
+import { GuidedEmpty } from './resource-card'
 
 type Registry = components['schemas']['RegistryInfo']
 export default function RegistrySettings() {
@@ -51,10 +52,16 @@ export default function RegistrySettings() {
       ) : registries.error ? (
         <ErrorState error={registries.error} />
       ) : !registries.data?.items.length ? (
-        <Empty
-          icon="lock"
-          title="No registry credentials"
-          description="Public images work without credentials. Add a credential to pull private images."
+        <GuidedEmpty
+          compact
+          icon="key"
+          title="Pull private images"
+          description="Public images work without credentials. Add a credential for each private registry you deploy from."
+          primary={
+            <Button onClick={() => void navigate({ to: '/infrastructure/registries/new' })}>
+              Add registry
+            </Button>
+          }
         />
       ) : (
         <div className="panel settings-session-list">
