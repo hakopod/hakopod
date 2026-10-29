@@ -4,7 +4,8 @@ import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tansta
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import type { components } from '../lib/api.generated'
-import { message, timestamp } from '../lib/api'
+import { message, relative, timestamp } from '../lib/api'
+import { duration, everyHours, until, useBackupNames, When } from '../components/backup-names'
 import { useScope } from '../lib/scope'
 import { useActiveSection } from '../lib/use-active-section'
 import {
@@ -25,6 +26,7 @@ import {
   Copy,
   Empty,
   ErrorState,
+  RequestError,
   Loading,
   Note,
   PageHeader,
@@ -70,14 +72,14 @@ function Backups() {
     <>
       <PageHeader
         eyebrow="DATA PROTECTION"
-        title="Backups & restores"
-        description="Encrypted database backups, object storage destinations, and reviewed restores."
+        title="Backups"
+        description="Encrypted database backups kept in your own object storage, run by hand or on a schedule, and restored into a new database."
         action={
           tab === 'destinations' ? (
             <Button asChild variant="primary">
               <Link to="/backups/destinations/new">
                 <Icon name="plus" size={15} />
-                Add destination
+                Add object storage
               </Link>
             </Button>
           ) : tab === 'schedules' ? (
@@ -146,6 +148,8 @@ function Backups() {
 function BackupHistory({ artifacts }: { artifacts: boolean }) {
   const [page, setPage] = useState({ cursor: '', previous: [] as string[] })
   const [remove, setRemove] = useState<components['schemas']['BackupArtifact'] | null>(null)
+  const names = useBackupNames()
+  const schedules = useBackupSchedules()
   const jobs = useQuery({
     queryKey: ['backups', page.cursor],
     queryFn: ({ signal }) =>
@@ -154,6 +158,10 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
       ),
     enabled: !artifacts,
     gcTime: 0,
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => ['queued', 'running'].includes(item.status))
+        ? 5000
+        : false,
   })
   const stored = useQuery({
     queryKey: ['backup-artifacts', page.cursor],
@@ -170,19 +178,28 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
   const active = artifacts ? stored : jobs
   const next = active.data?.next_cursor
   const removal = stored.data?.items.find((item) => item.id === remove?.id)
+  const scheduleName = (id?: string) =>
+    id ? schedules.data?.items.find((item) => item.id === id)?.name || 'a removed schedule' : ''
+  const noStorage = names.destinations.data && !names.destinations.data.items.length
+  const title = artifacts ? 'Stored backups' : 'Job history'
   return (
-    <>
+    <section className="backup-section" aria-labelledby="backup-history-heading">
       <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>{artifacts ? 'Stored database backups' : 'Backup and restore jobs'}</h2>
-            <HeadingHelp title={artifacts ? 'Stored database backups' : 'Backup and restore jobs'}>
-              Up to 100 records per page.
-            </HeadingHelp>
-          </div>
+        <div className="hako-section-heading-title">
+          <h2 id="backup-history-heading">{title}</h2>
+          <HeadingHelp title={title}>
+            {artifacts
+              ? 'Encrypted backups kept in object storage, newest first. Restoring creates a new database; it never overwrites one.'
+              : 'Every backup and restore, newest first, with its outcome. Up to 100 per page.'}
+          </HeadingHelp>
         </div>
-        <Button size="sm" onClick={() => void active.refetch()}>
-          <Icon name="refresh" size={14} />
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={active.isFetching}
+          onClick={() => void active.refetch()}
+        >
+          <Icon name="refresh" size={14} className={active.isFetching ? 'spin' : ''} />
           Refresh
         </Button>
       </div>
@@ -195,46 +212,69 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
           subject={artifacts ? 'stored backups' : 'backup jobs'}
         />
       ) : !active.data?.items.length ? (
-        <ResourceEmpty
-          icon="archive"
-          title={artifacts ? 'No stored backups' : 'No backup jobs yet'}
-          description={
-            artifacts
-              ? 'Completed backups appear here, ready to restore into a new database.'
-              : 'Run a backup after saving an object storage destination.'
-          }
-        />
+        noStorage ? (
+          <ResourceEmpty
+            icon="archive"
+            title="No backups yet"
+            description="Backups are written to object storage, and none is set up. Add a bucket first."
+            action={
+              <Button asChild>
+                <Link to="/backups/destinations/new">Add object storage</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <ResourceEmpty
+            icon="archive"
+            title={artifacts ? 'No stored backups' : 'No backup has run yet'}
+            description={
+              artifacts
+                ? 'Each successful backup is kept here until you delete it or its schedule’s retention removes it.'
+                : 'Run a backup by hand, or create a schedule to back up a database on an interval.'
+            }
+            action={
+              <Button asChild>
+                <Link to="/backups/new">Run backup</Link>
+              </Button>
+            }
+          />
+        )
       ) : (
         <>
           {active.error && (
             <StaleNotice updatedAt={active.dataUpdatedAt} retry={() => void active.refetch()} />
           )}
-          <ResourceRows label={artifacts ? 'Stored database backups' : 'Backup and restore jobs'}>
+          <ResourceRows label={title} className="backup-rows">
             {artifacts
               ? stored.data?.items.map((item) => (
                   <ResourceRow
                     key={item.id}
-                    identity={
-                      <>
-                        <code title={item.object_key}>
-                          {item.object_key.length > 48
-                            ? `…${item.object_key.slice(-47)}`
-                            : item.object_key}
-                        </code>
-                        <HeadingHelp title="Recovery scope">{item.scope}</HeadingHelp>
-                      </>
-                    }
+                    identity={<span>{names.source(item.source)}</span>}
                     detail={
                       <>
-                        <span>{sourceLabel(item.source)}</span>
-                        {engineManaged(item) && (
-                          <span>Object prefix · size reported by the engine</span>
-                        )}
-                        {item.deletion_pending && <span>Deletion pending</span>}
+                        <span>{byteSize(item.bytes)}</span>
+                        <span>in {names.destination(item.destination_id)}</span>
+                        <code title={item.object_key}>
+                          {item.object_key.length > 40
+                            ? `…${item.object_key.slice(-39)}`
+                            : item.object_key}
+                        </code>
+                        <span>
+                          {item.schedule_id
+                            ? `By schedule ${scheduleName(item.schedule_id)}`
+                            : 'Run by hand'}
+                        </span>
+                        {engineManaged(item) && <span>Size reported by the engine</span>}
                       </>
                     }
-                    status={<span className="resource-row-count">{byteSize(item.bytes)}</span>}
-                    meta={timestamp(item.created_at)}
+                    status={
+                      item.deletion_pending ? (
+                        <Status value="deletion pending" small />
+                      ) : (
+                        <span className="resource-row-count">{names.engine(item.source)}</span>
+                      )
+                    }
+                    meta={<When date={item.created_at} />}
                     actions={
                       <>
                         {item.deletion_pending ? (
@@ -246,46 +286,82 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
                             <Link
                               to="/backups/artifacts/$artifactId/restore"
                               params={{ artifactId: item.id }}
+                              aria-label={`Restore backup of ${names.source(item.source)} from ${timestamp(item.created_at)}`}
                             >
                               Restore
                             </Link>
                           </Button>
                         )}
                         <Button
-                          size="sm"
+                          size="icon"
                           variant="ghost"
                           disabled={item.deletion_pending}
+                          aria-label={`Delete backup of ${names.source(item.source)} from ${timestamp(item.created_at)}`}
                           onClick={() => setRemove(item)}
                         >
-                          <Icon name="trash" />
-                          Delete
+                          <Icon name="trash" size={15} />
                         </Button>
                       </>
                     }
                   />
                 ))
-              : jobs.data?.items.map((item) => (
-                  <ResourceRow
-                    key={item.id}
-                    identity={
-                      <Link
-                        className="resource-row-link"
-                        to="/backups/$jobId"
-                        params={{ jobId: item.id }}
-                      >
-                        {item.kind === 'restore' ? 'Restore database' : 'Database backup'}
-                      </Link>
-                    }
-                    detail={
-                      <>
-                        <code>{item.id.slice(0, 12)}</code>
-                        <span>{sourceLabel(item.source)}</span>
-                      </>
-                    }
-                    status={<Status value={item.status} small />}
-                    meta={timestamp(item.created_at)}
-                  />
-                ))}
+              : jobs.data?.items.map((item) => {
+                  const running = ['queued', 'running'].includes(item.status)
+                  const what =
+                    item.kind === 'restore'
+                      ? `Restore into ${item.target?.managed_database_name || item.target?.application_name || (item.target ? sourceLabel(item.target) : 'a new database')}`
+                      : `Backup of ${names.source(item.source)}`
+                  return (
+                    <ResourceRow
+                      key={item.id}
+                      identity={
+                        <Link
+                          className="resource-row-link"
+                          to="/backups/$jobId"
+                          params={{ jobId: item.id }}
+                        >
+                          {what}
+                        </Link>
+                      }
+                      detail={
+                        <>
+                          <span>
+                            {item.kind === 'restore' ? 'from' : 'to'}{' '}
+                            {names.destination(item.destination_id)}
+                          </span>
+                          {item.status === 'succeeded' && <span>{byteSize(item.bytes)}</span>}
+                          {item.finished_at ? (
+                            <span>took {duration(item.started_at, item.finished_at)}</span>
+                          ) : (
+                            item.started_at &&
+                            running && (
+                              <span>
+                                running {duration(item.started_at, new Date().toISOString())}
+                              </span>
+                            )
+                          )}
+                          <span>
+                            {item.schedule_id
+                              ? `Schedule ${scheduleName(item.schedule_id)}`
+                              : 'Run by hand'}
+                          </span>
+                          {item.status === 'failed' && item.error && (
+                            <span className="backup-row-error" title={item.error}>
+                              {item.error.split('\n')[0]}
+                            </span>
+                          )}
+                        </>
+                      }
+                      status={
+                        <Status
+                          value={running && item.cancel_requested ? 'cancelling' : item.status}
+                          small
+                        />
+                      }
+                      meta={<When date={item.created_at} />}
+                    />
+                  )
+                })}
           </ResourceRows>
         </>
       )}
@@ -298,7 +374,7 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
               setPage({ cursor: page.previous.at(-1) || '', previous: page.previous.slice(0, -1) })
             }
           >
-            Previous
+            Newer
           </Button>
           <span>Page {page.previous.length + 1}</span>
           <Button
@@ -308,12 +384,12 @@ function BackupHistory({ artifacts }: { artifacts: boolean }) {
               next && setPage({ cursor: next, previous: [...page.previous, page.cursor] })
             }
           >
-            Next
+            Older
           </Button>
         </div>
       )}
       {removal && <RemoveArtifact artifact={removal} onClose={() => setRemove(null)} />}
-    </>
+    </section>
   )
 }
 function RemoveArtifact({
@@ -423,13 +499,10 @@ function Destinations() {
   const navigate = useNavigate()
   const [remove, setRemove] = useState<BackupDestination | null>(null)
   const [testing, setTesting] = useState('')
-  const [result, setResult] = useState('')
-  const [error, setError] = useState('')
+  const [results, setResults] = useState<Record<string, { ok: boolean; text: string }>>({})
   async function test(item: BackupDestination) {
     if (testing) return
     setTesting(item.id)
-    setError('')
-    setResult('')
     try {
       const value = await unwrap(
         client.POST('/backup-destinations/{id}/test', {
@@ -437,23 +510,21 @@ function Destinations() {
           body: {},
         }),
       )
-      setResult(`${item.name}: ${value.message}`)
+      setResults((previous) => ({ ...previous, [item.id]: { ok: true, text: value.message } }))
     } catch (err) {
-      setError(message(err))
+      setResults((previous) => ({ ...previous, [item.id]: { ok: false, text: message(err) } }))
     } finally {
       setTesting('')
     }
   }
   return (
-    <>
+    <section className="backup-section" aria-labelledby="backup-storage-heading">
       <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>Object storage</h2>
-            <HeadingHelp title="Object storage">
-              Connect and test the buckets used by backups. Credentials stay on the server.
-            </HeadingHelp>
-          </div>
+        <div className="hako-section-heading-title">
+          <h2 id="backup-storage-heading">Object storage</h2>
+          <HeadingHelp title="Object storage">
+            S3-compatible buckets that hold encrypted backups. Credentials stay on the server.
+          </HeadingHelp>
         </div>
       </div>
       {destinations.isPending ? (
@@ -467,86 +538,102 @@ function Destinations() {
       ) : !destinations.data?.items.length ? (
         <ResourceEmpty
           icon="archive"
-          title="No destinations configured"
-          description="Backups need an S3-compatible bucket to store encrypted exports."
+          title="No object storage"
+          description="Backups need an S3-compatible bucket. Nothing can be backed up until one is added."
           action={
             <Button asChild>
-              <Link to="/backups/destinations/new">Add destination</Link>
+              <Link to="/backups/destinations/new">Add object storage</Link>
             </Button>
           }
         />
       ) : (
-        <ResourceRows label="Object storage destinations">
-          {destinations.data.items.map((item) => (
-            <ResourceRow
-              key={item.id}
-              identity={
-                <Link
-                  className="resource-row-link"
-                  to="/backups/destinations/$destinationId/edit"
-                  params={{ destinationId: item.id }}
-                >
-                  {item.name}
-                </Link>
-              }
-              detail={
-                <>
-                  <span>{item.endpoint}</span>
-                  <span>
-                    {item.bucket} / {item.prefix || 'bucket root'}
-                  </span>
-                  <span className="copy-id">
-                    <code>{item.id.slice(0, 12)}</code>
-                    <Copy value={item.id} label={`Copy destination ID ${item.id}`} iconOnly />
-                  </span>
-                  <span className="copy-id">
-                    <code title={item.encryption_recipient}>
-                      {item.encryption_recipient.slice(0, 18)}…
-                    </code>
-                    <Copy
-                      value={item.encryption_recipient}
-                      label={`Copy encryption recipient for ${item.name}`}
-                      iconOnly
+        <ResourceRows label="Object storage destinations" className="backup-rows">
+          {destinations.data.items.map((item) => {
+            const result = results[item.id]
+            return (
+              <ResourceRow
+                key={item.id}
+                identity={
+                  <Link
+                    className="resource-row-link"
+                    to="/backups/destinations/$destinationId/edit"
+                    params={{ destinationId: item.id }}
+                  >
+                    {item.name}
+                  </Link>
+                }
+                detail={
+                  <>
+                    <code>{[item.bucket, item.prefix].filter(Boolean).join('/')}</code>
+                    <span>{item.endpoint.replace(/^https?:\/\//, '')}</span>
+                    <span>{item.region}</span>
+                    <span className="copy-id">
+                      <span>Key</span>
+                      <code title={item.encryption_recipient}>
+                        {item.encryption_recipient.slice(0, 14)}…
+                      </code>
+                      <Copy
+                        value={item.encryption_recipient}
+                        label={`Copy encryption recipient for ${item.name}`}
+                        iconOnly
+                      />
+                    </span>
+                    {result && (
+                      <span
+                        role="status"
+                        className={result.ok ? undefined : 'backup-row-error'}
+                        title={result.text}
+                      >
+                        {result.text}
+                      </span>
+                    )}
+                  </>
+                }
+                status={
+                  testing === item.id ? (
+                    <Status value="testing" small />
+                  ) : result ? (
+                    <Status value={result.ok ? 'reachable' : 'failed'} small />
+                  ) : (
+                    <span className="resource-row-count">Not tested</span>
+                  )
+                }
+                actions={
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={Boolean(testing)}
+                      onClick={() => void test(item)}
+                      aria-label={`Test connection to ${item.name}`}
+                    >
+                      {testing === item.id ? 'Testing…' : 'Test'}
+                    </Button>
+                    <RowActions
+                      label={item.name}
+                      actions={[
+                        {
+                          label: 'Edit name and credentials',
+                          run: () =>
+                            void navigate({
+                              to: '/backups/destinations/$destinationId/edit',
+                              params: { destinationId: item.id },
+                            }),
+                        },
+                        {
+                          label: 'Remove object storage',
+                          run: () => setRemove(item),
+                          destructive: true,
+                        },
+                      ]}
                     />
-                  </span>
-                </>
-              }
-              meta={item.region}
-              actions={
-                <RowActions
-                  label={item.name}
-                  actions={[
-                    {
-                      label: 'Edit destination',
-                      run: () =>
-                        void navigate({
-                          to: '/backups/destinations/$destinationId/edit',
-                          params: { destinationId: item.id },
-                        }),
-                    },
-                    {
-                      label: testing === item.id ? 'Testing connection…' : 'Test connection',
-                      run: () => void test(item),
-                      disabled: Boolean(testing),
-                    },
-                    {
-                      label: 'Remove destination',
-                      run: () => setRemove(item),
-                      destructive: true,
-                    },
-                  ]}
-                />
-              }
-            />
-          ))}
+                  </>
+                }
+              />
+            )
+          })}
         </ResourceRows>
       )}
-      {result && (
-        <div role="status">
-          <Note>{result}</Note>
-        </div>
-      )}
-      {error && <ErrorState error={error} />}
       {remove && (
         <RemoveBackupConfig
           kind="destination"
@@ -556,23 +643,28 @@ function Destinations() {
           onClose={() => setRemove(null)}
         />
       )}
-    </>
+    </section>
   )
 }
 function Schedules() {
   const schedules = useBackupSchedules()
+  const names = useBackupNames()
   const navigate = useNavigate()
+  // The newest page of jobs shows each schedule's latest run without another endpoint.
+  const jobs = useQuery({
+    queryKey: ['backups', ''],
+    queryFn: ({ signal }) => unwrap(client.GET('/backups', { signal })),
+    gcTime: 0,
+  })
   const [remove, setRemove] = useState<BackupSchedule | null>(null)
   return (
-    <>
+    <section className="backup-section" aria-labelledby="backup-schedules-heading">
       <div className="section-toolbar">
-        <div>
-          <div className="hako-section-heading-title">
-            <h2>Backup schedules</h2>
-            <HeadingHelp title="Backup schedules">
-              Review the next run, source, and retained backup count.
-            </HeadingHelp>
-          </div>
+        <div className="hako-section-heading-title">
+          <h2 id="backup-schedules-heading">Schedules</h2>
+          <HeadingHelp title="Schedules">
+            Each schedule backs up one database on an interval and keeps its newest backups.
+          </HeadingHelp>
         </div>
       </div>
       {schedules.isPending ? (
@@ -586,8 +678,8 @@ function Schedules() {
       ) : !schedules.data?.items.length ? (
         <ResourceEmpty
           icon="clock"
-          title="No schedules yet"
-          description="A schedule backs up one database at a fixed interval and keeps a set number."
+          title="No schedules"
+          description="Nothing is backed up automatically. A schedule backs up one database on an interval."
           action={
             <Button asChild>
               <Link to="/backups/schedules/new">Create schedule</Link>
@@ -595,48 +687,72 @@ function Schedules() {
           }
         />
       ) : (
-        <ResourceRows label="Backup schedules">
-          {schedules.data.items.map((item) => (
-            <ResourceRow
-              key={item.id}
-              identity={
-                <Link
-                  className="resource-row-link"
-                  to="/backups/schedules/$scheduleId/edit"
-                  params={{ scheduleId: item.id }}
-                >
-                  {item.name}
-                </Link>
-              }
-              detail={
-                <>
-                  <code>{item.id.slice(0, 12)}</code>
-                  <span>{sourceLabel(item.source)}</span>
-                  <span>
-                    Every {item.interval_hours} hours · keeps {item.retention_count} backups
-                  </span>
-                </>
-              }
-              status={<Status value={item.enabled ? 'active' : 'paused'} small />}
-              meta={item.enabled ? `Next ${timestamp(item.next_run_at)}` : 'Paused'}
-              actions={
-                <RowActions
-                  label={item.name}
-                  actions={[
-                    {
-                      label: 'Edit schedule',
-                      run: () =>
-                        void navigate({
-                          to: '/backups/schedules/$scheduleId/edit',
-                          params: { scheduleId: item.id },
-                        }),
-                    },
-                    { label: 'Remove schedule', run: () => setRemove(item), destructive: true },
-                  ]}
-                />
-              }
-            />
-          ))}
+        <ResourceRows label="Backup schedules" className="backup-rows">
+          {schedules.data.items.map((item) => {
+            const last = jobs.data?.items.find((job) => job.schedule_id === item.id)
+            return (
+              <ResourceRow
+                key={item.id}
+                identity={
+                  <Link
+                    className="resource-row-link"
+                    to="/backups/schedules/$scheduleId/edit"
+                    params={{ scheduleId: item.id }}
+                  >
+                    {item.name}
+                  </Link>
+                }
+                detail={
+                  <>
+                    <span>
+                      {names.source(item.source)} → {names.destination(item.destination_id)}
+                    </span>
+                    <span>
+                      {everyHours(item.interval_hours).replace(/^./, (c) => c.toUpperCase())} ·
+                      keeps newest {item.retention_count}
+                    </span>
+                    {jobs.isPending ? null : last ? (
+                      <Link
+                        to="/backups/$jobId"
+                        params={{ jobId: last.id }}
+                        className={last.status === 'failed' ? 'backup-row-error' : undefined}
+                      >
+                        Last run {last.status} {relative(last.created_at).toLowerCase()}
+                      </Link>
+                    ) : (
+                      <span>{jobs.error ? 'Last run unavailable' : 'No run in recent history'}</span>
+                    )}
+                  </>
+                }
+                status={<Status value={item.enabled ? 'active' : 'paused'} small />}
+                meta={
+                  item.enabled ? (
+                    <time dateTime={item.next_run_at} title={timestamp(item.next_run_at)}>
+                      Next {until(item.next_run_at)}
+                    </time>
+                  ) : (
+                    'No next run'
+                  )
+                }
+                actions={
+                  <RowActions
+                    label={item.name}
+                    actions={[
+                      {
+                        label: 'Edit schedule',
+                        run: () =>
+                          void navigate({
+                            to: '/backups/schedules/$scheduleId/edit',
+                            params: { scheduleId: item.id },
+                          }),
+                      },
+                      { label: 'Remove schedule', run: () => setRemove(item), destructive: true },
+                    ]}
+                  />
+                }
+              />
+            )
+          })}
         </ResourceRows>
       )}
       {remove && (
@@ -648,7 +764,7 @@ function Schedules() {
           onClose={() => setRemove(null)}
         />
       )}
-    </>
+    </section>
   )
 }
 function RemoveBackupConfig({
@@ -666,7 +782,6 @@ function RemoveBackupConfig({
 }) {
   const cache = useQueryClient()
   const [busy, setBusy] = useState(false)
-  const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState('')
   return (
     <Dialog
@@ -677,21 +792,17 @@ function RemoveBackupConfig({
       title={`Remove ${name}?`}
       description={
         kind === 'destination'
-          ? 'The server checks whether jobs or schedules still need this destination.'
-          : 'Future automatic jobs for this schedule will stop.'
+          ? 'Hakopod forgets this bucket and its credentials. Removal is refused while stored backups, schedules or running jobs still use it.'
+          : 'No more backups run on this schedule.'
       }
     >
       <div className="dialog-body">
-        <Note>Stored backup objects are not deleted by this action.</Note>
-        <label>
-          Type {name} to remove this {kind}
-          <Input
-            value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}
-            autoComplete="off"
-          />
-        </label>
-        {error && <ErrorState error={error} />}
+        <Note>
+          {kind === 'destination'
+            ? 'Delete its stored backups and schedules first. Objects outside Hakopod’s records in the bucket are not touched.'
+            : 'Backups this schedule already made stay stored until you delete them.'}
+        </Note>
+        {error && <RequestError error={error} />}
       </div>
       <div className="dialog-footer">
         <Button disabled={busy} onClick={onClose}>
@@ -699,9 +810,9 @@ function RemoveBackupConfig({
         </Button>
         <Button
           variant="danger"
-          disabled={busy || confirmation !== name}
+          disabled={busy}
           onClick={async () => {
-            if (busy || confirmation !== name) return
+            if (busy) return
             setBusy(true)
             setError('')
             try {
@@ -730,7 +841,7 @@ function RemoveBackupConfig({
             }
           }}
         >
-          {busy ? 'Removing…' : 'Remove'}
+          {busy ? 'Removing…' : `Remove ${kind === 'destination' ? 'object storage' : 'schedule'} ${name}`}
         </Button>
       </div>
     </Dialog>

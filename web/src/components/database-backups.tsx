@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import type { ManagedDatabase } from '../lib/databases'
 import { client, unwrap } from '../lib/client'
-import { byteSize, useBackupSchedules } from '../lib/backups'
+import { byteSize, engineManaged, sourceKey, useBackupSchedules, type BackupSource } from '../lib/backups'
 import { timestamp } from '../lib/api'
 import { Button } from './ui/button'
 import { ErrorState, Loading, Status } from './shared'
@@ -33,7 +33,18 @@ export function DatabaseBackups({ database: d }: { database: ManagedDatabase }) 
       </div>
       <div className="flex flex-wrap gap-2 px-4 py-3">
         <Button asChild size="sm">
-          <Link to="/backups/new">Run backup</Link>
+          <Link
+            to="/backups/new"
+            search={{
+              source: sourceKey({
+                kind: 'managed_database',
+                managed_database_id: d.id,
+                engine: d.spec.engine as BackupSource['engine'],
+              }),
+            }}
+          >
+            Back up now
+          </Link>
         </Button>
         <Button asChild size="sm">
           <Link to="/backups/schedules/new">Schedule backup</Link>
@@ -67,11 +78,11 @@ export function DatabaseBackups({ database: d }: { database: ManagedDatabase }) 
                 <Link to="/backups/$jobId" params={{ jobId: a.job_id }}>
                   <strong>{timestamp(a.created_at)}</strong>
                 </Link>
-                <Status value={a.deletion_pending ? 'pending' : 'stored'} />
+                {a.deletion_pending && <Status value="deletion pending" />}
               </div>
               <div className="db-operation-meta">
                 <span>{byteSize(a.bytes)}</span>
-                <span>{a.format}</span>
+                <span>{engineManaged(a) ? 'Written by the engine' : 'Encrypted dump'}</span>
                 <span>{a.sha256 ? 'Digest recorded' : 'No digest recorded'}</span>
               </div>
             </li>

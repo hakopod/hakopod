@@ -1,0 +1,93 @@
+/* Backups: job history, schedules, object storage and their flows. */
+.backup-section {
+  @apply grid min-w-0;
+}
+.backup-section > .table-pagination {
+  margin-top: var(--space-3);
+}
+.backup-rows .resource-row-detail > * {
+  @apply min-w-0;
+}
+.backup-row-error {
+  color: var(--error-text);
+  overflow-wrap: anywhere;
+}
+a.backup-row-error {
+  text-decoration: underline;
+}
+.backup-flow {
+  @apply min-w-0;
+}
+.backup-destination-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+.backup-destination-fields > .backup-field-wide {
+  grid-column: 1 / -1;
+}
+.backup-schedule-fields {
+  max-width: 36rem;
+}
+.backup-number-field {
+  @apply block;
+  max-width: 36rem;
+}
+.backup-number-field > .input-wrap {
+  max-width: 14rem;
+}
+
+/* Job detail: outcome first, the actual error next, then the record. */
+.backup-job {
+  @apply grid min-w-0;
+  gap: var(--section-gap);
+}
+.backup-job-outcome {
+  @apply grid min-w-0 items-center gap-x-4 gap-y-3 p-4;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+}
+.backup-job-outcome[data-status='failed'] {
+  border-color: var(--error-accent);
+}
+.backup-job-outcome > p {
+  @apply m-0;
+  overflow-wrap: anywhere;
+}
+.backup-job-actions {
+  @apply flex flex-wrap items-center justify-end gap-2;
+}
+.backup-job-actions:empty {
+  @apply hidden;
+}
+.backup-job-error {
+  @apply grid min-w-0 gap-2;
+}
+.backup-job-error > h2 {
+  @apply m-0;
+  font-size: var(--type-section-size);
+  line-height: var(--type-section-line);
+  font-weight: var(--type-section-weight);
+}
+.backup-job-error > pre {
+  @apply m-0 max-h-80 overflow-auto p-3 font-mono text-sm whitespace-pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--error-accent);
+  border-radius: var(--radius-card);
+  color: var(--error-text);
+  background: var(--surface-2);
+}
+@media (max-width: 639px) {
+  .backup-job-outcome {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .backup-job-actions {
+    @apply justify-start;
+  }
+}
+.backup-rows .resource-row-detail > .backup-row-error {
+  flex-basis: 100%;
+}
+.backup-destination-fields,
+.backup-schedule-fields {
+  max-width: 48rem;
+}

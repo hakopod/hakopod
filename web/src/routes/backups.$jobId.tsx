@@ -3,9 +3,19 @@ import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
-import { timestamp, message } from '../lib/api'
-import { sourceLabel, byteSize, engineManagedSource } from '../lib/backups'
-import { FormPage, FormSection } from '../components/form-page'
+import { timestamp, message, relative } from '../lib/api'
+import {
+  sourceLabel,
+  byteSize,
+  engineLabel,
+  engineManagedSource,
+  sourceKey,
+  useBackupSchedules,
+} from '../lib/backups'
+import { FormPage } from '../components/form-page'
+import { duration, useBackupNames } from '../components/backup-names'
+import { StaleNotice } from '../components/resource-card'
+import { ReviewFacts } from '../components/task-review'
 import { Button } from '../components/ui/button'
 import { Dialog } from '../components/ui/dialog'
 import { Copy, ErrorState, Loading, Note, Status } from '../components/shared'
@@ -23,95 +33,151 @@ function BackupJob() {
     refetchInterval: (query) =>
       ['queued', 'running'].includes(query.state.data?.status || '') ? 2500 : false,
   })
+  const names = useBackupNames()
+  const schedules = useBackupSchedules()
   if (job.isPending) return <Loading />
-  if (job.error || !job.data) return <ErrorState error={job.error} />
+  if (!job.data) return <ErrorState error={job.error} retry={() => void job.refetch()} />
   const item = job.data
   const active = ['queued', 'running'].includes(item.status)
+  const restore = item.kind === 'restore'
+  const subject = restore
+    ? item.target?.managed_database_name ||
+      item.target?.application_name ||
+      (item.target ? sourceLabel(item.target) : 'a new database')
+    : names.source(item.source)
+  const schedule = item.schedule_id
+    ? schedules.data?.items.find((entry) => entry.id === item.schedule_id)
+    : undefined
+  const status = active && item.cancel_requested ? 'cancelling' : item.status
   return (
     <FormPage
-      title={item.kind === 'restore' ? 'Database restore' : 'Database backup'}
-      description={sourceLabel(item.source)}
+      title={restore ? `Restore into ${subject}` : `Backup of ${subject}`}
+      description="One backup or restore job: what it read, where it stored the result and how it ended."
       breadcrumbs={[{ label: 'Backups', to: '/backups' }, { label: item.id.slice(0, 12) }]}
       icon="archive"
     >
-      <FormSection title="Job status" icon="activity">
-        <div className="section-toolbar">
-          <Status value={item.status} />
-          {active && (
-            <Button
-              variant="danger"
-              disabled={item.cancel_requested}
-              onClick={() => setCancel(true)}
-            >
-              {item.cancel_requested ? 'Cancellation requested' : 'Cancel job'}
-            </Button>
-          )}
-        </div>
-        {item.status === 'queued' &&
-          engineManagedSource(item.source) &&
-          !item.cancel_requested && (
-            <p className="field-note">
-              Waiting on the database engine, which writes this backup to object storage itself.
-              Hakopod polls until it finishes and stops waiting after two hours. A queued job here
-              is not an idle one.
-            </p>
-          )}
-        <dl className="service-definition-list">
-          <div>
-            <dt>Job ID</dt>
-            <dd className="min-w-0 break-all">
-              <code>{item.id}</code>
-              <Copy value={item.id} />
-            </dd>
-          </div>
-          <div>
-            <dt>Created</dt>
-            <dd>{timestamp(item.created_at)}</dd>
-          </div>
-          <div>
-            <dt>Started / finished</dt>
-            <dd>
-              {timestamp(item.started_at)} / {timestamp(item.finished_at)}
-            </dd>
-          </div>
-          <div>
-            <dt>Transferred</dt>
-            <dd>{byteSize(item.bytes)}</dd>
-          </div>
-          {item.target && (
-            <div>
-              <dt>Restore target</dt>
-              <dd className="min-w-0 break-all">
-                {item.target.managed_database_name || sourceLabel(item.target)}
-              </dd>
-            </div>
-          )}
-        </dl>
-        {item.error && <ErrorState error={item.error} />}
-        <Note>
-          {item.status === 'succeeded'
-            ? item.kind === 'restore' && item.target?.managed_database_id
-              ? 'Recovery completed. Inspect the recovered data before replacing an application connection.'
-              : 'The job completed successfully. Stored backups can be reviewed in the artifact list.'
-            : active
-              ? 'This page follows the active job. Completion is reported only when the backend finishes the operation.'
-              : 'Inspect the recorded error before retrying.'}
-        </Note>
-        {item.kind === 'restore' && item.target?.managed_database_id ? (
-          <RecoveredDatabaseLink id={item.target.managed_database_id} />
-        ) : (
-          item.artifact_id && (
-            <Button asChild>
-              <Link
-                to="/backups/artifacts/$artifactId/restore"
-                params={{ artifactId: item.artifact_id }}
+      <div className="backup-job">
+        <header className="backup-job-outcome" data-status={item.status}>
+          <Status value={status} />
+          <p>
+            {item.status === 'succeeded'
+              ? restore
+                ? `Restored ${byteSize(item.bytes)} in ${duration(item.started_at, item.finished_at) || 'an unrecorded time'}.`
+                : `Stored ${byteSize(item.bytes)} in ${names.destination(item.destination_id)} in ${duration(item.started_at, item.finished_at) || 'an unrecorded time'}.`
+              : item.status === 'failed'
+                ? `Failed${item.finished_at ? ` ${relative(item.finished_at).toLowerCase()}` : ''}${item.started_at && item.finished_at ? ` after ${duration(item.started_at, item.finished_at)}` : ''}. Nothing was ${restore ? 'restored' : 'stored'}.`
+                : item.status === 'cancelled'
+                  ? 'Cancelled before it finished.'
+                  : item.cancel_requested
+                    ? 'Cancellation requested. The job stops at its next safe point.'
+                    : item.status === 'queued'
+                      ? engineManagedSource(item.source)
+                        ? 'Waiting on the database engine, which writes this backup to object storage itself. Hakopod checks until it finishes, for up to two hours.'
+                        : 'Queued. It starts when a backup worker is free.'
+                      : `Running for ${duration(item.started_at, new Date().toISOString()) || 'a moment'}. This page updates until it finishes.`}
+          </p>
+          <div className="backup-job-actions">
+            {active && (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={item.cancel_requested}
+                onClick={() => setCancel(true)}
               >
-                Inspect stored backup
-              </Link>
-            </Button>
-          )
+                {item.cancel_requested ? 'Cancellation requested' : 'Cancel job'}
+              </Button>
+            )}
+            {!active && !restore && item.status !== 'succeeded' && (
+              <Button asChild size="sm" variant="primary">
+                <Link
+                  to="/backups/new"
+                  search={{ source: sourceKey(item.source), destination: item.destination_id }}
+                >
+                  Run this backup again
+                </Link>
+              </Button>
+            )}
+            {item.status === 'succeeded' &&
+              (restore && item.target?.managed_database_id ? (
+                <RecoveredDatabaseLink id={item.target.managed_database_id} />
+              ) : (
+                item.artifact_id &&
+                !restore && (
+                  <Button asChild size="sm" variant="primary">
+                    <Link
+                      to="/backups/artifacts/$artifactId/restore"
+                      params={{ artifactId: item.artifact_id }}
+                    >
+                      Restore this backup
+                    </Link>
+                  </Button>
+                )
+              ))}
+          </div>
+        </header>
+        {item.error && (
+          <section className="backup-job-error" aria-labelledby="backup-job-error-heading">
+            <h2 id="backup-job-error-heading">
+              {item.status === 'failed' ? 'Why it failed' : 'Recorded error'}
+            </h2>
+            <pre>{item.error}</pre>
+          </section>
         )}
-      </FormSection>
+        {job.error && (
+          <StaleNotice updatedAt={job.dataUpdatedAt} retry={() => void job.refetch()} />
+        )}
+        <ReviewFacts
+          label="Job"
+          items={[
+            [restore ? 'Restored from' : 'Database', names.source(item.source)],
+            ['Engine', engineLabel(item.source.engine)],
+            [
+              restore ? 'Read from' : 'Stored in',
+              <span>
+                {names.destination(item.destination_id)}
+                {names.bucket(item.destination_id) && (
+                  <span className="block muted-text mono">{names.bucket(item.destination_id)}</span>
+                )}
+              </span>,
+            ],
+            ['Size', item.status === 'succeeded' ? byteSize(item.bytes) : active ? 'Not known until it finishes' : 'Nothing stored'],
+            ['Queued', timestamp(item.created_at)],
+            ['Started', item.started_at ? timestamp(item.started_at) : 'Not started'],
+            ['Finished', item.finished_at ? timestamp(item.finished_at) : active ? 'Still running' : 'Not recorded'],
+            ['Duration', duration(item.started_at, item.finished_at) || (active ? 'Still running' : 'Not recorded')],
+            [
+              'Started by',
+              item.schedule_id ? (
+                schedule ? (
+                  <Link
+                    to="/backups/schedules/$scheduleId/edit"
+                    params={{ scheduleId: schedule.id }}
+                  >
+                    Schedule {schedule.name}
+                  </Link>
+                ) : (
+                  'A removed schedule'
+                )
+              ) : (
+                'Run by hand'
+              ),
+            ],
+            [
+              'Job ID',
+              <span className="copy-id">
+                <code>{item.id.slice(0, 12)}</code>
+                <Copy value={item.id} label={`Copy job ID ${item.id}`} iconOnly />
+              </span>,
+            ],
+          ]}
+        />
+        {restore && item.status === 'succeeded' && (
+          <Note>
+            Inspect the recovered data before pointing an application at it. The original database
+            was not changed.
+          </Note>
+        )}
+      </div>
       <Dialog
         open={cancel}
         onOpenChange={(open) => {
@@ -163,13 +229,15 @@ function BackupJob() {
 
 function RecoveredDatabaseLink({ id }: { id: string }) {
   const database = useDatabase(id)
-  if (database.isPending) return <Loading />
-  if (database.error || !database.data) return <ErrorState error={database.error} />
+  if (database.isPending) return null
+  if (database.error || !database.data)
+    return <span className="muted-text">The recovered database is not available to you.</span>
   return (
     <Button
       asChild
       variant="primary"
-      className="justify-self-start max-w-full whitespace-normal text-center"
+      size="sm"
+      className="max-w-full whitespace-normal text-center"
     >
       <Link
         to="/databases/$databaseId"
