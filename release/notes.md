@@ -1,23 +1,23 @@
-Hakopod 0.1.0-alpha.70 tidies an app's security findings, adds a fix prompt for coding agents, and stops rollouts from showing as blocked.
+Hakopod 0.1.0-alpha.71 makes Managed Actions jobs faster.
 
-- An app's security findings now sit in a list that is closed by default. Its summary gives the number of advisories and a count per severity. Each finding takes one compact row: severity, title, the affected service and version, the fix, and Rebuild or Update.
-- Copy fix prompt puts a brief for a coding agent on the clipboard. It lists every finding with its service, version, identifiers and Hakopod's suggested fix. It asks the agent to move each runtime or image to the fixed patch release, skip advisories that cannot apply and summarise its changes. The brief tells the agent to treat advisory text as data, not instructions.
-- A new pod during a rollout no longer makes the app show as Runtime blocked with "readiness check has not passed". Readiness probes start only after the startup probe passes, so Hakopod now reports a readiness failure only after the container has started and run for 30 seconds. A real failure still shows within about 40 seconds.
+- A first-time server installation now tries the shared overlay2 workspace for Managed Actions, instead of Docker's VFS driver, which copies every image layer in full. In the cold service image benchmark, pulling PostgreSQL fell from 95 to 15 seconds on AMD64 and from 71 to 12 seconds on ARM64, and Redis from 30 to 5 seconds. If the node's qualification probe fails, it keeps VFS and the next maintenance run tries again. Existing installations keep their saved profile; enable overlay2 with `sudo python3 ./installer/modules.py managed-actions --workspace-profile shared-overlay2-v1`.
+- GitHub runner steps now get half of each slot's CPU and memory instead of a quarter, with the Docker sidecar taking the other half. With the default compute size, shell steps get about 2.35 cores instead of 1.18. GitLab runners keep their split because their jobs run inside Docker.
+- A slot whose job has finished is replaced sooner. Hakopod checks the pool again after a second while the finished pod shuts down, instead of waiting a full 10-second pass.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.70/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.70
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.71/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.71
 ```
 
-Upgrade an alpha.68 or alpha.69 installation:
+Upgrade an alpha.69 or alpha.70 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.70/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.70
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.71/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.71
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
