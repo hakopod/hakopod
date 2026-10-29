@@ -107,7 +107,7 @@ export function VPNProfiles({ serverAddress }: { serverAddress: string }) {
           description="Name the device, download its profile and import it into WireGuard."
         />
       ) : (
-        <ul className="settings-rows" aria-label="VPN devices">
+        <ul className="m-0 grid list-none gap-1 p-0" aria-label="VPN devices">
           {peers.map((peer) => (
             <li key={peer.id} className="flex items-center justify-between gap-3 py-2 text-sm">
               <span>
