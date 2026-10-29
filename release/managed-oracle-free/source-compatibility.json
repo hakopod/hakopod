@@ -1,0 +1,56 @@
+{
+  "bootstrap": {
+    "commit": "93c8caf011098ce5bc2fd00f06bd5fc6fa59c6a6",
+    "reviewed_release": "v0.1.0-alpha.70",
+    "tag": "v0.1.0-alpha.69",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "3c9a3a454c95b0118de92d9bd298140d14cd3157",
+  "delta": {
+    "baseline_sha256": "b74bd63e70bdd38a6369035297807f9f1e872be3432894d5dc7c7b9afc884c6b",
+    "changes": [
+      {
+        "after": "452df37d69ec58f1c12e27e301ef18832b55fd4976c60e69f7c45b1e29e657d2",
+        "before": "a21560a35a0c20097ce51c8142b166590d4a344e5b31bb01e47ad568f005a80c",
+        "path": "internal/cluster/observe.go",
+        "reason": "Reviewed control-plane change (readiness diagnostics wait for started containers, and release preparation; chain the alpha.70 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "3e6a989b22ad72791b434a3d32a159aab9242ea9ca03cd819fe7892ee977208e",
+        "before": "6e2bef36f7bd2d7801d8e35a1fbc74851eca21b484867608d98e27afc5badc40",
+        "path": "internal/cluster/observe_diagnostics_test.go",
+        "reason": "Reviewed control-plane change (readiness diagnostics wait for started containers, and release preparation; chain the alpha.70 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "08906a59bbe55f79ad4f01f6905a8c82789536b3ae1df5a1b34dc49039f5651e",
+        "before": "2448216f2c2a4e7f1675684d609792adb4155b80ab3d66deef0579fe8cf0f7fe",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed control-plane change (readiness diagnostics wait for started containers, and release preparation; chain the alpha.70 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      }
+    ],
+    "current_sha256": "c22141aad33ea7825db018cf82de67d8abeb47814c7a3e4267ef883c0ba3d39e"
+  },
+  "predecessor": {
+    "commit": "93c8caf011098ce5bc2fd00f06bd5fc6fa59c6a6",
+    "review_sha256": "c21a08695a35b7fbfb19d811b6d04b1a9b08a8d9dbc232b7aac5917e8640b1db",
+    "tag": "v0.1.0-alpha.69"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestPodMessageWaitsForStartedContainersBeforeBlamingReadiness",
+      "TestPodMessageReportsRecentOutOfMemoryRestarts"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40833651957"
+  },
+  "reviewed_release": "v0.1.0-alpha.70",
+  "runtime": "oracle-free",
+  "schema_version": 2
+}
