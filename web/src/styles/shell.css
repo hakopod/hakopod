@@ -1330,24 +1330,32 @@ html[data-accent] .button-primary:hover {
 
 /* Cloud's persistent navigation shares the authorized destination list. */
 .hako-cloud-sidebar { display: none; }
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   html[data-edition='cloud'] .hako-shell { --cloud-rail: 200px; @apply pl-[var(--cloud-rail)]; }
   html[data-edition='cloud'] .hako-shell[data-sidebar-collapsed] { --cloud-rail: 60px; }
-  .hako-cloud-sidebar { @apply fixed inset-y-0 left-0 z-20 flex w-[var(--cloud-rail)] flex-col border-r; background: var(--card); border-color: var(--hairline); }
+  .hako-cloud-sidebar { @apply fixed inset-y-0 left-0 z-20 flex w-[var(--cloud-rail)] flex-col gap-4 border-r; background: var(--card); border-color: var(--hairline); }
   .hako-cloud-sidebar-brand { @apply relative flex h-11 shrink-0 items-center gap-1 px-2; border-bottom: 1px solid var(--hairline); }
   .hako-cloud-sidebar-brand .hako-edition-brand { display: none; }
-  .hako-cloud-sidebar nav { @apply flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3; }
-  .hako-cloud-sidebar .hako-nav-link { @apply flex min-h-9 items-center gap-2 px-2 py-1.5 text-[13px]; }
-  .hako-cloud-sidebar-bottom { @apply flex flex-col gap-1 p-2; }
-  html[data-edition='cloud'] .hako-global-header { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: 'scope tools'; min-height: 44px; }
+  .hako-cloud-sidebar nav { @apply flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2; }
+  .hako-cloud-sidebar .hako-nav-link { @apply flex h-9 items-center gap-2 px-2 text-[13px]; }
+  .hako-cloud-sidebar-bottom { @apply flex flex-col gap-0.5 p-2; }
+  html[data-edition='cloud'] .hako-global-header { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: 'scope tools'; min-height: 44px; height: 44px; }
   html[data-edition='cloud'] .hako-global-header :is(.hako-brand-group,.hako-global-nav) { display: none; }
-  [data-sidebar-collapsed] .hako-cloud-sidebar-brand { @apply justify-center p-0; }
-  [data-sidebar-collapsed] .hako-cloud-sidebar-brand > button { @apply absolute left-full top-1.5 ml-1; background: var(--background); }
-  [data-sidebar-collapsed] .hako-cloud-sidebar .hako-nav-link { @apply justify-center; }
-  [data-sidebar-collapsed] .hako-cloud-sidebar .hako-nav-link > span { display: none; }
+  html[data-edition='cloud'] [data-sidebar-collapsed] .hako-cloud-sidebar-brand { @apply justify-center p-0; }
+  html[data-edition='cloud'] [data-sidebar-collapsed] .hako-cloud-sidebar-brand > button { @apply absolute left-full top-1.5 ml-1; background: var(--background); }
+  html[data-edition='cloud'] [data-sidebar-collapsed] .hako-cloud-sidebar .hako-nav-link { @apply justify-center; }
+  html[data-edition='cloud'] [data-sidebar-collapsed] .hako-cloud-sidebar .hako-nav-link > span { display: none; }
   .hako-cloud-sidebar .hako-nav-link > .brackets { display: none; }
-  [data-sidebar-collapsed] .hako-cloud-sidebar-bottom { display: none; }
+  html[data-edition='cloud'] [data-sidebar-collapsed] .hako-cloud-sidebar-bottom { display: none; }
+}
+@media (max-width: 767px) {
+  /* Cloud phone: 52px toolbar row (caret + brand + tools); the scope row stays below it. */
+  html[data-edition='cloud'] .hako-shell { --hako-header-height: 92px; }
+  html[data-edition='cloud'] .hako-global-header { grid-template-rows: 52px 40px; }
+  html[data-edition='cloud'] .hako-mobile-toggle.button { @apply size-11; }
+  html[data-edition='cloud'] .hako-mobile-sheet.sheet { width: 280px; }
+  html[data-edition='cloud'] .hako-mobile-sheet .dialog-body { @apply px-4; }
+  html[data-edition='cloud'] .hako-mobile-links :is(.hako-nav-link, .button) { @apply min-h-11 py-0 text-[14px]; }
 }
 html[data-edition='cloud'] .hako-page-heading.page-heading { @apply py-2.5; }
 html[data-edition='cloud'] .hako-page-heading.page-heading h1 { @apply text-lg leading-6; }
-html[data-edition='cloud'] .button { @apply text-[13px]; }
