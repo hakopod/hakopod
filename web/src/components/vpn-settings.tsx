@@ -650,11 +650,15 @@ function ConnectorForm({ current }: { current: Access }) {
         ? 'Keep the stored value'
         : 'Missing'
 
-  const change: Partial<AccessPolicy> = {
+  // One connector at a time: clear all four, then set the chosen one.
+  const cleared: Partial<AccessPolicy> = {
     vpn: undefined,
     tailscale: undefined,
     openvpn: undefined,
     ipsec: undefined,
+  }
+  const change: Partial<AccessPolicy> = {
+    ...cleared,
     ...(type === 'wireguard'
       ? {
           vpn: {
