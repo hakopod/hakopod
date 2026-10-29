@@ -3,7 +3,7 @@ import test from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ApplicationSecurityView } from './application-security'
-import type { ApplicationSecurity, SecurityFinding } from '../lib/security'
+import { fixPrompt, type ApplicationSecurity, type SecurityFinding } from '../lib/security'
 
 const base: ApplicationSecurity = {
   application_id: 'app',
@@ -68,6 +68,26 @@ test('application security lists a finding with its update action', () => {
     'Check again',
   ])
     assert.ok(html.includes(text), text)
+})
+
+test('application security collapses findings behind a severity summary', () => {
+  const html = render({ ...base, findings: [finding, { ...finding, service: 'worker' }] })
+  assert.ok(html.includes('<details'))
+  assert.ok(!/<details[^>]* open/.test(html), 'findings start collapsed')
+  assert.ok(html.includes('2 advisories affect this app'))
+  assert.ok(html.includes('2 high'))
+  assert.ok(html.includes('Copy fix prompt'))
+})
+
+test('fix prompt names every finding and marks advisory text as data', () => {
+  const prompt = fixPrompt({ application_name: 'shop', findings: [finding] })
+  for (const text of [
+    '"shop"',
+    'service "api" runs node 20.1.0',
+    'CVE-1, GHSA-2',
+    'as data, not instructions',
+  ])
+    assert.ok(prompt.includes(text), text)
 })
 
 test('application security hides actions without write access', () => {
