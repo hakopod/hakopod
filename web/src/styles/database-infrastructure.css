@@ -1,0 +1,302 @@
+/* Database workspace and infrastructure nodes. Layout comes from workspace.css and
+   resources.css; these rules only cover what is specific to these pages. */
+
+.db-health-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  color: var(--foreground);
+}
+.db-workspace .app-workspace-title > svg,
+.db-workspace .app-workspace-title > .service-brand-icon {
+  flex-shrink: 0;
+}
+
+/* Attention: errors use the shared red surface; pending and stale use the warning surface. */
+.db-attention-warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--hairline));
+  background: var(--warning-surface);
+}
+.db-attention-warn > svg {
+  color: var(--warn);
+}
+.db-attention-failures {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.db-attention-failures li {
+  display: grid;
+  gap: 2px;
+}
+.db-attention-failures span {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+
+.db-section-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+/* Title and its help stay together; actions keep the far edge. */
+.db-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-right: auto;
+}
+.db-section-title h2 {
+  margin: 0;
+}
+.db-workspace .app-workspace-section-head h2 + .hako-heading-help {
+  margin-right: auto;
+}
+/* Each overview column stacks from the top instead of stretching to its neighbour. */
+.db-workspace .app-workspace-columns > .app-workspace-overview {
+  align-content: start;
+}
+/* In the narrow side column, recent operations stack status and time beside the name. */
+.app-workspace-columns .db-activity-rows .resource-row {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-areas:
+    'identity status'
+    'identity meta';
+}
+.app-workspace-columns .db-activity-rows .resource-row-actions {
+  display: none;
+}
+.db-workspace .app-workspace-section-head > .app-workspace-count {
+  margin-left: auto;
+}
+.db-id,
+.db-fingerprint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.db-fingerprint code {
+  min-width: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+/* Rows that have no status or metadata slot give the space to the identity. */
+.db-endpoint-rows .resource-row,
+.db-operation-rows .resource-row {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-areas: 'identity actions';
+}
+.db-endpoint-rows :is(.resource-row-status, .resource-row-meta),
+.db-operation-rows :is(.resource-row-status, .resource-row-meta) {
+  display: none;
+}
+.db-endpoint-rows .resource-row-detail code {
+  font-size: var(--type-meta-size);
+  color: var(--foreground);
+  word-break: break-all;
+}
+.db-operation-rows .resource-row-detail {
+  display: grid;
+  gap: 2px;
+}
+.db-operation-unavailable {
+  color: var(--foreground);
+}
+.db-member-rows,
+.db-activity-rows {
+  --resource-row-meta: 176px;
+}
+.db-member-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.db-member-role,
+.db-activity-kind {
+  text-transform: capitalize;
+}
+.db-member-role {
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+}
+.db-activity-rows .resource-row-detail {
+  display: grid;
+  gap: 2px;
+}
+.db-activity-message {
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+.db-activity-stages summary {
+  min-height: 24px;
+  cursor: pointer;
+}
+.db-activity-stages ol {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0 0 0 var(--space-3);
+  border-left: 1px solid var(--hairline);
+  list-style: none;
+}
+.db-activity-stages li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  text-transform: none;
+}
+.db-activity-stages li > span:first-child {
+  color: var(--foreground);
+  text-transform: capitalize;
+}
+.db-activity-stages p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.db-confirm-field {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 639px) {
+  .db-endpoint-rows .resource-row,
+  .db-operation-rows .resource-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'identity'
+      'actions';
+  }
+  .db-endpoint-rows .resource-row-actions,
+  .db-operation-rows .resource-row-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* Database list: one line of counts above the grid. */
+.db-list-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+
+/* Infrastructure: capacity facts, then the node inventory with its own heading row. */
+.ops-summary.infra-capacity {
+  margin: 0 0 var(--section-gap);
+}
+.ops-summary.infra-capacity > div {
+  padding: var(--space-4);
+}
+.ops-summary.infra-capacity dd {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1023px) {
+  .ops-summary.infra-capacity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ops-summary.infra-capacity > div:nth-child(2n) {
+    border-right: 0;
+  }
+  .ops-summary.infra-capacity > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--hairline);
+  }
+}
+.ops-resource-list.resource-section > .infra-node-toolbar {
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+.infra-node-toolbar > .db-section-title {
+  margin-right: 0;
+}
+.infra-node-toolbar h2 {
+  margin: 0;
+  font-size: var(--type-section-size);
+  line-height: var(--type-section-line);
+  font-weight: var(--type-section-weight);
+}
+.infra-node-toolbar > .ops-search-input {
+  min-width: 0;
+}
+.infra-node-state {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+.infra-node-flag {
+  color: var(--warn);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.infra-node-usage {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+.infra-node-usage > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.infra-node-usage dd {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+}
+.infra-node-usage dd span {
+  color: var(--muted);
+}
+@media (max-width: 1023px) {
+  .infra-node-usage > div {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 639px) {
+  .infra-node-toolbar > .form-spacer {
+    display: none;
+  }
+  .infra-node-toolbar > .ops-search-input {
+    flex-basis: 100%;
+    width: 100%;
+  }
+}
+.ext-remove-form {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 720px;
+}
+.infra-freshness {
+  display: inline-block;
+  color: var(--muted);
+  font-size: var(--type-meta-size);
+  line-height: var(--type-meta-line);
+}
+.infra-freshness::first-letter {
+  text-transform: uppercase;
+}
+@media (max-width: 899px) {
+  /* A lone overflow menu needs no separate band below the meta line. */
+  .db-workspace .app-workspace-actions:has(> :only-child) {
+    margin-top: var(--space-2);
+  }
+}
+.ops-page .resource-footnote.infra-footnote {
+  padding-inline: 0;
+}

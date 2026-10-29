@@ -16,11 +16,11 @@ import { useActiveSection } from '../lib/use-active-section'
 import type { Node } from '../lib/types'
 import { createFileRoute, Outlet, useLocation, Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { timestamp } from '../lib/api'
+import { relative, timestamp } from '../lib/api'
 import { client, unwrap } from '../lib/client'
 import { Icon } from '../components/icons'
 import { Button } from '../components/ui/button'
-import { Copy, Loading, Note, PageHeader, Status } from '../components/shared'
+import { Copy, HeadingHelp, Loading, Note, PageHeader, Status } from '../components/shared'
 import {
   ResourceEmpty,
   ResourceError,
@@ -93,36 +93,35 @@ function Infrastructure() {
   return (
     <div className="ops-page">
       <PageHeader
-        eyebrow="OPERATOR / INFRASTRUCTURE"
         title="Infrastructure"
-        description="Live capacity, node scheduling, registries, and public ingress."
+        description="Nodes, registries, certificates and public ingress for this installation."
         action={
           <div className="toolbar-actions">
             {scope.identity.owner && (
               <>
                 {!dashboardEdition.cloud && (
-                  <Button asChild variant="secondary">
+                  <Button asChild>
                     <Link to="/infrastructure/cleanup">
                       <Icon name="trash" size={15} />
                       Safe cleanup
                     </Link>
                   </Button>
                 )}
-                <Link className="button button-secondary" to="/settings/host-access">
-                  <Icon name="key" size={15} />
-                  Host access
-                </Link>
+                <Button asChild>
+                  <Link to="/settings/host-access">
+                    <Icon name="key" size={15} />
+                    Host access
+                  </Link>
+                </Button>
               </>
             )}
             {scope.identity.admin && (!tab || tab === 'nodes') && (
-              <Link
-                className="button button-primary"
-                to="/infrastructure"
-                search={{ tab: 'enrollment' }}
-              >
-                <Icon name="plus" size={15} />
-                Add node
-              </Link>
+              <Button asChild variant="primary">
+                <Link to="/infrastructure" search={{ tab: 'enrollment' }}>
+                  <Icon name="plus" size={15} />
+                  Add node
+                </Link>
+              </Button>
             )}
           </div>
         }
@@ -239,33 +238,92 @@ function Nodes() {
   const inspector = items.find((node) => node.name === selectedNode)
   const totalCPU = items.reduce((sum, node) => sum + cpu(node.allocatable_cpu), 0)
   const totalMemory = items.reduce((sum, node) => sum + memory(node.allocatable_memory), 0)
+  const ready = items.filter((node) => node.ready).length
+  const cordoned = items.filter((node) => node.unschedulable).length
+  // Usage adds only nodes that reported a sample; capacity is compared over the same nodes.
+  const sampled = items.filter(
+    (node) =>
+      node.metrics.available &&
+      node.metrics.cpu_millicores !== undefined &&
+      node.metrics.memory_bytes !== undefined,
+  )
+  const sampledCPU = sampled.reduce((sum, node) => sum + node.metrics.cpu_millicores!, 0)
+  const sampledMemory = sampled.reduce((sum, node) => sum + node.metrics.memory_bytes!, 0)
+  const sampledCapacityCPU = sampled.reduce((sum, node) => sum + cpu(node.allocatable_cpu) * 1000, 0)
+  const sampledCapacityMemory = sampled.reduce(
+    (sum, node) => sum + memory(node.allocatable_memory),
+    0,
+  )
   return (
     <>
-      <dl className="ops-summary ops-summary-three" aria-label="Cluster capacity">
+      <dl className="ops-summary infra-capacity" aria-label="Cluster capacity">
         <div>
           <dt>Ready nodes</dt>
-          <dd>
-            {nodes.data ? `${items.filter((node) => node.ready).length} / ${items.length}` : '—'}
-          </dd>
-          <small>Kubernetes readiness condition</small>
+          <dd>{nodes.data ? `${ready} of ${items.length}` : 'Unavailable'}</dd>
+          <small>
+            {!nodes.data
+              ? 'Not observed yet'
+              : cordoned
+                ? `${cordoned} cordoned · not scheduling`
+                : 'All nodes accept workloads'}
+          </small>
         </div>
         <div>
-          <dt>Allocatable CPU</dt>
+          <dt>Allocatable</dt>
           <dd>
             {nodes.data && Number.isFinite(totalCPU)
               ? `${totalCPU.toLocaleString(undefined, { maximumFractionDigits: 2 })} cores`
-              : '—'}
+              : 'Unavailable'}
           </dd>
-          <small>Available to workloads</small>
+          <small>{nodes.data ? `${gib(totalMemory)} memory after reservations` : 'Not observed yet'}</small>
         </div>
-        <div>
-          <dt>Allocatable memory</dt>
-          <dd>{nodes.data ? gib(totalMemory) : '—'}</dd>
-          <small>After system reservations</small>
-        </div>
+        <UsageSummary
+          label="CPU in use"
+          used={sampled.length ? sampledCPU : undefined}
+          capacity={sampledCapacityCPU}
+          format={(value) => `${Math.round(value).toLocaleString()} mCPU`}
+          sampled={sampled.length}
+          total={items.length}
+          observed={Boolean(nodes.data)}
+        />
+        <UsageSummary
+          label="Memory in use"
+          used={sampled.length ? sampledMemory : undefined}
+          capacity={sampledCapacityMemory}
+          format={gib}
+          sampled={sampled.length}
+          total={items.length}
+          observed={Boolean(nodes.data)}
+        />
       </dl>
-      <section className="ops-resource-list resource-section" aria-label="Cluster nodes">
-        <div className="resource-toolbar">
+      <section className="ops-resource-list resource-section" aria-labelledby="infra-nodes-heading">
+        <div className="resource-toolbar infra-node-toolbar">
+          <div className="db-section-title">
+            <h2 id="infra-nodes-heading">Nodes</h2>
+            <span className="muted-text">{items.length}</span>
+            <HeadingHelp title="nodes">
+              Allocatable values describe workload capacity after system reservations. Usage comes
+              from the latest cluster sample for each node; service pages show pod CPU, memory,
+              allocations and events. Adding workers expands workload capacity. It does not make the
+              control plane, database or public ingress highly available.
+            </HeadingHelp>
+          </div>
+          <span className="infra-freshness" role="status">
+            {!nodes.dataUpdatedAt ? (
+              'Not observed yet'
+            ) : (
+              <>
+                {nodes.error ? 'Stale · ' : paused ? 'Paused · ' : ''}
+                <time
+                  dateTime={new Date(nodes.dataUpdatedAt).toISOString()}
+                  title={timestamp(new Date(nodes.dataUpdatedAt).toISOString())}
+                >
+                  observed {relative(new Date(nodes.dataUpdatedAt).toISOString()).toLowerCase()}
+                </time>
+              </>
+            )}
+          </span>
+          <span className="form-spacer" />
           <div className="ops-search-input">
             <Icon name="search" size={15} />
             <Input
@@ -275,13 +333,11 @@ function Nodes() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
-          <span className="muted-text">{items.length} nodes</span>
-          <span className="form-spacer" />
-          <Button variant="ghost" size="sm" onClick={() => setPaused((value) => !value)}>
+          <Button onClick={() => setPaused((value) => !value)}>
             <Icon name={paused ? 'play' : 'pause'} size={15} />
             {paused ? 'Resume live' : 'Pause live'}
           </Button>
-          <Button variant="ghost" size="sm" disabled={nodes.isFetching || !visible} onClick={probe}>
+          <Button disabled={nodes.isFetching || !visible} onClick={probe}>
             <Icon name="refresh" size={15} className={nodes.isFetching ? 'spin' : ''} />
             {nodes.isFetching ? 'Probing…' : 'Probe now'}
           </Button>
@@ -322,33 +378,41 @@ function Nodes() {
                   detail={
                     <>
                       <span>
-                        {node.control_plane ? 'Control plane' : 'Worker'} · {node.architecture} ·{' '}
-                        {node.unschedulable ? 'Cordoned' : 'Schedulable'}
+                        {node.control_plane ? 'Control plane' : 'Worker'} · {node.architecture}
                       </span>
                       <span>
-                        {node.pods} pods · {node.allocatable_gpu} GPUs
+                        {node.pods} pods{node.allocatable_gpu ? ` · ${node.allocatable_gpu} GPUs` : ''}
                       </span>
                       <code>{node.kubelet_version}</code>
                     </>
                   }
-                  status={<Status value={node.ready ? 'ready' : 'not ready'} small />}
+                  status={
+                    <span className="infra-node-state">
+                      <Status value={node.ready ? 'ready' : 'not ready'} small />
+                      {node.unschedulable && <span className="infra-node-flag">Cordoned</span>}
+                    </span>
+                  }
                   meta={
-                    <>
-                      <span className="block">
-                        CPU{' '}
-                        {node.metrics.available && node.metrics.cpu_millicores !== undefined
-                          ? `${node.metrics.cpu_millicores.toFixed(0)} mCPU`
-                          : 'unavailable'}{' '}
-                        / {cpu(node.allocatable_cpu)} cores
-                      </span>
-                      <span className="block">
-                        Memory{' '}
-                        {node.metrics.available && node.metrics.memory_bytes !== undefined
-                          ? gib(node.metrics.memory_bytes)
-                          : 'unavailable'}{' '}
-                        / {gib(memory(node.allocatable_memory))}
-                      </span>
-                    </>
+                    <dl className="infra-node-usage">
+                      <div>
+                        <dt>CPU</dt>
+                        <dd>
+                          {node.metrics.available && node.metrics.cpu_millicores !== undefined
+                            ? `${Math.round(node.metrics.cpu_millicores)}m`
+                            : 'Unavailable'}{' '}
+                          <span>of {cpu(node.allocatable_cpu)} cores</span>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Memory</dt>
+                        <dd>
+                          {node.metrics.available && node.metrics.memory_bytes !== undefined
+                            ? gib(node.metrics.memory_bytes)
+                            : 'Unavailable'}{' '}
+                          <span>of {gib(memory(node.allocatable_memory))}</span>
+                        </dd>
+                      </div>
+                    </dl>
                   }
                   actions={
                     <Menu
@@ -388,12 +452,7 @@ function Nodes() {
             </ResourceRows>
           </>
         )}
-        <div className="resource-footnote">
-          <span>
-            {nodes.dataUpdatedAt
-              ? `Refreshed ${timestamp(new Date(nodes.dataUpdatedAt).toISOString())}`
-              : 'Waiting for cluster observation'}
-          </span>
+        <div className="resource-footnote infra-footnote">
           <span>
             {paused
               ? 'Live updates paused'
@@ -482,29 +541,17 @@ function Nodes() {
                 </Button>
               )}
               {canOpenHostTerminal(scope.identity, inspector.name) && (
-                <Link
-                  className="button button-primary"
-                  to="/infrastructure/nodes/$node/terminal"
-                  params={{ node: inspector.name }}
-                >
-                  <Icon name="terminal" size={14} />
-                  Open terminal
-                </Link>
+                <Button asChild variant="primary">
+                  <Link to="/infrastructure/nodes/$node/terminal" params={{ node: inspector.name }}>
+                    <Icon name="terminal" size={14} />
+                    Open terminal
+                  </Link>
+                </Button>
               )}
             </div>
           </>
         )}
       </Dialog>
-      <div className="infrastructure-notes">
-        <Note>
-          Allocatable values describe workload capacity. Service pages show observed pod CPU,
-          memory, allocations, and events.
-        </Note>
-        <Note>
-          Adding workers expands workload capacity. It does not make the control plane, database, or
-          public ingress highly available.
-        </Note>
-      </div>
       {action && (
         <Suspense fallback={<Loading />}>
           <NodeAction
@@ -516,5 +563,39 @@ function Nodes() {
         </Suspense>
       )}
     </>
+  )
+}
+
+/** Usage summed over the nodes that reported a sample; unknown stays unknown, never zero. */
+function UsageSummary({
+  label,
+  used,
+  capacity,
+  format,
+  sampled,
+  total,
+  observed,
+}: {
+  label: string
+  used?: number
+  capacity: number
+  format: (value: number) => string
+  sampled: number
+  total: number
+  observed: boolean
+}) {
+  const share = used !== undefined && capacity > 0 ? Math.round((used / capacity) * 100) : undefined
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{used === undefined ? 'Unavailable' : format(used)}</dd>
+      <small>
+        {!observed
+          ? 'Not observed yet'
+          : used === undefined
+            ? 'No node reported a usage sample'
+            : `${share ?? '—'}% of allocatable${sampled < total ? ` · ${sampled} of ${total} nodes sampled` : ''}`}
+      </small>
+    </div>
   )
 }

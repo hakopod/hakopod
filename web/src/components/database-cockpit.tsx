@@ -4,132 +4,18 @@ import { useQuery } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { SelectField } from './ui/select'
 import type { ManagedDatabase } from '../lib/databases'
+import { ResourceEmpty, ResourceRow, ResourceRows } from './resource-card'
 import { databaseHealth } from '../lib/databases'
 import {
   databaseMemberCapacity,
-  databaseStorageGiB,
-  databaseLayoutSummary,
   databaseMetricAge,
-  engineName,
   expectedMembers,
   metricAvailable,
 } from '../lib/database-view'
 import { databaseActivityFresh, databaseHistorySamples, databaseActivityCounter } from '../lib/database-monitoring'
 import { message, timestamp } from '../lib/api'
-import { ServiceIcon } from './service-icon'
 import { Copy, HeadingHelp, Status } from './shared'
 import { ResourceMetric } from './resource-metric'
-
-type Member = ManagedDatabase['observation']['members'][number]
-export function DatabaseIdentity({ database: d }: { database: ManagedDatabase }) {
-  return (
-    <div className="db-identity">
-      <ServiceIcon name={d.spec.engine} size={32} />
-      <div>
-        <strong>
-          {engineName(d.spec.engine)} {d.spec.version}
-        </strong>
-        <span>
-          {databaseLayoutSummary(d.spec)}{['clickhouse', 'oracle'].includes(d.spec.engine) && ' · Development preview'}
-        </span>
-      </div>
-    </div>
-  )
-}
-export function DatabaseSummary({ database: d, now }: { database: ManagedDatabase; now: number }) {
-  const members = d.observation.members || []
-  const nodes = [...new Set(members.map((m) => m.node).filter(Boolean))]
-  const zones = [...new Set(members.map((m) => m.zone).filter(Boolean))]
-  const health = databaseHealth(d, now)
-  return (
-    <dl className="db-summary">
-      <div>
-        <dt>Cluster health</dt>
-        <dd>
-          <Status value={health === 'Observation stale' ? 'stale' : health} />
-        </dd>
-        <small>
-          Lifecycle: {d.status} · revision {d.revision}
-        </small>
-      </div>
-      <div>
-        <dt>{health === 'Observation stale' ? 'Members ready · last known' : 'Members ready'}</dt>
-        <dd>
-          {members.filter((m) => m.ready).length}
-          <span> / {expectedMembers(d.spec)}</span>
-        </dd>
-        <small>
-          {members.length} observed · {expectedMembers(d.spec)} desired
-        </small>
-      </div>
-      <div>
-        <dt>{health === 'Observation stale' ? 'Placement · last known' : 'Placement'}</dt>
-        <dd>
-          {nodes.length || '—'}
-          <span> {nodes.length === 1 ? 'node' : 'nodes'}</span>
-        </dd>
-        <small>
-          {zones.length > 0
-            ? `${zones.length} observed ${zones.length === 1 ? 'zone' : 'zones'}`
-            : nodes.length === 1 && members.length > 1
-              ? 'All members share one node'
-              : nodes.length
-                ? 'Observed member placement'
-                : 'Placement not observed'}
-        </small>
-      </div>
-      <div>
-        <dt>Configured storage</dt>
-        <dd>
-          {databaseStorageGiB(d.spec)}
-          <span> GiB</span>
-        </dd>
-        <small>{d.spec.storage_gib} GiB per data member{d.spec.engine === 'mongodb' ? ' + 1 GiB logs' : ['clickhouse', 'oracle'].includes(d.spec.engine) ? ' + backup staging' : ''}{d.spec.engine === 'clickhouse' && d.spec.mode === 'cluster' ? ' + 3 GiB Keeper storage' : ''} · usage unavailable</small>
-      </div>
-    </dl>
-  )
-}
-
-export function DatabaseFailures({ database: d }: { database: ManagedDatabase }) {
-  const history = useQuery({
-    queryKey: ['database-failures', d.id],
-    queryFn: ({ signal }) => unwrap(client.GET('/databases/{id}/failures', { signal, params: { path: { id: d.id } } })),
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-    gcTime: 0,
-  })
-  const items = history.data?.items || []
-  if (!history.isPending && !history.error && !items.length) return null
-  return (
-    <section className="db-panel" aria-label="Retained database failures">
-      <div className="db-panel-heading">
-        <h2>Recent failures</h2>
-        <span className="db-kicker">{history.isPending ? 'Loading' : history.error ? 'Unavailable' : `${items.length} retained`}</span>
-      </div>
-      {history.error ? (
-        <p className="db-inline-notice">Failure evidence could not be refreshed.</p>
-      ) : history.isPending ? (
-        <p className="db-inline-notice">Loading retained failure evidence.</p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {items.slice(0, 5).map((item) => (
-            <li key={`${item.member_uid}-${item.container}-${item.occurred_at}`} className="grid gap-1 px-4 py-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong>{item.summary}</strong>
-                <time className="text-xs text-muted-foreground" dateTime={item.occurred_at}>{timestamp(item.occurred_at)}</time>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {item.member} · {item.container} · revision {item.revision}
-                {item.restart_count !== undefined ? ` · ${item.restart_count} restarts` : ''}
-                {item.exit_code !== undefined ? ` · exit ${item.exit_code}` : ''}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
 
 export function DatabaseMonitoring({
   database: d,
@@ -257,80 +143,45 @@ export function DatabaseMembers({
   receivedAt: number
 }) {
   const current = !['Observation stale', 'Not observed'].includes(databaseHealth(d, now))
+  const members = d.observation.members || []
+  if (!members.length)
+    return (
+      <ResourceEmpty
+        icon="database"
+        title="No members observed"
+        description={`${expectedMembers(d.spec)} desired. Members appear once the cluster reports them.`}
+      />
+    )
   return (
-    <section className="db-panel" aria-label="Database member details">
-      <div className="db-panel-heading">
-        <h2>Member inventory</h2>
-        <span className="db-kicker">{d.observation.members?.length || 0} observed</span>
-      </div>
-      {!d.observation.members?.length ? (
-        <p className="db-inline-notice">No members have been observed.</p>
-      ) : (
-        <div className="db-inventory">
-          {d.observation.members.map((m: Member) => (
-            <details key={m.uid} className="db-inventory-member">
-              <summary>
-                <span className="db-inventory-name">
-                  <ServiceIcon name={d.spec.engine} size={22} />
-                  <strong>{m.name}</strong>
+    <ResourceRows label="Database members" className="db-member-rows">
+      {members.map((m) => {
+        const usage =
+          current && metricAvailable(m.metrics, d.observation.observed_at, receivedAt, now)
+            ? `${Math.round(m.metrics!.cpu_millicores!)} mCPU · ${Math.round(m.metrics!.memory_bytes! / 1024 ** 2)} MiB`
+            : undefined
+        return (
+          <ResourceRow
+            key={m.uid}
+            identity={
+              <span className="db-member-name">
+                <span>{m.name}</span>
+                <span className="db-member-role">{m.role}{m.shard ? ` · ${m.shard}` : ''}</span>
+              </span>
+            }
+            detail={
+              <>
+                <span>{m.node || 'Not scheduled'}{m.zone ? ` · ${m.zone}` : ''}</span>
+                <span>
+                  {m.phase || 'Phase not reported'} · {m.restarts === undefined ? 'restarts not reported' : `${m.restarts} ${m.restarts === 1 ? 'restart' : 'restarts'}`}
                 </span>
-                <span className="db-inventory-role">{m.role}</span>
-                <Status value={current ? (m.ready ? 'ready' : 'not ready') : 'stale'} />
-                <span className="db-inventory-node">{m.node || 'Not scheduled'}</span>
-                <span className="db-inventory-usage">
-                  {current && metricAvailable(m.metrics, d.observation.observed_at, receivedAt, now)
-                    ? `${m.metrics!.cpu_millicores!.toFixed(1)} mCPU · ${(m.metrics!.memory_bytes! / 1024 ** 2).toFixed(1)} MiB`
-                    : 'Metrics unavailable'}
-                </span>
-                <span className="db-expand-label">Inspect</span>
-              </summary>
-              <dl className="db-facts db-member-expanded">
-                <div>
-                  <dt>Member ID</dt>
-                  <dd>{m.uid}</dd>
-                </div>
-                <div>
-                  <dt>Phase / restarts</dt>
-                  <dd>
-                    {m.phase || 'Not reported'} / {m.restarts ?? 'Not reported'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Created</dt>
-                  <dd>{m.created_at ? timestamp(m.created_at) : 'Not reported'}</dd>
-                </div>
-                <div>
-                  <dt>Zone / region</dt>
-                  <dd>
-                    {m.zone || 'Not reported'} / {m.region || 'Not reported'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Provider</dt>
-                  <dd>{m.provider || 'Not reported'}</dd>
-                </div>
-                <div>
-                  <dt>Storage allocation</dt>
-                  <dd>{d.spec.storage_gib} GiB data{d.spec.engine === 'mongodb' ? ' + 1 GiB logs' : ['clickhouse', 'oracle'].includes(d.spec.engine) ? ` + ${d.spec.storage_gib} GiB backup staging` : ''}</dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt>Image</dt>
-                  <dd className="db-image-id">
-                    {m.image || 'Not reported'}
-                    {m.image && <Copy value={m.image} />}
-                  </dd>
-                </div>
-                {m.shard && (
-                  <div className="sm:col-span-2">
-                    <dt>Shard identity</dt>
-                    <dd>{m.shard}</dd>
-                  </div>
-                )}
-              </dl>
-            </details>
-          ))}
-        </div>
-      )}
-    </section>
+              </>
+            }
+            status={<Status value={current ? (m.ready ? 'ready' : 'not ready') : 'stale'} small />}
+            meta={<span className={usage ? undefined : 'resource-card-absent'}>{usage || 'Usage unavailable'}</span>}
+            actions={m.image ? <Copy iconOnly value={m.image} label={`Copy ${m.name} image`} /> : undefined}
+          />
+        )
+      })}
+    </ResourceRows>
   )
 }
