@@ -9,7 +9,6 @@ import {
   endpointTargetsMember,
   topologyApplicationPageSize,
 } from '../lib/database-topology'
-import { DatabaseStack } from './database-stack'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { SelectField } from './ui/select'
@@ -176,14 +175,14 @@ export function DatabaseTopology({
           />
         )}
         <div className="db-topology-paging">
-          <span aria-live="polite">
+          {pageCount > 1 && <span aria-live="polite">
             {!connections.data
               ? '—'
               : filtered.length
                 ? `${activePage * topologyApplicationPageSize + 1}–${Math.min((activePage + 1) * topologyApplicationPageSize, filtered.length)} of ${filtered.length}`
                 : '0'}{' '}
             applications
-          </span>
+          </span>}
           {pageCount > 1 && (
             <>
               <Button
@@ -260,29 +259,6 @@ export function DatabaseTopology({
           may not be included.
         </p>
       )}
-      <div className="db-member-picker db-topology-picker">
-        <SelectField
-          label="Inspect topology"
-          value={activeID}
-          onValueChange={reveal}
-          options={[
-            ...shown.map((app) => ({
-              value: `app:${app.id}`,
-              label: `Application · ${app.displayName}`,
-            })),
-            ...endpoints.map((e) => ({
-              value: `endpoint:${e.purpose}`,
-              label: `Endpoint · ${endpointName(e.purpose, d.spec.engine)}`,
-            })),
-            ...poolers.map((m) => ({ value: `pooler:${m.uid}`, label: `${middleLabel} · ${m.name}` })),
-            ...members.map((m) => ({ value: `member:${m.uid}`, label: `${m.role} · ${m.name}` })),
-            ...coordinators.map((m) => ({ value: `keeper:${m.uid}`, label: `${coordinatorLabel} ${m.role} · ${m.name}` })),
-          ]}
-        />
-        <Button size="sm" disabled={!activeID} onClick={() => reveal(activeID)}>
-          Locate selected
-        </Button>
-      </div>
       <div
         className="db-topology-scroll"
         ref={canvas}
@@ -314,25 +290,26 @@ export function DatabaseTopology({
             d={`M${layout.applicationWidth + 20},58 V${layout.height - 24} M${layout.memberStart - 25},58 V${layout.height - 24}`}
           />
           {!shown.length && (
-            <text x="28" y="120" className="db-stack-role">
-              {connections.isPending
-                ? 'Loading connections'
-                : connections.isError && !connections.data
-                  ? 'Connections unavailable'
-                  : filter
-                    ? 'No matching applications'
-                    : 'No recorded application bindings'}
-            </text>
+            <Placeholder
+              x={28}
+              y={88}
+              title={
+                connections.isPending
+                  ? 'Loading'
+                  : connections.isError && !connections.data
+                    ? 'Unavailable'
+                    : filter
+                      ? 'No matches'
+                      : 'No applications'
+              }
+              detail={filter ? 'Try another name' : 'None bound yet'}
+            />
           )}
           {!endpoints.length && (
-            <text x={layout.endpointX} y="120" className="db-stack-role">
-              Not observed
-            </text>
+            <Placeholder x={layout.endpointX} y={114} title="Not observed" detail="No endpoints yet" />
           )}
           {!members.length && (
-            <text x={layout.memberStart + 20} y="120" className="db-stack-role">
-              Waiting for member observation
-            </text>
+            <Placeholder x={layout.memberStart + 10} y={99} title="Waiting" detail="No members yet" />
           )}
           {shown.flatMap((app, i) =>
             [...new Set(app.bindings.map((b) => b.endpoint))].flatMap((purpose) => {
@@ -357,12 +334,17 @@ export function DatabaseTopology({
                 return []
               const from = endpointPositions[i],
                 to = layout.memberPositions[j],
-                trunk = layout.memberStart - 12 + i * 7
+                trunk = layout.memberStart - 12 + i * 7,
+                // The primary has its row to itself, so its routes enter from the side.
+                end =
+                  primary && j === 0
+                    ? `V${to.y} H${to.x - 80}`
+                    : `V${to.y - 72} H${to.x} V${to.y - 55}`
               return (
                 <path
                   key={`${e.purpose}-${m.uid}`}
                   className={`db-route-edge ${!current ? 'db-edge-stale' : ''}`}
-                  d={poolers.length ? `M${from.x + 155},${from.y + 35} H${layout.poolerX - 30 + i * 5} V${62 + i * 10} H${trunk} V${to.y - 72} H${to.x} V${to.y - 55}` : `M${from.x + 155},${from.y + 35} H${trunk} V${to.y - 72} H${to.x} V${to.y - 55}`}
+                  d={poolers.length ? `M${from.x + 155},${from.y + 35} H${layout.poolerX - 30 + i * 5} V${62 + i * 10} H${trunk} ${end}` : `M${from.x + 155},${from.y + 35} H${trunk} ${end}`}
                 />
               )
             }),
@@ -375,7 +357,8 @@ export function DatabaseTopology({
           {poolers.flatMap((p, i) => members.flatMap((m, j) => {
             if (routed ? !['primary', 'replica'].includes(m.role) : !endpointTargetsMember(p.role, m.role, d.spec.engine)) return []
             const from = layout.poolerPositions[i], to = layout.memberPositions[j]
-            return <path key={`${p.uid}-${m.uid}`} className={`db-route-edge ${!current ? 'db-edge-stale' : ''}`} d={`M${from.x + 164},${from.y + 35} H${layout.memberStart - 20 + i * 3} V${to.y - 72} H${to.x} V${to.y - 55}`} />
+            const end = primary && j === 0 ? `V${to.y} H${to.x - 80}` : `V${to.y - 72} H${to.x} V${to.y - 55}`
+            return <path key={`${p.uid}-${m.uid}`} className={`db-route-edge ${!current ? 'db-edge-stale' : ''}`} d={`M${from.x + 164},${from.y + 35} H${layout.memberStart - 20 + i * 3} ${end}`} />
           }))}
           {primary &&
             members.map(
@@ -384,13 +367,13 @@ export function DatabaseTopology({
                   <path
                     key={`replication-${m.uid}`}
                     className={`db-replication-edge ${!current ? 'db-edge-stale' : ''}`}
-                    d={`M${layout.memberPositions[0].x},${layout.memberPositions[0].y + 110} H${layout.memberStart + 12} V${layout.memberPositions[i].y - 82} H${layout.memberPositions[i].x} V${layout.memberPositions[i].y - 55}`}
+                    d={`M${layout.memberPositions[0].x},${layout.memberPositions[0].y + 49} V${layout.memberPositions[i].y - 82} H${layout.memberPositions[i].x} V${layout.memberPositions[i].y - 55}`}
                   />
                 ),
             )}
           {coordinators.length > 0 && <>
             <text x={layout.memberStart + 20} y={layout.coordinationY - 20} className="db-lane-title">{vitess ? current ? 'ETCD TOPOLOGY' : 'LAST KNOWN TOPOLOGY' : current ? 'KEEPER COORDINATION' : 'LAST KNOWN KEEPERS'}</text>
-            {members.map((m, i) => <path key={`coordination-data-${m.uid}`} className={`db-replication-edge ${!current ? 'db-edge-stale' : ''}`} d={`M${layout.memberPositions[i].x},${layout.memberPositions[i].y + 110} H${layout.memberStart - 8} V${layout.coordinationY - 45} H${layout.memberStart + 90}`} />)}
+            {members.map((m, i) => <path key={`coordination-data-${m.uid}`} className={`db-replication-edge ${!current ? 'db-edge-stale' : ''}`} d={`M${layout.memberPositions[i].x},${layout.memberPositions[i].y + 49} H${layout.memberStart - 8} V${layout.coordinationY - 45} H${layout.memberStart + 90}`} />)}
             {coordinators.map((m, i) => <path key={`coordination-keeper-${m.uid}`} className={`db-replication-edge ${!current ? 'db-edge-stale' : ''}`} d={`M${layout.memberStart + 90},${layout.coordinationY - 45} H${layout.coordinatorPositions[i].x + 82} V${layout.coordinationY}`} />)}
           </>}
           {shown.map((app, i) => {
@@ -480,33 +463,27 @@ export function DatabaseTopology({
                 tabIndex={0}
                 aria-pressed={activeID === id}
                 aria-label={`Inspect ${m.name}, ${m.role}, ${current ? (m.ready ? 'ready' : 'not ready') : 'last known state'}`}
-                className="db-topology-member"
+                className={`db-topology-member ${activeID === id ? 'db-node-selected' : ''}`}
                 onClick={() => setSelected(id)}
                 onFocus={() => reveal(id)}
                 onKeyDown={(event) => activate(event, () => setSelected(id))}
               >
                 <title>{m.name}</title>
-                <rect
-                  x={at.x - 82}
-                  y={at.y - 67}
-                  width="164"
-                  height="174"
-                  rx="8"
-                  className="db-stack-hit"
-                />
-                <DatabaseStack
-                  {...at}
-                  primary={m.role === 'primary'}
-                  ready={current && m.ready}
+                <MemberCard
+                  x={at.x - 80}
+                  y={at.y - 55}
+                  name={m.name}
+                  role={m.role}
+                  node={m.node}
                   selected={activeID === id}
-                  unknown={!['primary', 'replica'].includes(m.role)}
+                  state={!current ? 'stale' : m.ready ? 'ready' : 'down'}
+                  usage={
+                    current &&
+                    metricAvailable(m.metrics, d.observation.observed_at, receivedAt, now)
+                      ? `${Math.round(m.metrics!.cpu_millicores!)} mCPU · ${Math.round(m.metrics!.memory_bytes! / 1024 ** 2)} MiB`
+                      : 'No usage reported'
+                  }
                 />
-                <text x={at.x} y={at.y + 78} textAnchor="middle" className="db-stack-name">
-                  {shortName(m.name)}
-                </text>
-                <text x={at.x} y={at.y + 98} textAnchor="middle" className="db-stack-role">
-                  {m.role.toUpperCase()}
-                </text>
               </g>
             )
           })}
@@ -660,5 +637,63 @@ export function DatabaseTopology({
           'Zone and provider details depend on reported node metadata.'}
       </div>
     </section>
+  )
+}
+
+/** A flat member card: role and state on top, then name, node and usage. */
+function MemberCard({
+  x,
+  y,
+  name,
+  role,
+  node,
+  state,
+  usage,
+  selected,
+}: {
+  x: number
+  y: number
+  name: string
+  role: string
+  node?: string
+  state: 'ready' | 'down' | 'stale'
+  usage: string
+  selected: boolean
+}) {
+  const primary = role === 'primary'
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect className="db-member-card" width="160" height="104" rx="4" />
+      {primary && <rect className="db-member-accent" width="2" height="104" />}
+      <circle className={`db-member-state db-member-state-${state}`} cx="16" cy="20" r="3.5" />
+      <text x="26" y="24" className="db-member-role">
+        {role.toUpperCase()}
+      </text>
+      <text x="14" y="52" className="db-member-name">
+        {shortName(name, 18)}
+      </text>
+      <text x="14" y="71" className="db-member-meta">
+        {shortName(node || 'Not scheduled', 20)}
+      </text>
+      <text x="14" y="89" className="db-member-meta">
+        {usage}
+      </text>
+      {selected && <rect className="db-member-ring" width="160" height="104" rx="4" />}
+    </g>
+  )
+}
+
+/** An empty lane keeps the shape of the node it is waiting for. */
+function Placeholder({ x, y, title, detail }: { x: number; y: number; title: string; detail: string }) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect className="db-placeholder" width="164" height="70" rx="4" />
+      <text x="14" y="30" className="db-app-title">
+        {title}
+      </text>
+      <text x="14" y="50" className="db-app-meta">
+        {detail}
+      </text>
+    </g>
   )
 }

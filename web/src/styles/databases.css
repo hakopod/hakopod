@@ -64,8 +64,7 @@
 }
 .db-topology-scroll {
   @apply max-h-[660px] overflow-auto overscroll-contain;
-  background: radial-gradient(circle, var(--hairline) 1px, transparent 1px);
-  background-size: 16px 16px;
+  border-block: 1px solid var(--hairline);
 }
 .db-topology-scroll:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--action) 55%, var(--foreground));
@@ -74,90 +73,59 @@
 .db-topology-art {
   @apply block max-w-none;
 }
-.db-plane {
-  fill: color-mix(in srgb, var(--info) 6%, var(--card));
-  stroke: color-mix(in srgb, var(--info) 22%, var(--hairline));
-}
-.db-plane-side {
-  fill: color-mix(in srgb, var(--info) 20%, var(--card));
-}
-.db-plane-grid {
-  fill: none;
-  stroke: color-mix(in srgb, var(--info) 10%, transparent);
-  stroke-width: 1;
-}
-.db-stack {
-  --stack-color: var(--info);
-}
-.db-stack-primary {
-  --stack-color: var(--action);
-}
-.db-stack-unknown {
-  --stack-color: var(--muted);
-}
-.db-stack-side {
-  fill: color-mix(in srgb, var(--stack-color) 50%, var(--card));
-  stroke: color-mix(in srgb, var(--stack-color) 60%, var(--card));
-  stroke-width: 1;
-}
-.db-stack-top {
-  fill: color-mix(in srgb, var(--stack-color) 22%, var(--card));
-  stroke: color-mix(in srgb, var(--stack-color) 75%, var(--card));
-  stroke-width: 1.2;
-}
-.db-stack-core {
-  fill: var(--stack-color);
-  stroke: color-mix(in srgb, var(--stack-color) 35%, var(--card));
-  stroke-width: 5;
-}
-.db-stack-highlight {
-  fill: none;
-  stroke: color-mix(in srgb, var(--stack-color) 80%, var(--foreground));
-  stroke-width: 1;
-}
-.db-stack-shadow {
-  fill: color-mix(in srgb, var(--foreground) 7%, transparent);
-}
-.db-stack-ring {
-  fill: none;
-  stroke: var(--stack-color);
-  opacity: 0.2;
-  stroke-width: 2;
-}
-.db-stack-selected .db-stack-ring {
-  opacity: 1;
-  stroke-width: 3;
-  stroke: color-mix(in srgb, var(--stack-color) 55%, var(--foreground));
-}
-.db-stack-led {
-  fill: var(--success);
-}
-.db-stack-led-off {
-  fill: var(--muted);
-}
-.db-stack-name {
-  fill: var(--foreground);
-  font: 12px var(--font-mono);
-}
 .db-stack-role {
   fill: var(--muted);
   font: 12px var(--font-mono);
   letter-spacing: 1px;
 }
-.db-stack-hit {
-  fill: transparent;
-  stroke: transparent;
-  stroke-width: 2;
-}
 .db-topology-member {
   cursor: pointer;
   outline: none;
 }
-.db-topology-member:focus-visible .db-stack-hit {
-  stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
+.db-member-card {
+  fill: var(--card);
+  stroke: color-mix(in srgb, var(--foreground) 22%, var(--card));
 }
-.db-topology-member:hover .db-stack-ring {
-  opacity: 1;
+.db-topology-member:hover .db-member-card {
+  stroke: color-mix(in srgb, var(--foreground) 40%, var(--card));
+}
+.db-member-accent {
+  fill: var(--action);
+}
+.db-member-ring {
+  fill: none;
+}
+.db-member-ring,
+.db-topology-member:focus-visible .db-member-card {
+  stroke: color-mix(in srgb, var(--action) 55%, var(--foreground));
+  stroke-width: 2;
+}
+.db-member-state-ready {
+  fill: var(--success);
+}
+.db-member-state-down {
+  fill: var(--destructive);
+}
+.db-member-state-stale {
+  fill: var(--muted);
+}
+.db-member-role {
+  fill: var(--muted);
+  font: 11px var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.db-member-name {
+  fill: var(--foreground);
+  font: 13px var(--font-mono);
+}
+.db-member-meta {
+  fill: var(--muted);
+  font: 11px var(--font-mono);
+}
+.db-placeholder {
+  fill: none;
+  stroke: var(--hairline);
+  stroke-dasharray: 4 4;
 }
 .db-replication-edge {
   fill: none;
@@ -502,12 +470,6 @@
   border-color: color-mix(in srgb, var(--action) 55%, var(--foreground));
 }
 
-.db-topology-picker {
-  @apply flex flex-wrap items-center gap-2 pt-3;
-}
-.db-topology-picker > .select-field-wrap {
-  @apply min-w-0 flex-1 basis-64;
-}
 
 .db-monitor-controls {
   @apply flex flex-wrap items-center gap-2;
