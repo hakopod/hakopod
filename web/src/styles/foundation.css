@@ -7,6 +7,15 @@
 .light {
   --card: #fafafa;
 }
+/* Self-hosted light uses warm stone; muted text is darkened to keep 4.5:1 on it. */
+html[data-edition='self-hosted'].light {
+  --background: #d5cdc5;
+  --card: #f3efea;
+  --surface-2: #cbc2b9;
+  --surface-3: #c0b6ac;
+  --hairline: #a69d94;
+  --muted: #4f4a44;
+}
 html[data-edition='cloud']:not(.light) {
   --background: #0f0004;
 }
