@@ -67,11 +67,11 @@ html[data-edition='cloud'] {
   --space-5: 24px;
   --space-6: 32px;
   --space-7: 48px;
-  --section-gap: var(--space-6);
+  --section-gap: var(--space-5);
 }
 @media (max-width: 639px) {
   :root {
-    --section-gap: var(--space-5);
+    --section-gap: var(--space-4);
   }
 }
 :root,
@@ -392,9 +392,9 @@ input[type='radio']:focus-visible {
   color: var(--foreground);
 }
 .tab-list {
-  gap: 24px;
+  gap: var(--space-5);
   padding: 0;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--hairline);
 }
 .tab-trigger {
@@ -403,7 +403,7 @@ input[type='radio']:focus-visible {
   gap: 8px;
   border: 0;
   margin: 0;
-  padding: 14px 0;
+  padding: 10px 0;
   font-size: 15px;
   background: transparent;
 }
@@ -454,10 +454,11 @@ input[type='radio']:focus-visible {
 .panel-body {
   padding: 24px;
 }
+/* The one section header rhythm: a 40px row (fits a button), 8px to its content. */
 .section-toolbar {
-  min-height: 48px;
-  gap: 16px;
-  margin-bottom: 24px;
+  min-height: 40px;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
 }
 .section-toolbar h2 {
   font-size: 18px;
