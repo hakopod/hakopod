@@ -12,6 +12,8 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { SelectField } from '../components/ui/select'
 import { Empty, ErrorState, HeadingHelp, Loading } from '../components/shared'
+import { ChoiceCards } from '../components/create-flow'
+import { Icon } from '../components/icons'
 
 export const Route = createFileRoute('/applications/$applicationId/services/new')({
   component: AddService,
@@ -86,33 +88,44 @@ function AddService() {
         { label: 'Add service' },
       ]}
     >
-      <div className="grid gap-4 py-4">
+      <div className="create-flow grid gap-4 py-4">
         <ComputeNotice />
         <section className="grid gap-2" aria-labelledby="service-source-heading">
           <h2 id="service-source-heading" className="m-0 text-sm font-medium">
             Choose a source
           </h2>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {[
-              ['catalog', 'Catalog template', 'Start from a reviewed service template'],
-              ['compose', 'Docker Compose', 'Import services from a Compose file'],
-              ['function', 'HTTP function', 'Start a small JavaScript or Python service'],
-              ['image', 'Container image', 'Deploy an image you already have'],
-            ].map(([value, label, detail]) => (
-              <Button
-                key={value}
-                type="button"
-                variant={source === value ? 'primary' : 'outline'}
-                className="h-auto! min-h-11 min-w-0 w-full justify-start! whitespace-normal! px-3 py-2 text-left normal-case! font-sans!"
-                onClick={() => setSource(value as typeof source)}
-              >
-                <span className="grid min-w-0 gap-0.5 whitespace-normal">
-                  <span className="break-words">{label}</span>
-                  <span className="break-words text-xs font-normal opacity-80">{detail}</span>
-                </span>
-              </Button>
-            ))}
-          </div>
+          <ChoiceCards
+            label="Choose a source"
+            value={source}
+            onChange={setSource}
+            compact
+            choices={[
+              {
+                value: 'image',
+                title: 'Container image',
+                description: 'Deploy an image you already have',
+                icon: <Icon name="box" size={16} />,
+              },
+              {
+                value: 'function',
+                title: 'HTTP function',
+                description: 'Start a small JavaScript or Python service',
+                icon: <Icon name="activity" size={16} />,
+              },
+              {
+                value: 'compose',
+                title: 'Docker Compose',
+                description: 'Import services from a Compose file',
+                icon: <Icon name="code" size={16} />,
+              },
+              {
+                value: 'catalog',
+                title: 'Catalog template',
+                description: 'Start from a reviewed service template',
+                icon: <Icon name="grid" size={16} />,
+              },
+            ]}
+          />
         </section>
         {source === 'catalog' && (
           <section className="grid gap-3" aria-labelledby="catalog-source-heading">
