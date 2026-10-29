@@ -165,6 +165,7 @@ type accessPolicyView struct {
 	store.AccessPolicyRecord
 	SecretsSet map[string]bool        `json:"connector_secrets_set,omitempty"`
 	Connector  json.RawMessage        `json:"connector_status,omitempty"`
+	Agent      *store.AccessAgent     `json:"agent,omitempty"`
 	ClientIP   string                 `json:"client_ip"`
 	Licensed   bool                   `json:"licensed"`
 	VPNStatus  *store.AccessVPNStatus `json:"vpn_status,omitempty"`
