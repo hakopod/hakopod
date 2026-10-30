@@ -44,7 +44,7 @@ def output(args):
 
 def fingerprint():
     files=set()
-    for folder in ('cmd','internal','api','auth','templates','third_party/go-ora-v3'):
+    for folder in ('cmd','internal','api','auth','templates','third_party/go-ora-v3','agent/hakopod-vpn'):
         files.update(p for p in (ROOT/folder).rglob('*') if p.is_file() and '.git' not in p.parts and '__pycache__' not in p.parts and p.suffix != '.pyc')
     files.update(ROOT/p for p in ('go.mod','go.sum','web/package.json','web/pnpm-lock.yaml','LICENSE','NOTICE'))
     digest=hashlib.sha256()
@@ -123,6 +123,10 @@ def main():
     run(['python3','release/collect-notices.py','--source',str(source),'--output',str(notices)])
     inventory=json.loads((notices/'inventory.json').read_text())
     if any(not package['files'] for package in inventory['go']):raise SystemExit('A linked Go module is missing license/notice files; review before packaging')
+    # The VPN agent is its own Go module with its own linked dependencies.
+    vpn_notices=stage/'vpn-dependency-notices'
+    run(['python3','release/collect-notices.py','--source',str(source/'agent/hakopod-vpn'),'--packages','./...','--output',str(vpn_notices)])
+    if any(not package['files'] for package in json.loads((vpn_notices/'inventory.json').read_text())['go']):raise SystemExit('A VPN agent Go module is missing license/notice files; review before packaging')
     scan=stage/'sbom-source'
     scan.mkdir()
     # CLI-only staging lives outside scan/ so syft (which catalogs scan/) never
@@ -173,6 +177,7 @@ def main():
                 print(f'Building hakopod-vpn for {system}/{arch}',flush=True)
                 run(build_command('hakopod-vpn', (vpn_directory/'hakopod-vpn').resolve(), version),env=env,cwd=source/'agent/hakopod-vpn')
                 for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,vpn_directory/filename)
+                shutil.copytree(vpn_notices/'go',vpn_directory/'third-party-licenses')
                 vpn_bundles.append(vpn_directory)
             # CLI-only archive reuses the already-built hakopod binary; never
             # recompiled a second time.

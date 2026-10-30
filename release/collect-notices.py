@@ -55,11 +55,12 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',required=True)
     parser.add_argument('--source',default=str(ROOT),help='Go source snapshot; installed dashboard packages are read from the working tree')
+    parser.add_argument('--packages',default='./cmd/...',help='Go packages whose linked modules are inventoried')
     args=parser.parse_args()
     out=Path(args.output).resolve()
     go_root=Path(args.source).resolve()
     out.mkdir(parents=True,exist_ok=True)
-    linked=set(subprocess.check_output(['go','list','-deps','-f','{{if .Module}}{{.Module.Path}}{{end}}','./cmd/...'],cwd=go_root,text=True).splitlines())
+    linked=set(subprocess.check_output(['go','list','-deps','-f','{{if .Module}}{{.Module.Path}}{{end}}',args.packages],cwd=go_root,text=True).splitlines())
     modules=list(decode_stream(subprocess.check_output(['go','list','-m','-json','all'],cwd=go_root,text=True)))
     inventory={'scope':'Go cmd import graph plus installed dashboard packages; build/development dependencies included','go':[],'dashboard':[]}
     for module in sorted(modules,key=lambda m:m['Path']):
