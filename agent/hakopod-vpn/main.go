@@ -9,7 +9,7 @@ import (
 
 	"golang.zx2c4.com/wireguard/wgctrl"
 
-	"github.com/hakopod/hakopod/internal/hostvpn"
+	"github.com/hakopod/hakopod/agent/hakopod-vpn/internal/hostvpn"
 )
 
 // Release builds inject the tag version with -X main.version.

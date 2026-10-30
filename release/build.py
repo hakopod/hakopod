@@ -32,7 +32,9 @@ def compile_command(package, destination, *, tags='', ldflags='-s -w'):
 def build_command(command, destination, version):
     flags='-s -w'+(' -X main.version='+version if command in ('hakopod','hakopod-vpn') else '')
     # Public artifacts always retain their closed-signup build tag.
-    return compile_command('./cmd/'+command, destination, tags=PUBLIC_BUILD_TAG, ldflags=flags)
+    # The VPN agent is its own Go module so its WireGuard dependency never
+    # enters the control plane's go.mod; it is built from that directory.
+    return compile_command('.' if command=='hakopod-vpn' else './cmd/'+command, destination, tags=PUBLIC_BUILD_TAG, ldflags=flags)
 
 def run(args,**kwargs):
     return subprocess.run(args,cwd=kwargs.pop('cwd',ROOT),env=kwargs.pop('env',ENV),check=True,**kwargs)
@@ -169,7 +171,7 @@ def main():
                 vpn_directory=scan/f'hakopod-vpn_{version}_{system}_{arch}'
                 vpn_directory.mkdir()
                 print(f'Building hakopod-vpn for {system}/{arch}',flush=True)
-                run(build_command('hakopod-vpn', vpn_directory/'hakopod-vpn', version),env=env,cwd=source)
+                run(build_command('hakopod-vpn', (vpn_directory/'hakopod-vpn').resolve(), version),env=env,cwd=source/'agent/hakopod-vpn')
                 for filename in ('LICENSE','NOTICE'):shutil.copyfile(source/filename,vpn_directory/filename)
                 vpn_bundles.append(vpn_directory)
             # CLI-only archive reuses the already-built hakopod binary; never
