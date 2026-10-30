@@ -123,15 +123,15 @@ try {
       page = await context.newPage()
       page.on('pageerror', error => errors.push({ label, message: error.message }))
       await page.goto(`http://127.0.0.1:4194/templates/outpost?theme=${theme}`)
-      await page.getByRole('heading', { name: 'Configure Outpost', exact: true }).waitFor()
-      await page.getByRole('textbox', { name: 'Application name', exact: true }).fill('fixture-outpost')
+      await page.getByRole('heading', { name: 'Outpost', exact: true, level: 1 }).waitFor()
+      await page.getByRole('textbox', { name: /^Application name\b/ }).fill('fixture-outpost')
       await page.getByRole('combobox', { name: 'Target architecture', exact: true }).click()
       await page.getByRole('option', { name: 'Linux ARM64', exact: true }).click()
       if (database === 'external') {
         await page.getByRole('combobox', { name: 'PostgreSQL', exact: true }).click()
         await page.getByRole('option', { name: 'Existing PostgreSQL', exact: true }).click()
       }
-      await page.getByRole('button', { name: 'Review template', exact: true }).click()
+      await page.getByRole('button', { name: 'Review Outpost', exact: true }).click()
       await loaded()
       const command = await showDiff('command', migration.command)
       const commandBounds = await command.boundingBox()
