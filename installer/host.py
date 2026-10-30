@@ -95,14 +95,7 @@ def config(path):
         if not low <= c[key] <= high: fail(f'{key} must be {low}–{high}')
     if c['deployment_mode'] not in ('self-hosted', 'managed-cloud'):
         fail('deployment_mode must be self-hosted or managed-cloud')
-    ports = c['public_tcp_ports']
-    if c['deployment_mode'] == 'managed-cloud' and ports:
-        fail('managed-cloud does not support public_tcp_ports; private TCP service ports remain available')
-    reserved = {22, 53, 80, 443, 1024, 1042, 2379, 2380, 6060, 6443, 8080, 8082, 8443, 10250, c['dashboard_port']}
-    if len(ports) > 256 or any(type(port) is not int or not 1 <= port <= 65535 or port in reserved for port in ports):
-        fail('public_tcp_ports requires at most 256 non-platform TCP ports between 1 and 65535')
-    if len(set(ports)) != len(ports): fail('public_tcp_ports must not contain duplicates')
-    c['public_tcp_ports'] = sorted(ports)
+    c['public_tcp_ports'] = public_tcp_ports(c, c['public_tcp_ports'])
     if c['dashboard_port'] in (6443, 10250, 8080, 8082): fail('dashboard_port conflicts with a platform port')
     origin = urlsplit(c['dashboard_origin'])
     try: port = origin.port
@@ -139,6 +132,26 @@ def config(path):
     c['oauth'] = oauth.configured(c['oauth'])
     database.validate_config(c, inspect_files=False)
     return c
+
+def public_tcp_ports(c, ports):
+    """Validate an installation's public TCP allowlist; also used after install."""
+    if c['deployment_mode'] == 'managed-cloud' and ports:
+        fail('managed-cloud does not support public_tcp_ports; private TCP service ports remain available')
+    reserved = {22, 53, 80, 443, 1024, 1042, 2379, 2380, 6060, 6443, 8080, 8082, 8443, 10250, c['dashboard_port']}
+    if len(ports) > 256 or any(type(port) is not int or not 1 <= port <= 65535 or port in reserved for port in ports):
+        fail('public_tcp_ports requires at most 256 non-platform TCP ports between 1 and 65535')
+    if len(set(ports)) != len(ports): fail('public_tcp_ports must not contain duplicates')
+    return sorted(ports)
+
+def port_free(port):
+    for family, address in ((socket.AF_INET, '0.0.0.0'), (socket.AF_INET6, '::')):
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as s:
+                if family == socket.AF_INET6: s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                s.bind((address, port))
+        except OSError as error:
+            if error.errno not in (97, 99): return False
+    return True
 
 def architecture(value=None):
     value = value or platform.machine()
@@ -302,13 +315,7 @@ def preflight(c, arch, resume, directory):
         for user in ('hakopod-api', 'hakopod-dashboard'):
             if subprocess.run(['getent', 'passwd', user], stdout=subprocess.DEVNULL).returncode == 0: fail('Refusing existing service account: ' + user)
         for port in (80, 443, 6443, 8080, 8082, 10250, c['dashboard_port'], *c['public_tcp_ports']):
-            for family, address in ((socket.AF_INET, '0.0.0.0'), (socket.AF_INET6, '::')):
-                try:
-                    with socket.socket(family, socket.SOCK_STREAM) as s:
-                        if family == socket.AF_INET6: s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-                        s.bind((address, port))
-                except OSError as error:
-                    if error.errno not in (97, 99): fail(f'Port{port} is already in use')
+            if not port_free(port): fail(f'Port{port} is already in use')
         routes = json.loads(subprocess.check_output(['ip', '-j', 'route', 'show', 'table', 'all'], text=True))
         for route in routes:
             if route.get('dst', 'default') == 'default': continue

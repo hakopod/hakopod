@@ -82,23 +82,69 @@ def install_vpn_agent(machine=None, agent=AGENT, units=UNITS):
     if not wireguard:
         print('The wireguard kernel module is not available: the firewall, Tailscale, OpenVPN and IPsec work, the WireGuard connector and server do not.')
 
-def main(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False, adopt_node=None):
+CONFIG=Path('/etc/hakopod/config.json')
+API_ENV=Path('/etc/hakopod/api.env')
+HELM=['/opt/hakopod/tools/helm','--kubeconfig=/etc/hakopod/admin-kubeconfig']
+
+def set_public_tcp_ports(requested, config_path=CONFIG, api_env=API_ENV, chart=None, run_command=None, read_json=None, port_free=None, output=None):
+    """Change the public TCP allowlist of a completed installation: HAProxy host
+    ports, the API's HAKOPOD_PUBLIC_TCP_PORTS and config.json move together.
+    A port still claimed by an application is never removed."""
+    import host
+    run_command=run_command or run
+    read_json=read_json or read
+    port_free=port_free or host.port_free
+    output=output or subprocess.check_output
+    chart=chart or Path(__file__).resolve().parents[1]/'deploy/charts/hakopod-platform'
+    config=json.loads(config_path.read_text())
+    ports=host.public_tcp_ports(config,requested)
+    current=set(config.get('public_tcp_ports',[]))
+    claimed={int(item['metadata']['name'].rsplit('-',1)[1]) for item in read_json('-n','haproxy-controller','get','configmaps').get('items',[])
+             if item['metadata']['name'].startswith('hakopod-tcp-port-') and item['metadata']['name'].rsplit('-',1)[1].isdigit()}
+    blocked=sorted((current-set(ports))&claimed)
+    if blocked:
+        raise ValueError('Ports still claimed by an application: '+', '.join(map(str,blocked))+'. Remove their public_tcp listeners and retire the claim first; see docs/public-tcp.md.')
+    busy=[port for port in sorted(set(ports)-current) if not port_free(port)]
+    if busy:
+        raise ValueError('Ports already in use on this host: '+', '.join(map(str,busy)))
+    if ports==sorted(current):
+        print('Public TCP ports are already '+(', '.join(map(str,ports)) or 'empty')+'. Nothing changed.')
+        return
+    if not (chart/'Chart.yaml').is_file():
+        raise ValueError('Run this from the installer kit of the installed release: its deploy/charts directory is missing')
+    values=json.loads(output([*HELM,'-n','haproxy-controller','get','values','hakopod-ingress','-o','json'],timeout=30,text=True))
+    values.setdefault('kubernetes-ingress',{}).setdefault('controller',{}).setdefault('service',{})['tcpPorts']=[{'name':'tcp-'+str(port),'port':port,'targetPort':port} for port in ports]
+    with tempfile.TemporaryDirectory(prefix='hakopod-tcp-') as tmp:
+        path=Path(tmp)/'haproxy.json';path.write_text(json.dumps(values))
+        run_command(*HELM,'upgrade','hakopod-ingress',str(chart),'--namespace','haproxy-controller','--values',str(path),'--wait','--timeout','3m')
+    listed=','.join(map(str,ports))
+    lines=[line for line in api_env.read_text().splitlines() if not line.startswith('HAKOPOD_PUBLIC_TCP_PORTS=')]
+    host.write(api_env,'\n'.join(lines+['HAKOPOD_PUBLIC_TCP_PORTS='+json.dumps(listed)])+'\n')
+    config['public_tcp_ports']=ports
+    host.write(config_path,json.dumps(config,indent=2)+'\n')
+    run_command('systemctl','restart','hakopod-api')
+    print('Public TCP ports: '+(listed or 'none')+'. Open the same ports in your cloud firewall and host firewall; Hakopod does not change them. '
+          'config.json now records these ports, so installer --resume no longer applies; use maintenance for upgrades.')
+
+def main(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False, adopt_node=None, ports=None):
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
     os.umask(0o077)
     # This broader lock also covers the ordinary qualification probe, after
     # runtime installation hands off its separate local maintenance lock.
     with open("/run/lock/hakopod-install.lock","a") as lock:
         fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
-        options = {key: value for key, value in {'engines': engines, 'plan_path': plan_path, 'review_path': review_path, 'runtime_class_only': runtime_class_only or None, 'adopt_node': adopt_node}.items() if value is not None}
+        options = {key: value for key, value in {'engines': engines, 'plan_path': plan_path, 'review_path': review_path, 'runtime_class_only': runtime_class_only or None, 'adopt_node': adopt_node, 'ports': ports}.items() if value is not None}
         return apply_module(module, workspace_profile, **options)
 
-def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False, adopt_node=None):
+def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None, review_path=None, runtime_class_only=False, adopt_node=None, ports=None):
     if (workspace_profile is not None or runtime_class_only or adopt_node) and module != 'managed-actions':
         raise ValueError('Workspace profiles, --runtime-class-only and --adopt-node apply only to Managed Actions')
     if sum((workspace_profile is not None, runtime_class_only, adopt_node is not None)) > 1:
         raise ValueError('Choose one of --workspace-profile, --runtime-class-only or --adopt-node')
     if any(value is not None for value in (engines, plan_path, review_path)) and module != 'managed-databases':
         raise ValueError('Engine selection and reviewed plans apply only to Managed Databases')
+    if (ports is None) != (module != 'public-tcp'):
+        raise ValueError('public-tcp requires --ports, and --ports applies only to public-tcp')
     if os.geteuid()!=0:raise ValueError('Run module setup as root')
     os.umask(0o077)
     config=json.loads(Path('/etc/hakopod/config.json').read_text())
@@ -108,6 +154,9 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
     root=Path(__file__).resolve().parent/'modules'
     if not root.is_dir():root=Path(__file__).resolve().parents[1]/'deploy'
     ident=marker['id']
+    if module=='public-tcp':
+        set_public_tcp_ports(ports)
+        return
     if module=='managed-databases':
         from database_controllers import make_plan, apply_plan, write_plan
         if bool(plan_path)==bool(review_path) or not engines:
@@ -170,15 +219,21 @@ def apply_module(module, workspace_profile=None, *, engines=None, plan_path=None
     print(module+' module is ready. Original installer resume inputs are unchanged.')
 
 def cli(argv=None):
-    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions','managed-databases','private-access'])
+    parser=argparse.ArgumentParser();parser.add_argument('module',choices=['storage','cert-manager','managed-actions','managed-databases','private-access','public-tcp'])
     parser.add_argument('--workspace-profile', choices=['vfs', 'shared-overlay2-v1'])
     parser.add_argument('--adopt-node', metavar='NODE', help='Managed Actions: mark a joined K3s agent as part of this installation')
     parser.add_argument('--runtime-class-only', action='store_true', help='Managed Actions: publish the RuntimeClass for adopted agents without preparing or restarting this server')
     parser.add_argument('--engines', nargs='+', choices=ENGINES)
     parser.add_argument('--plan'); parser.add_argument('--apply-reviewed-plan')
+    parser.add_argument('--ports', help='public-tcp: the complete comma-separated list of public TCP ports, such as 587,465; an empty value removes all')
     args=parser.parse_args(argv)
+    ports=None
+    if args.ports is not None:
+        try: ports=[int(value) for value in args.ports.split(',') if value.strip()]
+        except ValueError: parser.error('--ports takes comma-separated port numbers')
     main(args.module, args.workspace_profile, engines=args.engines, plan_path=args.plan, review_path=args.apply_reviewed_plan,
          **({'runtime_class_only': True} if args.runtime_class_only else {}),
-         **({'adopt_node': args.adopt_node} if args.adopt_node else {}))
+         **({'adopt_node': args.adopt_node} if args.adopt_node else {}),
+         **({'ports': ports} if ports is not None else {}))
 
 if __name__=='__main__':cli()
