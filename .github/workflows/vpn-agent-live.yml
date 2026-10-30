@@ -1,7 +1,7 @@
 name: VPN agent live
 # Runs the hakopod-vpn agent against a real kernel: nftables, WireGuard,
 # OpenVPN and strongSwan, with network namespaces standing in for devices
-# and remote VPNs. Tailscale is not covered: it needs a coordination server.
+# and remote VPNs. Tailscale runs in its own job against a local Headscale.
 on:
   pull_request:
     paths:
@@ -37,3 +37,37 @@ jobs:
       - name: Live tests as root
         working-directory: agent/hakopod-vpn
         run: sudo env "PATH=$PATH" HOME="$HOME" GOFLAGS=-buildvcs=false go test -tags live -run Live -count=1 -v ./internal/hostvpn
+  tailscale:
+    # A separate job: the Tailscale connector takes over the machine's tailscaled.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      HEADSCALE_VERSION: 0.29.5
+      HEADSCALE_SHA256: e979d27fe17d924d33bb6ab7504f6338d0635989a0cfdcfbc0ceb637dbcbe980
+      TAILSCALE_VERSION: 1.102.4
+      TAILSCALE_SHA256: 50748df1045e60b5b695f19f4c56b0da36c019948b440fb456b6584a50f0d8b9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: agent/hakopod-vpn/go.mod
+          cache-dependency-path: agent/hakopod-vpn/go.sum
+      - name: Install Headscale and Tailscale
+        run: |
+          curl -fsSL -o headscale "https://github.com/juanfont/headscale/releases/download/v${HEADSCALE_VERSION}/headscale_${HEADSCALE_VERSION}_linux_amd64"
+          echo "${HEADSCALE_SHA256}  headscale" | sha256sum --check --strict
+          sudo install -m 0755 headscale /usr/local/bin/headscale
+          curl -fsSL -o tailscale.tgz "https://pkgs.tailscale.com/stable/tailscale_${TAILSCALE_VERSION}_amd64.tgz"
+          echo "${TAILSCALE_SHA256}  tailscale.tgz" | sha256sum --check --strict
+          tar xzf tailscale.tgz
+          d="tailscale_${TAILSCALE_VERSION}_amd64"
+          sudo install -m 0755 "$d/tailscale" /usr/bin/tailscale
+          sudo install -m 0755 "$d/tailscaled" /usr/sbin/tailscaled
+          sudo install -m 0644 "$d/systemd/tailscaled.service" /etc/systemd/system/tailscaled.service
+          sudo install -m 0644 "$d/systemd/tailscaled.defaults" /etc/default/tailscaled
+          sudo systemctl daemon-reload
+      - name: Tailscale connector against Headscale
+        working-directory: agent/hakopod-vpn
+        run: sudo env "PATH=$PATH" HOME="$HOME" HAKOPOD_LIVE_TAILSCALE=1 GOFLAGS=-buildvcs=false go test -tags live -run LiveTailscale -count=1 -v ./internal/hostvpn

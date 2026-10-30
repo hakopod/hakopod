@@ -470,3 +470,145 @@ secrets { ike-gw { id-1 = vpn.example.com
 		t.Fatal("removing the connector left the swanctl file with its key")
 	}
 }
+
+// The Tailscale connector needs a coordination server, so this test runs only
+// where the workflow has installed Headscale and Tailscale and set
+// HAKOPOD_LIVE_TAILSCALE. It takes over the machine's tailscaled.
+func TestLiveTailscaleConnectorJoinsHeadscale(t *testing.T) {
+	if os.Getenv("HAKOPOD_LIVE_TAILSCALE") == "" {
+		t.Skip("set HAKOPOD_LIVE_TAILSCALE on a machine whose tailscaled may be taken over")
+	}
+	a := newLiveAgent(t)
+	dir := t.TempDir()
+	// Headscale serves HTTPS on headscale.test with a CA the system trusts.
+	sh(t, "openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-days", "1",
+		"-subj", "/CN=headscale.test", "-addext", "subjectAltName=DNS:headscale.test",
+		"-keyout", filepath.Join(dir, "key.pem"), "-out", filepath.Join(dir, "cert.pem"))
+	sh(t, "cp", filepath.Join(dir, "cert.pem"), "/usr/local/share/ca-certificates/hakopod-live-headscale.crt")
+	sh(t, "update-ca-certificates")
+	t.Cleanup(func() {
+		os.Remove("/usr/local/share/ca-certificates/hakopod-live-headscale.crt")
+		try("update-ca-certificates", "--fresh")
+	})
+	hosts, _ := os.ReadFile("/etc/hosts")
+	os.WriteFile("/etc/hosts", append(hosts, []byte("127.0.0.1 headscale.test\n")...), 0o644)
+	t.Cleanup(func() { os.WriteFile("/etc/hosts", hosts, 0o644) })
+	config := fmt.Sprintf(`server_url: https://headscale.test:8443
+listen_addr: 127.0.0.1:8443
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: 127.0.0.1:50443
+tls_cert_path: %[1]s/cert.pem
+tls_key_path: %[1]s/key.pem
+noise:
+  private_key_path: %[1]s/noise.key
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+derp:
+  server:
+    enabled: true
+    region_id: 999
+    region_code: live
+    region_name: Live
+    stun_listen_addr: 127.0.0.1:3478
+    private_key_path: %[1]s/derp.key
+    automatically_add_embedded_derp_region: true
+    ipv4: 127.0.0.1
+  urls: []
+  paths: []
+  auto_update_enabled: false
+disable_check_updates: true
+database:
+  type: sqlite
+  sqlite:
+    path: %[1]s/db.sqlite
+dns:
+  magic_dns: false
+  override_local_dns: false
+unix_socket: %[1]s/headscale.sock
+unix_socket_permission: "0770"
+`, dir)
+	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(config), 0o600)
+	headscale := func(args ...string) string {
+		return sh(t, append([]string{"headscale", "--config", filepath.Join(dir, "config.yaml")}, args...)...)
+	}
+	server := exec.Command("headscale", "--config", filepath.Join(dir, "config.yaml"), "serve")
+	log, _ := os.Create(filepath.Join(dir, "headscale.log"))
+	server.Stdout, server.Stderr = log, log
+	if err := server.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { server.Process.Kill(); server.Wait() })
+	deadline := time.Now().Add(20 * time.Second)
+	for try("headscale", "--config", filepath.Join(dir, "config.yaml"), "users", "list") != nil {
+		if time.Now().After(deadline) {
+			raw, _ := os.ReadFile(filepath.Join(dir, "headscale.log"))
+			t.Fatalf("Headscale did not start:\n%s", raw)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	headscale("users", "create", "live")
+	var users []struct {
+		ID   json.Number `json:"id"`
+		Name string      `json:"name"`
+	}
+	json.Unmarshal([]byte(headscale("users", "list", "-o", "json")), &users)
+	if len(users) != 1 {
+		t.Fatalf("users = %+v", users)
+	}
+	var key struct {
+		Key string `json:"key"`
+	}
+	json.Unmarshal([]byte(headscale("preauthkeys", "create", "--user", users[0].ID.String(), "--reusable", "--expiration", "1h", "-o", "json")), &key)
+	if len(key.Key) < 16 {
+		t.Fatalf("no pre-auth key: %+v", key)
+	}
+	before := sh(t, "iptables-save")
+	state, _ := json.Marshal(map[string]any{"hostname": "hakopod-live", "tags": []string{}, "login_server": "https://headscale.test:8443", "auth_key": key.Key})
+	tailscale := `{"firewall":{"enabled":false,"allow_cidrs":[],"tunnel_only":false},"vpn":null,"vpn_server":null,"openvpn":null,"ipsec":null,"tailscale":` + string(state) + `}`
+	t.Cleanup(func() {
+		a.sync(t, `{"firewall":{"enabled":false,"allow_cidrs":[],"tunnel_only":false},"vpn":null,"vpn_server":null,"tailscale":null,"openvpn":null,"ipsec":null}`)
+	})
+	var report struct {
+		Connected bool   `json:"connected"`
+		Address   string `json:"address"`
+		Error     string `json:"error"`
+	}
+	a.mu.Lock()
+	a.state = tailscale
+	a.mu.Unlock()
+	deadline = time.Now().Add(60 * time.Second)
+	for {
+		// Joining can take a few ticks; a failing tick is retried like the timer would.
+		a.Sync("live")
+		json.Unmarshal([]byte(a.report("access-connector-report")), &report)
+		if report.Connected {
+			break
+		}
+		if time.Now().After(deadline) {
+			raw, _ := os.ReadFile(filepath.Join(dir, "headscale.log"))
+			t.Fatalf("the Tailscale connector did not join Headscale: %s\n%s", a.report("access-connector-report"), raw)
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if !strings.HasPrefix(report.Address, "100.") {
+		t.Fatalf("the tailnet address = %q", report.Address)
+	}
+	if !strings.Contains(headscale("nodes", "list"), "hakopod-live") {
+		t.Fatal("Headscale does not list the server")
+	}
+	// The agent must leave the host's firewall to K3s.
+	if after := sh(t, "iptables-save"); strings.Count(after, "ts-") > strings.Count(before, "ts-") {
+		t.Fatalf("tailscaled changed netfilter:\n%s", after)
+	}
+	a.sync(t, `{"firewall":{"enabled":false,"allow_cidrs":[],"tunnel_only":false},"vpn":null,"vpn_server":null,"tailscale":null,"openvpn":null,"ipsec":null}`)
+	var status struct {
+		BackendState string
+	}
+	raw, _ := exec.Command("tailscale", "status", "--json").Output()
+	json.Unmarshal(raw, &status)
+	if status.BackendState == "Running" {
+		t.Fatal("removing the connector left the server on the tailnet")
+	}
+}
