@@ -66,6 +66,24 @@ Local` to preserve source addresses. NodePort exposes its assigned node port,
 not necessarily the listener's port; the external load balancer or NAT must map
 587 to it explicitly. Environment configuration alone never opens a port.
 
+### Changing ports after installation
+
+From the installer kit of the installed release, give the complete new list:
+
+```sh
+sudo python3 ./installer/modules.py public-tcp --ports 587,465
+```
+
+An empty `--ports ''` removes them all. The command checks the same limits as
+the installer, refuses to remove a port an application still claims (its
+`hakopod-tcp-port-PORT` reservation) and refuses a new port something on the
+host already listens on. It then upgrades the `hakopod-ingress` release with the
+new host ports, updates `HAKOPOD_PUBLIC_TCP_PORTS` in `/etc/hakopod/api.env` and
+`/etc/hakopod/config.json`, and restarts the API. The HAProxy controller uses
+the `Recreate` strategy, so HTTP ingress pauses briefly while it restarts.
+Because `config.json` changes, installer `--resume` no longer applies to that
+host; upgrades use maintenance as usual.
+
 Allow the same port in the cloud security group, host firewall and any external
 load balancer. Configure the DNS record to the public ingress address. Hakopod
 does not change cloud firewalls automatically. Platforms without the HAProxy v3
