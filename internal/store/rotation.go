@@ -34,11 +34,11 @@ func (s *Store) RotateKey(ctx context.Context, p Principal, oldID string, expire
 		expiresAt = &at
 	}
 	k := Key{ID: id, IdentityID: owner, Name: in.Name, Prefix: "hp_" + id[:8], Project: in.Project, Environment: in.Environment, Application: in.Application, Permissions: in.Permissions, ExpiresAt: expiresAt, NeverExpires: neverExpires, CreatedAt: time.Now().UTC()}
-	_, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,never_expires) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", id, owner, in.Name, digest, k.Prefix, in.Project, in.Environment, in.Application, in.Permissions, expiresAt, neverExpires)
+	_, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,never_expires,admin_never_expires) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)", id, owner, in.Name, digest, k.Prefix, in.Project, in.Environment, in.Application, in.Permissions, expiresAt, neverExpires)
 	if err != nil {
 		return Key{}, "", err
 	}
-	if _, err = tx.Exec(ctx, "UPDATE api_keys SET expires_at=COALESCE(LEAST(expires_at,now()+interval '15 minutes'),now()+interval '15 minutes'),never_expires=false WHERE id=$1", oldID); err != nil {
+	if _, err = tx.Exec(ctx, "UPDATE api_keys SET expires_at=COALESCE(LEAST(expires_at,now()+interval '15 minutes'),now()+interval '15 minutes'),never_expires=false,admin_never_expires=false WHERE id=$1", oldID); err != nil {
 		return Key{}, "", err
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'key.rotate',$3,$4)", p.ID, p.KeyID, oldID, JSON(map[string]any{"replacement_id": id, "overlap_seconds": 900})); err != nil {

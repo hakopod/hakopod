@@ -34,7 +34,7 @@ func (s *Store) managedPlatformAuthorityTx(ctx context.Context, tx pgx.Tx, keyID
 	err := tx.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id)))
 		FROM api_keys k JOIN identities i ON i.id=k.identity_id
 		WHERE k.id=$1 AND k.revoked_at IS NULL
-		AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine'))
+		AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine' AND (k.admin_never_expires OR EXISTS(SELECT 1 FROM automation_key_scopes s WHERE s.key_id=k.id))))
 		AND NOT i.disabled
 		FOR SHARE OF k,i`, keyID).Scan(
 		&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment,

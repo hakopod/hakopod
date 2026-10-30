@@ -12,7 +12,7 @@ func TestSelfHostedAdministratorCanCreateANeverExpiringKey(t *testing.T) {
 	h := newAuthHarness(t, nil)
 	ctx := context.Background()
 	owner := h.owner()
-	created := h.call("POST", "/keys", owner, map[string]any{"name": "ci", "permissions": []string{"deployments:read"}, "never_expires": true}, 201)
+	created := h.call("POST", "/keys", owner, map[string]any{"name": "ci", "permissions": []string{"admin"}, "never_expires": true}, 201)
 	metadata := created["metadata"].(map[string]any)
 	if metadata["never_expires"] != true || metadata["expires_at"] != nil {
 		t.Fatalf("metadata = %v", metadata)
@@ -42,17 +42,17 @@ func TestSelfHostedAdministratorCanCreateANeverExpiringKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = h.db.CreateKey(ctx, store.Principal{ID: p.ID, Admin: true, CredentialType: "cli"}, store.KeyInput{Name: "cli", Permissions: []string{"deployments:read"}, NeverExpires: true}); err == nil {
+	if _, _, err = h.db.CreateKey(ctx, store.Principal{ID: p.ID, Admin: true, CredentialType: "cli"}, store.KeyInput{Name: "cli", Permissions: []string{"admin"}, NeverExpires: true}); err == nil {
 		t.Fatal("a CLI principal created a never-expiring key")
 	}
 	h.call("POST", "/keys", cli.Token, map[string]any{"name": "cli", "permissions": []string{"deployments:read"}, "never_expires": true}, 403)
 	// Both modes at once are refused.
-	h.call("POST", "/keys", owner, map[string]any{"name": "both", "permissions": []string{"deployments:read"}, "never_expires": true, "expires_at": time.Now().Add(time.Hour)}, 400)
+	h.call("POST", "/keys", owner, map[string]any{"name": "both", "permissions": []string{"admin"}, "never_expires": true, "expires_at": time.Now().Add(time.Hour)}, 400)
 
 	// Managed Cloud keeps never-expiring keys to its automation issuer.
 	h.db.ManagedCloud = true
 	defer func() { h.db.ManagedCloud = false }()
-	if _, _, err = h.db.CreateKey(ctx, p, store.KeyInput{Name: "cloud", Permissions: []string{"deployments:read"}, NeverExpires: true}); err == nil {
+	if _, _, err = h.db.CreateKey(ctx, p, store.KeyInput{Name: "cloud", Permissions: []string{"admin"}, NeverExpires: true}); err == nil {
 		t.Fatal("a Cloud installation created a never-expiring key outside the issuer")
 	}
 }

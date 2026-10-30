@@ -126,11 +126,16 @@ func (s *Server) registerPodExecRoutes(m *http.ServeMux) {
 func (s *Server) executePodCommand(w http.ResponseWriter, r *http.Request) {
 	// Anyone who can see the application gets a specific answer when the
 	// execution grant is missing, instead of a generic forbidden.
-	a, ok := s.authorizedApp(w, r, r.PathValue("id"), "deployments:read")
-	if !ok {
+	a, err := s.Store.Application(r.Context(), r.PathValue("id"))
+	if err != nil {
+		failure(w, err)
 		return
 	}
 	p := who(r)
+	if !p.Allows("deployments:read", a.Project, a.Environment, a.Name) && !p.Allows(podExecPermission, a.Project, a.Environment, a.Name) {
+		failure(w, store.ErrForbidden)
+		return
+	}
 	if !podExecAllowed(p, a) {
 		problem(w, 403, "pod_exec_grant_required", "Pod commands need the pods:exec permission. CLI sessions get it with hakopod login --allow-exec; API keys need it granted explicitly.")
 		return
