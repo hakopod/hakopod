@@ -23,6 +23,15 @@ async function loaded({ allowError = false, allowEmpty = false } = {}) {
     .map(animation => animation.finished)))
 }
 
+// Radix closes an open tooltip on scroll, so let any scroll from filling a
+// field finish before keyboard focus opens one.
+async function settleScroll() {
+  await page.waitForFunction(() => new Promise(resolve => {
+    let last = scrollY, still = 0
+    const tick = () => { still = scrollY === last ? still + 1 : 0; last = scrollY; still >= 10 ? resolve(true) : requestAnimationFrame(tick) }
+    requestAnimationFrame(tick)
+  }))
+}
 async function capture(state, options = {}) {
   await loaded(options)
   const geometry = await page.evaluate(() => {
@@ -35,7 +44,8 @@ async function capture(state, options = {}) {
       inset: getComputedStyle(content).paddingLeft,
       content: rect(content),
       heading: heading && { ...rect(heading), paddingTop: getComputedStyle(heading).paddingTop, paddingBottom: getComputedStyle(heading).paddingBottom },
-      title: document.querySelector('h1') && rect(document.querySelector('h1')),
+      // The title row starts on the inset; a template's icon may precede its h1.
+      title: (document.querySelector('.hako-page-heading-title') || document.querySelector('h1')) && rect(document.querySelector('.hako-page-heading-title') || document.querySelector('h1')),
       h1: document.querySelectorAll('h1').length,
       nativeSelects: document.querySelectorAll('select:not([aria-hidden=true])').length,
       brackets: [...document.querySelectorAll('.brackets')].filter(e => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width).length,
@@ -87,7 +97,7 @@ async function select(name, choice, touch = false) {
 }
 
 async function review(database, storage) {
-  await page.getByRole('button', { name: 'Review template', exact: true }).click()
+  await page.getByRole('button', { name: 'Review Mathesar', exact: true }).click()
   await page.getByRole('heading', { name: 'Review fixture-mathesar', exact: true }).waitFor()
   await page.getByRole('heading', { name: 'Required secrets', exact: true }).waitFor()
   await page.waitForFunction(() => window.__fixture.requests.some(request => request.path === '/api/secrets'))
@@ -101,7 +111,7 @@ async function review(database, storage) {
   assert.equal(media.access_mode, storage === 'local' ? 'ReadWriteOnce' : 'ReadWriteMany')
   assert.equal(media.storage_class || '', storage === 'local' ? '' : 'fixture-rwx')
   assert.deepEqual((await page.locator('.service-summary-panel .settings-list-row strong').allTextContents()).sort(), ['database-password', 'secret-key'])
-  assert.equal(await page.getByRole('button', { name: 'Deploy template', exact: true }).isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: 'Deploy fixture-mathesar', exact: true }).isDisabled(), true)
   await capture(`${database}-${storage}-review`)
   const summary = page.locator('.config-details > summary')
   if (page.viewportSize().width < 640) await summary.tap()
@@ -115,7 +125,7 @@ async function review(database, storage) {
   assert.equal(await canonical.evaluate(element => getComputedStyle(element).outlineStyle), 'solid')
   results.push({ label, database, storage, planRequest: request, media, canonicalTextMatchesPlan: true })
   await page.getByRole('button', { name: 'Back to configuration', exact: true }).click()
-  await page.getByRole('heading', { name: 'Configure Mathesar', exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Mathesar', exact: true, level: 1 }).waitFor()
 }
 
 try {
@@ -127,24 +137,23 @@ try {
     try {
       await page.goto(`http://127.0.0.1:4195/templates?theme=${theme}&q=mathesar`)
       await page.getByRole('heading', { name: 'Mathesar', exact: true }).waitFor()
-      const card = page.locator('.catalog-card').filter({ has: page.getByRole('heading', { name: 'Mathesar', exact: true }) })
+      const card = page.locator('.template-card').filter({ has: page.getByRole('heading', { name: 'Mathesar', exact: true }) })
       assert.equal(await card.locator('img').evaluate(element => element.complete && element.naturalWidth > 0), true)
       await capture('catalog')
-      await card.focus()
+      // The card's title link opens the configuration page, which carries the template summary.
+      await card.getByRole('link', { name: 'Mathesar', exact: true }).focus()
       await page.keyboard.press('Enter')
-      await page.getByRole('dialog', { name: 'Mathesar', exact: true }).waitFor()
-      await page.getByRole('heading', { name: 'Before you deploy', exact: true }).waitFor()
+      await page.getByRole('heading', { name: 'Mathesar', exact: true, level: 1 }).waitFor()
+      await page.getByText('Before you deploy', { exact: true }).waitFor()
       await capture('inspector')
-      await page.keyboard.press('Escape')
-      await page.getByRole('dialog').waitFor({ state: 'hidden' })
-      await page.waitForFunction(() => document.activeElement?.matches('.catalog-card'))
       await page.goto(`http://127.0.0.1:4195/templates/mathesar?theme=${theme}`)
-      await page.getByRole('heading', { name: 'Configure Mathesar', exact: true }).waitFor()
-      const name = page.getByRole('textbox', { name: 'Application name', exact: true })
+      await page.getByRole('heading', { name: 'Mathesar', exact: true, level: 1 }).waitFor()
+      const name = page.getByRole('textbox', { name: /^Application name\b/ })
       await name.fill('fixture-mathesar')
       // Exercise help while entering the form, before review moves the viewport.
       const help = page.getByRole('button', { name: 'About Application configuration', exact: true })
-      await page.keyboard.press('Shift+Tab')
+      await settleScroll()
+    await page.keyboard.press('Shift+Tab')
       assert.equal(await help.evaluate(element => element === document.activeElement), true)
       await page.getByRole('tooltip').waitFor()
       await page.keyboard.press('Escape')
@@ -167,7 +176,7 @@ try {
       const storageMode = page.getByRole('combobox', { name: 'Media storage', exact: true })
       assert.match(await storageMode.textContent(), /Automatic local storage/)
       assert.equal(await page.locator('#template-config-media-storage-class').count(), 0)
-      assert.equal(await page.getByRole('button', { name: 'Review template', exact: true }).isEnabled(), true)
+      assert.equal(await page.getByRole('button', { name: 'Review Mathesar', exact: true }).isEnabled(), true)
       const modeHelp = page.locator('#template-help-media-storage-mode')
       assert.match(await modeHelp.textContent(), /same node|one node/i)
       await capture('automatic-configuration')
@@ -188,7 +197,7 @@ try {
       const storageClass = page.locator('#template-config-media-storage-class')
       await storageClass.waitFor()
       assert.equal(await storageClass.getAttribute('required'), '')
-      assert.equal(await page.getByRole('button', { name: 'Review template', exact: true }).isDisabled(), true)
+      assert.equal(await page.getByRole('button', { name: 'Review Mathesar', exact: true }).isDisabled(), true)
       await page.keyboard.press('Tab')
       assert.equal(await storageClass.evaluate(element => element === document.activeElement), true)
       assert.equal(await storageClass.evaluate(element => getComputedStyle(element).outlineStyle), 'solid')
@@ -205,7 +214,7 @@ try {
       await page.getByRole('textbox', { name: 'Database host', exact: true }).fill('postgres.example.invalid')
       await capture('external-automatic-configuration')
       await page.evaluate(() => window.__fixture.planMode = 'error')
-      await page.getByRole('button', { name: 'Review template', exact: true }).click()
+      await page.getByRole('button', { name: 'Review Mathesar', exact: true }).click()
       await page.getByText('Development fixture: review request failed. Your entries are preserved.', { exact: true }).first().waitFor()
       assert.equal(await page.getByRole('textbox', { name: 'Database host', exact: true }).inputValue(), 'postgres.example.invalid')
       assert.match(await storageMode.textContent(), /Automatic local storage/)

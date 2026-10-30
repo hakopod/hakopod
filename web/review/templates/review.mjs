@@ -21,6 +21,15 @@ async function stable({ allowEmpty = false, allowError = false } = {}) {
     .map(animation => animation.finished)))
   assert.equal(await page.evaluate(() => window.__fixture.requests.some(request => !request.allowed)), false)
 }
+// Radix closes an open tooltip on scroll, so let any scroll from filling a
+// field finish before keyboard focus opens one.
+async function settleScroll() {
+  await page.waitForFunction(() => new Promise(resolve => {
+    let last = scrollY, still = 0
+    const tick = () => { still = scrollY === last ? still + 1 : 0; last = scrollY; still >= 10 ? resolve(true) : requestAnimationFrame(tick) }
+    requestAnimationFrame(tick)
+  }))
+}
 async function capture(state, options = {}) {
   await stable(options)
   const geometry = await page.evaluate(() => {
@@ -33,7 +42,8 @@ async function capture(state, options = {}) {
       inset: getComputedStyle(content).paddingLeft,
       content: rect(content),
       heading: heading && { ...rect(heading), paddingTop: getComputedStyle(heading).paddingTop, paddingBottom: getComputedStyle(heading).paddingBottom },
-      title: document.querySelector('h1') && rect(document.querySelector('h1')),
+      // The title row starts on the inset; a template's icon may precede its h1.
+      title: (document.querySelector('.hako-page-heading-title') || document.querySelector('h1')) && rect(document.querySelector('.hako-page-heading-title') || document.querySelector('h1')),
       h1: document.querySelectorAll('h1').length,
       brackets: [...document.querySelectorAll('.brackets')].filter(e => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width).length,
       fields: [...document.querySelectorAll('.form-card input,.form-card button[role="combobox"],.service-summary-panel input')].filter(visible).map(e => ({ name: e.getAttribute('aria-label') || e.id || e.type, ...rect(e) })),
@@ -89,26 +99,24 @@ try {
     page.on('pageerror', error => errors.push({ label, message: error.message }))
     await page.goto(`http://127.0.0.1:4194/templates?theme=${theme}&q=outpost`)
     await page.getByRole('heading', { name: 'Outpost', exact: true }).waitFor()
-    const card = page.locator('.catalog-card').filter({ has: page.getByRole('heading', { name: 'Outpost', exact: true }) })
+    const card = page.locator('.template-card').filter({ has: page.getByRole('heading', { name: 'Outpost', exact: true }) })
     assert.equal(await card.locator('img').evaluate(e => e.complete && e.naturalWidth > 0), true)
     await capture('catalog')
-    await card.focus()
+    // The card's title link opens the configuration page, which carries the template summary.
+    await card.getByRole('link', { name: 'Outpost', exact: true }).focus()
     await page.keyboard.press('Enter')
-    await page.getByRole('dialog', { name: 'Outpost', exact: true }).waitFor()
-    await page.getByRole('heading', { name: 'Before you deploy', exact: true }).waitFor()
+    await page.getByRole('heading', { name: 'Outpost', exact: true, level: 1 }).waitFor()
+    await page.getByText('Before you deploy', { exact: true }).waitFor()
     if (width !== 390) await capture('inspector')
-    await page.keyboard.press('Escape')
-    await page.getByRole('dialog').waitFor({ state: 'hidden' })
-    await page.waitForFunction(() => document.activeElement?.matches('.catalog-card'), undefined, { timeout: 5000 })
-    assert.equal(await card.evaluate(e => e === document.activeElement), true)
 
     await page.goto(`http://127.0.0.1:4194/templates/outpost?theme=${theme}`)
-    await page.getByRole('heading', { name: 'Configure Outpost', exact: true }).waitFor()
-    const applicationName = page.getByRole('textbox', { name: 'Application name', exact: true })
+    await page.getByRole('heading', { name: 'Outpost', exact: true, level: 1 }).waitFor()
+    const applicationName = page.getByRole('textbox', { name: /^Application name\b/ })
     await applicationName.fill('fixture-outpost')
     const help = page.getByRole('button', { name: 'About Application configuration', exact: true })
     // Exercise normal keyboard traversal and touch at the loaded form, without
     // programmatic help focus or repositioning under the sticky header.
+    await settleScroll()
     await page.keyboard.press('Shift+Tab')
     assert.equal(await help.evaluate(element => element === document.activeElement), true)
     results.push({ label, interactionStage: 'help keyboard Shift+Tab' })
@@ -130,16 +138,16 @@ try {
     await select('Target architecture', 'Linux ARM64')
     assert.equal(await page.getByRole('textbox', { name: 'Redis host', exact: true }).count(), 0)
     await capture('bundled')
-    await page.getByRole('button', { name: 'Review template', exact: true }).click()
+    await page.getByRole('button', { name: 'Review Outpost', exact: true }).click()
     await page.getByRole('heading', { name: 'Review fixture-outpost', exact: true }).waitFor()
     await requiredSecrets(['api-key', 'jwt-secret', 'encryption-secret', 'database-password', 'redis-password', 'broker-password'])
     await recordPlan({ 'database-mode': 'bundled', 'redis-mode': 'bundled', 'broker-mode': 'bundled' })
     if (width !== 320) await capture('bundled-review')
     await page.getByRole('button', { name: 'Back to configuration', exact: true }).click()
-    assert.equal(await page.getByRole('textbox', { name: 'Application name', exact: true }).inputValue(), 'fixture-outpost')
+    assert.equal(await page.getByRole('textbox', { name: /^Application name\b/ }).inputValue(), 'fixture-outpost')
     await select('PostgreSQL', 'Existing PostgreSQL')
     if (width === 390) {
-      await page.getByRole('button', { name: 'Review template', exact: true }).click()
+      await page.getByRole('button', { name: 'Review Outpost', exact: true }).click()
       await page.getByRole('heading', { name: 'Review fixture-outpost', exact: true }).waitFor()
       await requiredSecrets(['api-key', 'jwt-secret', 'encryption-secret', 'database-url', 'redis-password', 'broker-password'])
       await recordPlan({ 'database-mode': 'external', 'redis-mode': 'bundled', 'broker-mode': 'bundled' })
@@ -156,7 +164,7 @@ try {
     await page.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Existing Redis')
     await page.keyboard.press('Enter')
     await page.getByRole('textbox', { name: 'Redis host', exact: true }).waitFor()
-    assert.equal(await page.getByRole('button', { name: 'Review template', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: 'Review Outpost', exact: true }).isDisabled(), true)
     await page.getByRole('textbox', { name: 'Redis host', exact: true }).fill('redis.example.invalid')
     await capture('external')
     await select('Redis', 'Bundled Redis')
@@ -169,16 +177,16 @@ try {
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width)
     await page.keyboard.press('Escape')
     await page.evaluate(() => window.__fixture.planMode = 'error')
-    await page.getByRole('button', { name: 'Review template', exact: true }).click()
+    await page.getByRole('button', { name: 'Review Outpost', exact: true }).click()
     await page.getByText('Development fixture: review request failed. Your entries are preserved.', { exact: true }).first().waitFor()
     assert.equal(await page.getByRole('textbox', { name: 'Redis host', exact: true }).inputValue(), 'redis.example.invalid')
     if (width === 320) await capture('review-error', { allowError: true })
     await page.evaluate(() => window.__fixture.planMode = 'success')
-    await page.getByRole('button', { name: 'Review template', exact: true }).click()
+    await page.getByRole('button', { name: 'Review Outpost', exact: true }).click()
     await page.getByRole('heading', { name: 'Review fixture-outpost', exact: true }).waitFor()
     await requiredSecrets(['api-key', 'jwt-secret', 'encryption-secret', 'database-url', 'redis-password', 'broker-url'])
     await recordPlan({ 'database-mode': 'external', 'redis-mode': 'external', 'broker-mode': 'external', 'redis-host': 'redis.example.invalid' })
-    assert.equal(await page.getByRole('button', { name: 'Deploy template', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: 'Deploy fixture-outpost', exact: true }).isDisabled(), true)
     assert.equal(await page.getByText('database-password', { exact: true }).count(), 0)
     assert.equal(await page.getByText('broker-password', { exact: true }).count(), 0)
     await capture('review')
@@ -196,10 +204,10 @@ try {
     if ((theme === 'dark' && width === 1440) || (theme === 'light' && width === 390)) {
       await page.goto(`http://127.0.0.1:4194/templates/outpost?theme=${theme}&viewer=1`)
       await page.getByRole('heading', { name: 'Deployment access required', exact: true }).waitFor()
-      assert.equal(await page.getByRole('button', { name: 'Review template', exact: true }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: 'Review Outpost', exact: true }).count(), 0)
       await capture('denied', { allowEmpty: true })
       await page.goto(`http://127.0.0.1:4194/templates?theme=${theme}&state=empty`)
-      await page.getByRole('heading', { name: 'No matching templates', exact: true }).waitFor()
+      await page.getByText('No matching templates', { exact: true }).waitFor()
       await capture('empty', { allowEmpty: true })
       await page.goto(`http://127.0.0.1:4194/templates?theme=${theme}&state=error`)
       await page.locator('[data-error-recovery]').getByText('Development fixture: catalog is unavailable.', { exact: true }).waitFor()
