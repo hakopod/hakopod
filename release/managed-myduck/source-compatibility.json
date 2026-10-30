@@ -25,13 +25,13 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "1213c47fe1260a0b3e41f51eaf862c05671ec81dd744ed51ddebbe04d1b0595c",
+        "after": "06ab1bddace237038a420d147acdf69f6f33ae31fcf7c50516a219076444aa5a",
         "before": "371728d2e3b26f70b4e3a8ad739317a95bc0761fad1fd2f1bfd498fee1943c1e",
         "path": "api/contracts/installation_settings.py",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "6bb4aea8f2080a2e549cfb4aa0c8160ea7200b72be41f9ac9f14d12aca15cba3",
+        "after": "75a1affbd8de3dfaf7dd57025832bbeda0e8a4962a6429c8e31030fbf729cece",
         "before": "c00aed8b8d75500d40cc7a35fd0f8b27e26c99c20152e27e882d0556d3a7f04c",
         "path": "api/openapi.json",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -43,19 +43,19 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "1e5143306434522c176b38c20ebdaaa24fc1a26a64b660ef98fc2854d4a3c235",
+        "after": "6cbe7356624fec6e99c1086b4ed762b26e098ea3e5fce4a096736c5f8984dad4",
         "before": null,
         "path": "cmd/hakopod-server/access.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "99c464d0d411d4fc355e621498bacc1e133cd698c004fcc907b64bbc29284e44",
+        "after": "22c8961f3f144ff66e2525db08c15a275478da826ea5029649abcc6b9b7e04e0",
         "before": "f9ae4b7169684a63574b56dbfedb1e3ce6c4b27617c073faa032bb2750497805",
         "path": "cmd/hakopod-server/main.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "80b7706933d9c23ea013d865f923b8bc6fc371e449fe48dd8f525e934b786017",
+        "after": "e209f8019559ef5a62b787f6145f616d27d54b67313499ff63ddeff2494e6924",
         "before": null,
         "path": "internal/access/access.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -79,13 +79,13 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "c030599c530e52c0376e1d2296d4d0279057c19f51d01b3047c16b817d2b1eb2",
+        "after": "67ed5a0ae267917866b2e46d946a6d782b12496616ad5f903340a9e492c6be85",
         "before": null,
         "path": "internal/api/installation_access.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "d32c8879df5935d94b33c3adcfac910579b2b669f69487224d94391277988228",
+        "after": "a137e8507d639e1e877fd9037b2fc7867d4ae2204a6e30037ba79302a247ecd0",
         "before": null,
         "path": "internal/api/installation_access_test.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -103,7 +103,7 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "f23deb992aa3cb5b11e2e99680b6beef7c8b2765a11e10d9a9f83c90ad764bf1",
+        "after": "5ed0462a4f67fe068bda18e3a44a9157419e58d851c765f97ab618128432a357",
         "before": null,
         "path": "internal/store/installation_access.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -119,9 +119,33 @@
         "before": null,
         "path": "internal/store/104_installation_access_vpn_server.sql",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "fe54ccd571538abd863efc9b56a8893ea43aad866b72ce07e75e2f35de08204c",
+        "before": null,
+        "path": "internal/access/connectors.go",
+        "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f8309f2e5a0dfe5d4b34764932400324ed3622fb032e0a1fe721000f9a0b07d8",
+        "before": null,
+        "path": "internal/access/connectors_test.go",
+        "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "751cf2811000ebbc38fc4df10538107f30b24106153777c467fc2890097d0afd",
+        "before": null,
+        "path": "internal/store/105_installation_access_connectors.sql",
+        "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "bcea1629037d4a918052c09490545a4068a172b51962bdad0dbf534a7d0ee8bf",
+        "before": null,
+        "path": "internal/store/106_installation_access_agent.sql",
+        "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "a6a68dae838305f6d871924e6928f3bf3c75244444b02ed2149aa1cb79347c96"
+    "current_sha256": "ae1d28975ed2484f53f5995d041e39879ce955cb32901eccc4679f9a9c66608a"
   },
   "predecessor": {
     "commit": "808e4d70fe65b96df5a3cf1c9a80d482c55ce25d",
