@@ -273,6 +273,14 @@
 .hako-auth-split .input-wrap input:focus {
   outline: none;
 }
+/* Browser autofill paints its own field colour; keep the underlined field
+   on the panel's background instead of a pale block with flush text. */
+.hako-auth-split .input-wrap input:is(:-webkit-autofill, :autofill) {
+  -webkit-box-shadow: 0 0 0 1000px var(--background) inset;
+  box-shadow: 0 0 0 1000px var(--background) inset;
+  -webkit-text-fill-color: var(--foreground);
+  caret-color: var(--foreground);
+}
 .hako-auth-split .field label {
   color: var(--foreground);
   font-size: 13px;
@@ -319,8 +327,10 @@
   outline-offset: 3px;
 }
 
-/* Submit: text plus a small dark square with an Ion arrow, no hover fill. */
-.hako-auth-split .hako-auth-submit {
+/* Submit: text plus a small dark square with an Ion arrow, no hover fill.
+   .button-primary is repeated so this beats the light theme's ink primary
+   (html.light .button-primary), which otherwise fills the whole button. */
+.hako-auth-split .hako-auth-submit.button-primary {
   justify-self: end;
   gap: 14px;
   min-height: 44px;
@@ -339,7 +349,7 @@
   color: var(--auth-submit-fg);
   transition: transform 0.2s ease;
 }
-.hako-auth-split .hako-auth-submit:is(:hover, :active) {
+.hako-auth-split .hako-auth-submit.button-primary:is(:hover, :active) {
   background: none;
   filter: none;
   transform: none;
