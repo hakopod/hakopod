@@ -65,8 +65,11 @@ def main():
                     binaries.append({'path':entry.name,'bytes':len(blob),'sha256':digest,'file_type':kind,**settings})
             elif bundle.name.startswith('hakopod-vpn_'):
                 files=[member for member in archive.getmembers() if member.isfile()]
-                assert sorted(Path(member.name).name for member in files)==['LICENSE','NOTICE','hakopod-vpn']
-                entry=next(member for member in files if Path(member.name).name=='hakopod-vpn')
+                top=sorted(Path(member.name).name for member in files if len(Path(member.name).parts)==2)
+                assert top==['LICENSE','NOTICE','hakopod-vpn'],top
+                assert any('/third-party-licenses/' in member.name for member in files),'hakopod-vpn archive lacks third-party notices'
+                assert all(len(Path(member.name).parts)==2 or Path(member.name).parts[1]=='third-party-licenses' for member in files)
+                entry=next(member for member in files if Path(member.name).name=='hakopod-vpn' and len(Path(member.name).parts)==2)
                 assert entry.mode&0o111,'hakopod-vpn is not executable'
                 blob=archive.extractfile(entry).read()
                 binary=stage/entry.name
@@ -112,7 +115,7 @@ def main():
         assert str(Path.home()) not in path.read_text(),'absolute host-home path in '+path.name
     report={'verified_at':datetime.now(timezone.utc).isoformat(),'source_fingerprint_sha256':provenance['source_fingerprint_sha256'],
             'source_matches_working_tree':True,'native_cli_platform':host_os+'/'+host_arch,'native_cli_version':native_version,'binaries':binaries+agents,
-            'checks':['all archive paths relative and traversal-free','all six archive executable bytes equal scanned binary bytes','both hakopod-vpn archives hold exactly the scanned agent, LICENSE and NOTICE',
+            'checks':['all archive paths relative and traversal-free','all six archive executable bytes equal scanned binary bytes','both hakopod-vpn archives hold exactly the scanned agent, LICENSE, NOTICE and its third-party notices',
                       'Linux binaries statically linked; all target formats and architectures correct','native host CLI returns release version',
                       'all public binaries carry the self-hosted build tag and disable public signup',
                       'all linked external Go modules have preserved license/notice files','JSON host paths normalized','SHA256SUMS verified'],
