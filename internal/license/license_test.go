@@ -128,15 +128,23 @@ func TestReleaseIssuerRejectsForgedLicense(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	claims := Claims{Version: 1, KeyID: "hakopod-2026-09", LicenseID: strings.Repeat("a", 32), InstallationID: strings.Repeat("b", 32), Customer: "Ephemeral test customer", Plan: "pro", Sequence: 1, IssuedAt: now.Unix(), NotBefore: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), Features: []string{"managed_actions"}}
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		t.Fatal(err)
+	if len(v.keys) != 2 {
+		t.Fatalf("release trusts %d keys, want the offline and billing keys", len(v.keys))
 	}
-	signature := ed25519.Sign(private, append([]byte(Domain), payload...))
-	token := "hl1." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature)
-	if _, err := v.Verify(token, claims.InstallationID, now); State(err) != "invalid_signature" {
-		t.Fatalf("forged production license: state=%s error=%v", State(err), err)
+	for _, keyID := range []string{"hakopod-2026-09", "hakopod-web-2026-11"} {
+		if _, ok := v.keys[keyID]; !ok {
+			t.Fatalf("release does not trust %s", keyID)
+		}
+		claims := Claims{Version: 1, KeyID: keyID, LicenseID: strings.Repeat("a", 32), InstallationID: strings.Repeat("b", 32), Customer: "Ephemeral test customer", Plan: "pro", Sequence: 1, IssuedAt: now.Unix(), NotBefore: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix(), Features: []string{"managed_actions"}}
+		payload, err := json.Marshal(claims)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signature := ed25519.Sign(private, append([]byte(Domain), payload...))
+		token := "hl1." + base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature)
+		if _, err := v.Verify(token, claims.InstallationID, now); State(err) != "invalid_signature" {
+			t.Fatalf("forged %s license: state=%s error=%v", keyID, State(err), err)
+		}
 	}
 	for _, feature := range Catalog(nil) {
 		if feature.Plan == "pro" && feature.Enabled {

@@ -19,7 +19,10 @@ import (
 // anchor. A trusted distributor may override it with -ldflags -X using
 // key-id=base64url-key[,next-key-id=base64url-key]. An empty trust set disables
 // paid activation. Requests and environment variables cannot replace this set.
-var ReleaseKeys = "hakopod-2026-09=CrQD0KiOhy_RZgzhyKoVhIHuDQ925whZzVx0VE7VrgE"
+// hakopod-2026-09 is the offline issuer key. hakopod-web-2026-11 is the online
+// key the billing service uses to sign Pro subscriptions bought on hakopod.com;
+// it can be removed without affecting licenses signed offline.
+var ReleaseKeys = "hakopod-2026-09=CrQD0KiOhy_RZgzhyKoVhIHuDQ925whZzVx0VE7VrgE,hakopod-web-2026-11=n_8mjrO3epLlcYPzaUAKAd6aCQlVceOPv5WiW6wfDio"
 
 const Domain = "hakopod-license-v1\x00"
 const MaxTokenBytes = 16 << 10
