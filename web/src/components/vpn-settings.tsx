@@ -151,7 +151,7 @@ function ServerSection({ current }: { current: Access }) {
   const status = current.vpn_status
   const action = (
     <Button variant={server ? 'outline' : 'primary'} asChild>
-      <Link to="/settings/vpn/server">{server ? 'Edit' : 'Set up'}</Link>
+      <Link to="/settings/vpn/setup">{server ? 'Edit' : 'Set up'}</Link>
     </Button>
   )
   return (
@@ -991,7 +991,7 @@ function DeviceForm({ current }: { current: Access }) {
           description="Devices connect to the Hakopod VPN server."
           primary={
             <Button variant="primary" asChild>
-              <Link to="/settings/vpn/server">Set up</Link>
+              <Link to="/settings/vpn/setup">Set up</Link>
             </Button>
           }
         />

@@ -93,14 +93,14 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 const [{ DashboardShell }, settings, server, connector, device] = await Promise.all([
   import('../../src/components/shell'),
   import('../../src/routes/settings'),
-  import('../../src/routes/settings.vpn.server'),
+  import('../../src/routes/settings.vpn.setup'),
   import('../../src/routes/settings.vpn.connector'),
   import('../../src/routes/settings.vpn.devices.new'),
 ])
 const root = createRootRoute({ component: () => <DashboardShell><Outlet /></DashboardShell> })
 const routes = [
   [settings.Route, '/settings'],
-  [server.Route, '/settings/vpn/server'],
+  [server.Route, '/settings/vpn/setup'],
   [connector.Route, '/settings/vpn/connector'],
   [device.Route, '/settings/vpn/devices/new'],
 ].map(([route, path]) => (route as typeof settings.Route).update({ id: path, path, getParentRoute: () => root } as never))

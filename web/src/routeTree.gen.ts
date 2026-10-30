@@ -94,7 +94,7 @@ import { Route as SettingsLoginProvidersProviderRouteImport } from './routes/set
 import { Route as SettingsRolesNewRouteImport } from './routes/settings.roles.new'
 import { Route as SettingsSecretProvidersNewRouteImport } from './routes/settings.secret-providers.new'
 import { Route as SettingsVpnConnectorRouteImport } from './routes/settings.vpn.connector'
-import { Route as SettingsVpnServerRouteImport } from './routes/settings.vpn.server'
+import { Route as SettingsVpnSetupRouteImport } from './routes/settings.vpn.setup'
 import { Route as ApplicationsApplicationIdPreviewsNewRouteImport } from './routes/applications.$applicationId.previews.new'
 import { Route as ApplicationsApplicationIdServicesNewRouteImport } from './routes/applications.$applicationId.services.new'
 import { Route as BackupsArtifactsArtifactIdRestoreRouteImport } from './routes/backups.artifacts.$artifactId.restore'
@@ -568,9 +568,9 @@ const SettingsVpnConnectorRoute = SettingsVpnConnectorRouteImport.update({
   path: '/vpn/connector',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsVpnServerRoute = SettingsVpnServerRouteImport.update({
-  id: '/vpn/server',
-  path: '/vpn/server',
+const SettingsVpnSetupRoute = SettingsVpnSetupRouteImport.update({
+  id: '/vpn/setup',
+  path: '/vpn/setup',
   getParentRoute: () => SettingsRoute,
 } as any)
 const ApplicationsApplicationIdPreviewsNewRoute =
@@ -765,7 +765,7 @@ export interface FileRoutesByFullPath {
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/settings/vpn/connector': typeof SettingsVpnConnectorRoute
-  '/settings/vpn/server': typeof SettingsVpnServerRoute
+  '/settings/vpn/setup': typeof SettingsVpnSetupRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
@@ -871,7 +871,7 @@ export interface FileRoutesByTo {
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/settings/vpn/connector': typeof SettingsVpnConnectorRoute
-  '/settings/vpn/server': typeof SettingsVpnServerRoute
+  '/settings/vpn/setup': typeof SettingsVpnSetupRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
@@ -978,7 +978,7 @@ export interface FileRoutesById {
   '/settings/roles/new': typeof SettingsRolesNewRoute
   '/settings/secret-providers/new': typeof SettingsSecretProvidersNewRoute
   '/settings/vpn/connector': typeof SettingsVpnConnectorRoute
-  '/settings/vpn/server': typeof SettingsVpnServerRoute
+  '/settings/vpn/setup': typeof SettingsVpnSetupRoute
   '/applications/$applicationId/previews/new': typeof ApplicationsApplicationIdPreviewsNewRoute
   '/applications/$applicationId/services/new': typeof ApplicationsApplicationIdServicesNewRoute
   '/backups/artifacts/$artifactId/restore': typeof BackupsArtifactsArtifactIdRestoreRoute
@@ -1086,7 +1086,7 @@ export interface FileRouteTypes {
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
     | '/settings/vpn/connector'
-    | '/settings/vpn/server'
+    | '/settings/vpn/setup'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
@@ -1192,7 +1192,7 @@ export interface FileRouteTypes {
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
     | '/settings/vpn/connector'
-    | '/settings/vpn/server'
+    | '/settings/vpn/setup'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
@@ -1298,7 +1298,7 @@ export interface FileRouteTypes {
     | '/settings/roles/new'
     | '/settings/secret-providers/new'
     | '/settings/vpn/connector'
-    | '/settings/vpn/server'
+    | '/settings/vpn/setup'
     | '/applications/$applicationId/previews/new'
     | '/applications/$applicationId/services/new'
     | '/backups/artifacts/$artifactId/restore'
@@ -1946,11 +1946,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsVpnConnectorRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/vpn/server': {
-      id: '/settings/vpn/server'
-      path: '/vpn/server'
-      fullPath: '/settings/vpn/server'
-      preLoaderRoute: typeof SettingsVpnServerRouteImport
+    '/settings/vpn/setup': {
+      id: '/settings/vpn/setup'
+      path: '/vpn/setup'
+      fullPath: '/settings/vpn/setup'
+      preLoaderRoute: typeof SettingsVpnSetupRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/applications/$applicationId/previews/new': {
@@ -2373,7 +2373,7 @@ interface SettingsRouteChildren {
   SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
   SettingsRolesNewRoute: typeof SettingsRolesNewRoute
   SettingsVpnConnectorRoute: typeof SettingsVpnConnectorRoute
-  SettingsVpnServerRoute: typeof SettingsVpnServerRoute
+  SettingsVpnSetupRoute: typeof SettingsVpnSetupRoute
   SettingsGitConnectionsConnectionIdRoute: typeof SettingsGitConnectionsConnectionIdRoute
   SettingsGitConnectionsNewRoute: typeof SettingsGitConnectionsNewRoute
   SettingsGitGithubCallbackRoute: typeof SettingsGitGithubCallbackRoute
@@ -2395,7 +2395,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsLoginProvidersProviderRoute: SettingsLoginProvidersProviderRoute,
   SettingsRolesNewRoute: SettingsRolesNewRoute,
   SettingsVpnConnectorRoute: SettingsVpnConnectorRoute,
-  SettingsVpnServerRoute: SettingsVpnServerRoute,
+  SettingsVpnSetupRoute: SettingsVpnSetupRoute,
   SettingsGitConnectionsConnectionIdRoute:
     SettingsGitConnectionsConnectionIdRoute,
   SettingsGitConnectionsNewRoute: SettingsGitConnectionsNewRoute,

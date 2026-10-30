@@ -14,7 +14,7 @@ const cases = [
   ['vpn-empty', '/settings?tab=vpn&fixture=restricted', 'Hakopod VPN server'],
   ['vpn-full', '/settings?tab=vpn&fixture=full', 'Devices'],
   ['vpn-wireguard', '/settings?tab=vpn&fixture=vpn', 'VPN connector'],
-  ['vpn-server-editor', '/settings/vpn/server?fixture=full', 'Hakopod VPN server'],
+  ['vpn-server-editor', '/settings/vpn/setup?fixture=full', 'Hakopod VPN server'],
   ['vpn-connector-editor', '/settings/vpn/connector?fixture=full', 'VPN connector'],
   ['vpn-device-new', '/settings/vpn/devices/new?fixture=full', 'Add a VPN device'],
 ]
