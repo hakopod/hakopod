@@ -60,7 +60,8 @@ jobs:
         run: |
           python3 scripts/ui-source.py restore
           pnpm --dir web install --frozen-lockfile
-          go test ./...
+          # internal/api alone runs close to go test's default 10-minute limit.
+          go test -timeout 20m ./...
           go vet ./...
           python3 -m unittest discover -s installer -p 'test_*.py'
           python3 -m unittest discover -s release -p 'test_*.py'
