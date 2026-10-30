@@ -31,7 +31,7 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "75a1affbd8de3dfaf7dd57025832bbeda0e8a4962a6429c8e31030fbf729cece",
+        "after": "2f3a4f0e66760c707cdfb5a8d2b11ef0d2807b8ae436670e6c5b491360136d2d",
         "before": "c00aed8b8d75500d40cc7a35fd0f8b27e26c99c20152e27e882d0556d3a7f04c",
         "path": "api/openapi.json",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -67,7 +67,7 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "03f9a896913f8f058859b9f5ee45a3d8d6ac17d73e17e933b315f1e3475d7b1c",
+        "after": "cf4f5a2df0cc61ea616add81efc5cc26c9cc5d12158fdf450148d899ecc7a402",
         "before": "8b18a37807dc9bfbf16ea0ad30bef645fe3ae6d9f12f000230d53e0c6d48f987",
         "path": "internal/api/api.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -143,9 +143,75 @@
         "before": null,
         "path": "internal/store/106_installation_access_agent.sql",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c20ed867f5031a33e5ace873ef9811085f502ff6f4f5cc438f0b584b3d038c28",
+        "before": "99504a00b9e84619776c16196c6950005af2999c72b31eb264af49609fa4cce4",
+        "path": "api/generate.py",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "080c489836a86a613910784f01225b7d3581f6ebfbaa02c3a9d6b95d3481d7a3",
+        "before": null,
+        "path": "internal/api/key_never_expires_test.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "421ad2f32c40889b18444fcb19b735c4d64212813ec63a4e6c6c3eca526ce74c",
+        "before": "d8fa8b0cd9a934c94771bfa97061e810b29a3b1d39301476fbb084e7272ab465",
+        "path": "internal/api/pod_exec.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "fb46e2bad39a7800e0fa76a3078aca6e9d820c313d4f6e6566f38ec44c41eb8a",
+        "before": null,
+        "path": "internal/store/107_admin_never_expiring_keys.sql",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4cd36b67207ceca117dfd54f68134fa88385958df4d8627714a2ba6f59c33ad8",
+        "before": "9b3f43fd8ae40683c9d124c1878e40044305709b27410acdb27ecd97bbb515a9",
+        "path": "internal/store/automation_keys_test.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a82f20c978fcc5014b02202feeb90b97984d871675ca4a4e3b2f445f20ba7942",
+        "before": "f627383d5e864d5c9b7d8ad2872336b258cb2a7e428630bdae62a3b603e25ac7",
+        "path": "internal/store/host_actions.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "8bf7ed6b545c68a71a6fe5ab5089b76b8c7b31aa31e7c6d6c19bd9cbc53ac674",
+        "before": "0b0cefdbe6f3b818ca25e8c25e0ae67aaff3ba63fef12571976a9f056f6bec6e",
+        "path": "internal/store/invocations.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c456622391904207c105506b9d4a4d1dc0bc8a5baded65c410116360ee884854",
+        "before": "f0a5d3d69f18065aefed5013ff16228b21452c2184464e0093c7d2c131d1f2d3",
+        "path": "internal/store/managed_platform_authority.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "456ea4c90e44963f0e33362535d0e9d024bff9cca93852f25e043730841b1621",
+        "before": "fead3e0da17cdf5b801195ce2f240b13981848c645f2d4061f0982f306f91a4d",
+        "path": "internal/store/rotation.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4731edd367c0b29a44b0c403d40d882e911d7504135f01ab32c7cfabacb0e2ea",
+        "before": "c0a66107f9a662788778173f201369bbfaa7715f3fd20713f30745efd1cb29dc",
+        "path": "internal/store/sandbox_sessions.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "0e0b1229676eb9d59080e32edd0e2212f8be77532b2840e165afc5c3eae20c0a",
+        "before": "103505c436c066c6bcad5f6142c9fd8c2ffb20a5fea136d07c85e08777a27973",
+        "path": "internal/store/store.go",
+        "reason": "Reviewed control-plane change (CLI execution grants requested at login and administrator API keys without an expiry date, with their store, API and contract); not a managed runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "7b9658b5a670f5a21afac0ba88271722c9dce0a7cce7561fc641ac6450cff3dc"
+    "current_sha256": "884771bbb2f2c97a88c8de77eb1a016b62c421a52d2339dae0190dae088c4495"
   },
   "predecessor": {
     "commit": "808e4d70fe65b96df5a3cf1c9a80d482c55ce25d",
