@@ -35,11 +35,17 @@ async function decide(headers) {
   const key = JSON.stringify(headers)
   const cached = decisions.get(key)
   if (cached && Date.now() - cached.at < 5000) return cached.status
-  let status = 503
+  // An API that cannot be reached is not a denial: every dashboard call to
+  // the API carries the peer and the API applies the same policy itself, so
+  // only the static shell renders while it restarts. A 503 from a running API
+  // (policy unreadable) still fails closed.
+  let status = 204
   try {
     const response = await fetch(apiOrigin + '/internal/access/check', { headers, signal: AbortSignal.timeout(5000) })
     status = response.status
-  } catch {}
+  } catch {
+    return status
+  }
   if (status === 204 || status === 403) {
     if (decisions.size >= 4096) decisions.clear()
     decisions.set(key, { at: Date.now(), status })
