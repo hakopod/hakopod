@@ -503,7 +503,7 @@ export function AuthScreen({
                 {error && <RequestError error={error} />}
                 <Button
                   variant="primary"
-                  className={split ? 'hako-auth-submit' : 'full-width'}
+                  className="full-width"
                   type="submit"
                   disabled={
                     busy ||
@@ -534,13 +534,7 @@ export function AuthScreen({
                                 : setup
                                   ? 'Create owner account'
                                   : 'Sign in'}
-                  {split ? (
-                    <span aria-hidden="true">
-                      <Icon name="arrow" size={16} />
-                    </span>
-                  ) : (
-                    <Icon name="arrow" size={16} />
-                  )}
+                  <Icon name="arrow" size={16} />
                 </Button>
               </form>
               {(verify || reset) && !linkToken && (
