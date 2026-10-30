@@ -383,7 +383,7 @@ func (s *Store) Bootstrap(ctx context.Context, name string) (string, error) {
 func (s *Store) principal(ctx context.Context, keyID string) (Principal, []byte, error) {
 	var p Principal
 	var digest []byte
-	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id))) FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine')) AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision, &p.MFAVerified)
+	err := s.Pool.QueryRow(ctx, `SELECT i.id,i.name,i.admin,k.id,k.project,k.environment,k.application,k.permissions,i.project,i.environment,i.permissions,k.digest,COALESCE(i.email,''),i.owner,k.kind,i.avatar_style,i.avatar_seed,i.profile_revision,(k.mfa_verified AND (i.totp_secret IS NOT NULL OR EXISTS(SELECT 1 FROM passkeys WHERE identity_id=i.id))) FROM api_keys k JOIN identities i ON i.id=k.identity_id WHERE k.id=$1 AND k.revoked_at IS NULL AND (k.expires_at>now() OR (k.never_expires AND k.kind='machine' AND (k.admin_never_expires OR EXISTS(SELECT 1 FROM automation_key_scopes s WHERE s.key_id=k.id)))) AND NOT i.disabled`, keyID).Scan(&p.ID, &p.Name, &p.Admin, &p.KeyID, &p.Project, &p.Environment, &p.Application, &p.Permissions, &p.IdentityProject, &p.IdentityEnvironment, &p.IdentityPermissions, &digest, &p.Email, &p.Owner, &p.CredentialType, &p.AvatarStyle, &p.AvatarSeed, &p.ProfileRevision, &p.MFAVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, nil, ErrUnauthorized
 	}
@@ -467,7 +467,7 @@ func (s *Store) CreateKey(ctx context.Context, p Principal, in KeyInput) (Key, s
 		return k, "", err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,never_expires) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", id, p.ID, in.Name, digest, k.Prefix, in.Project, in.Environment, in.Application, in.Permissions, expires, in.NeverExpires)
+	_, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,never_expires,admin_never_expires) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)", id, p.ID, in.Name, digest, k.Prefix, in.Project, in.Environment, in.Application, in.Permissions, expires, in.NeverExpires)
 	if err != nil {
 		return k, "", err
 	}
