@@ -29,9 +29,33 @@
         "before": "aceb8b9de75f201d61ea14724af4ef8fa00de1af66e2182ecd01d102d3d817f9",
         "path": "internal/license/license_test.go",
         "reason": "Reviewed control-plane test change (forged licenses are rejected under each trusted release key, including hakopod-web-2026-11); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "76e3d273762e9ab98db733b66df05b9d54be5e08f1454741db01a70669e3d53d",
+        "before": "07e15af7ea89ea39df907e5a8c64caae33a6a13f08e613a058c23a940b1b6d65",
+        "path": "internal/cluster/backend_certificates.go",
+        "reason": "Reviewed control-plane change (an ingress certificate mount without a hostname follows the service's generated hostname, with its validation and tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "69728fc2c1f30203b371a5090392837959ad6183f5393a5246c0a530c5ba1820",
+        "before": null,
+        "path": "internal/cluster/certificate_generated_hostname_test.go",
+        "reason": "Reviewed control-plane change (an ingress certificate mount without a hostname follows the service's generated hostname, with its validation and tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "eeea82ca73f6e24676ebb6df98ec444e67e1fbd24f32124120287b20608a9da8",
+        "before": "f567158d8e42c21a23d0dd5d72d1623e2d5192a55c6565f5f6ab0be4afbab8d4",
+        "path": "internal/cluster/certificate_renewal.go",
+        "reason": "Reviewed control-plane change (an ingress certificate mount without a hostname follows the service's generated hostname, with its validation and tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "543ee1837f0d9add36c1307d9df663f92f98832bc55d5bce69c38e940b3157dd",
+        "before": "60de12ae3cf43299b4ab3c19f8a844527b0e6c73162133996ddffd668b50e314",
+        "path": "internal/spec/certificate_mounts.go",
+        "reason": "Reviewed control-plane change (an ingress certificate mount without a hostname follows the service's generated hostname, with its validation and tests); not a managed runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "a290965fc2517a066cd747964898dd512b51c226cd6587908d571351aaba1e42"
+    "current_sha256": "95b586851c07d46a4e99b711044d139da669242d0df34a13aa03e317378b12d1"
   },
   "predecessor": {
     "commit": "62954d81675d5ca50518362d1a0d09bbcebb93a8",
