@@ -1,0 +1,39 @@
+name: VPN agent live
+# Runs the hakopod-vpn agent against a real kernel: nftables, WireGuard,
+# OpenVPN and strongSwan, with network namespaces standing in for devices
+# and remote VPNs. Tailscale is not covered: it needs a coordination server.
+on:
+  pull_request:
+    paths:
+      - 'agent/hakopod-vpn/**'
+      - '.github/workflows/vpn-agent-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vpn-agent-live-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: agent/hakopod-vpn/go.mod
+          cache-dependency-path: agent/hakopod-vpn/go.sum
+      - name: Install the peers' tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wireguard-tools openvpn charon-systemd strongswan-swanctl strongswan-charon
+          # Only charon-systemd may own the control socket, as on a real server.
+          sudo systemctl disable --now strongswan-starter 2>/dev/null || true
+          sudo rm -f /var/run/charon.pid
+          sudo systemctl restart strongswan
+          sudo modprobe wireguard
+      - name: Live tests as root
+        working-directory: agent/hakopod-vpn
+        run: sudo env "PATH=$PATH" HOME="$HOME" GOFLAGS=-buildvcs=false go test -tags live -run Live -count=1 -v ./internal/hostvpn
