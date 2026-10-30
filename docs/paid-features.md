@@ -91,9 +91,11 @@ published with the public repository. The parent repository stores only its
 submodule reference. The issuer repository is private and must remain separate
 from public release artifacts.
 
-The vendor public verification key `hakopod-2026-09` is compiled into the
-verifier by default. The private signing key stays in protected operator storage,
-outside Git and customer installations. The private issuer provides explicit key
+Two vendor public verification keys are compiled into the verifier by default.
+`hakopod-2026-09` is the offline issuer key. `hakopod-web-2026-11` is the online
+key the billing service uses to sign Pro subscriptions bought on hakopod.com;
+releases before `v0.1.0-alpha.74` do not trust it. The private signing keys stay
+in protected operator storage, outside Git and customer installations. The private issuer provides explicit key
 generation and signing commands; its tests use temporary keys. Trusted
 distributors can replace the public verification set at build time using:
 
