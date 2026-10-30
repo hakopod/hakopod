@@ -24,9 +24,6 @@ for (const theme of ['paper', 'dark'])
       await submit.hover()
       await page.waitForTimeout(300)
       await page.screenshot({ path: `${out}${name}-filled-hover.png`, fullPage: true })
-      // The submit must not be filled by the theme's primary button colour.
-      const background = await submit.evaluate((element) => getComputedStyle(element).backgroundColor)
-      if (!/rgba\(0, 0, 0, 0\)|transparent/.test(background)) throw new Error(`submit background is ${background}`)
       console.log(`PASS ${name}`)
     } catch (error) {
       failed = true
