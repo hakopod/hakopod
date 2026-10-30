@@ -145,7 +145,7 @@ previous one. Install the VPN's own client on the server first: `tailscale`,
   and list the networks to route. Directives that run programs, load plugins,
   read files or change the default route are refused; pushed routes are
   ignored (`route-nopull`) and `script-security 1` is forced.
-- **IPsec:** IKEv2 with a pre-shared key: the remote gateway, local and remote
+- **IPsec:** install `charon-systemd` and `strongswan-swanctl`, not `strongswan-starter`: both daemons want the same control socket and the agent talks to `charon-systemd`. IKEv2 with a pre-shared key: the remote gateway, local and remote
   identities, and remote networks. Certificate authentication is not supported
   yet.
 
