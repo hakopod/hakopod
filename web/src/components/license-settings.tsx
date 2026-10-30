@@ -13,6 +13,10 @@ import { Icon } from './icons'
 import { Copy, ErrorState, Loading, RequestError } from './shared'
 import { ReviewFacts } from './operation-review'
 import { SettingsRow, SettingsRows, SettingsSection, SettingsState } from './settings-section'
+
+// Opens the Pro checkout on hakopod.com with this installation's ID filled in.
+const buyProURL = (installation: string) =>
+  `https://hakopod.com/pricing/?installation=${encodeURIComponent(installation)}#buy-pro`
 export function FeatureLock({
   title = 'This capability requires Hakopod Pro',
 }: {
@@ -79,12 +83,20 @@ export default function LicenseSettings() {
           .filter(Boolean)
           .join(' · ')}
         actions={
-          scope.identity.admin &&
-          current.license_id && (
-            <Button variant="ghost" disabled={busy} onClick={() => setRemove(true)}>
-              <Icon name="trash" size={15} />
-              Remove license
-            </Button>
+          scope.identity.admin && (
+            <>
+              <Button asChild size="sm" variant={current.plan === 'pro' ? 'ghost' : 'primary'}>
+                <a href={buyProURL(current.installation_id)} target="_blank" rel="noreferrer">
+                  {current.plan === 'pro' ? 'Renew Pro' : 'Buy Pro'}
+                </a>
+              </Button>
+              {current.license_id && (
+                <Button variant="ghost" disabled={busy} onClick={() => setRemove(true)}>
+                  <Icon name="trash" size={15} />
+                  Remove license
+                </Button>
+              )}
+            </>
           )
         }
       >
