@@ -53,9 +53,57 @@
         "before": "60de12ae3cf43299b4ab3c19f8a844527b0e6c73162133996ddffd668b50e314",
         "path": "internal/spec/certificate_mounts.go",
         "reason": "Reviewed control-plane change (an ingress certificate mount without a hostname follows the service's generated hostname, with its validation and tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a79d6c60a1c4c7d3300aeacfacfa390b23b91f84f6332ae8c115289eb33d635d",
+        "before": null,
+        "path": "templates/blueprints/maddy/README.md",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "44b600a5e2230701a27b861a19cac01273ac610e2e354381b409d82cc5286366",
+        "before": null,
+        "path": "templates/blueprints/maddy/hakopod.toml",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "733f3ae3e2591eb6accce580d54fe334af6b0bb0a5d65584367f2fa4c221dbec",
+        "before": null,
+        "path": "templates/blueprints/maddy/migration.json",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "27dde317262c0c92e138a19b620870dd297ac54ca95b73d88bae57dc69404e09",
+        "before": "010b3dfa47b726fce25f43d221a49b4310c5053051b7156c9b6a3ca4b9e0e67d",
+        "path": "templates/catalog.json",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "cc078090cf2552f7bb00f3fff2b5bf8d7d61152ff9d714fc0f74483560e5cc86",
+        "before": "1eae966cba1175c5ce0a99c94afafc9d72e942dead7cd05b35fbf2a64114fa6e",
+        "path": "templates/images.lock.json",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "0aed29acef32a35429a6496ca220acbf71a8fee4b1b6f54c2fa2fd6839262661",
+        "before": "70dead0d66f9b1a5faf12aea3fb321830cdd1c403c0a7d67f51dd1fdf4ba3a1e",
+        "path": "templates/scripts/smoke_template.py",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d33afe822770e513751be642e335ad6705cff0617c70c20168e8912b6d572c9d",
+        "before": "2c164597028c0d87f9630cfc74c6ff4a224347963496c9bf8d683832b291fb4d",
+        "path": "templates/scripts/test_smoke_template.py",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "302270805d813619030b5cebdf1e8c0077f1895bd813a530785c914a49897589",
+        "before": "053196396e6da1adc741b66673217f2088b8d7a290cb221b80b41f6bd1c7b93a",
+        "path": "templates/scripts/validate.py",
+        "reason": "Reviewed templates submodule bump to 530bae9 (send-only Maddy SMTP preset, hakopod/templates#21); catalog content only, not a runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "95b586851c07d46a4e99b711044d139da669242d0df34a13aa03e317378b12d1"
+    "current_sha256": "33191ed336b627cfd5b58c8d78b36e7355447306df46b098cf536f55b917b8ce"
   },
   "predecessor": {
     "commit": "62954d81675d5ca50518362d1a0d09bbcebb93a8",
