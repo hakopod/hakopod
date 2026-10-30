@@ -216,6 +216,7 @@ func (c *Client) BackendCertificates(ctx context.Context, t Target, service stri
 	}
 	for _, mount := range svc.CertificateMounts {
 		if mount.Source == "ingress" {
+			mount.Hostname = c.certificateHostname(t, service, mount)
 			value := BackendCertificateStatus{Hostname: mount.Hostname, MountPath: mount.MountPath, Source: "ingress-auto"}
 			secret, sourceErr := c.backendIngressSource(ctx, t, service, mount.Hostname)
 			if sourceErr != nil {
