@@ -6,7 +6,9 @@ import (
 )
 
 // CertificateMount pins an upload or follows the service's ingress certificate.
-// Private keys never enter application revisions.
+// Private keys never enter application revisions. An ingress mount without a
+// hostname follows the service's generated hostname, which a template cannot
+// know before the application exists.
 type CertificateMount struct {
 	Certificate string `json:"certificate,omitempty" toml:"certificate,omitempty"`
 	Source      string `json:"source,omitempty" toml:"source,omitempty"`
@@ -33,7 +35,8 @@ func validateCertificateMounts(service Service) error {
 			return fmt.Errorf("certificate_mounts: each certificate reference may be mounted once per service")
 		}
 		seen[reference] = true
-		if !ValidHostname(mount.Hostname) || !allowedMount(mount.MountPath) {
+		generated := mount.Hostname == "" && mount.Source == "ingress"
+		if (!generated && !ValidHostname(mount.Hostname)) || !allowedMount(mount.MountPath) {
 			return fmt.Errorf("certificate_mounts: use a managed certificate reference, lowercase DNS hostname and clean absolute data directory")
 		}
 	}

@@ -21,6 +21,15 @@ func automaticCertificateName(service, hostname string, certificate []byte) stri
 	return fmt.Sprintf("hp-auto-cert-%x", hash.Sum(nil)[:20])
 }
 
+// certificateHostname resolves an ingress mount that names no hostname to the
+// service's generated hostname.
+func (c *Client) certificateHostname(t Target, service string, mount spec.CertificateMount) string {
+	if mount.Hostname == "" && mount.Source == "ingress" {
+		return c.hostname(t, service)
+	}
+	return mount.Hostname
+}
+
 // Resolution is read-only unless explicitly applying a validated snapshot.
 func (c *Client) resolveBackendCertificates(ctx context.Context, t Target, service string, svc spec.Service, persist bool) (spec.Service, error) {
 	result := svc
@@ -30,6 +39,8 @@ func (c *Client) resolveBackendCertificates(ctx context.Context, t Target, servi
 		if t.ApplicationID == "" {
 			return svc, fmt.Errorf("certificate references require an existing application")
 		}
+		mount.Hostname = c.certificateHostname(t, service, mount)
+		result.CertificateMounts[i].Hostname = mount.Hostname
 		if mount.Source == "ingress" {
 			mode, err := ParseDeploymentMode(c.options.DeploymentMode)
 			if err != nil || mode != DeploymentSelfHosted {
@@ -241,7 +252,7 @@ func (c *Client) RenewBackendCertificates(ctx context.Context, t Target, emit fu
 			for _, v := range current.Spec.Template.Spec.Volumes {
 				if v.Name == fmt.Sprintf("backend-certificate-%d", i) && v.Secret != nil {
 					secret, err := c.kube.CoreV1().Secrets(Namespace(t.ApplicationID)).Get(ctx, v.Secret.SecretName, metav1.GetOptions{})
-					if err != nil || owned(secret, t) != nil || secret.Labels[serviceKey] != name || secret.Labels[automaticCertificateKey] != "true" || secret.Annotations[backendCertificateHostname] != m.Hostname {
+					if err != nil || owned(secret, t) != nil || secret.Labels[serviceKey] != name || secret.Labels[automaticCertificateKey] != "true" || secret.Annotations[backendCertificateHostname] != c.certificateHostname(t, name, m) {
 						return fmt.Errorf("current automatic certificate ownership mismatch")
 					}
 					expected.CertificateMounts[i].Certificate, found = secret.Name, true

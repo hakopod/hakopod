@@ -158,7 +158,21 @@ target_port = 7000
 source_cidrs = ["0.0.0.0/0"]
 ```
 
-That hostname is the service's generated hostname, not a custom domain. A
+That hostname is the service's generated hostname, not a custom domain. Leave
+`hostname` out of an ingress mount to mean exactly that: Hakopod fills in the
+generated hostname when it deploys, so a template can follow the certificate
+without knowing the application's identity in advance:
+
+```toml
+certificate_mounts = [
+  { source = "ingress", mount_path = "/certificates/tunnel" },
+]
+```
+
+A pinned uploaded certificate always needs its hostname. On a first release,
+Hakopod creates the certificate-only ingress before the workload and waits up
+to 90 seconds for cert-manager to issue the certificate, so the container
+starts with it mounted. A
 TCP-only service can use only its generated hostname for an automatic
 certificate, because `domains` maps a custom hostname only to a service that is
 public for HTTP, so a custom hostname never reaches such a service's ingress TLS
