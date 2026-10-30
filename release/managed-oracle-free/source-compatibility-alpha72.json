@@ -1,0 +1,138 @@
+{
+  "bootstrap": {
+    "commit": "94ca091e9a5bdfda25e80e87561445054ff0660e",
+    "reviewed_release": "v0.1.0-alpha.72",
+    "tag": "v0.1.0-alpha.71",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "82ca978303cbdf834d67ca36d30c5b623b378f32",
+  "delta": {
+    "baseline_sha256": "d9a2d8c6da03b0dc60d9bb1583714954fe6ffc14aa726d27436d46e8f6bd5a79",
+    "changes": [
+      {
+        "after": "9dc342bdbd52d20d031d446a5f8e1b35f9f25121e5574d30a122a6d7a84fe05b",
+        "before": "0ebf72adc0e1197d7eefa279a493c5fe8b3061ad9f53792c2dd079d44cca50f8",
+        "path": "api/contracts/agent_policy.py",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "aa7694e299721ac2a8f7170135162210db41ac1d5d863e15a3222418d9d017e3",
+        "before": null,
+        "path": "api/contracts/drafts.py",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "75fde55b1fba071526271925ea0c7a0c1be65798eb12bbff3a9296c81a1719c1",
+        "before": "b2b180a7b11c15e56c942dba7ca194f73ea64bcda43f724518baa2c1f762385b",
+        "path": "api/contracts/projects.py",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "c00aed8b8d75500d40cc7a35fd0f8b27e26c99c20152e27e882d0556d3a7f04c",
+        "before": "660448b09a2795713ea53b8df9bb52c395047385806223895522216ff2561abe",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "f91227ff5a5060b2035b2125b6048a094b760cba9c0ef16aba73877d80129c88",
+        "before": "8cf30af1bf3632549da1657799e3b13a27de5dcc20c0804c58119b8984af4f58",
+        "path": "api/operation-summaries.json",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "8b18a37807dc9bfbf16ea0ad30bef645fe3ae6d9f12f000230d53e0c6d48f987",
+        "before": "fdb861e038e4ce0e1a5851bba5fbeb3b9b241646e0f5d41f4c855de360753432",
+        "path": "internal/api/api.go",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "8d72ea501a8e0951dc1b9589e8a2f36983986f521eac943d4d02b6a3c27aff9b",
+        "before": null,
+        "path": "internal/api/drafts.go",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "2910848cd3548714c58d27ed21c8aa390ec538acb2a5e675ec6ac7726b4e8a90",
+        "before": "98d476ab4a6e495b1bf788878428d78e9404a4e46c7fd58e6ca3db0bd136f989",
+        "path": "internal/cluster/actions-daemon.sh",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "a0241dfadded0eec6df0b131040ad16242ac5c30bf8397a166775bb0962225d9",
+        "before": "fc581a7f602521727edb56921521c67ae3c4aa70ff8be5d363d441d75b95099f",
+        "path": "internal/cluster/actions_gitlab_network.go",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "63d3e5d345142ff0a27155e5c54087506846f7329c86c88b2510af94c5c9e356",
+        "before": "ebb0efac0602ca01d5d0004080652da0fcbee8c79feab9aa4753dcea9a85172f",
+        "path": "internal/cluster/actions_provider_policy_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "bceccfeb7e7f18e1b03b87327dab2ccdafbdf0e030ae761f5e96d20ba9528de8",
+        "before": "f44604ebe2e885ad74bf3c04e7f2b757037699817b648d10570a87a08835569d",
+        "path": "internal/cluster/policies.go",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "35cc1fc5c0d5bc1c395c6b058d1460e18b2340b69e63bf9e0a2d8edee569f5ba",
+        "before": null,
+        "path": "internal/spec/rebase.go",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "c5f496d9804ba0c3ea7d24898f44b478e4eedcb0bb1023c1f56bc776a9f3dab8",
+        "before": null,
+        "path": "internal/spec/rebase_test.go",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "244b191a36dc83625cbb7add7b8118364dfe9ee599e2ab01a6f90c84d6081836",
+        "before": null,
+        "path": "internal/store/101_application_drafts.sql",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "10142ea7703a43efe426ded8da3ffdf3c4466dcb9b90c1c7ddbe95d2816d68ef",
+        "before": null,
+        "path": "internal/store/drafts.go",
+        "reason": "Reviewed control-plane change (dashboard redesign: staged application drafts API, store and migration, three-way specification rebase, per-environment project summaries, and their API contract); not a runtime binary, image, dependency, authorization or native harness input."
+      },
+      {
+        "after": "e9e70681a48830eec273915b6580ca1aa03174c6a4e05e5a3502256cdeee4e76",
+        "before": "a11d86addc7221b87251d43349fd53ca2c4dc67ffff03e026bdae27b0ecf3bc2",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Reviewed control-plane change (Managed Actions Docker Hub pull-through mirror: runner dockerd mirror flags, one mirror egress rule in the GitHub and GitLab runner policies, and opening the alpha.72 runtime source review); not a runtime binary, image, dependency, authorization or native harness input."
+      }
+    ],
+    "current_sha256": "164c38c41b9e1067fd4cc3a1bb12de46c1641c2ee91d84bb2289eaa78900ec02"
+  },
+  "predecessor": {
+    "commit": "94ca091e9a5bdfda25e80e87561445054ff0660e",
+    "review_sha256": "fab439a11a8e2ab2784364d54f5c2f1ae96d3e474967dee124690ff79b7a8fe0",
+    "tag": "v0.1.0-alpha.71"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestActionsServicePullFixtureIsolation",
+      "TestRebaseCarriesIndependentChangesForward",
+      "TestRebaseHonoursRemovals",
+      "TestRebaseNamesConflictsAndKeepsCurrent",
+      "TestRunnerPoliciesReachOnlyTheRegistryMirrorInTheCluster",
+      "TestServicePolicyExcludesOnlyGitLabSlotsWithTheirOwnNetworkPolicy"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40933820752"
+  },
+  "reviewed_release": "v0.1.0-alpha.72",
+  "runtime": "oracle-free",
+  "schema_version": 2
+}
