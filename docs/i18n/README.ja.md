@@ -42,6 +42,20 @@ Coolify、Dokploy、Openship はどれも良いツールで、今いちばん成
 | --- | --- | --- | --- | --- |
 | アプリの実行基盤 | K3s（Kubernetes） | Docker | Docker、複数サーバーは Swarm | Docker、クラスタは K3s |
 | 実装言語 | Go | PHP（Laravel） | TypeScript | TypeScript |
+| デプロイごとに変更内容を事前表示 | あり（デプロイごとのプラン） | — | — | デプロイウィザードの確認ステップ |
+| プレビュー環境 | 手動、ビルド済みイメージから、1〜72 時間 | プルリクエストごと | プルリクエストごと（GitHub） | Git ブランチから |
+| IP の許可・拒否リスト、レート制限、国別ルール | ダッシュボードで設定 | — | — | CLI で設定 |
+| ダッシュボードと API を自社ネットワークや VPN に限定 | 許可リスト、ファイアウォール、内蔵 WireGuard サーバー、Tailscale、OpenVPN、IPsec（Pro） | API の IP 許可リスト | — | — |
+| パスキー / TOTP | あり / あり | なし / あり | あり / あり | あり / あり |
+| アイドル中のアプリをゼロにスケール | あり | — | — | あり |
+| AI エージェント向け MCP | あり | あり | あり | あり |
+| 公式 Terraform プロバイダー | あり | — | コミュニティ製のみ | — |
+| マネージドデータベース | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
+| すぐにデプロイできるテンプレート | 57 | 300+ | 500+ | 42 |
+| 監査ログ | あり（履歴のエクスポートは Pro） | あり | Enterprise | あり |
+| ライセンス | Apache-2.0 | Apache-2.0 | Apache-2.0、一部プロプライエタリなディレクトリあり | Apache-2.0 |
+
+「—」は、そのプロジェクトのドキュメントに記載が見つからなかったという意味で、できないという意味ではありません。古くなったセルがあれば教えてください。
 
 K3s はメモリを使うため、Hakopod は Docker ベースのツールより多くのメモリを必要とします。その代わり、サーバー間のスケジューリングとローリングアップデートは Kubernetes が担います。
 

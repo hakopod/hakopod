@@ -42,6 +42,20 @@ Coolify、Dokploy 和 Openship 都是好工具；如果你现在就想要最成�
 | --- | --- | --- | --- | --- |
 | 应用运行在 | K3s（Kubernetes） | Docker | Docker，多服务器用 Swarm | Docker，集群用 K3s |
 | 开发语言 | Go | PHP（Laravel） | TypeScript | TypeScript |
+| 每次部署前显示将要变更的内容 | 支持，每次部署都有计划 | — | — | 部署向导中的审核步骤 |
+| 预览环境 | 手动创建，基于已构建的镜像，1–72 小时 | 每个拉取请求 | 每个拉取请求（GitHub） | 基于 Git 分支 |
+| IP 允许和拒绝列表、限流、国家规则 | 在控制台中配置 | — | — | 通过 CLI 配置 |
+| 将控制台和 API 限制在你的网络或 VPN 内 | 允许列表、防火墙、内置 WireGuard 服务器、Tailscale、OpenVPN、IPsec（Pro） | API 的 IP 允许列表 | — | — |
+| 通行密钥 / TOTP | 支持 / 支持 | 不支持 / 支持 | 支持 / 支持 | 支持 / 支持 |
+| 闲置应用缩容到零 | 支持 | — | — | 支持 |
+| 面向 AI 代理的 MCP | 支持 | 支持 | 支持 | 支持 |
+| 官方 Terraform Provider | 支持 | — | 仅社区版 | — |
+| 托管数据库 | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
+| 可直接部署的模板 | 57 | 300+ | 500+ | 42 |
+| 审计日志 | 支持；导出历史为 Pro | 支持 | Enterprise | 支持 |
+| 许可证 | Apache-2.0 | Apache-2.0 | Apache-2.0，另含一个专有目录 | Apache-2.0 |
+
+"—" 表示我们在该项目自己的文档中没有找到相关说明，并不代表它做不到。如有过时的内容，请告诉我们。
 
 K3s 需要更多内存，所以 Hakopod 的要求高于基于 Docker 的工具。换来的是：跨服务器调度和滚动更新由 Kubernetes 负责。
 

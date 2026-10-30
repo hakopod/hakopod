@@ -56,6 +56,21 @@ differ, based on each project's own documentation in October 2026:
 | --- | --- | --- | --- | --- |
 | Runs apps on | K3s (Kubernetes) | Docker | Docker, Swarm for multiple servers | Docker, K3s for clusters |
 | Written in | Go | PHP (Laravel) | TypeScript | TypeScript |
+| Shows what will change before each deploy | Yes, a plan per deployment | — | — | Review step in the deploy wizard |
+| Preview environments | Manual, from a built image, 1–72 hours | Per pull request | Per pull request (GitHub) | From a Git branch |
+| IP allow and deny lists, rate limits, country rules | In the dashboard | — | — | From the CLI |
+| Limit the dashboard and API to your networks or a VPN | Allow list, firewall, built-in WireGuard server, Tailscale, OpenVPN, IPsec (Pro) | API IP allow list | — | — |
+| Passkeys / TOTP | Yes / Yes | No / Yes | Yes / Yes | Yes / Yes |
+| Scale idle apps to zero | Yes | — | — | Yes |
+| MCP for AI agents | Yes | Yes | Yes | Yes |
+| Official Terraform provider | Yes | — | Community only | — |
+| Managed databases | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
+| Ready-to-deploy templates | 57 | 300+ | 500+ | 42 |
+| Audit log | Yes; history export is Pro | Yes | Enterprise | Yes |
+| License | Apache-2.0 | Apache-2.0 | Apache-2.0, plus a proprietary directory | Apache-2.0 |
+
+"—" means we found no mention of it in that project's own documentation, not
+that it can't be done there. Tell us if a cell is out of date.
 
 K3s costs memory, which is why Hakopod asks for more than Docker-based tools. In
 return, scheduling across servers and rolling updates come from Kubernetes

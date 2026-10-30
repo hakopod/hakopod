@@ -42,6 +42,20 @@ Coolify, Dokploy y Openship son buenas herramientas, y si hoy quieres la opción
 | --- | --- | --- | --- | --- |
 | Ejecuta las apps sobre | K3s (Kubernetes) | Docker | Docker, Swarm para varios servidores | Docker, K3s para clústeres |
 | Escrito en | Go | PHP (Laravel) | TypeScript | TypeScript |
+| Muestra qué cambiará antes de cada despliegue | Sí, un plan por despliegue | — | — | Paso de revisión en el asistente de despliegue |
+| Entornos de vista previa | Manual, desde una imagen construida, 1–72 horas | Por pull request | Por pull request (GitHub) | Desde una rama de Git |
+| Listas de IP permitidas y bloqueadas, límites de tasa, reglas por país | En el panel | — | — | Desde la CLI |
+| Limitar el panel y la API a tus redes o a una VPN | Lista de permitidos, firewall, servidor WireGuard integrado, Tailscale, OpenVPN, IPsec (Pro) | Lista de IP permitidas para la API | — | — |
+| Passkeys / TOTP | Sí / Sí | No / Sí | Sí / Sí | Sí / Sí |
+| Escalar a cero las apps inactivas | Sí | — | — | Sí |
+| MCP para agentes de IA | Sí | Sí | Sí | Sí |
+| Proveedor oficial de Terraform | Sí | — | Solo de la comunidad | — |
+| Bases de datos gestionadas | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
+| Plantillas listas para desplegar | 57 | 300+ | 500+ | 42 |
+| Registro de auditoría | Sí; exportar el historial es Pro | Sí | Enterprise | Sí |
+| Licencia | Apache-2.0 | Apache-2.0 | Apache-2.0, más un directorio propietario | Apache-2.0 |
+
+"—" significa que no encontramos ninguna mención en la documentación de ese proyecto, no que allí sea imposible. Avísanos si una celda está desactualizada.
 
 K3s consume memoria, por eso Hakopod pide más que las herramientas basadas en Docker. A cambio, la planificación entre servidores y las actualizaciones progresivas vienen de Kubernetes.
 
