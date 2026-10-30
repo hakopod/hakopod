@@ -25,13 +25,13 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "172bf861761f17b6fb66f4a15bf8c99b4f30a789657a8fe83892178404e1c053",
+        "after": "f29a539e8100548a889cfc868fb23ac1d40767d4aa925067883b80621c8da87d",
         "before": "371728d2e3b26f70b4e3a8ad739317a95bc0761fad1fd2f1bfd498fee1943c1e",
         "path": "api/contracts/installation_settings.py",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "408b17454506c154fbea147c4a72ea2a2ba1e0af8eb3f9ff23cf3c4f319bf33f",
+        "after": "7da7ddaec328cafdb765b9a810547724aaff41d94a45583e41c1e064886264e2",
         "before": "c00aed8b8d75500d40cc7a35fd0f8b27e26c99c20152e27e882d0556d3a7f04c",
         "path": "api/openapi.json",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -43,25 +43,25 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "e1719f8e38393a97edeba210e372d633a46d7817e647526f2bb2a643c7255841",
+        "after": "681af8bb37a21161365674d294bfeee4222333dc2d20bb09d3d282a496647fd7",
         "before": null,
         "path": "cmd/hakopod-server/access.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "4093726fc1a32ea269d1a772e6f253c6593f95bff2126b687c5babee7ae1f7f0",
+        "after": "ca5a3c752937e4000341a6826d08173dcad0d06ed4d71dcdad513c5eae56ec68",
         "before": "f9ae4b7169684a63574b56dbfedb1e3ce6c4b27617c073faa032bb2750497805",
         "path": "cmd/hakopod-server/main.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "436240307d4053c1c78207a3f68e3921ed8d7a40c5efcaca1b26d0655ddfbf47",
+        "after": "c2987ded854476e204b8171885ff41250fea6b8eeb0d8f00a1347d82107e0cd5",
         "before": null,
         "path": "internal/access/access.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "53c82026bc19eada7f5361aa1b561de3d1f349ebfa3a8337d550e7c404dd6a8e",
+        "after": "b2472b5c6c7ae88ba37125398a7e98ce0f5304091fd059039782fd9ebf347c4f",
         "before": null,
         "path": "internal/access/access_test.go",
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
@@ -109,7 +109,7 @@
         "reason": "Reviewed control-plane change (private management access: network policy, host firewall and VPN state, their API, store, contract and dashboard); not a managed runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "6bb55dda15d2d68ce59f06f6ab522aba6e712719d59ec3aa01c602f3faa900c3"
+    "current_sha256": "dc57d6a4af9e211090d8e886782fd88fd6a05f38217162c92c3906f738ece0d9"
   },
   "predecessor": {
     "commit": "808e4d70fe65b96df5a3cf1c9a80d482c55ce25d",
