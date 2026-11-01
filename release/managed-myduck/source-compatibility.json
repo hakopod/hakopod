@@ -1,0 +1,60 @@
+{
+  "bootstrap": {
+    "commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+    "reviewed_release": "v0.1.0-alpha.75",
+    "tag": "v0.1.0-alpha.74",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+  "delta": {
+    "baseline_sha256": "33191ed336b627cfd5b58c8d78b36e7355447306df46b098cf536f55b917b8ce",
+    "changes": [
+      {
+        "after": "d91b91bd0727f6f78c63de3109752dd0e42dffee10e81f18a718bec664b6c5bb",
+        "before": "659c4c85b423a59fe1556260f78afe1aced6a3ac03ab43a82a8ca6f3415ea571",
+        "path": "internal/spec/environment_test.go",
+        "reason": "Reviewed control-plane change (per-service effective environment limit raised from 128 to 256 variables with a 512 KiB total size bound, with its test); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "7827bcfec361855185055c994dad7c4aa2ad9033052a12b5ac763dce65ff6f89",
+        "before": "83480aa91140618a6fbd122b193d57c44ba1c96bb909ea025d162f8d5ce3d1e2",
+        "path": "internal/spec/spec.go",
+        "reason": "Reviewed control-plane change (per-service effective environment limit raised from 128 to 256 variables with a 512 KiB total size bound, with its test); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "040a518007253307f0152aa79acefb4276329fce54d617eb436f9499d647d8b7",
+        "before": "da838b35c2db0ac36925e4eb3ab9978e82d4ccd30656cb2d1afc5435160669fc",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Opens the alpha.75 chained review on the published alpha.74 records; verifier wording only, no change to what is verified."
+      }
+    ],
+    "current_sha256": "cb615a413768266611662f7888b66df499bf1e4535389fd66a93080920b19695"
+  },
+  "predecessor": {
+    "commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+    "review_sha256": "f89a5caeb8528ea6d4e4701791b9bdef99178463e3f0a006e419f22fc451707b",
+    "tag": "v0.1.0-alpha.74"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestActionsServicePullFixtureIsolation",
+      "TestRebaseCarriesIndependentChangesForward",
+      "TestRebaseHonoursRemovals",
+      "TestRebaseNamesConflictsAndKeepsCurrent",
+      "TestRunnerPoliciesReachOnlyTheRegistryMirrorInTheCluster",
+      "TestServicePolicyExcludesOnlyGitLabSlotsWithTheirOwnNetworkPolicy"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40933820752"
+  },
+  "reviewed_release": "v0.1.0-alpha.75",
+  "runtime": "myduck",
+  "schema_version": 2
+}

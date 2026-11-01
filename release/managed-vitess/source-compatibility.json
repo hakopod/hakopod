@@ -1,0 +1,76 @@
+{
+  "bootstrap": {
+    "commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+    "reviewed_release": "v0.1.0-alpha.75",
+    "tag": "v0.1.0-alpha.74",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py",
+      "release/verify-vitess-runtime.py"
+    ]
+  },
+  "control_plane_commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+  "predecessor": {
+    "commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+    "review_sha256": "ffeae4b417b61603e99a0cdb76b391e979411493b3a1fef786c5ec705b03ae40",
+    "tag": "v0.1.0-alpha.74"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "http_evidence_sha256": "7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545",
+    "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274",
+    "native_manifest_sha256": "64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestActionsServicePullFixtureIsolation",
+      "TestRebaseCarriesIndependentChangesForward",
+      "TestRebaseHonoursRemovals",
+      "TestRebaseNamesConflictsAndKeepsCurrent",
+      "TestRunnerPoliciesReachOnlyTheRegistryMirrorInTheCluster",
+      "TestServicePolicyExcludesOnlyGitLabSlotsWithTheirOwnNetworkPolicy"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40933820752"
+  },
+  "reviewed_release": "v0.1.0-alpha.75",
+  "runtime": "vitess",
+  "schema_version": 3,
+  "scopes": {
+    "http_harness": {
+      "baseline_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb",
+      "changes": [],
+      "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
+    },
+    "runtime": {
+      "baseline_sha256": "0e5e5b95108ab44aff64d3e6b1d91514c4fd8bdf94b8444e48467af7da4e36f9",
+      "changes": [
+        {
+          "after": "d91b91bd0727f6f78c63de3109752dd0e42dffee10e81f18a718bec664b6c5bb",
+          "before": "659c4c85b423a59fe1556260f78afe1aced6a3ac03ab43a82a8ca6f3415ea571",
+          "path": "internal/spec/environment_test.go",
+          "reason": "Reviewed control-plane change (per-service effective environment limit raised from 128 to 256 variables with a 512 KiB total size bound, with its test); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "7827bcfec361855185055c994dad7c4aa2ad9033052a12b5ac763dce65ff6f89",
+          "before": "83480aa91140618a6fbd122b193d57c44ba1c96bb909ea025d162f8d5ce3d1e2",
+          "path": "internal/spec/spec.go",
+          "reason": "Reviewed control-plane change (per-service effective environment limit raised from 128 to 256 variables with a 512 KiB total size bound, with its test); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "040a518007253307f0152aa79acefb4276329fce54d617eb436f9499d647d8b7",
+          "before": "da838b35c2db0ac36925e4eb3ab9978e82d4ccd30656cb2d1afc5435160669fc",
+          "path": "release/runtime-source-compatibility.py",
+          "reason": "Opens the alpha.75 chained review on the published alpha.74 records; verifier wording only, no change to what is verified."
+        },
+        {
+          "after": "e9b822fc0606431cf41d16178d69ebe9402192629a5eab8abadb5ef6f8d8331e",
+          "before": "08b9e7111d2bd903474d23b4d3215311f651b06df139929cdf6625674ab81f87",
+          "path": "release/verify-vitess-runtime.py",
+          "reason": "Opens the alpha.75 chained review on the published alpha.74 records; verifier wording only, no change to what is verified."
+        }
+      ],
+      "current_sha256": "e78e44cae46ecabb634e153420975514f3b3ecd51585a4d3fdda6033386850a8"
+    }
+  }
+}
