@@ -694,9 +694,24 @@ func EffectiveEnvironment(defaults map[string]string, service Service) map[strin
 	return env
 }
 
+// Environment bounds per service. Kubernetes stores the environment in every
+// Deployment and ReplicaSet revision and etcd refuses objects over about
+// 1.5 MiB, so the total size, not the count, is the real limit.
+const (
+	MaxEnvironmentVariables = 256
+	MaxEnvironmentBytes     = 512 << 10
+)
+
 func validateEnvironment(field string, env map[string]string) error {
-	if len(env) > 128 {
-		return fmt.Errorf("%s: at most 128 effective variables are supported", field)
+	if len(env) > MaxEnvironmentVariables {
+		return fmt.Errorf("%s: at most %d effective variables are supported", field, MaxEnvironmentVariables)
+	}
+	total := 0
+	for key, value := range env {
+		total += len(key) + len(value)
+	}
+	if total > MaxEnvironmentBytes {
+		return fmt.Errorf("%s: effective variable names and values must total at most 512 KiB", field)
 	}
 	for key, value := range env {
 		if sensitiveEnv(key, value) {
