@@ -79,7 +79,8 @@ Initial application limits: 20 services, 16 declared networks, 20 replicas per
 service, 20 custom domains, 32 application-level secrets, 16 named volumes, 20
 volume claims totalling at most 200 GiB, 20 pending releases per application,
 and 200 applications per environment. Each service additionally accepts at most
-128 effective environment variables, counted after application-level injection,
+256 effective environment variables, counted after application-level injection,
+whose names and values total at most 512 KiB,
 and 32 effective secret references; an application's TOML document is limited
 to 256 KiB. Every service of an application also shares a single namespace
 resource quota (8 CPU and 8 GiB of requests, 16 CPU and 16 GiB of limits, 64

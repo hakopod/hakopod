@@ -73,13 +73,34 @@ image="nginx:alpine"
 	}
 }
 
+// The TOML document limit usually binds first; env files can still add up to
+// 128 KiB, so the effective environment keeps its own size bound.
+func TestEffectiveEnvironmentSizeIsBounded(t *testing.T) {
+	env := map[string]string{}
+	for i := 0; i < 128; i++ {
+		env[fmt.Sprintf("VALUE_%d", i)] = strings.Repeat("x", 4000)
+	}
+	if err := validateEnvironment("env", env); err != nil {
+		t.Fatal("environment under the size bound rejected", err)
+	}
+	for i := 128; i < 140; i++ {
+		env[fmt.Sprintf("VALUE_%d", i)] = strings.Repeat("x", 4000)
+	}
+	if err := validateEnvironment("env", env); err == nil || !strings.Contains(err.Error(), "512 KiB") {
+		t.Fatal("oversized environment accepted", err)
+	}
+}
+
 func TestApplicationEnvironmentValidationAndPreview(t *testing.T) {
 	base := Application{InjectEnv: true, SchemaVersion: 1, Name: "test", Services: map[string]Service{"api": {Image: "nginx", Env: map[string]string{}}}}
-	for i := 0; i < 128; i++ {
+	for i := 0; i < MaxEnvironmentVariables; i++ {
 		base.Services["api"].Env[fmt.Sprintf("KEY_%d", i)] = "value"
 	}
+	if _, err := Normalize(base); err != nil {
+		t.Fatal("256 effective variables rejected", err)
+	}
 	base.Env = map[string]string{"EXTRA": "value"}
-	if _, err := Normalize(base); err == nil || !strings.Contains(err.Error(), "128") {
+	if _, err := Normalize(base); err == nil || !strings.Contains(err.Error(), "256") {
 		t.Fatal("effective variable limit bypassed", err)
 	}
 	base.Env = map[string]string{"KEY_0": "fallback"}
