@@ -6035,6 +6035,10 @@ export interface components {
             };
             /** @description Defaults to 2 GiB. Temporary disk reserved on the runner node per slot, shared by source, tools, Docker images and build files. Deleted after each job. */
             workspace_size_gib?: number;
+            /** @description GitHub pools only. Enables scale to zero: replicas becomes the maximum, queued workflow_job deliveries start runners and the pool returns to min_replicas after this many seconds without job activity. Omit for a fixed pool. */
+            idle_seconds?: number;
+            /** @description Runners kept online while a scale-to-zero pool is idle. Defaults to 0; requires idle_seconds and must not exceed replicas. */
+            min_replicas?: number;
             /** @description Optional application secret for provider job details and logs. Defaults to credential when omitted or empty. */
             jobs_credential?: string;
             /** @description Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration. */

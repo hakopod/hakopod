@@ -57,6 +57,10 @@ func TestActionsRejectUnsafeWorkloadControls(t *testing.T) {
 		"workspace-negative": func(s *Service) { s.Actions.WorkspaceSizeGiB = -1 },
 		"workspace-large":    func(s *Service) { s.Actions.WorkspaceSizeGiB = 17 },
 		"duplicate-labels":   func(s *Service) { s.Actions.Labels = []string{"Linux", "linux"} },
+		"idle-short":         func(s *Service) { s.Actions.IdleSeconds = 59 },
+		"idle-long":          func(s *Service) { s.Actions.IdleSeconds = 86401 },
+		"min-without-idle":   func(s *Service) { s.Actions.MinReplicas = 1 },
+		"min-above-max":      func(s *Service) { s.Actions.IdleSeconds = 300; s.Actions.MinReplicas = 2 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := actionsFixture()
@@ -166,5 +170,24 @@ func TestActionsOrganizationRoundTripAndTemplate(t *testing.T) {
 		if _, err := PlanTemplate("managed-actions", TemplateOptions{Name: "runners", Values: values}); err == nil {
 			t.Fatal("invalid scope accepted", values)
 		}
+	}
+}
+
+func TestActionsScaleToZeroIsGitHubOnly(t *testing.T) {
+	app := actionsFixture()
+	runner := app.Services["runner"]
+	runner.Replicas = 4
+	runner.Actions.IdleSeconds = 300
+	app.Services["runner"] = runner
+	normalized, err := Normalize(app)
+	if err != nil || normalized.Services["runner"].Actions.MinReplicas != 0 {
+		t.Fatal("GitHub scale-to-zero pool rejected", err)
+	}
+	runner.Actions = &Actions{Provider: "gitlab", GitLab: &GitLabTarget{URL: "https://gitlab.com", ProjectID: 1}, Credential: "token", IdleSeconds: 300}
+	runner.Image = "registry.example/runner@sha256:" + strings.Repeat("a", 64)
+	runner.Architecture = "amd64"
+	app.Services["runner"] = runner
+	if _, err = Normalize(app); err == nil || !strings.Contains(err.Error(), "GitHub pools only") {
+		t.Fatal("GitLab pool accepted scale to zero", err)
 	}
 }

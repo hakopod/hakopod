@@ -183,7 +183,7 @@ func (s *Server) writeGitAppSetup(w http.ResponseWriter, r *http.Request, c gitC
 			permissions["contents"] = "write"
 			permissions["actions"] = "write"
 			permissions["workflows"] = "write"
-			events = append(events, "workflow_run")
+			events = append(events, "workflow_run", "workflow_job")
 		}
 		manifest := map[string]any{"name": "Hakopod " + c.ID[:8], "url": origin, "hook_attributes": map[string]any{"url": s.gitWebhookURL(origin, c.ID), "active": true}, "redirect_url": origin + "/settings/git/github/callback", "setup_url": origin + "/settings/git/github/installed", "public": false, "request_oauth_on_install": false, "default_permissions": permissions, "default_events": events}
 		result["action_url"] = "https://github.com" + path + "?state=" + url.QueryEscape(state)

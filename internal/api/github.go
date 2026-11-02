@@ -488,6 +488,18 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		write(w, 202, map[string]bool{"accepted": true})
 		return
 	}
+	if r.Header.Get("X-GitHub-Event") == "workflow_job" {
+		if err := s.recordActionsJob(r.Context(), connectionID, body); err != nil {
+			if errors.Is(err, errInvalidJobEvent) {
+				problem(w, 400, "invalid_workflow_job", err.Error())
+				return
+			}
+			failure(w, err)
+			return
+		}
+		write(w, 202, map[string]bool{"accepted": true})
+		return
+	}
 	if r.Header.Get("X-GitHub-Event") != "push" {
 		write(w, 202, map[string]bool{"ignored": true})
 		return

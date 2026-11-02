@@ -154,6 +154,12 @@ func sameActionsConfig(a, b spec.Service) bool {
 	b.Replicas = 1
 	a.Suspended = false
 	b.Suspended = false
+	// Scaling bounds change how many runners exist, not how each one is built.
+	if a.Actions != nil && b.Actions != nil {
+		x, y := *a.Actions, *b.Actions
+		x.IdleSeconds, x.MinReplicas, y.IdleSeconds, y.MinReplicas = 0, 0, 0, 0
+		a.Actions, b.Actions = &x, &y
+	}
 	return reflect.DeepEqual(a, b)
 }
 
@@ -297,6 +303,19 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	}
 	allowed := accessErr == nil
 	desired := int(p.Config.Replicas)
+	if a := p.Config.Actions; a != nil && a.IdleSeconds > 0 {
+		queued, warm, err := s.Store.ActionsDemand(ctx, p.ApplicationID, p.Service, a.IdleSeconds)
+		if err != nil {
+			return err
+		}
+		busy := 0
+		for _, v := range slots {
+			if v.Phase == "busy" {
+				busy++
+			}
+		}
+		desired = scaledActionsReplicas(a, desired, busy, queued, len(slots), warm)
+	}
 	if p.Removed || p.Config.Suspended || !allowed {
 		desired = 0
 	}
@@ -482,6 +501,10 @@ func (s *Server) startActionsSlot(ctx context.Context, t cluster.Target, p store
 
 func (s *Server) observeActions(ctx context.Context, t cluster.Target, name string, config spec.Service) (cluster.ServiceStatus, error) {
 	result := cluster.ServiceStatus{Name: name, Status: "deploying", Desired: config.Replicas}
+	scaled := config.Actions != nil && config.Actions.IdleSeconds > 0
+	if scaled {
+		result.Desired = int32(config.Actions.MinReplicas)
+	}
 	if config.Suspended {
 		result.Desired = 0
 	}
@@ -519,6 +542,9 @@ func (s *Server) observeActions(ctx context.Context, t cluster.Target, name stri
 	}
 	if !config.Suspended && result.Ready >= result.Desired && p.Message == "" {
 		result.Status = "ready"
+		if scaled && len(slots) == 0 {
+			result.Status = "sleeping"
+		}
 	}
 	return result, nil
 }
