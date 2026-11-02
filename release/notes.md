@@ -1,25 +1,23 @@
-Hakopod 0.1.0-alpha.74 lets installation administrators buy Hakopod Pro from the dashboard, trusts the license key that the hakopod.com billing service signs with, lets an administrator change public TCP ports after installation, lets an ingress certificate mount follow the generated hostname and adds a Maddy SMTP template.
+Hakopod 0.1.0-alpha.75 lets GitHub runner pools scale to zero between jobs and allows up to 256 environment variables per service.
 
-- Settings → License has a **Buy Pro** button for installation administrators, or **Renew Pro** once Pro is active. It opens the Pro checkout on hakopod.com in a new tab with this installation's ID filled in. Paste the license you receive into the same page to activate it.
-- Releases now trust a second license verification key, `hakopod-web-2026-11`, which the billing service on hakopod.com uses to sign Pro subscriptions. Licenses signed with the existing `hakopod-2026-09` key keep working. Earlier releases do not trust the new key, so upgrade before activating a license bought on hakopod.com.
-- `sudo python3 ./installer/modules.py public-tcp --ports 587,465` changes the public TCP ports after installation. It takes the complete new list, refuses to drop a port an application still claims or to add one already in use on the host, then updates the ingress, the API settings and restarts the API. HTTP ingress pauses briefly while the HAProxy controller restarts, and installer `--resume` no longer applies to that host. See docs/public-tcp.md.
-- An ingress certificate mount without a `hostname` now follows the service's generated hostname, so a template can mount the certificate before it knows the application's identity. On a first release the container starts with the certificate mounted. Uploaded certificate mounts still need a hostname. See docs/backend-certificates.md.
-- The catalog has a **Maddy SMTP** template: a send-only SMTP submission server for your own apps on port 587 with STARTTLS, using the certificate Hakopod issues for the service's generated hostname. It signs mail with DKIM and delivers it directly or through a relay such as Amazon SES, Mailgun or Postmark. It needs public TCP port 587; direct delivery also needs outbound port 25 and reverse DNS. There is no inbound mail or IMAP.
+- A Managed Actions pool for GitHub can stop all its runners while no jobs are waiting. In the pool's Capacity step choose **Scale to zero**, or set `idle_seconds` under `[services.<name>.actions]`; `replicas` then becomes the maximum number of concurrent jobs. A queued job whose `runs-on` labels match the pool starts a runner, and idle runners stop after the idle period. `min_replicas` keeps some runners online while idle. Busy jobs are never interrupted. GitLab and Bitbucket pools keep a fixed size.
+- Scale to zero wakes from GitHub `workflow_job` webhook deliveries. Enable the **Workflow jobs** event on the GitHub App or webhook that sends this repository's events to Hakopod; new GitHub Apps created with builds enabled subscribe to it automatically. GitHub does not retry a failed delivery, so a job queued while Hakopod is unreachable waits until another job event, a runner kept online or a manual redelivery. See docs/managed-actions.md.
+- A service can now have up to 256 environment variables, up from 128. Their names and values together are limited to 512 KiB, which keeps each deployment revision well inside Kubernetes object limits.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.74/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.74
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.75/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.75
 ```
 
-Upgrade an alpha.72 or alpha.73 installation:
+Upgrade an alpha.73 or alpha.74 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.74/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.74
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.75/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.75
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
