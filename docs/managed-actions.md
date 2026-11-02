@@ -306,9 +306,10 @@ idle_seconds = 300
 The pool wakes from GitHub `workflow_job` webhook deliveries. Each queued job
 whose `runs-on` labels all appear on the pool (its labels plus `self-hosted`,
 `linux` and its architecture) and whose repository matches the pool's
-repository or organization starts one runner, up to `replicas`. Runners stay
-online for `idle_seconds` after the last job event, then the pool returns to
-`min_replicas`. Busy jobs are never interrupted. An idle pool appears as
+repository or organization starts one runner, up to `replicas`. Idle runners
+stay online for `idle_seconds` after the last job event, then the pool returns
+to `min_replicas`. A runner that finishes its job is not replaced unless more
+jobs are queued or `min_replicas` requires it. Busy jobs are never interrupted. An idle pool appears as
 **Sleeping** on its service.
 
 Deliveries arrive through a GitHub connection under **Settings → Git**. New
@@ -328,6 +329,39 @@ Bitbucket pools keep a fixed size.
 
 Each wake-up starts a fresh runner, so the first job after an idle period also
 waits for runner and Docker startup.
+
+### Live verification
+
+`actions-live.yml` with `scale_to_zero` runs `TestActionsScaleToZeroGitHubLive`
+on a GitHub-hosted machine. It deploys a pool with `idle_seconds = 60` to a fresh
+named `k3d-hakopod-dev` cluster with the gVisor sandbox, checks that it deploys
+asleep with no runner pods, then lets a companion job in the same workflow run
+queue on the pool's label.
+
+Real in this run: PostgreSQL, the deployment path, the webhook endpoint and its
+HMAC check, demand recording, the scheduled reconciler, the sandboxed runner pod,
+GitHub assigning and running the queued job on that runner, the job's
+conclusion, and the pool returning to zero runners after the idle window.
+
+Simulated: GitHub cannot reach a disposable CI machine, so the test builds each
+signed `workflow_job` delivery from the real job's ID, labels and status, read
+with the run's read-only token. CI never holds the repository administration
+token, so the registrations are two pre-issued single-job JIT configurations,
+and the runner's online and busy state comes from its pod and the real job record
+rather than the self-hosted runners API. The JIT registration the idle window
+keeps warm is not deleted from GitHub; GitHub removes the unused offline runner
+later.
+
+A repository administrator mints the registrations and dispatches the run:
+
+```sh
+label=hakopod-scale-$(date +%s)
+scripts/actions/mint-scale-jit.sh hakopod/hakopod "$label"
+gh workflow run actions-live.yml --repo hakopod/hakopod --ref <branch> \
+  -f scale_to_zero=true -f runner_label="$label" -f jit_secret=HAKOPOD_ACTIONS_SCALE_JIT
+```
+
+Mint fresh registrations with a new label for each run.
 
 ## Isolation and capacity
 

@@ -137,6 +137,7 @@ export function RunnerCapacity({
   providerName,
   disabled,
   onChange,
+  scaled = false,
 }: {
   value: string
   maximum: number
@@ -144,6 +145,7 @@ export function RunnerCapacity({
   providerName: string
   disabled: boolean
   onChange: (value: string) => void
+  scaled?: boolean
 }) {
   const slots = Number(value)
   const valid = Number.isInteger(slots) && slots >= 1 && slots <= maximum
@@ -153,50 +155,183 @@ export function RunnerCapacity({
         Concurrent jobs
         <HeadingHelp title="Concurrent jobs">One isolated runner for each job slot.</HeadingHelp>
       </div>
-      <div className="grid min-h-12 grid-cols-[3rem_5rem_3rem_minmax(0,1fr)] content-start items-start gap-2 [&>.field-error]:col-span-full [&>.field-error]:row-start-2">
-        <Button
-          type="button"
-          size="icon"
-          className="col-start-1 row-start-1 h-12! w-12!"
-          variant="ghost"
-          disabled={disabled || Number(value) <= 1}
-          aria-label="Fewer concurrent jobs"
-          onClick={() => onChange(String(Number(value) - 1))}
-        >
-          <Minus size={16} />
-        </Button>
-        <Input
-          className="h-12! w-20 text-center"
-          type="number"
-          aria-label="Concurrent jobs"
-          min={1}
-          max={maximum}
-          required
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-        />
-        <Button
-          type="button"
-          size="icon"
-          className="col-start-3 row-start-1 h-12! w-12!"
-          variant="ghost"
-          disabled={disabled || Number(value) >= maximum}
-          aria-label="More concurrent jobs"
-          onClick={() => onChange(String(Number(value) + 1))}
-        >
-          <Plus size={16} />
-        </Button>
-      </div>
+      <RunnerStepper
+        label="Concurrent jobs"
+        noun="concurrent jobs"
+        value={value}
+        min={1}
+        max={maximum}
+        disabled={disabled}
+        onChange={onChange}
+      />
       <ul className="grid gap-1 text-sm muted-text" aria-label="Capacity implications">
         <li>Minimum 1 · maximum {maximum} job slots.</li>
         <li>
           {valid
-            ? `Keeps ${slots} ${slots === 1 ? 'runner' : 'runners'} registered. Job ${slots + 1} waits in the ${providerName} queue until a slot is free.`
+            ? `${scaled ? `Runs up to ${slots} ${slots === 1 ? 'job' : 'jobs'} at once` : `Keeps ${slots} ${slots === 1 ? 'runner' : 'runners'} registered`}. Job ${slots + 1} waits in the ${providerName} queue until a slot is free.`
             : `Choose between 1 and ${maximum} job slots.`}
         </li>
         <li role="status">{reservationLabel}</li>
       </ul>
+    </div>
+  )
+}
+
+// A bounded number with large touch targets; the input keeps native validation.
+function RunnerStepper({
+  id,
+  label,
+  noun,
+  value,
+  min,
+  max,
+  disabled,
+  onChange,
+}: {
+  id?: string
+  label: string
+  noun: string
+  value: string
+  min: number
+  max: number
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className="grid min-h-12 grid-cols-[3rem_5rem_3rem_minmax(0,1fr)] content-start items-start gap-2 [&>.field-error]:col-span-full [&>.field-error]:row-start-2">
+      <Button
+        type="button"
+        size="icon"
+        className="col-start-1 row-start-1 h-12! w-12!"
+        variant="ghost"
+        disabled={disabled || Number(value) <= min}
+        aria-label={`Fewer ${noun}`}
+        onClick={() => onChange(String(Math.max(min, Number(value) - 1)))}
+      >
+        <Minus size={16} />
+      </Button>
+      <Input
+        id={id}
+        className="h-12! w-20 text-center"
+        type="number"
+        aria-label={id ? undefined : label}
+        min={min}
+        max={max}
+        step={1}
+        required
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <Button
+        type="button"
+        size="icon"
+        className="col-start-3 row-start-1 h-12! w-12!"
+        variant="ghost"
+        disabled={disabled || Number(value) >= max}
+        aria-label={`More ${noun}`}
+        onClick={() => onChange(String(Math.min(max, Number(value) + 1)))}
+      >
+        <Plus size={16} />
+      </Button>
+    </div>
+  )
+}
+
+export function RunnerScaling({
+  enabled,
+  idleMinutes,
+  warmRunners,
+  slots,
+  disabled,
+  onEnabled,
+  onIdleMinutes,
+  onWarmRunners,
+}: {
+  enabled: boolean
+  idleMinutes: string
+  warmRunners: string
+  slots: number
+  disabled: boolean
+  onEnabled: (enabled: boolean) => void
+  onIdleMinutes: (value: string) => void
+  onWarmRunners: (value: string) => void
+}) {
+  const idleId = useId()
+  const warmId = useId()
+  const warm = Number(warmRunners)
+  const warmValid = Number.isInteger(warm) && warm >= 0 && warm <= slots
+  const idle = Number(idleMinutes)
+  const idleValid = Number.isInteger(idle) && idle >= 1 && idle <= 1440
+  return (
+    <div className="grid min-w-0 gap-3">
+      <RunnerChoices
+        compact
+        label="When no jobs are waiting"
+        value={enabled ? 'scale' : 'fixed'}
+        onChange={(value) => onEnabled(value === 'scale')}
+        disabled={disabled}
+        options={[
+          { value: 'fixed', label: 'Keep runners online' },
+          { value: 'scale', label: 'Scale to zero' },
+        ]}
+      />
+      {enabled && (
+        <>
+          <div className="grid min-w-0 gap-x-4 gap-y-4 sm:grid-cols-2">
+            <div className="grid min-w-0 content-start gap-2">
+              <div className="flex min-h-8 items-center gap-2">
+                <label htmlFor={idleId} className="text-sm font-medium">
+                  Idle minutes
+                </label>
+                <HeadingHelp title="Idle minutes">
+                  Runners stay online this long after the last job event, then the pool shrinks.
+                </HeadingHelp>
+              </div>
+              <RunnerStepper
+                id={idleId}
+                label="Idle minutes"
+                noun="idle minutes"
+                value={idleMinutes}
+                min={1}
+                max={1440}
+                disabled={disabled}
+                onChange={onIdleMinutes}
+              />
+              {idleValid && <p className="text-xs muted-text">1 to 1,440 minutes.</p>}
+            </div>
+            <div className="grid min-w-0 content-start gap-2">
+              <div className="flex min-h-8 items-center gap-2">
+                <label htmlFor={warmId} className="text-sm font-medium">
+                  Runners kept online
+                </label>
+                <HeadingHelp title="Runners kept online">
+                  These runners stay registered while the pool is idle, so the next job starts
+                  without waiting for a new runner.
+                </HeadingHelp>
+              </div>
+              <RunnerStepper
+                id={warmId}
+                label="Runners kept online"
+                noun="runners kept online"
+                value={warmRunners}
+                min={0}
+                max={slots}
+                disabled={disabled}
+                onChange={onWarmRunners}
+              />
+              {warmValid && (
+                <p className="text-xs muted-text">0 to {slots}. 0 stops every runner while idle.</p>
+              )}
+            </div>
+          </div>
+          <p className="text-xs muted-text">
+            Queued jobs start runners through GitHub webhook deliveries. Enable the Workflow jobs
+            event on the GitHub connection that receives this repository&rsquo;s webhooks. The first
+            job after an idle period waits for a new runner to start.
+          </p>
+        </>
+      )}
     </div>
   )
 }
@@ -409,7 +544,9 @@ type RunnerPoolSummaryProps = {
   resources: string
   workspace: string
   labels: string[]
+  scaling?: string
   mode: 'mobile' | 'desktop'
+  actions?: ReactNode
 }
 
 function RunnerPoolSummaryBody({
@@ -422,6 +559,7 @@ function RunnerPoolSummaryBody({
   resources,
   workspace,
   labels,
+  scaling,
   mode: _mode,
 }: RunnerPoolSummaryProps) {
   return (
@@ -443,6 +581,7 @@ function RunnerPoolSummaryBody({
             {placement || 'Any eligible runner node'}
           </dd>
           <dd className="text-xs muted-text wrap-anywhere">{resources}</dd>
+          {scaling && <dd className="text-xs muted-text wrap-anywhere">{scaling}</dd>}
         </div>
         <div className="grid min-w-0 gap-1 border-t border-[var(--hairline)] pt-3">
           <dt className="text-xs muted-text">Job workspace</dt>
@@ -476,6 +615,11 @@ export function RunnerPoolSummary(props: RunnerPoolSummaryProps) {
     >
       <h2 className="text-sm font-semibold">Pool summary</h2>
       <RunnerPoolSummaryBody {...props} />
+      {props.actions && (
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-4">
+          {props.actions}
+        </div>
+      )}
     </aside>
   )
 }

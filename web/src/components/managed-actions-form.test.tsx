@@ -16,6 +16,7 @@ import { ManagedActionsStatus } from './managed-actions-status'
 import { DeploymentForm } from './deploy-dialog'
 import { actionsRemovalMessage } from '../lib/actions-provider'
 import {
+  RunnerScaling,
   RunnerWorkflowGuide,
   runnerCustomLabels,
   runnerLabelError,
@@ -423,4 +424,31 @@ test('pool cards report stale observations as unknown, never as zero running job
   assert.match(live, /Running 1 job/)
   assert.match(live, /1 of 4 slots/)
   assert.match(live, /GitHub · Automatic architecture · Any eligible node/)
+  assert.match(card([]), /No runners registered/)
+  saved.spec.services.runner.actions!.idle_seconds = 300
+  const asleep = card([])
+  assert.match(asleep, />Sleeping</)
+  assert.match(asleep, /0 of 4 slots/)
+  saved.spec.services.runner.actions!.min_replicas = 1
+  assert.match(card([]), /No runners registered/)
+})
+
+test('scale to zero settings stay hidden for fixed pools and show bounds when enabled', () => {
+  const props = {
+    idleMinutes: '5',
+    warmRunners: '0',
+    slots: 3,
+    disabled: false,
+    onEnabled: () => {},
+    onIdleMinutes: () => {},
+    onWarmRunners: () => {},
+  }
+  const fixed = renderToStaticMarkup(<RunnerScaling {...props} enabled={false} />)
+  assert.match(fixed, /Keep runners online/)
+  assert.doesNotMatch(fixed, /Idle minutes/)
+  const scaled = renderToStaticMarkup(<RunnerScaling {...props} enabled />)
+  assert.match(scaled, /Idle minutes/)
+  assert.match(scaled, /max="1440"/)
+  assert.match(scaled, /max="3"/)
+  assert.match(scaled, /Workflow jobs/)
 })
