@@ -69,10 +69,18 @@ try:
                 node_rss.append(int(re.search(r'^VmRSS:\s+(\d+)', status, re.M)[1]))
         except (OSError, TypeError): pass
     assert node_rss and all(value > 0 for value in node_rss), 'Dashboard RSS was not observed'
-    print(json.dumps(dict(result='PASS', architecture=os.environ['ARCH'], dashboard_rss_kib=node_rss,
-        checks=['real SSR/static assets', 'unprivileged startup under umask077', '401 unauthenticated', '403 cross-origin', '413 oversized sign-in', 'resume preserves secrets', 'missing established key refused', 'only HAProxy host ports80/443'])))
-finally:
+    # systemd stops the unit with SIGTERM; a dashboard that lingers holds up
+    # every restart until TimeoutStopSec.
+    stopping = time.monotonic()
     os.killpg(process.pid, signal.SIGTERM)
+    try: process.wait(timeout=8)
+    except subprocess.TimeoutExpired: raise AssertionError('Dashboard did not exit within 8 s of SIGTERM')
+    stop_seconds = round(time.monotonic() - stopping, 2)
+    print(json.dumps(dict(result='PASS', architecture=os.environ['ARCH'], dashboard_rss_kib=node_rss,
+        dashboard_stop_seconds=stop_seconds,
+        checks=['real SSR/static assets', 'exits within 8 s of SIGTERM', 'unprivileged startup under umask077', '401 unauthenticated', '403 cross-origin', '413 oversized sign-in', 'resume preserves secrets', 'missing established key refused', 'only HAProxy host ports80/443'])))
+finally:
+    if process.poll() is None: os.killpg(process.pid, signal.SIGTERM)
     try: process.wait(timeout=15)
     except subprocess.TimeoutExpired: os.killpg(process.pid, signal.SIGKILL); process.wait(timeout=5)
     log.close()

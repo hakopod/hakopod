@@ -86,9 +86,19 @@ const server = serve({
   hostname: process.env.HOST || '127.0.0.1',
   port,
   tls: cert ? { cert, key } : undefined,
-  gracefulShutdown: true,
+  gracefulShutdown: false,
   middleware: [privateAccess, staticMiddleware({ dir: fileURLToPath(new URL('./dist/client', import.meta.url)) })],
   node: { maxHeaderSize: 16384, requestTimeout: 30000, headersTimeout: 15000, keepAliveTimeout: 5000 },
   error: () => new Response('The dashboard could not complete this request.', { status: 500 }),
 })
 await server.ready()
+
+// systemd stops the unit with SIGTERM. srvx's own handler closes the server
+// but never exits, so timers and pooled connections kept Node alive until
+// TimeoutStopSec killed it, adding 30 s to every restart and reboot. Stop
+// accepting connections, give in-flight requests five seconds, then exit.
+for (const signal of ['SIGTERM', 'SIGINT'])
+  process.once(signal, () => {
+    setTimeout(() => process.exit(0), 5000).unref()
+    server.close().then(() => process.exit(0), () => process.exit(0))
+  })
