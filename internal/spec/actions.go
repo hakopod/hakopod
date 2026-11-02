@@ -38,6 +38,10 @@ type Actions struct {
 	TimeoutMinutes   int64            `json:"timeout_minutes,omitempty" toml:"timeout_minutes"`
 	WorkspaceSizeGiB int64            `json:"workspace_size_gib,omitempty" toml:"workspace_size_gib,omitempty"`
 	Cache            *ActionsCache    `json:"cache,omitempty" toml:"cache,omitempty"`
+	// IdleSeconds enables demand scaling: replicas becomes the maximum, queued
+	// GitHub jobs wake runners and the pool returns to MinReplicas when idle.
+	IdleSeconds int64 `json:"idle_seconds,omitempty" toml:"idle_seconds,omitempty"`
+	MinReplicas int64 `json:"min_replicas,omitempty" toml:"min_replicas,omitempty"`
 }
 
 // Cache opts into installation-approved storage. Its credential is a local
@@ -159,6 +163,18 @@ func normalizeActions(s *Service) error {
 	}
 	if s.Replicas > 10 {
 		return fmt.Errorf("actions pools support at most ten concurrent job slots")
+	}
+	if a.IdleSeconds != 0 && target.Provider != actions.ProviderGitHub {
+		return fmt.Errorf("actions.idle_seconds: scale to zero is available for GitHub pools only")
+	}
+	if a.IdleSeconds != 0 && (a.IdleSeconds < 60 || a.IdleSeconds > 86400) {
+		return fmt.Errorf("actions.idle_seconds: choose 60–86,400 seconds")
+	}
+	if a.MinReplicas != 0 && a.IdleSeconds == 0 {
+		return fmt.Errorf("actions.min_replicas: set idle_seconds to scale the pool on demand")
+	}
+	if a.MinReplicas < 0 || a.MinReplicas > int64(s.Replicas) {
+		return fmt.Errorf("actions.min_replicas: choose 0 up to the pool's replicas")
 	}
 	// An actions pool manages its own sandbox, so it never names a daemon.
 	if s.Job != nil || s.Serverless != nil || s.Autoscaling != nil || s.Public || s.BackendHTTP2 || s.Port != 0 || len(s.Ports) > 0 || len(s.PublicTCP) > 0 || len(s.HTTP) > 0 || s.Volume != nil || len(s.Mounts) > 0 || len(s.TemporaryMounts) > 0 || s.GPU != nil || len(s.Env) > 0 || len(s.Secrets) > 0 || len(s.Files) > 0 || len(s.Bindings) > 0 || len(s.Command) > 0 || len(s.Args) > 0 || len(s.DependsOn) > 0 || s.AWSIdentity != "" || s.ContainerDaemon != "" || s.RegistryCredential != "" || len(s.CertificateMounts) > 0 || s.TLS != nil || s.RunAsUser != 0 || s.RunAsGroup != 0 || s.FSGroup != 0 || s.WorkingDir != "" || s.ReadOnlyRootFilesystem || len(s.PrivateEgress) > 0 {

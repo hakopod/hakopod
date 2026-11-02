@@ -281,6 +281,54 @@ contain ordinary services, persistent volumes or custom host access. Create a
 separate application for databases and application workloads. Runner pools
 cannot be copied into previews or moved between applications.
 
+## Scale to zero
+
+A GitHub pool can stop all runners while no jobs are waiting. Set
+`idle_seconds` and `replicas` becomes the maximum number of concurrent jobs:
+
+```toml
+[services.runner]
+replicas = 4
+
+[services.runner.actions]
+organization = "your-team"
+credential = "github-runner-token"
+labels = ["hakopod"]
+idle_seconds = 300
+# min_replicas = 1 # Optional; keeps one runner online while idle.
+```
+
+| Setting | Default | Allowed values |
+| --- | --- | --- |
+| `idle_seconds` | Omitted (fixed pool) | 60–86,400 seconds |
+| `min_replicas` | 0 | 0 up to `replicas`; requires `idle_seconds` |
+
+The pool wakes from GitHub `workflow_job` webhook deliveries. Each queued job
+whose `runs-on` labels all appear on the pool (its labels plus `self-hosted`,
+`linux` and its architecture) and whose repository matches the pool's
+repository or organization starts one runner, up to `replicas`. Runners stay
+online for `idle_seconds` after the last job event, then the pool returns to
+`min_replicas`. Busy jobs are never interrupted. An idle pool appears as
+**Sleeping** on its service.
+
+Deliveries arrive through a GitHub connection under **Settings → Git**. New
+GitHub Apps created with builds enabled subscribe to **Workflow jobs**
+automatically. For an existing App, or a repository or organization webhook
+pointing at the connection's webhook URL, enable the **Workflow jobs** event in
+GitHub. A connection limited to a project and environment only wakes pools in
+that scope; the installation-wide connection can wake any matching pool.
+
+GitHub does not retry failed webhook deliveries on its own. If Hakopod is
+unreachable when a job is queued, that job waits until another job event for
+the pool arrives, a runner from `min_replicas` picks it up, or you redeliver it
+from the webhook's **Recent Deliveries** page. GitHub cancels jobs still queued
+after 24 hours, and Hakopod forgets demand at the same limit. Use
+`min_replicas = 1` where a missed delivery must not delay a job. GitLab and
+Bitbucket pools keep a fixed size.
+
+Each wake-up starts a fresh runner, so the first job after an idle period also
+waits for runner and Docker startup.
+
 ## Isolation and capacity
 
 Each single-job runner has its own Docker daemon inside gVisor. Docker actions,
