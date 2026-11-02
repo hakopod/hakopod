@@ -2,6 +2,15 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Republishes the npm CLI packages of an already published release. build
+  # runs only on a tag push, so nothing that depends on it publishes; the
+  # runtime qualification jobs only gather evidence and stay unconditional.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag whose npm CLI packages to publish
+        type: string
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -9,6 +18,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -433,41 +443,44 @@ jobs:
         with:
           name: release-assets
           path: .local/publication/${{ needs.build.outputs.version }}
-      - name: Stage the CLI archives against the published checksums
+      - name: Stage, generate and publish the CLI packages
         env:
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: release/publish-npm-cli.sh "$RELEASE_VERSION" ".local/publication/$RELEASE_VERSION"
+
+  # npm provenance statements are tied to the workflow run. When a publish
+  # writes its transparency-log entry and then fails, every retry in the same
+  # run repeats that statement and is refused as a duplicate, so a fresh run
+  # is the only way to finish. Trusted publishing is bound to this file and
+  # the npm environment, which is why recovery lives here.
+  npm-cli-recovery:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: read
+    environment: npm
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check the release
         run: |
-          directory=".local/publication/$RELEASE_VERSION"
-          # The archives are what the release publishes; re-verify before repackaging.
-          (cd "$directory" && grep 'hakopod-cli_' SHA256SUMS | sha256sum --check --strict)
-          for platform in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64 windows_arm64; do
-            target=".local/npm-archives/$platform"
-            mkdir -p "$target"
-            tar -xzf "$directory/hakopod-cli_${RELEASE_VERSION}_${platform}.tar.gz" \
-              -C "$target" --strip-components=1
-          done
-      - name: Generate the npm packages
-        env:
-          RELEASE_VERSION: ${{ needs.build.outputs.version }}
-        run: node packages/cli-binary/generate.mjs "$RELEASE_VERSION" .local/npm-archives .local/npm-packages
-      - name: Publish the platform packages, then the wrapper
+          [[ $RELEASE_TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "invalid tag: $RELEASE_TAG" >&2; exit 1; }
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)" = false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - name: Download the published CLI archives and verify their attestations
         run: |
-          # Publishing seven packages in sequence means a failure partway leaves
-          # the earlier ones published. npm refuses to republish a version, so a
-          # naive re-run would die on those instead of resuming. Skip what is
-          # already on the registry at this exact version.
-          publish() {
-            name=$(node -p "require('./$1/package.json').name")
-            version=$(node -p "require('./$1/package.json').version")
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "skip $name@$version (already published)"
-              return 0
-            fi
-            npm publish --provenance --access public --tag latest "$1"
-          }
-          # Platform packages first: the wrapper's optionalDependencies pin these
-          # exact versions, and npm resolves them at install time.
-          for package in .local/npm-packages/cli-*; do
-            publish "$package"
+          directory=".local/publication/${RELEASE_TAG#v}"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$directory" \
+            --pattern SHA256SUMS --pattern 'hakopod-cli_*'
+          for archive in "$directory"/hakopod-cli_*; do
+            gh attestation verify "$archive" --repo "$GITHUB_REPOSITORY" > /dev/null
           done
-          publish .local/npm-packages/cli
+      - name: Stage, generate and publish the CLI packages
+        run: release/publish-npm-cli.sh "${RELEASE_TAG#v}" ".local/publication/${RELEASE_TAG#v}"
