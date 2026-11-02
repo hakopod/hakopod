@@ -24,6 +24,10 @@ on:
         description: Second single-job runner label for the cache restore job
         type: string
         default: unused-cache-restore-fixture
+      scale_to_zero:
+        description: Verify a scale-to-zero pool wakes for a real queued job and returns to zero
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -31,7 +35,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   sandbox:
-    if: ${{ !inputs.observer || inputs.cache }}
+    if: ${{ !inputs.scale_to_zero && (!inputs.observer || inputs.cache) }}
     runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 35
     env:
@@ -74,7 +78,7 @@ jobs:
         if: always()
         run: scripts/local-down.sh
   shell-and-docker:
-    if: ${{ !inputs.observer && !inputs.cache }}
+    if: ${{ !inputs.scale_to_zero && !inputs.observer && !inputs.cache }}
     runs-on: [self-hosted, hakopod-live-shell]
     timeout-minutes: 20
     services:
@@ -115,7 +119,7 @@ jobs:
           docker build -t managed-actions-fixture /home/runner/actions-build
           docker run --rm managed-actions-fixture | grep built-inside-sandbox
   container-job:
-    if: ${{ !inputs.observer && !inputs.cache }}
+    if: ${{ !inputs.scale_to_zero && !inputs.observer && !inputs.cache }}
     runs-on: [self-hosted, hakopod-live-container]
     timeout-minutes: 20
     container:
@@ -131,7 +135,7 @@ jobs:
           test "$(cat "$GITHUB_WORKSPACE/container-proof")" = job-container-ok
 
   observer-host:
-    if: ${{ inputs.observer && !inputs.cache }}
+    if: ${{ !inputs.scale_to_zero && inputs.observer && !inputs.cache }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -189,7 +193,7 @@ jobs:
         if: always()
         run: scripts/local-down.sh
   observer-job:
-    if: ${{ inputs.observer && !inputs.cache }}
+    if: ${{ !inputs.scale_to_zero && inputs.observer && !inputs.cache }}
     runs-on: [self-hosted, '${{ inputs.runner_label }}']
     timeout-minutes: 10
     permissions:
@@ -216,7 +220,7 @@ jobs:
           echo '::endgroup::'
 
   cache-save:
-    if: ${{ inputs.cache }}
+    if: ${{ !inputs.scale_to_zero && inputs.cache }}
     runs-on: [self-hosted, '${{ inputs.runner_label }}']
     timeout-minutes: 10
     outputs:
@@ -246,7 +250,7 @@ jobs:
           key: ${{ steps.fixture.outputs.key }}
 
   cache-restore:
-    if: ${{ inputs.cache }}
+    if: ${{ !inputs.scale_to_zero && inputs.cache }}
     needs: cache-save
     runs-on: [self-hosted, '${{ inputs.restore_runner_label }}']
     timeout-minutes: 10
@@ -282,3 +286,83 @@ jobs:
           test "$(cat .hakopod-cache-fixture/source-runner)" = "$SOURCE_RUNNER"
           printf '%s  .hakopod-cache-fixture/payload\n' "$EXPECTED_SHA" | sha256sum --check --strict
           printf 'Verified an exact GitHub cache hit on a different managed runner: `%s` (8 MiB payload).\n' "$CACHE_KEY" >> "$GITHUB_STEP_SUMMARY"
+
+  scale-to-zero-controller:
+    if: ${{ inputs.scale_to_zero }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
+    env:
+      HAKOPOD_DEV_SERVER_MEMORY: 6g
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 512MiB
+      HAKOPOD_TEST_DATABASE_URL: postgres://hakopod_ci:ephemeral-ci-only@127.0.0.1:5432/postgres?sslmode=disable
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: hakopod_ci
+          POSTGRES_PASSWORD: ephemeral-ci-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hakopod_ci -d postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+      - uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.17.2
+      - run: scripts/local-up.sh
+      - name: Install sandbox on the disposable development node
+        run: |
+          python3 scripts/actions/setup-dev-runtime.py
+          sleep 10
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev wait --for=condition=Ready nodes --all --timeout=180s
+      - name: Wake a sleeping pool from the companion job and return to zero
+        env:
+          FIXTURE_JSON: ${{ secrets[inputs.jit_secret] }}
+          READ_TOKEN: ${{ github.token }}
+          HAKOPOD_ACTIONS_SCALE_TEST: '1'
+          HAKOPOD_ACTIONS_SCALE_LABEL: ${{ inputs.runner_label }}
+        run: |
+          python3 - <<'PYFIXTURE'
+          import json,os,pathlib
+          root=pathlib.Path('.local/scale-fixture');root.mkdir(mode=0o700)
+          data=json.loads(os.environ['FIXTURE_JSON'])
+          assert isinstance(data,list) and len(data)==2, 'expected two single-job registrations'
+          for name,value in {'jit':json.dumps(data),'token':os.environ['READ_TOKEN']}.items():
+              fd=os.open(root/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+              with os.fdopen(fd,'w') as output: output.write(value)
+          PYFIXTURE
+          export HAKOPOD_TEST_KUBECONFIG="$PWD/.local/kubeconfig"
+          export HAKOPOD_ACTIONS_SCALE_JIT="$PWD/.local/scale-fixture/jit"
+          export HAKOPOD_ACTIONS_SCALE_READ_TOKEN="$PWD/.local/scale-fixture/token"
+          unset FIXTURE_JSON READ_TOKEN
+          go test -p=1 ./internal/api -run '^TestActionsScaleToZeroGitHubLive$' -v -count=1 -timeout=30m
+      - name: Diagnose disposable runner pods
+        if: failure()
+        run: |
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get pods -A
+          kubectl --kubeconfig .local/kubeconfig --context k3d-hakopod-dev get events -A --sort-by=.lastTimestamp | tail -50
+      - name: Stop disposable cluster
+        if: always()
+        run: scripts/local-down.sh
+  scale-to-zero-job:
+    if: ${{ inputs.scale_to_zero }}
+    runs-on: [self-hosted, '${{ inputs.runner_label }}']
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Run on the runner woken by the scale-to-zero pool
+        run: |
+          echo "runner=$RUNNER_NAME"
+          test -n "$RUNNER_NAME"

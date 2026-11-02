@@ -480,7 +480,7 @@ func (c *Client) waitActions(ctx context.Context, t Target) error {
 			if err != nil {
 				return err
 			}
-			ready = ready && (status.Status == "ready" || status.Status == "stopped")
+			ready = ready && (status.Status == "ready" || status.Status == "stopped" || status.Status == "sleeping")
 		}
 		if ready {
 			return nil

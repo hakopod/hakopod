@@ -303,6 +303,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	}
 	allowed := accessErr == nil
 	desired := int(p.Config.Replicas)
+	start := desired
 	if a := p.Config.Actions; a != nil && a.IdleSeconds > 0 {
 		queued, warm, err := s.Store.ActionsDemand(ctx, p.ApplicationID, p.Service, a.IdleSeconds)
 		if err != nil {
@@ -314,17 +315,19 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 				busy++
 			}
 		}
+		// The idle window keeps existing runners; only demand starts new ones.
+		start = scaledActionsReplicas(a, desired, busy, queued, len(slots), false)
 		desired = scaledActionsReplicas(a, desired, busy, queued, len(slots), warm)
 	}
 	if p.Removed || p.Config.Suspended || !allowed {
-		desired = 0
+		desired, start = 0, 0
 	}
 	remaining := len(slots)
 	retained := 0
 	// Fill genuinely empty capacity before spending its entire shared request
 	// budget polling online runners. Ambiguous registrations must recover first.
 	cleanupPending := len(slots) > 0 && (slots[0].Phase == "intent" || slots[0].Phase == "cleanup")
-	if remaining < desired && !cleanupPending {
+	if remaining < start && !cleanupPending {
 		if err = s.startActionsSlot(ctx, t, p); err != nil {
 			return err
 		}
@@ -442,7 +445,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	}
 	// At most one provider registration per pool per pass. Draining and
 	// cleanup-pending slots continue to count against the replica budget.
-	if remaining < desired {
+	if remaining < start {
 		if err = s.startActionsSlot(ctx, t, p); err != nil {
 			return err
 		}

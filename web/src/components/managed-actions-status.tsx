@@ -68,7 +68,13 @@ export function ManagedActionsStatus({
   const observedAt = item
     ? [item.pool.updated_at, ...item.slots.map((slot) => slot.updated_at)].sort().at(-1)
     : undefined
-  const known = !!item && !query.error && fresh.length > 0
+  // A scale-to-zero pool with no registrations is asleep, not unknown.
+  // Runners kept online must be observed, so a missing one is never shown as sleep.
+  const asleep =
+    !!item?.pool.config.actions?.idle_seconds &&
+    !item.pool.config.actions.min_replicas &&
+    item.slots.length === 0
+  const known = !!item && !query.error && (fresh.length > 0 || asleep)
   const state = query.isPending
     ? { tone: 'pending', label: 'Checking pool' }
     : query.error
@@ -80,7 +86,9 @@ export function ManagedActionsStatus({
           : !fresh.length
             ? stale
               ? { tone: 'warning', label: 'Observation out of date' }
-              : { tone: 'pending', label: 'No runners registered' }
+              : asleep
+                ? { tone: 'pending', label: 'Sleeping' }
+                : { tone: 'pending', label: 'No runners registered' }
             : busy
               ? { tone: 'success', label: busy === 1 ? 'Running 1 job' : `Running ${busy} jobs` }
               : available

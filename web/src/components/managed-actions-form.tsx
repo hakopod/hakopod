@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { dashboardEdition } from '../lib/dashboard-edition'
 import { canAccess } from '../lib/scope'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -26,6 +26,7 @@ import {
 } from '../lib/runner-bindings'
 import {
   RunnerCapacity,
+  RunnerScaling,
   RunnerChoices,
   RunnerDisclosureSummary,
   RunnerLabels,
@@ -126,6 +127,11 @@ function RunnerPoolForm({
     runnerCustomLabels(original?.actions?.labels, provider),
   )
   const [replicas, setReplicas] = useState(String(original?.replicas ?? 1))
+  const savedIdleSeconds = original?.actions?.idle_seconds || 0
+  const savedIdleMinutes = String(Math.max(1, Math.round((savedIdleSeconds || 300) / 60)))
+  const [scaleToZero, setScaleToZero] = useState(savedIdleSeconds > 0)
+  const [idleMinutes, setIdleMinutes] = useState(savedIdleMinutes)
+  const [warmRunners, setWarmRunners] = useState(String(original?.actions?.min_replicas || 0))
   const [architecture, setArchitecture] = useState(original?.architecture || '')
   const [nodeName, setNodeName] = useState(original?.node_name || '')
   const [step, setStep] = useState(0)
@@ -149,6 +155,7 @@ function RunnerPoolForm({
   const [error, setError] = useState('')
   const [plan, setPlan] = useState<Plan | null>(null)
   const key = useRef('')
+  const formId = useId()
   const capabilities = useQuery({
     queryKey: ['actions-capabilities', project, environment],
     queryFn: ({ signal }) =>
@@ -225,6 +232,25 @@ function RunnerPoolForm({
   ]
   const lifecycle =
     providerCapability?.lifecycle || (provider === 'bitbucket' ? 'dedicated' : 'ephemeral')
+  const scaling = provider === 'github' && lifecycle !== 'dedicated' && scaleToZero
+  // An unchanged saved value keeps its exact seconds, including ones TOML set off the minute.
+  const scalingValid =
+    scaling &&
+    Number.isInteger(Number(idleMinutes)) &&
+    Number(idleMinutes) >= 1 &&
+    Number(idleMinutes) <= 1440 &&
+    Number.isInteger(Number(warmRunners)) &&
+    Number(warmRunners) >= 0 &&
+    Number(warmRunners) <= Number(replicas)
+  const idleLabel = `${idleMinutes} idle ${idleMinutes === '1' ? 'minute' : 'minutes'}`
+  const scalingLabel =
+    Number(warmRunners) === 0
+      ? `Stops all runners after ${idleLabel}`
+      : `Scales down to ${warmRunners} ${warmRunners === '1' ? 'runner' : 'runners'} after ${idleLabel}`
+  const idleSeconds =
+    savedIdleSeconds && idleMinutes === savedIdleMinutes
+      ? savedIdleSeconds
+      : Number(idleMinutes) * 60
   const target = {
     gitlab:
       provider === 'gitlab'
@@ -377,6 +403,18 @@ function RunnerPoolForm({
       setError('Choose an eligible node for this architecture, or use Automatic placement.')
       return
     }
+    if (step === 2 && scaling) {
+      const idle = Number(idleMinutes)
+      const warm = Number(warmRunners)
+      if (!Number.isInteger(idle) || idle < 1 || idle > 1440) {
+        setError('Choose 1 to 1,440 idle minutes.')
+        return
+      }
+      if (!Number.isInteger(warm) || warm < 0 || warm > Number(replicas)) {
+        setError(`Keep 0 to ${replicas} runners online while idle.`)
+        return
+      }
+    }
     if (step === 2 && !resourcesValid) {
       setError('Choose a pool preset or increase the values to meet this provider’s minimums.')
       return
@@ -442,6 +480,8 @@ function RunnerPoolForm({
           timeout_minutes:
             lifecycle === 'dedicated' ? original?.actions?.timeout_minutes : Number(timeout),
           workspace_size_gib: Number(workspaceSize),
+          idle_seconds: scaling ? idleSeconds : undefined,
+          min_replicas: scaling && Number(warmRunners) > 0 ? Number(warmRunners) : undefined,
         },
       }
       const result = await unwrap(
@@ -570,6 +610,8 @@ function RunnerPoolForm({
       const key = change.field.split('.').at(-1) || change.field
       const labels: Record<string, string> = {
         replicas: 'Concurrent jobs',
+        idle_seconds: 'Idle time in seconds',
+        min_replicas: 'Runners kept online',
         architecture: 'Architecture',
         node_name: 'Placement',
         workspace_size_gib: 'Workspace size',
@@ -652,7 +694,47 @@ function RunnerPoolForm({
     resources: reservationLabel,
     workspace: `${workspaceSize} GiB${lifecycle !== 'dedicated' ? ` · ${timeout} minute lifetime` : ' · Retained for this repository'} · ${persistentCache ? 'Shared cache' : 'No shared cache'}`,
     labels: runnerWorkflowLabels(workflowLabels, provider, architecture),
+    scaling: scalingValid ? scalingLabel : undefined,
   }
+  // One set of step actions: below the form on small screens, under the
+  // sticky pool summary on desktop. `form` keeps submit bound to the form.
+  const actions = plan ? (
+    <>
+      <Button disabled={busy} onClick={() => move(3)}>
+        Back to cache policy
+      </Button>
+      <Button
+        variant="primary"
+        disabled={busy || !!plan.missing_secrets?.length || !ready}
+        onClick={() => void deploy()}
+      >
+        {busy
+          ? original
+            ? 'Updating runner pool…'
+            : 'Creating runner pool…'
+          : original
+            ? 'Update runner pool'
+            : 'Create runner pool'}
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button type="button" disabled={busy} onClick={() => (step ? move(step - 1) : onClose())}>
+        {step ? 'Back' : 'Cancel'}
+      </Button>
+      <Button
+        type="submit"
+        form={formId}
+        variant="primary"
+        disabled={busy || !canDraft || (step === 3 && !ready)}
+        aria-busy={busy || undefined}
+      >
+        {busy
+          ? 'Preparing review…'
+          : ['Choose image', 'Set capacity', 'Set cache policy'][step] || 'Review runner pool'}
+      </Button>
+    </>
+  )
   return (
     <FormPage
       title={original ? 'Configure runner pool' : 'Create runner pool'}
@@ -721,7 +803,7 @@ function RunnerPoolForm({
                       ref={reviewFocus}
                       tabIndex={-1}
                       aria-label="Review runner pool"
-                      className="grid min-w-0 gap-4 focus-visible:outline-2"
+                      className="grid min-w-0 gap-4 outline-none"
                     >
                       <RunnerSection title="Review runner pool">
                         <RunnerPolicyRows
@@ -736,8 +818,19 @@ function RunnerPoolForm({
                             { label: 'Scope', value: `${project} / ${environment}` },
                             {
                               label: 'Runners',
-                              value: `${original ? 'Keeps' : 'Registers'} ${replicas} ${providerName} ${replicas === '1' ? 'runner' : 'runners'} for ${targetLabel}`,
+                              value: scaling
+                                ? `Starts up to ${replicas} ${providerName} ${replicas === '1' ? 'runner' : 'runners'} for queued jobs in ${targetLabel}. ${scalingLabel}.`
+                                : `${original ? 'Keeps' : 'Registers'} ${replicas} ${providerName} ${replicas === '1' ? 'runner' : 'runners'} for ${targetLabel}`,
                             },
+                            ...(scaling
+                              ? [
+                                  {
+                                    label: 'Wakes on',
+                                    value:
+                                      'GitHub Workflow jobs webhook events. Enable that event on the GitHub connection for this repository.',
+                                  },
+                                ]
+                              : []),
                             {
                               label: 'Image',
                               value: `${architecture ? architecture.toUpperCase() : 'Automatic architecture'}${runnerImage ? ` · ${runnerImage.split('@')[0]}` : ''}`,
@@ -839,28 +932,14 @@ function RunnerPoolForm({
                             )
                           }
                         />
-                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-3">
-                          <Button disabled={busy} onClick={() => move(3)}>
-                            Back to cache policy
-                          </Button>
-                          <Button
-                            variant="primary"
-                            disabled={busy || !!plan.missing_secrets?.length || !ready}
-                            onClick={() => void deploy()}
-                          >
-                            {busy
-                              ? original
-                                ? 'Updating runner pool…'
-                                : 'Creating runner pool…'
-                              : original
-                                ? 'Update runner pool'
-                                : 'Create runner pool'}
-                          </Button>
+                        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-3 lg:hidden">
+                          {actions}
                         </div>
                       </RunnerSection>
                     </div>
                   ) : (
                     <form
+                      id={formId}
                       ref={form}
                       onSubmit={(event) => void advance(event)}
                       className="grid min-w-0 gap-4"
@@ -873,7 +952,7 @@ function RunnerPoolForm({
                         ref={stepFocus}
                         tabIndex={-1}
                         aria-label={`${['Provider and source scope', 'Runner image', 'Capacity and placement', 'Cache policy'][step]} step`}
-                        className="min-w-0 focus-visible:outline-2"
+                        className="min-w-0 outline-none"
                       >
                         {step === 0 && (
                           <RunnerSection title="Provider and source scope">
@@ -1374,6 +1453,7 @@ function RunnerPoolForm({
                                 )}
                                 disabled={busy}
                                 onChange={setReplicas}
+                                scaled={scaling}
                               />
                               <RunnerPlacement
                                 value={nodeName}
@@ -1386,6 +1466,20 @@ function RunnerPoolForm({
                                 onChange={setNodeName}
                                 onRetry={() => void nodes.refetch()}
                               />
+                              {provider === 'github' && lifecycle !== 'dedicated' && (
+                                <div className="min-w-0 pt-3 lg:col-span-2">
+                                  <RunnerScaling
+                                    enabled={scaleToZero}
+                                    idleMinutes={idleMinutes}
+                                    warmRunners={warmRunners}
+                                    slots={Number(replicas) || 1}
+                                    disabled={busy}
+                                    onEnabled={setScaleToZero}
+                                    onIdleMinutes={setIdleMinutes}
+                                    onWarmRunners={setWarmRunners}
+                                  />
+                                </div>
+                              )}
                             </div>
                           </RunnerSection>
                         )}
@@ -1514,30 +1608,13 @@ function RunnerPoolForm({
                         )}
                       </div>
                       {error && <RequestError error={error} />}
-                      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-3">
-                        <Button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => (step ? move(step - 1) : onClose())}
-                        >
-                          {step ? 'Back' : 'Cancel'}
-                        </Button>
-                        <Button
-                          type="submit"
-                          variant="primary"
-                          disabled={busy || !canDraft || (step === 3 && !ready)}
-                          aria-busy={busy || undefined}
-                        >
-                          {busy
-                            ? 'Preparing review…'
-                            : ['Choose image', 'Set capacity', 'Set cache policy'][step] ||
-                              'Review runner pool'}
-                        </Button>
+                      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--hairline)] pt-3 lg:hidden">
+                        {actions}
                       </div>
                     </form>
                   )}
                 </div>
-                <RunnerPoolSummary {...summary} mode="desktop" />
+                <RunnerPoolSummary {...summary} mode="desktop" actions={actions} />
               </div>
             </>
           )}

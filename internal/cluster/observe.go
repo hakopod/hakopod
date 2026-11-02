@@ -45,7 +45,7 @@ func (c *Client) Observe(ctx context.Context, t Target) (Observation, error) {
 				return result, err
 			}
 			result.Services = append(result.Services, status)
-			if status.Status == "ready" || status.Status == "stopped" {
+			if status.Status == "ready" || status.Status == "stopped" || status.Status == "sleeping" {
 				healthy++
 			}
 			continue
