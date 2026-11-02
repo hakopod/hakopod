@@ -1,0 +1,144 @@
+{
+  "bootstrap": {
+    "commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+    "reviewed_release": "v0.1.0-alpha.75",
+    "tag": "v0.1.0-alpha.74",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+  "delta": {
+    "baseline_sha256": "3892e41610aca13220b7f0fd711515644bc30706d76201c4d3c663e7734904d1",
+    "changes": [
+      {
+        "after": "fbbe6a89da25d9af73bff741e3a2c9a9b07341a1677fe8eb0c1280c7dd9715de",
+        "before": "0fa1752dc2d2248bfc47855d5c3e1af1e4fbd2b4134030217a843cdfbc636e71",
+        "path": "api/contracts/actions.py",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d89d0bd22f9e417592538f1dd02dbb02f595f30c8cb4e6350d0a061265c76892",
+        "before": "2f3a4f0e66760c707cdfb5a8d2b11ef0d2807b8ae436670e6c5b491360136d2d",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "65c87c9ac38bc83b9c6f8bc1d1e567699968721bac4262e81ed120b542d3b081",
+        "before": "04894a1b1bb8c9b658aef016c744b8418105c8644fc47dec5a0350f8db0748eb",
+        "path": "internal/api/actions.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "9ef4f1d81430bb63fd4168d45bbde42dafc7b5ce5a0baae4e97048194201544a",
+        "before": null,
+        "path": "internal/api/actions_demand.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "3272264ce4c07705bb798ac624912f08f5a3278da7c713b86e6a52f42532a9f4",
+        "before": null,
+        "path": "internal/api/actions_demand_test.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "36bcebf5bbd018bd4e23deadade723ca50952ebe29a6f2249f4b34c799867bc7",
+        "before": null,
+        "path": "internal/api/actions_scale_live_test.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "ce14a371472b1955b11153e14653d8a12a058bc993079725c0fc75c152709186",
+        "before": "1aeffd7aea445c60428f35ff617146b37d59f15c7c4bba39d044811caf3cebfb",
+        "path": "internal/api/git_manifest.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a55dce0d7c95ebc1289031d6b1621b6612b85cb540c3cf66b2e3be91a404612a",
+        "before": "19854abcb1ff65aba41d24217b5b73fffaefaf0d8be425936e8a9d07047e1801",
+        "path": "internal/api/github.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "fba27f57a5d7deec2b6a6970c58ccbd39b34a44d44a0591d910ec8c84933f222",
+        "before": "fe765e4caf1295c5a3514da5f20ad46d30925871bfff56498ca1a1fc1117148e",
+        "path": "internal/cluster/actions.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "0e696ca1e6737de1541ea4d0334453be0c74623f1456d4db9a74cd521960c2f6",
+        "before": "452df37d69ec58f1c12e27e301ef18832b55fd4976c60e69f7c45b1e29e657d2",
+        "path": "internal/cluster/observe.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "ef5798ce5e0295d41e5583376413119c991413030ce8bfd923fea03d29595279",
+        "before": "d9f31a32d9f4dfc2956601dae470b7e09d6be231d514f915e2a57764f879d1b8",
+        "path": "internal/spec/actions.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "74d80eb681b8b3378570580d7dc507d613dc1bfa3a687704d56a99e4f95682c7",
+        "before": "bbc9fbe8086b546fa86fd3de16547831319028a3726e4f3e4a3fa5695fa87ea4",
+        "path": "internal/spec/actions_test.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d91b91bd0727f6f78c63de3109752dd0e42dffee10e81f18a718bec664b6c5bb",
+        "before": "659c4c85b423a59fe1556260f78afe1aced6a3ac03ab43a82a8ca6f3415ea571",
+        "path": "internal/spec/environment_test.go",
+        "reason": "Reviewed control-plane change (per-service effective environment limit raised from 128 to 256 variables with a 512 KiB total size bound, with its test); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "7827bcfec361855185055c994dad7c4aa2ad9033052a12b5ac763dce65ff6f89",
+        "before": "83480aa91140618a6fbd122b193d57c44ba1c96bb909ea025d162f8d5ce3d1e2",
+        "path": "internal/spec/spec.go",
+        "reason": "Reviewed control-plane change (per-service effective environment limit raised from 128 to 256 variables with a 512 KiB total size bound, with its test); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d5d6832eaca6d2330b1285148537e2ceb63b59eaecd6f38b7e1055b636f7dc79",
+        "before": null,
+        "path": "internal/store/108_actions_demand.sql",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "3197d9dcbf28f020b46e70a64c657bf260f029522be9f3f44bac73f10345db63",
+        "before": null,
+        "path": "internal/store/actions_demand.go",
+        "reason": "Reviewed control-plane change (GitHub runner pools scale to zero on queued workflow_job deliveries, the dashboard controls, API contract and their tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "040a518007253307f0152aa79acefb4276329fce54d617eb436f9499d647d8b7",
+        "before": "da838b35c2db0ac36925e4eb3ab9978e82d4ccd30656cb2d1afc5435160669fc",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Opens the alpha.75 chained review on the published alpha.74 records; verifier wording only, no change to what is verified."
+      }
+    ],
+    "current_sha256": "1c7d423f7a20dc75a52987e540d7400714cf72f11c4326fb233c5905d2fdb266"
+  },
+  "predecessor": {
+    "commit": "42f1fa8f9edead951964fd0991698d82474e6f61",
+    "review_sha256": "679a68a6a68c05bc7f2e7486ba59b1e9b595fba2ab8fa2ef76a9d4551b1c12d1",
+    "tag": "v0.1.0-alpha.74"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestActionsServicePullFixtureIsolation",
+      "TestRebaseCarriesIndependentChangesForward",
+      "TestRebaseHonoursRemovals",
+      "TestRebaseNamesConflictsAndKeepsCurrent",
+      "TestRunnerPoliciesReachOnlyTheRegistryMirrorInTheCluster",
+      "TestServicePolicyExcludesOnlyGitLabSlotsWithTheirOwnNetworkPolicy"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/40933820752"
+  },
+  "reviewed_release": "v0.1.0-alpha.75",
+  "runtime": "oracle-free",
+  "schema_version": 2
+}
