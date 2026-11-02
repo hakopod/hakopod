@@ -55,7 +55,7 @@ const cases = {
     // Keyboard selection: focus the fixed choice, then move to Scale to zero.
     await page.getByRole('radio', { name: 'Keep runners online' }).focus()
     await page.keyboard.press('ArrowRight')
-    await page.getByLabel('Idle minutes').waitFor()
+    await page.getByLabel('Idle minutes', { exact: true }).waitFor()
     await page.getByText('When no jobs are waiting').scrollIntoViewIfNeeded()
     await capture(page, `${name}-capacity-enabled-keyboard`)
     await page.getByRole('button', { name: 'About Idle minutes' }).click()
@@ -65,14 +65,14 @@ const cases = {
   },
   async invalid(page, name) {
     await openCapacity(page, 'scaled')
-    await page.getByLabel('Runners kept online').fill('9')
+    await page.getByLabel('Runners kept online', { exact: true }).fill('9')
     await page.getByRole('button', { name: 'Set cache policy' }).click()
     await page.waitForTimeout(300)
     await capture(page, `${name}-capacity-invalid`)
   },
   async review(page, name) {
     await openCapacity(page, 'scaled')
-    await page.getByLabel('Idle minutes').fill('15')
+    await page.getByLabel('Idle minutes', { exact: true }).fill('15')
     await page.getByRole('button', { name: 'Set cache policy' }).click()
     await page.getByRole('button', { name: 'Review runner pool' }).click()
     await page.getByText('What will change').waitFor({ timeout: 20000 })
@@ -80,7 +80,7 @@ const cases = {
   },
   async sleeping(page, name) {
     await page.goto(`${base}/status?fixture=sleeping`)
-    await page.getByText('Sleeping', { exact: true }).waitFor({ timeout: 20000 })
+    await page.locator('.runner-pool-state', { hasText: 'Sleeping' }).waitFor({ timeout: 20000 })
     await capture(page, `${name}-pool-sleeping`)
   },
 }
