@@ -1,0 +1,48 @@
+{
+  "bootstrap": {
+    "commit": "71452cd9ecc37857a5f5444f6afafe4bfc03e0a5",
+    "reviewed_release": "v0.1.0-alpha.76",
+    "tag": "v0.1.0-alpha.75",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "71452cd9ecc37857a5f5444f6afafe4bfc03e0a5",
+  "delta": {
+    "baseline_sha256": "b54c97111fbb8bb91d20932c6c702f6727c966d153e09283ba5c9024bfe8fe52",
+    "changes": [
+      {
+        "after": "cd8cd8b73a3cfe7bd895b39ad51fb809e9994eef1162fe1b77b8c11cda01c21a",
+        "before": "040a518007253307f0152aa79acefb4276329fce54d617eb436f9499d647d8b7",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Opens the alpha.76 chained review on the published alpha.75 records; verifier constants only, no change to what is verified."
+      }
+    ],
+    "current_sha256": "8525efbe898668a6210dc1289b0dd8ea90e6140093864d80f04acc1524561dc6"
+  },
+  "predecessor": {
+    "commit": "71452cd9ecc37857a5f5444f6afafe4bfc03e0a5",
+    "review_sha256": "6c67122d3957d0012fcafd9d694ef988e0c7f426688fbf78d2116553c2b1d727",
+    "tag": "v0.1.0-alpha.75"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestManagedOracleFreeHTTPApplicationDeploymentAdmission",
+      "TestManagedPostgresSSLSelectionAndVitessRouting",
+      "TestOracleFreeDeletionAcceptsOnlyOwnedReclamationProgress",
+      "TestVitessObservationRechecksNativeBackupAuthority",
+      "TestWaitForMyDuckRecoveryReadyRetriesPendingObservation",
+      "TestWaitForMyDuckRecoveryReadyStopsOnAuthorityLoss"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/41466700863"
+  },
+  "reviewed_release": "v0.1.0-alpha.76",
+  "runtime": "myduck",
+  "schema_version": 2
+}
