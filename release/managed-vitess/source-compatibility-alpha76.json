@@ -1,0 +1,64 @@
+{
+  "bootstrap": {
+    "commit": "71452cd9ecc37857a5f5444f6afafe4bfc03e0a5",
+    "reviewed_release": "v0.1.0-alpha.76",
+    "tag": "v0.1.0-alpha.75",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py",
+      "release/verify-vitess-runtime.py"
+    ]
+  },
+  "control_plane_commit": "71452cd9ecc37857a5f5444f6afafe4bfc03e0a5",
+  "predecessor": {
+    "commit": "71452cd9ecc37857a5f5444f6afafe4bfc03e0a5",
+    "review_sha256": "3640be54f4e9c32de826cb5d91d56cf76409e24303637925152ec0335a1207de",
+    "tag": "v0.1.0-alpha.75"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "http_evidence_sha256": "7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545",
+    "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274",
+    "native_manifest_sha256": "64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestManagedOracleFreeHTTPApplicationDeploymentAdmission",
+      "TestManagedPostgresSSLSelectionAndVitessRouting",
+      "TestOracleFreeDeletionAcceptsOnlyOwnedReclamationProgress",
+      "TestVitessObservationRechecksNativeBackupAuthority",
+      "TestWaitForMyDuckRecoveryReadyRetriesPendingObservation",
+      "TestWaitForMyDuckRecoveryReadyStopsOnAuthorityLoss"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/41466700863"
+  },
+  "reviewed_release": "v0.1.0-alpha.76",
+  "runtime": "vitess",
+  "schema_version": 3,
+  "scopes": {
+    "http_harness": {
+      "baseline_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb",
+      "changes": [],
+      "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
+    },
+    "runtime": {
+      "baseline_sha256": "afc2ee7e39acd011f77f73e241bf4e04491f595938fe23b7decb8d68cdd6544e",
+      "changes": [
+        {
+          "after": "cd8cd8b73a3cfe7bd895b39ad51fb809e9994eef1162fe1b77b8c11cda01c21a",
+          "before": "040a518007253307f0152aa79acefb4276329fce54d617eb436f9499d647d8b7",
+          "path": "release/runtime-source-compatibility.py",
+          "reason": "Opens the alpha.76 chained review on the published alpha.75 records; verifier constants only, no change to what is verified."
+        },
+        {
+          "after": "19b6f754cc095f0d092d1a14375cfd1f5f2e72eddcf5d09884b4894173ba636a",
+          "before": "e9b822fc0606431cf41d16178d69ebe9402192629a5eab8abadb5ef6f8d8331e",
+          "path": "release/verify-vitess-runtime.py",
+          "reason": "Trust-root comment wording for the alpha.76 chained review; no change to what is verified."
+        }
+      ],
+      "current_sha256": "398b03a3d31bdf0184787d9b40bdeb90afb3a01e31d33b7c71c7a37859646fa7"
+    }
+  }
+}
