@@ -107,7 +107,7 @@ func ValidateTemplateSecret(id, name, value string) error {
 		} else if u.Scheme != "redis" || u.Host != "redis:6379" || (u.Path != "" && u.Path != "/0") || (u.User.Username() != "" && u.User.Username() != "default") || u.RawQuery != "" {
 			return fmt.Errorf("redis-url must target redis:6379 database 0 with password authentication")
 		}
-	case "postgres-connection-url", "amqp-url":
+	case "postgres-connection-url", "amqp-url", "clickhouse-url":
 		if err := validateTemplateConnectionURL(field.Format, value); err != nil {
 			return fmt.Errorf("%s: %s", name, err)
 		}
@@ -187,6 +187,12 @@ func validateTemplateConnectionURL(format, value string) error {
 		}
 		if strings.Contains(strings.TrimPrefix(u.EscapedPath(), "/"), "/") {
 			return fmt.Errorf("percent-encode any slash inside the broker virtual host")
+		}
+		return nil
+	}
+	if format == "clickhouse-url" {
+		if u.Scheme != "https" && u.Scheme != "http" || u.Path == "" || u.Path == "/" || u.RawQuery != "" {
+			return fmt.Errorf("use an https ClickHouse URL, or http on a trusted private network, ending in the database name")
 		}
 		return nil
 	}
