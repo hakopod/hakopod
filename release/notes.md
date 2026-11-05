@@ -1,22 +1,23 @@
-Hakopod 0.1.0-alpha.76 makes the dashboard stop promptly, which takes about 30 seconds off every dashboard restart, host reboot and upgrade.
+Hakopod 0.1.0-alpha.77 adds two catalog presets: Plausible Analytics and Headscale.
 
-- The dashboard now exits within five seconds of being asked to stop. Before, it ignored the stop signal, and systemd waited its full 30-second timeout before killing it, so a reboot or upgrade sat idle for half a minute before K3s could stop. In-flight requests still get up to five seconds to finish.
-- The packaged installer smoke test now fails if the dashboard is still running eight seconds after it is told to stop.
+- **Plausible Analytics** (Community Edition 3.2.1) is cookie-free web analytics. Its PostgreSQL and ClickHouse are each bundled or existing. An existing database takes a complete connection URL secret, and a ClickHouse already installed on the server can be used directly. The first account to register becomes the owner.
+- **Headscale** 0.29.6 is a control server for Tailscale clients, so your own laptops, phones and servers can join one private WireGuard network. It runs without added capabilities or a public UDP port. It does not protect the Hakopod dashboard or API.
+- Templates accept a new `clickhouse-url` secret format: an http or https URL with credentials and a database path.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.76/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.76
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.77/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.77
 ```
 
-Upgrade an alpha.74 or alpha.75 installation:
+Upgrade an alpha.75 or alpha.76 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.76/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.76
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.77/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.77
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
