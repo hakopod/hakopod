@@ -390,6 +390,21 @@ func PlanTemplate(id string, o TemplateOptions) (Application, error) {
 			return Application{}, err
 		}
 		main = app.Services["main"]
+	case "plausible":
+		// Existing databases replace the bundled service with a complete
+		// connection URL; the startup script keeps a supplied ClickHouse URL.
+		if values["database-mode"] == "external" {
+			delete(main.Bindings, "DATABASE_URL")
+			main.Secrets["DATABASE_URL"] = SecretRef{Ref: "database-url"}
+			main.DependsOn = slices.DeleteFunc(main.DependsOn, func(dep string) bool { return dep == "db" })
+			delete(app.Services, "db")
+		}
+		if values["events-mode"] == "external" {
+			delete(main.Secrets, "CLICKHOUSE_PASSWORD")
+			main.Secrets["CLICKHOUSE_DATABASE_URL"] = SecretRef{Ref: "clickhouse-url"}
+			main.DependsOn = slices.DeleteFunc(main.DependsOn, func(dep string) bool { return dep == "events" })
+			delete(app.Services, "events")
+		}
 	case "mathesar", "xem":
 		if values["database-mode"] == "external" {
 			host := values["database-host"]
