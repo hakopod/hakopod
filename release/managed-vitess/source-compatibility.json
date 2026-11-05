@@ -1,19 +1,19 @@
 {
   "bootstrap": {
-    "commit": "2d7537b78a684dd4150c8c504a5ee21c2753710b",
-    "reviewed_release": "v0.1.0-alpha.77",
-    "tag": "v0.1.0-alpha.76",
+    "commit": "5fc8326f5a69c425366f36c8c6683f272f86e577",
+    "reviewed_release": "v0.1.0-alpha.78",
+    "tag": "v0.1.0-alpha.77",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py",
       "release/verify-vitess-runtime.py"
     ]
   },
-  "control_plane_commit": "2d7537b78a684dd4150c8c504a5ee21c2753710b",
+  "control_plane_commit": "5fc8326f5a69c425366f36c8c6683f272f86e577",
   "predecessor": {
-    "commit": "2d7537b78a684dd4150c8c504a5ee21c2753710b",
-    "review_sha256": "19e3d9a7f30026d9c30eb1ac5eff8de706643b3b8c3ea5d843d80b91c3a9d744",
-    "tag": "v0.1.0-alpha.76"
+    "commit": "5fc8326f5a69c425366f36c8c6683f272f86e577",
+    "review_sha256": "ee3b0d45a5f790c10c866bfb2903972467667bafc1800bc0e1947c5442ef8f60",
+    "tag": "v0.1.0-alpha.77"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -24,12 +24,12 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestPlausibleClickHouseURL",
-      "TestPlausibleIndependentDatabases"
+      "TestSharedCatalogParametersAreDataAndBounded",
+      "TestSharedCatalogPlansContainNoTemplateMarkers"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/41988925058"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42012089507"
   },
-  "reviewed_release": "v0.1.0-alpha.77",
+  "reviewed_release": "v0.1.0-alpha.78",
   "runtime": "vitess",
   "schema_version": 3,
   "scopes": {
@@ -39,76 +39,130 @@
       "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
     },
     "runtime": {
-      "baseline_sha256": "398b03a3d31bdf0184787d9b40bdeb90afb3a01e31d33b7c71c7a37859646fa7",
+      "baseline_sha256": "44ac86e873b5a1f4afec14d874080e0ed85bb4b4e86df7d47f9d3a38a50bf779",
       "changes": [
         {
-          "after": "800e974a2ad615a70fe927f82532c4516e3a4e0044886da55386f6d67058add7",
-          "before": null,
-          "path": "internal/spec/plausible_template_test.go",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "7d3189f0fbd51de12a48be87e609f1794d2033bd5e547c105a6b1337e237360f",
-          "before": "28209e4bb55bd11f90503f7cf233b275db31c41c6489994898813d06cac64014",
-          "path": "internal/spec/template_requirements.go",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "281e8bf2bf2dfe9b24697586bb598c99297b5b989dab81aad805c59e16d05748",
-          "before": "2e5a297a69335c53082f515611e6819f144cc361a1b653c331d1eca2c1ff7f72",
-          "path": "internal/spec/templates.go",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "1e070147d67ef3df0da828f2ccef5764c3a76f494c240297ce8d4acf1823616a",
-          "before": "cd8cd8b73a3cfe7bd895b39ad51fb809e9994eef1162fe1b77b8c11cda01c21a",
+          "after": "30fa17022311546ea12e5a9a1a57a135d29b1cda052190ee1cce75c4ab19875c",
+          "before": "1e070147d67ef3df0da828f2ccef5764c3a76f494c240297ce8d4acf1823616a",
           "path": "release/runtime-source-compatibility.py",
-          "reason": "Opens the alpha.77 chained review on the published alpha.76 records; verifier constants only, no change to what is verified."
+          "reason": "Opens the alpha.78 chained review on the published alpha.77 records; verifier constants only, no change to what is verified."
         },
         {
-          "after": "e9b822fc0606431cf41d16178d69ebe9402192629a5eab8abadb5ef6f8d8331e",
-          "before": "19b6f754cc095f0d092d1a14375cfd1f5f2e72eddcf5d09884b4894173ba636a",
+          "after": "dca565d2cfbc5df49b5bb721edd674a985c29c8437dc43c9926ddf93e9647bad",
+          "before": "e9b822fc0606431cf41d16178d69ebe9402192629a5eab8abadb5ef6f8d8331e",
           "path": "release/verify-vitess-runtime.py",
-          "reason": "Trust-root comment wording for the alpha.77 chained review; no change to what is verified."
+          "reason": "Trust-root comment wording for the alpha.78 chained review; no change to what is verified."
         },
         {
-          "after": "ad69799093fd03d4aaee97ae0248233ed32f1d70c0c91d1be68aadc4957f3b12",
+          "after": "07e754e38c75d87b0d7627f94b5abb7792cef18eceba1c7145f2b694f42c5f9a",
           "before": null,
-          "path": "templates/blueprints/headscale/README.md",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+          "path": "templates/blueprints/alertmanager/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "f8c78d67eb49e50dac9354d62b43d79b82ee23ba05e94f4662b1cd3f82db34f4",
+          "after": "bafb5b19c397aeff6ac7467940bfc0794c2ddbff952ea35caa327e93029e6b1e",
           "before": null,
-          "path": "templates/blueprints/headscale/hakopod.toml",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+          "path": "templates/blueprints/alertmanager/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "5f22a7ffc0ac506b7cf719fda2106368849daac36a48158e5de0c2b680c932c3",
+          "after": "a5aef3acd11cca2dbaaaeed774ff0b2e615d3650df9abbc85983eb2535526d57",
           "before": null,
-          "path": "templates/blueprints/plausible/README.md",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+          "path": "templates/blueprints/beszel/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "4bbf946052701f2036db5254b5a14b6f54e2c59349fd7abdad90135e5c21c203",
+          "after": "ffb15d1e01051033c45fc9b68c9a1510ced1fc5a786e30e91aaee8a92c1b2db4",
           "before": null,
-          "path": "templates/blueprints/plausible/hakopod.toml",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+          "path": "templates/blueprints/beszel/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "662ed70d612bda1ae5db5148b1e6584951ea982c35e4557aaa0350b6a975684d",
-          "before": "27dde317262c0c92e138a19b620870dd297ac54ca95b73d88bae57dc69404e09",
+          "after": "37c02388817de9c68fb5976efff213c92433e45be772ed7e7d797fe2281e021d",
+          "before": null,
+          "path": "templates/blueprints/listmonk/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "d334fbb96981c99e3df7c9730269649e1939304304d5cf79295a8e497e655c3f",
+          "before": null,
+          "path": "templates/blueprints/listmonk/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "63293d2233c57e46d82e6a506f03b5ad79da24aa552432c2b55007a8712fa73b",
+          "before": null,
+          "path": "templates/blueprints/loki/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "3ea2afb162ec5af5a5830b5a9d2b8137fb89d55e1617555b18cc458dd7228a1d",
+          "before": null,
+          "path": "templates/blueprints/loki/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "d1e3d8ad38818d4a2c921c5df961b9aea0907b18d012012dbad4c112d530473a",
+          "before": null,
+          "path": "templates/blueprints/otel-collector/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "15132288d31ea2c7aceaa8465e2288bf1530112473769bdf6894428c7b0e603a",
+          "before": null,
+          "path": "templates/blueprints/otel-collector/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "183578eb2dc121a4b51684cb959cf575578e425dc6ad052b6fbf46a443e4d810",
+          "before": null,
+          "path": "templates/blueprints/pgadmin/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "499782c23a36a2cdd1290c474f13bf0fb356d0915ba4de92ae4e6fa4aa024d09",
+          "before": null,
+          "path": "templates/blueprints/pgadmin/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "5076563ec1352db935ee2a875af97b23e4ac5943c970d21674356aa2d59a45fb",
+          "before": null,
+          "path": "templates/blueprints/radicale/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "5ad056fc031e587aa8115eee078d815b9b1656c3b0438d0a3c7d99f93cf175ea",
+          "before": null,
+          "path": "templates/blueprints/radicale/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "20880d66ee310ac0ec82c9866a87248e98d21d3354214c4b48ece9e7edf48fa7",
+          "before": null,
+          "path": "templates/blueprints/victoriametrics/README.md",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "5555a6203bdd3c3542c2723838f8769f3836fc2d7dc73e3053e9c8b282d25296",
+          "before": null,
+          "path": "templates/blueprints/victoriametrics/hakopod.toml",
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "ae396b1d8010e542b2d1dfb8d83489406063eb2cd598e8bb6838a7bcc308c0b3",
+          "before": "662ed70d612bda1ae5db5148b1e6584951ea982c35e4557aaa0350b6a975684d",
           "path": "templates/catalog.json",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "6b61e593839b2633b08f376239c0528d57c0d3a1074ee6e6fa7838f28b41f8b7",
-          "before": "cc078090cf2552f7bb00f3fff2b5bf8d7d61152ff9d714fc0f74483560e5cc86",
+          "after": "9d7b5edbf98ac127cb4d49454b3c96d31a0971f0ce78aa4f3ef33e85d460a763",
+          "before": "6b61e593839b2633b08f376239c0528d57c0d3a1074ee6e6fa7838f28b41f8b7",
           "path": "templates/images.lock.json",
-          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+          "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
         }
       ],
-      "current_sha256": "44ac86e873b5a1f4afec14d874080e0ed85bb4b4e86df7d47f9d3a38a50bf779"
+      "current_sha256": "f2d3ebd22b184089301ec005ee8be4a330baf2e043ec67b2979dc9515ba348e2"
     }
   }
 }

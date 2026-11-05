@@ -1,0 +1,114 @@
+{
+  "bootstrap": {
+    "commit": "2d7537b78a684dd4150c8c504a5ee21c2753710b",
+    "reviewed_release": "v0.1.0-alpha.77",
+    "tag": "v0.1.0-alpha.76",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py",
+      "release/verify-vitess-runtime.py"
+    ]
+  },
+  "control_plane_commit": "2d7537b78a684dd4150c8c504a5ee21c2753710b",
+  "predecessor": {
+    "commit": "2d7537b78a684dd4150c8c504a5ee21c2753710b",
+    "review_sha256": "19e3d9a7f30026d9c30eb1ac5eff8de706643b3b8c3ea5d843d80b91c3a9d744",
+    "tag": "v0.1.0-alpha.76"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "http_evidence_sha256": "7970da3efa8ce9b714438ba06e1d849fd4d837676032176edbe208556747f545",
+    "http_report_sha256": "7c2a438ac4cb1aa772ccda6459c459e7984f9c08b0f37ced7d4de2dd863fb274",
+    "native_manifest_sha256": "64a9a969ff473e14fc25f345a380fdb27defed9d0ef1cee6df59048007805b1f",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestPlausibleClickHouseURL",
+      "TestPlausibleIndependentDatabases"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/41988925058"
+  },
+  "reviewed_release": "v0.1.0-alpha.77",
+  "runtime": "vitess",
+  "schema_version": 3,
+  "scopes": {
+    "http_harness": {
+      "baseline_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb",
+      "changes": [],
+      "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
+    },
+    "runtime": {
+      "baseline_sha256": "398b03a3d31bdf0184787d9b40bdeb90afb3a01e31d33b7c71c7a37859646fa7",
+      "changes": [
+        {
+          "after": "800e974a2ad615a70fe927f82532c4516e3a4e0044886da55386f6d67058add7",
+          "before": null,
+          "path": "internal/spec/plausible_template_test.go",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "7d3189f0fbd51de12a48be87e609f1794d2033bd5e547c105a6b1337e237360f",
+          "before": "28209e4bb55bd11f90503f7cf233b275db31c41c6489994898813d06cac64014",
+          "path": "internal/spec/template_requirements.go",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "281e8bf2bf2dfe9b24697586bb598c99297b5b989dab81aad805c59e16d05748",
+          "before": "2e5a297a69335c53082f515611e6819f144cc361a1b653c331d1eca2c1ff7f72",
+          "path": "internal/spec/templates.go",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "1e070147d67ef3df0da828f2ccef5764c3a76f494c240297ce8d4acf1823616a",
+          "before": "cd8cd8b73a3cfe7bd895b39ad51fb809e9994eef1162fe1b77b8c11cda01c21a",
+          "path": "release/runtime-source-compatibility.py",
+          "reason": "Opens the alpha.77 chained review on the published alpha.76 records; verifier constants only, no change to what is verified."
+        },
+        {
+          "after": "e9b822fc0606431cf41d16178d69ebe9402192629a5eab8abadb5ef6f8d8331e",
+          "before": "19b6f754cc095f0d092d1a14375cfd1f5f2e72eddcf5d09884b4894173ba636a",
+          "path": "release/verify-vitess-runtime.py",
+          "reason": "Trust-root comment wording for the alpha.77 chained review; no change to what is verified."
+        },
+        {
+          "after": "ad69799093fd03d4aaee97ae0248233ed32f1d70c0c91d1be68aadc4957f3b12",
+          "before": null,
+          "path": "templates/blueprints/headscale/README.md",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "f8c78d67eb49e50dac9354d62b43d79b82ee23ba05e94f4662b1cd3f82db34f4",
+          "before": null,
+          "path": "templates/blueprints/headscale/hakopod.toml",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "5f22a7ffc0ac506b7cf719fda2106368849daac36a48158e5de0c2b680c932c3",
+          "before": null,
+          "path": "templates/blueprints/plausible/README.md",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "4bbf946052701f2036db5254b5a14b6f54e2c59349fd7abdad90135e5c21c203",
+          "before": null,
+          "path": "templates/blueprints/plausible/hakopod.toml",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "662ed70d612bda1ae5db5148b1e6584951ea982c35e4557aaa0350b6a975684d",
+          "before": "27dde317262c0c92e138a19b620870dd297ac54ca95b73d88bae57dc69404e09",
+          "path": "templates/catalog.json",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "6b61e593839b2633b08f376239c0528d57c0d3a1074ee6e6fa7838f28b41f8b7",
+          "before": "cc078090cf2552f7bb00f3fff2b5bf8d7d61152ff9d714fc0f74483560e5cc86",
+          "path": "templates/images.lock.json",
+          "reason": "Reviewed control-plane change (Plausible Analytics template with bundled or existing PostgreSQL and ClickHouse, the clickhouse-url template secret format, and the Plausible and Headscale catalog presets, with their tests); not a managed runtime binary, image, dependency or native harness input."
+        }
+      ],
+      "current_sha256": "44ac86e873b5a1f4afec14d874080e0ed85bb4b4e86df7d47f9d3a38a50bf779"
+    }
+  }
+}
