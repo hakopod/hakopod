@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face { font-family: "Space Grotesk"; src: url(../../../fonts/SpaceGrotesk-Variable.ttf); font-weight: 300 700; }
+:root { --ink:#111A17; --paper:#F4F5EE; --ion:#D8FF45; --fog:#B8C4B9; --muted:#8A988E; --line:#25322D; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 1600px; height: 900px; }
+body { background: var(--ink); color: var(--paper); font-family: "Space Grotesk", sans-serif; padding: 64px 88px 56px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.mark { position: absolute; right: 104px; top: 158px; width: 260px; }
+header { display: flex; justify-content: space-between; align-items: center; }
+header img { height: 46px; }
+.tag { font-size: 17px; font-weight: 600; letter-spacing: .14em; color: var(--fog); text-transform: uppercase; }
+.tag b { color: var(--ink); background: var(--ion); padding: 6px 12px; border-radius: 6px; margin-left: 12px; letter-spacing: .06em; }
+h1 { margin-top: 56px; font-size: 96px; font-weight: 500; letter-spacing: -.035em; line-height: 1; }
+h1 span { color: var(--ion); }
+.sub { margin-top: 22px; font-size: 27px; color: var(--fog); }
+.grid { margin-top: 48px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.app { background: var(--paper); border-radius: 18px; height: 140px; display: flex; align-items: center; gap: 22px; padding: 0 28px; }
+.app img { width: 64px; height: 64px; object-fit: contain; flex: none; }
+.app div { color: var(--ink); }
+.app strong { display: block; font-size: 25px; font-weight: 600; letter-spacing: -.01em; line-height: 1.15; }
+.app small { display: block; margin-top: 4px; font-size: 17px; color: #607065; }
+footer { margin-top: auto; padding-top: 28px; display: flex; justify-content: space-between; font-size: 19px; color: var(--muted); letter-spacing: .02em; }
+footer b { color: var(--paper); font-weight: 600; }
+</style></head>
+<body>
+<img class="mark" src="../../../logos/marks/hakopod-mark-ion.svg" alt="">
+<header>
+  <img src="../../../logos/lockups/hakopod-horizontal-paper.svg" alt="hakopod">
+  <div class="tag">App catalog <b>0.1.0-alpha.78</b></div>
+</header>
+<h1>Eight new apps.<br><span>On your own servers.</span></h1>
+<p class="sub">Monitoring, logs, calendars, newsletters and database admin, ready to deploy.</p>
+<section class="grid">
+  <div class="app"><img src="logos/radicale.svg"><div><strong>Radicale</strong><small>Calendars &amp; contacts</small></div></div>
+  <div class="app"><img src="logos/loki.png"><div><strong>Grafana Loki</strong><small>Log storage</small></div></div>
+  <div class="app"><img src="logos/victoriametrics.svg"><div><strong>VictoriaMetrics</strong><small>Time-series database</small></div></div>
+  <div class="app"><img src="logos/beszel.svg"><div><strong>Beszel</strong><small>Server monitoring</small></div></div>
+  <div class="app"><img src="logos/pgadmin.png"><div><strong>pgAdmin</strong><small>PostgreSQL admin</small></div></div>
+  <div class="app"><img src="logos/listmonk.svg"><div><strong>listmonk</strong><small>Newsletters</small></div></div>
+  <div class="app"><img src="logos/opentelemetry.svg"><div><strong>OpenTelemetry</strong><small>Collector</small></div></div>
+  <div class="app"><img src="logos/prometheus.svg"><div><strong>Alertmanager</strong><small>Alert routing</small></div></div>
+</section>
+<footer><span>Self-hosted. Open source. Your apps, your rules.</span><b>hakopod.com</b></footer>
+</body></html>
