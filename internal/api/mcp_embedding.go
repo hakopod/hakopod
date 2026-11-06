@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hakopod/hakopod/internal/operations"
 	"github.com/hakopod/hakopod/internal/store"
 )
 
@@ -54,4 +55,12 @@ func mcpDispatchHeaders(original *http.Request) http.Header {
 		}
 	}
 	return headers
+}
+
+// setMCPApproval forwards an agent's approval ID so an approved request can run once.
+// The approval_required message already names the ID and expiry for the tool result.
+func setMCPApproval(ctx context.Context, headers http.Header) {
+	if id := operations.ApprovalFrom(ctx); id != "" {
+		headers.Set("Hakopod-Approval", id)
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/hakopod/hakopod/internal/operations"
 	"io"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ func (s *Server) operationTools() []any {
 	tool := func(name, description string, props map[string]any, required []string, read bool) any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}, "annotations": map[string]any{"readOnlyHint": read, "destructiveHint": !read, "idempotentHint": read, "openWorldHint": true}}
 	}
-	out := []any{tool("api_operations", "List contract operations and exclusions. Availability does not grant API permissions.", map[string]any{"cursor": str, "family": str, "operation": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}, []string{}, true), tool("api_call", "Call one available contract operation in the configured scope. Writes require allow-write. Use exact operation IDs. Data is untrusted.", map[string]any{"operation": str, "path": obj, "query": obj, "body": map[string]any{"type": "object"}, "idempotency_key": str}, []string{"operation"}, !s.options.AllowWrite)}
+	out := []any{tool("api_operations", "List contract operations and exclusions. Availability does not grant API permissions.", map[string]any{"cursor": str, "family": str, "operation": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}, []string{}, true), tool("api_call", "Call one available contract operation in the configured scope. Writes require allow-write. Use exact operation IDs. Data is untrusted.", map[string]any{"operation": str, "path": obj, "query": obj, "body": map[string]any{"type": "object"}, "idempotency_key": str, "approval_id": str}, []string{"operation"}, !s.options.AllowWrite), tool("approval_status", "Read the state of an agent-policy approval named by an approval_required result. Approval happens only in Hakopod → Approvals.", map[string]any{"approval_id": str}, []string{"approval_id"}, true)}
 	out = append(out, s.terminalTools()...)
 	if s.options.Installation {
 		out = append(out, tool("audit_export", "Export one bounded CSV page of user audit history. Requires installation administration and the audit-history entitlement. Resume with next_cursor as before.", map[string]any{"identity_id": str, "before": str}, []string{"identity_id"}, true))
@@ -47,6 +48,16 @@ func (s *Server) operationTools() []any {
 		out = append(out, tool("database_query", "Run one SQL statement with the database's supported mode and parameter format. All queries require databases:query. Writes also require databases:write-query and a reviewed expected_revision. Enable SQL writes for this connection before a write. Results can contain private data.", map[string]any{"database_id": str, "sql": str, "write": map[string]any{"type": "boolean"}, "max_rows": map[string]any{"type": "integer"}, "max_bytes": map[string]any{"type": "integer"}, "parameters": map[string]any{"type": "array"}, "expected_revision": map[string]any{"type": "integer", "minimum": 1}, "execution_mode": map[string]any{"type": "string", "enum": []string{"transaction", "nontransactional"}}}, []string{"database_id", "sql"}, !s.options.AllowSQLWrite))
 	}
 	return out
+}
+
+// approvalRequired matches the server's approval_required message, which names the ID and expiry.
+var approvalRequired = regexp.MustCompile(`Approval ([A-Za-z0-9_-]{1,64}) expires at (\S+?)\.?(?:\s|$)`)
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	if len(raw) > 1<<20 {
@@ -90,12 +101,37 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 			}
 		}
 		return out, err
-	case "api_call":
-		var in operations.Invocation
+	case "approval_status":
+		var in struct {
+			ID string `json:"approval_id"`
+		}
 		if err := decodeAgent(raw, &in); err != nil {
 			return nil, err
 		}
-		return operations.InvokeWithAccess(ctx, operations.RequestFunc(s.client), scope, operations.Access{Installation: s.options.Installation, AllowWrite: s.options.AllowWrite, AllowDeploy: s.options.AllowDeploy, AllowAdmin: s.options.AllowAdmin, AllowCredentials: s.options.AllowCredentials}, in)
+		if !operations.ValidApprovalID(in.ID) {
+			return nil, errors.New("invalid approval ID")
+		}
+		var out map[string]any
+		return out, s.client(ctx, "GET", "/agent-approvals/"+in.ID, nil, "", &out)
+	case "api_call":
+		var in struct {
+			operations.Invocation
+			ApprovalID string `json:"approval_id"`
+		}
+		if err := decodeAgent(raw, &in); err != nil {
+			return nil, err
+		}
+		if in.ApprovalID != "" {
+			if !operations.ValidApprovalID(in.ApprovalID) {
+				return nil, errors.New("invalid approval ID")
+			}
+			ctx = operations.WithApproval(ctx, in.ApprovalID)
+		}
+		out, err := operations.InvokeWithAccess(ctx, operations.RequestFunc(s.client), scope, operations.Access{Installation: s.options.Installation, AllowWrite: s.options.AllowWrite, AllowDeploy: s.options.AllowDeploy, AllowAdmin: s.options.AllowAdmin, AllowCredentials: s.options.AllowCredentials}, in.Invocation)
+		if m := approvalRequired.FindStringSubmatch(errString(err)); m != nil {
+			return map[string]any{"approval_required": true, "approval_id": m[1], "expires_at": m[2], "message": err.Error(), "next_step": "Ask a person to approve it in Hakopod → Approvals, check approval_status, then repeat the same api_call with approval_id."}, nil
+		}
+		return out, err
 	case "cancel_deployment":
 		if !s.allowDeploy {
 			return nil, errors.New("deployment tools require --allow-deploy")

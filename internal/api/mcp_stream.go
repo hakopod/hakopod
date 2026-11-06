@@ -52,12 +52,15 @@ func mcpStreamRequester(routes http.Handler) agent.StreamFunc {
 		request.Body = nil
 		request.ContentLength = 0
 		request.Header = mcpDispatchHeaders(original)
+		setMCPApproval(ctx, request.Header)
 		request.Header.Set("Accept", "text/event-stream")
 		if cursor != "" {
 			request.Header.Set("Last-Event-ID", cursor)
 		}
 		writer := &sampleWriter{header: make(http.Header), cancel: cancel}
-		routes.ServeHTTP(writer, request)
+		if mcpGate(ctx, original, writer, request) {
+			routes.ServeHTTP(writer, request)
+		}
 		if writer.status >= 400 {
 			return agent.StreamSample{}, errors.New("canonical event stream rejected the request")
 		}

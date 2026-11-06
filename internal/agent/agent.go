@@ -225,7 +225,7 @@ func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (an
 	if s.options.HostOnly && !strings.HasPrefix(name, "host_terminal_") {
 		return nil, errors.New("host-only connection offers only host terminal tools")
 	}
-	if s.options.Installation && name != "api_operations" && name != "api_call" && name != "audit_export" && !strings.HasPrefix(name, "host_terminal_") {
+	if s.options.Installation && name != "api_operations" && name != "api_call" && name != "approval_status" && name != "audit_export" && !strings.HasPrefix(name, "host_terminal_") {
 		return nil, errors.New("project tools require a separate project connection")
 	}
 	if strings.HasPrefix(name, "terminal_") || strings.HasPrefix(name, "host_terminal_") {
@@ -236,7 +236,7 @@ func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (an
 		return s.sampleDeploymentEvents(ctx, raw)
 	case "read_logs":
 		return s.Call(ctx, "logs", raw)
-	case "audit_export", "api_operations", "api_call", "pod_exec", "database_query", "cancel_deployment", "rollback", "restart_service", "secret_names":
+	case "audit_export", "api_operations", "api_call", "approval_status", "pod_exec", "database_query", "cancel_deployment", "rollback", "restart_service", "secret_names":
 		return s.operationCall(ctx, name, raw)
 	case "detect_framework":
 		var in struct {

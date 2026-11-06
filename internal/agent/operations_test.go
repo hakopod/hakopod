@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/hakopod/hakopod/internal/operations"
 	"strings"
 	"testing"
 )
@@ -166,7 +168,7 @@ func TestInstallationAgentDoesNotExposeProjectTools(t *testing.T) {
 	s := NewWithOptions(nil, Scope{}, Options{Installation: true, AllowAdmin: true, AllowDeploy: true, AllowExec: true, AllowSQL: true}, 0)
 	for _, tool := range s.Tools() {
 		name := tool.(map[string]any)["name"]
-		if name != "api_operations" && name != "api_call" && name != "audit_export" {
+		if name != "api_operations" && name != "api_call" && name != "approval_status" && name != "audit_export" {
 			t.Fatal("project tool on installation connection", name)
 		}
 	}
@@ -214,5 +216,42 @@ func TestRestartServiceAndSecretNames(t *testing.T) {
 	}
 	if _, err := writer.Call(context.Background(), "restart_service", json.RawMessage(`{"application_id":"app","service":"kole","expected_revision":7,"idempotency_key":"retry-key-1"}`)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestApprovalToolsAndApprovalRequired(t *testing.T) {
+	var gotApproval, gotPath string
+	r := func(ctx context.Context, method, path string, body any, key string, out any) error {
+		gotPath = path
+		if strings.HasPrefix(path, "/agent-approvals/") {
+			return json.Unmarshal([]byte(`{"id":"apr_1","state":"approved"}`), out)
+		}
+		gotApproval = operations.ApprovalFrom(ctx)
+		if gotApproval == "" {
+			return errors.New(`approval_required: Agent policy "Prod" requires approval. Approval apr_1 expires at 2099-01-01T00:00:00Z. Retry the identical request with the header Hakopod-Approval: apr_1 after it is approved.`)
+		}
+		return nil
+	}
+	s := New(r, Scope{"p", "dev"}, false, 32)
+	call := `{"operation":"listApplications"}`
+	out, err := s.Call(context.Background(), "api_call", json.RawMessage(call))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := out.(map[string]any)
+	if m["approval_id"] != "apr_1" || m["expires_at"] != "2099-01-01T00:00:00Z" || !strings.Contains(m["next_step"].(string), "approval_status") {
+		t.Fatal(out)
+	}
+	raw, _ := json.Marshal(out)
+	t.Logf("approval_required tool result: %s", raw)
+	if _, err := s.Call(context.Background(), "api_call", json.RawMessage(call[:len(call)-1]+`,"approval_id":"apr_1"}`)); err != nil || gotApproval != "apr_1" {
+		t.Fatal(err, gotApproval)
+	}
+	status, err := s.Call(context.Background(), "approval_status", json.RawMessage(`{"approval_id":"apr_1"}`))
+	if err != nil || gotPath != "/agent-approvals/apr_1" || status.(map[string]any)["state"] != "approved" {
+		t.Fatal(status, err)
+	}
+	if _, err := s.Call(context.Background(), "approval_status", json.RawMessage(`{"approval_id":"../x"}`)); err == nil {
+		t.Fatal("accepted bad approval id")
 	}
 }
