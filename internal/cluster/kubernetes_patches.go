@@ -375,6 +375,12 @@ func guardContainers(path string, generated, patched []corev1.Container, addedVo
 				return fmt.Errorf("%s.volumeMounts[%q]: a patch may mount only the volumes it adds", at, mount.MountPath)
 			}
 		}
+		// A host port binds the node's address directly, outside network policy.
+		for _, port := range p.Ports {
+			if (port.HostPort != 0 || port.HostIP != "") && !slices.ContainsFunc(g.Ports, func(q corev1.ContainerPort) bool { return reflect.DeepEqual(q, port) }) {
+				return fmt.Errorf("%s.ports[%d]: a patch cannot set hostPort or hostIP", at, port.ContainerPort)
+			}
+		}
 		// The kubelet runs these requests from the node, outside network policy.
 		for _, handler := range []*corev1.ProbeHandler{probeHandler(p.LivenessProbe), probeHandler(p.ReadinessProbe), probeHandler(p.StartupProbe)} {
 			if handler != nil && (handler.HTTPGet != nil && handler.HTTPGet.Host != "" || handler.TCPSocket != nil && handler.TCPSocket.Host != "") {
