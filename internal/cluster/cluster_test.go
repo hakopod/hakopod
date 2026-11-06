@@ -354,3 +354,31 @@ func TestNewDeploymentResolvesUpdatedTag(t *testing.T) {
 		t.Fatal("new deployment reused an old tag digest or changed the configured tag")
 	}
 }
+
+// A rollout that times out names how long it waited and the pod still
+// starting; one that turns ready by the deadline is not reported as failed.
+func TestRolloutTimeoutNamesPodAndRechecksReadiness(t *testing.T) {
+	target := testTarget(t)
+	svc := target.Spec.Services["api"]
+	dep := deployment(target, "api", svc, time.Second)
+	dep.Generation = 1
+	ns := Namespace(target.ApplicationID)
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-7b6d798687-fx6nf", Namespace: ns, Labels: dep.Spec.Template.Labels, CreationTimestamp: metav1.Now()}, Spec: dep.Spec.Template.Spec, Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}}}}
+	kube := fake.NewClientset(dep, pod)
+	c := &Client{kube: kube, options: Options{RolloutTimeout: time.Second}}
+	err := c.waitReady(context.Background(), target, "api", 1)
+	if err == nil || !strings.Contains(err.Error(), "rollout stopped after 1.5s") || !strings.Contains(err.Error(), "api-7b6d798687-fx6nf") {
+		t.Fatalf("timeout error lacks the wait and the pod: %v", err)
+	}
+	dep.Status = appsv1.DeploymentStatus{ObservedGeneration: 1, Replicas: *dep.Spec.Replicas, ReadyReplicas: *dep.Spec.Replicas, AvailableReplicas: *dep.Spec.Replicas, UpdatedReplicas: *dep.Spec.Replicas}
+	pod.Status.Conditions[0].Status = corev1.ConditionTrue
+	if _, err := kube.AppsV1().Deployments(ns).UpdateStatus(context.Background(), dep, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kube.CoreV1().Pods(ns).UpdateStatus(context.Background(), pod, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := c.rolloutReady(context.Background(), target, "api", 1); err != nil || !ready {
+		t.Fatalf("final readiness check missed a ready rollout: %v %v", ready, err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"reflect"
 	"slices"
@@ -402,6 +403,7 @@ func (c *Client) observationAfterFailure(target Target) Observation {
 	defer cancel()
 	observed, err := c.Observe(ctx, target)
 	if err != nil {
+		slog.Warn("observe after failed rollout", "application", target.ApplicationID, "error", err)
 		return Observation{Status: "unknown", Services: []ServiceStatus{}, ObservedAt: time.Now().UTC()}
 	}
 	return observed
@@ -968,16 +970,49 @@ func (c *Client) applyHPA(ctx context.Context, t Target, name string, svc spec.S
 	return err
 }
 
+// rolloutGrace covers scheduling and the image pull. The startup probe already
+// gets the whole startup timeout once the container runs, so waiting only that
+// long reported failure for pods that became ready moments later.
+func rolloutGrace(timeout time.Duration) time.Duration {
+	return min(timeout/2, 60*time.Second)
+}
+
 func (c *Client) waitReady(ctx context.Context, t Target, service string, generation int64) error {
 	timeout := serviceStartupTimeout(t.Spec.Services[service], c.options.RolloutTimeout)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	budget := timeout + rolloutGrace(timeout)
+	waitCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
+	err := c.awaitReady(waitCtx, t, service, generation, budget)
+	if err != nil && errors.Is(waitCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		// One last look before declaring failure: a pod that turned ready as
+		// the deadline passed is a successful rollout.
+		check, done := context.WithTimeout(ctx, 5*time.Second)
+		defer done()
+		if ready, _ := c.rolloutReady(check, t, service, generation); ready {
+			return nil
+		}
+	}
+	return err
+}
+
+func (c *Client) rolloutReady(ctx context.Context, t Target, service string, generation int64) (bool, error) {
+	current, err := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID)).Get(ctx, service, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if current.Generation < generation || !readyDeployment(current) {
+		return false, nil
+	}
+	return c.readyPods(ctx, t, service, current)
+}
+
+func (c *Client) awaitReady(ctx context.Context, t Target, service string, generation int64, budget time.Duration) error {
 	api := c.kube.AppsV1().Deployments(Namespace(t.ApplicationID))
 	for {
 		current, err := api.Get(ctx, service, metav1.GetOptions{})
 		if err != nil {
 			if ctx.Err() != nil {
-				return c.readinessError(t, service, ctx.Err())
+				return c.readinessErrorAfter(t, service, budget, ctx.Err())
 			}
 			return fmt.Errorf("%s: read rollout: %w", service, err)
 		}
@@ -999,7 +1034,7 @@ func (c *Client) waitReady(ctx context.Context, t Target, service string, genera
 		stream, err := api.Watch(ctx, metav1.ListOptions{FieldSelector: "metadata.name=" + service, ResourceVersion: current.ResourceVersion, TimeoutSeconds: ptr(int64(25)), AllowWatchBookmarks: true})
 		if err != nil {
 			if err := sleepContext(ctx, time.Second); err != nil {
-				return c.readinessError(t, service, err)
+				return c.readinessErrorAfter(t, service, budget, err)
 			}
 			continue
 		}
@@ -1040,12 +1075,12 @@ func (c *Client) waitReady(ctx context.Context, t Target, service string, genera
 		}
 		if result != nil {
 			if ctx.Err() != nil {
-				return c.readinessError(t, service, ctx.Err())
+				return c.readinessErrorAfter(t, service, budget, ctx.Err())
 			}
 			return result
 		}
 		if err := sleepContext(ctx, time.Second); err != nil {
-			return c.readinessError(t, service, err)
+			return c.readinessErrorAfter(t, service, budget, err)
 		}
 	}
 }
@@ -1117,14 +1152,38 @@ func deploymentFailure(d *appsv1.Deployment) string {
 	return ""
 }
 
-func (c *Client) readinessError(t Target, service string, cause error) error {
+// readinessErrorAfter names how long the rollout waited and the newest pod
+// that was still not ready, so the operator knows where to look.
+func (c *Client) readinessErrorAfter(t Target, service string, waited time.Duration, cause error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	message := c.podMessage(ctx, t, service)
 	if message == "" {
 		message = "pods did not become ready; check application health and cluster capacity"
 	}
-	return fmt.Errorf("%s: rollout stopped: %s: %w", service, message, cause)
+	if pod := c.newestUnreadyPod(ctx, t, service); pod != "" {
+		message += " (newest unready pod " + pod + ")"
+	}
+	return fmt.Errorf("%s: rollout stopped after %s: %s: %w", service, waited, message, cause)
+}
+
+func (c *Client) newestUnreadyPod(ctx context.Context, t Target, service string) string {
+	pods, err := c.kube.CoreV1().Pods(Namespace(t.ApplicationID)).List(ctx, metav1.ListOptions{LabelSelector: managedBy + "=hakopod," + ownerKey + "=" + ownerID(t.ApplicationID) + "," + serviceKey + "=" + service, Limit: 64})
+	if err != nil {
+		return ""
+	}
+	newest := ""
+	var created time.Time
+	for _, pod := range pods.Items {
+		ready := false
+		for _, condition := range pod.Status.Conditions {
+			ready = ready || condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue
+		}
+		if !ready && (newest == "" || pod.CreationTimestamp.After(created)) {
+			newest, created = pod.Name, pod.CreationTimestamp.Time
+		}
+	}
+	return newest
 }
 
 // cleanup discovers bounded, owned stale resources as well as the previous
