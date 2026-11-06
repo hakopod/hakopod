@@ -85,6 +85,9 @@ const DNSProviders = lazy(() =>
 const SlackSettingsPanel = lazy(() =>
   import('../components/slack-settings').then((m) => ({ default: m.SlackSettingsPanel })),
 )
+const AgentPolicyList = lazy(() =>
+  import('../components/agent-policy-list').then((m) => ({ default: m.AgentPolicyList })),
+)
 const InstallationUsers = lazy(() =>
   import('../components/team-settings').then((m) => ({
     default: m.InstallationUsers,
@@ -110,6 +113,7 @@ export const Route = createFileRoute('/settings')({
         'github',
         'keys',
         'audit',
+        'agent-policies',
         'appearance',
         'license',
         'secret-providers',
@@ -179,6 +183,7 @@ function Administration() {
           },
           { id: 'keys', label: 'API keys', group: 'Installation' },
           { id: 'audit', label: 'Audit events', group: 'Installation' },
+          { id: 'agent-policies', label: 'Agent policies', group: 'Installation' },
           { id: 'logs', label: 'Logs', group: 'Installation' },
           ...(installation.allowed
             ? [
@@ -247,6 +252,7 @@ function Administration() {
                   {tab === 'private-destinations' && <PrivateDestinations />}
                   {tab === 'dns-providers' && <DNSProviders saved={search.saved} />}
                   {tab === 'audit' && <AuditLog />}
+                  {tab === 'agent-policies' && <AgentPolicyList />}
                   {tab === 'logs' && <AppLogSettings />}
                   {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
                   {installation.allowed && tab === 'smtp' && <SMTPSettings />}
