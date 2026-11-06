@@ -49,6 +49,7 @@ See [contract generation](agent-parity/contract-generation.md) for the generatio
 | Run a pod command | `pods:exec` | `--allow-exec` | `allow_exec=true` |
 | Query managed SQL data | `databases:query` | `--allow-sql` for MCP | `allow_sql=true` |
 | Change managed SQL data | `databases:query` and `databases:write-query` | `--allow-sql-write` | `allow_sql_write=true` with `allow_sql=true` |
+| Add or change Kubernetes patches | `deployments:write` and `kubernetes:patch` | `--allow-deploy`, after `hakopod login --allow-kubernetes-patch` | `allow_deploy=true` |
 | Open application terminals | `deployments:write` and `pods:exec` | `--allow-exec --allow-terminal` | `allow_exec=true` and `allow_terminal=true` |
 | Use credentials | `agent:credentials` and the resource permission | `--allow-credentials` | `allow_credentials=true` |
 | Administer the installation | `admin` and `agent:admin` | `--installation --allow-admin` | `installation=true` and `allow_admin=true` |

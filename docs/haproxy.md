@@ -180,16 +180,26 @@ checks, backend connection limits and load balancing. `check-interval` only take
 effect where health checks are enabled. The editor does not change those
 annotations, enable disabled checks or expose arbitrary directives and credentials.
 
-One narrow exception exists, and it is not general annotation support: a service
-with `backend_http2 = true` gets `haproxy.org/server-proto: h2` on its own
-generated ingress, so the ingress speaks HTTP/2 to that service's backend instead
-of HTTP/1.1. This is for gRPC and other servers that accept only h2. A few other
-specification fields also write fixed controller annotations, such as the
-serverless timeout, `ingress_timeout_seconds` (as `haproxy.org/timeout-server`)
-and TLS redirect and issuer annotations, but a specification
-cannot set arbitrary annotations, and the HAProxy editor still cannot set them.
-The annotation applies to the whole ingress, so it is rejected alongside named
-`http` endpoints, whose backends speak HTTP/1.1.
+A service with `backend_http2 = true` gets `haproxy.org/server-proto: h2` on its
+own generated ingress, so the ingress speaks HTTP/2 to that service's backend
+instead of HTTP/1.1. This is for gRPC and other servers that accept only h2. A
+few other specification fields also write fixed controller annotations, such as
+the serverless timeout, `ingress_timeout_seconds` (as `haproxy.org/timeout-server`)
+and TLS redirect and issuer annotations. The `backend_http2` annotation applies to
+the whole ingress, so it is rejected alongside named `http` endpoints, whose
+backends speak HTTP/1.1.
+
+Beyond those fields, a service can set its own `haproxy.org/` annotations through
+a `kubernetes.ingress` patch, but only where an administrator has enabled
+[Kubernetes patches](kubernetes-patches.md) and the person deploying holds
+`kubernetes:patch`. Such a patch may add or override `haproxy.org/` annotations
+on that one service's ingress and nothing else: annotations outside the prefix,
+the ingress spec, and the HAProxy annotations that inject configuration (any
+`*-snippet`), reference Secrets or custom resources, or change what Hakopod Edge
+sees before its rules run (`src-ip-header`, `ssl-passthrough`, `route-acl`,
+`path-rewrite`, `set-host` and the others listed there) are refused. Installation-
+wide settings stay in this editor, which still cannot set annotations or
+arbitrary directives.
 
 Two consequences are worth planning for. Readiness probes run from Kubernetes
 straight to the pod over HTTP/1.1, so a `healthcheck` path against a pure gRPC
