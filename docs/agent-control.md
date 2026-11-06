@@ -36,7 +36,7 @@ The dashboard proxy routes come from the same OpenAPI exposure metadata.
 HTTP MCP dispatches operations through the canonical runtime API.
 Installation administration uses a separate connection. Credentials need an additional explicit grant and connection option.
 Streams, terminals and SQL use dedicated tools. Binary uploads and human consent retain their separate workflows.
-Deployments use the existing reviewed plan flow. Deployment opt-in also enables cancellation and rollback tools.
+Deployments use the existing reviewed plan flow. Deployment opt-in also enables cancellation, rollback and `restart_service` tools. No MCP tool sets a secret value; use `hakopod secret set` or the dashboard, so values never pass through an agent.
 
 See [contract generation](agent-parity/contract-generation.md) for the generation process and drift checks.
 

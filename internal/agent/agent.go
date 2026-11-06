@@ -236,7 +236,7 @@ func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (an
 		return s.sampleDeploymentEvents(ctx, raw)
 	case "read_logs":
 		return s.Call(ctx, "logs", raw)
-	case "audit_export", "api_operations", "api_call", "pod_exec", "database_query", "cancel_deployment", "rollback":
+	case "audit_export", "api_operations", "api_call", "pod_exec", "database_query", "cancel_deployment", "rollback", "restart_service", "secret_names":
 		return s.operationCall(ctx, name, raw)
 	case "detect_framework":
 		var in struct {

@@ -174,3 +174,45 @@ func TestInstallationAgentDoesNotExposeProjectTools(t *testing.T) {
 		t.Fatal("installation connection ran project tool")
 	}
 }
+
+func TestRestartServiceAndSecretNames(t *testing.T) {
+	var calls []string
+	r := func(_ context.Context, m, p string, in any, key string, out any) error {
+		calls = append(calls, m+" "+p)
+		switch {
+		case m == "GET" && p == "/applications/app":
+			return json.Unmarshal([]byte(`{"id":"app","name":"shop","project":"p","environment":"dev","revision":7,"spec":{"services":{"kole":{}}}}`), out)
+		case m == "GET" && strings.HasPrefix(p, "/secrets?"):
+			if !strings.Contains(p, "application=shop") {
+				t.Fatal(p)
+			}
+			return json.Unmarshal([]byte(`{"items":[{"name":"zeta"},{"name":"cpa-api-key","value":"never-returned"}]}`), out)
+		case m == "POST" && p == "/applications/app/services/kole/restart":
+			if in.(map[string]any)["expected_revision"] != int64(7) || key != "retry-key-1" {
+				t.Fatal("restart omitted review inputs", in, key)
+			}
+			return json.Unmarshal([]byte(`{"id":"d","status":"queued"}`), out)
+		}
+		t.Fatal(m, p)
+		return nil
+	}
+	reader := NewWithOptions(r, Scope{"p", "dev"}, Options{}, 32)
+	if _, err := reader.Call(context.Background(), "restart_service", json.RawMessage(`{"application_id":"app","service":"kole","expected_revision":7,"idempotency_key":"retry-key-1"}`)); err == nil {
+		t.Fatal("restart without deployment opt-in")
+	}
+	out, err := reader.Call(context.Background(), "secret_names", json.RawMessage(`{"application_id":"app"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(out)
+	if string(encoded) != `{"application":"shop","names":["cpa-api-key","zeta"]}` {
+		t.Fatal(string(encoded))
+	}
+	writer := NewWithOptions(r, Scope{"p", "dev"}, Options{AllowDeploy: true}, 32)
+	if _, err := writer.Call(context.Background(), "restart_service", json.RawMessage(`{"application_id":"app","service":"nope","expected_revision":7,"idempotency_key":"retry-key-1"}`)); err == nil {
+		t.Fatal("unknown service restarted")
+	}
+	if _, err := writer.Call(context.Background(), "restart_service", json.RawMessage(`{"application_id":"app","service":"kole","expected_revision":7,"idempotency_key":"retry-key-1"}`)); err != nil {
+		t.Fatal(err)
+	}
+}
