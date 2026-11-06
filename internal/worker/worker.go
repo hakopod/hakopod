@@ -532,7 +532,10 @@ func (w *Worker) Resync(ctx context.Context) {
 				o, err := w.Cluster.Observe(observeCtx, cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec})
 				cancel()
 				if err != nil {
-					o = cluster.Observation{Revision: a.Revision, Status: "unknown", Services: []cluster.ServiceStatus{}, ObservedAt: time.Now().UTC()}
+					// Keep the last good observation rather than replacing it
+					// with an empty one; its timestamp shows how old it is.
+					slog.Warn("runtime observation failed", "application", id, "error", err)
+					continue
 				}
 				_, err = w.Store.Pool.Exec(ctx, "UPDATE applications SET observed=$2 WHERE id=$1 AND revision=$3", id, store.JSON(o), a.Revision)
 				if err != nil {
