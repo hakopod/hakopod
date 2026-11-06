@@ -17,7 +17,7 @@ import (
 	"github.com/hakopod/hakopod/internal/store"
 )
 
-const agentTestDoc = `{"schema_version":1,"description":"Hold production deploys","when":[{"field":"operation","operator":"is_any_of","values":["createDeployment"]},{"field":"environment","operator":"is_any_of","values":["production"]}],"then":{"effect":"require_approval"}}`
+const agentTestDoc = `{"schema_version":1,"description":"Hold production deploys","when":[{"field":"operation","operator":"is_any_of","values":["createDeployment"]},{"field":"environment","operator":"is_any_of","values":["production"]}],"then":{"effect":"require_approval","approval_ttl_seconds":900}}`
 
 func agentCall(t *testing.T, s *Server, p store.Principal, method, path, body string) (int, map[string]any) {
 	t.Helper()
