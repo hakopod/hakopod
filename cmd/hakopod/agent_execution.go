@@ -50,6 +50,16 @@ func runExecution(ctx context.Context, c *client, cfg config, kind, id string, f
 		if !f.AllowExec {
 			return errors.New("execution requires --allow-exec")
 		}
+		if id == "" {
+			return errors.New("exec requires an application name or ID")
+		}
+		// The API addresses applications by ID; accept the name too, as the
+		// other application commands do.
+		app, err := findApp(ctx, c, cfg, id, "")
+		if err != nil {
+			return err
+		}
+		id = app.ID
 		var command []string
 		if err := operations.Decode([]byte(f.CommandJSON), &command); err != nil {
 			return errors.New("command-json must contain an argument array")
@@ -86,7 +96,7 @@ func runExecution(ctx context.Context, c *client, cfg config, kind, id string, f
 	defer cancel()
 	server := agent.NewWithOptions(c.request, agent.Scope{Project: cfg.Project, Environment: cfg.Environment}, opts, 0)
 	out, err := server.Call(bounded, name, raw)
-	if err != nil && strings.Contains(err.Error(), "forbidden") {
+	if err != nil && (strings.Contains(err.Error(), "forbidden") || strings.Contains(err.Error(), "grant_required")) {
 		// The usual cause is a CLI session that was not granted the
 		// execution permission at login; say how to get one.
 		grant := "--allow-exec"

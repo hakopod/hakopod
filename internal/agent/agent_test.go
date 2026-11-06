@@ -15,7 +15,7 @@ import (
 )
 
 func TestAgentReadOnlyProtocol(t *testing.T) {
-	input := strings.Join([]string{`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, `{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`, `{"jsonrpc":"2.0","method":"notifications/initialized"}`, `{"jsonrpc":"2.0","id":3,"method":"tools/list"}`, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"deploy","arguments":{"plan_id":"bad"}}}`}, "\n")
+	input := strings.Join([]string{`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, `{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`, `{"jsonrpc":"2.0","method":"notifications/initialized"}`, `{"jsonrpc":"2.0","id":3,"method":"tools/list"}`, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"deploy","arguments":{"plan_id":"bad"},"_meta":{"progressToken":7}}}`}, "\n")
 	var out bytes.Buffer
 	if err := Serve(context.Background(), nil, Scope{Project: "demo", Environment: "development"}, false, strings.NewReader(input), &out, "test"); err != nil {
 		t.Fatal(err)

@@ -47,6 +47,31 @@ func TestExecutionCommandsShareScopedAPI(t *testing.T) {
 		t.Fatal("execution opt-in bypass")
 	}
 }
+func TestExecResolvesApplicationName(t *testing.T) {
+	var execPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/applications":
+			io.WriteString(w, `{"items":[{"id":"72521019d2ab3296687042914bb3d997","name":"claude-gateway","project":"p","environment":"dev"}]}`)
+		case r.URL.Path == "/api/v1/applications/72521019d2ab3296687042914bb3d997":
+			io.WriteString(w, `{"id":"72521019d2ab3296687042914bb3d997","name":"claude-gateway","project":"p","environment":"dev","spec":{"name":"claude-gateway","services":{"cliproxyapi":{"image":"ghcr.io/example/cliproxyapi:1"}}}}`)
+		case strings.HasSuffix(r.URL.Path, "/exec"):
+			execPath = r.URL.Path
+			io.WriteString(w, `{"exit_code":0,"stdout":"","stderr":""}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, key: "test-key", http: server.Client()}
+	flags := executionFlags{AllowExec: true, Service: "cliproxyapi", Pod: "cliproxyapi-f8ddf5fc5-9m2nz", Container: "app", CommandJSON: `["true"]`, Timeout: 5, MaxOutput: 1024}
+	if err := runExecution(context.Background(), c, config{Project: "p", Environment: "dev"}, "exec", "claude-gateway", flags); err != nil {
+		t.Fatal(err)
+	}
+	if execPath != "/api/v1/applications/72521019d2ab3296687042914bb3d997/services/cliproxyapi/exec" {
+		t.Fatal(execPath)
+	}
+}
 func TestResponseErrorRetainsQueryOutcome(t *testing.T) {
 	res := &http.Response{StatusCode: 500, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"query_failed","message":"Query failed"},"outcome":"unknown","operation_id":"operation-1"}`))}
 	err := responseError(res)
