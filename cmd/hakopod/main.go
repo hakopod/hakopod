@@ -173,6 +173,9 @@ func run() error {
 	dir := fs.String("dir", "", "folder tree: optional network.toml plus one application per subfolder")
 	only := fs.String("only", "", "with --dir, comma-separated folder or application names to include")
 	noNetwork := fs.Bool("no-network", false, "with --dir, validate network.toml locally but do not plan or apply it")
+	image := fs.String("image", "", "set-image: the new image reference, ideally pinned by digest")
+	secretFromFile := fs.String("from-file", "", "secret set: read the value from this file")
+	secretFromStdin := fs.Bool("stdin", false, "secret set: read the value from redirected stdin")
 	// Standard flags accept options before an identifier. Move ordinary positionals
 	// to the end so `status APP --json` and `--json APP` behave consistently.
 	if err := fs.Parse(reorder(os.Args[2:])); err != nil {
@@ -399,7 +402,7 @@ func run() error {
 		return externalDatabaseCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), externalDatabaseFlags{CredentialsFile: *externalCredentialsFile, CredentialsStdin: *externalCredentialsStdin, IdempotencyKey: *idem, ReviewID: *reviewID, Name: *name, Revision: *revision, ApplicationID: *databaseApplication, Service: *service, Variable: *databaseVariable})
 	case "exec":
 		if fs.NArg() != 1 {
-			return errors.New("usage: hakopod exec APP --service SERVICE --pod POD --container CONTAINER --command-json ARRAY --allow-exec")
+			return errors.New("usage: hakopod exec APP [--service SERVICE] [--pod POD] [--container CONTAINER] --command-json ARRAY --allow-exec")
 		}
 		return runExecution(ctx, c, cfg, "exec", fs.Arg(0), executionFlags{Service: *service, Pod: *pod, Container: *container, CommandJSON: *commandJSON, AllowExec: *allowExec, Timeout: *execTimeout, MaxOutput: *execMaxOutput})
 	case "database":
@@ -445,6 +448,14 @@ func run() error {
 			cfg.Environment = ""
 		}
 		return serveAgentAccess(ctx, c, cfg, agent.Options{HostOnly: *hostOnly, Installation: *installation, AllowAdmin: *allowAdmin, AllowCredentials: *allowCredentials, AllowDeploy: *allowDeploy, AllowWrite: *allowWrite, AllowExec: *allowExec, AllowTerminal: *allowTerminal, AllowHostTerminal: *allowHostTerminal, AllowSQL: *allowSQL, AllowSQLWrite: *allowSQLWrite}, os.Stdin, os.Stdout)
+	case "apps", "applications":
+		apps, err := listApplications(ctx, c, cfg)
+		if err != nil {
+			return err
+		}
+		return printApplications(apps, *outputJSON, os.Stdout)
+	case "secret", "secrets":
+		return secretCommand(ctx, c, cfg, fs.Args(), *secretFromFile, *secretFromStdin, *outputJSON)
 	case "projects", "nodes", "keys", "audit":
 		var out any
 		if err = c.request(ctx, "GET", "/"+command, nil, "", &out); err != nil {
@@ -583,7 +594,7 @@ func run() error {
 			}
 		}
 		return deploymentOutput(d, *outputJSON)
-	case "status", "logs", "rollback", "services", "networks", "terminal", "certificates", "certificate-upload", "delivery", "test-connection", "inspect-binding":
+	case "status", "logs", "rollback", "services", "networks", "terminal", "certificates", "certificate-upload", "delivery", "test-connection", "inspect-binding", "bindings", "export", "restart", "set-image":
 		a, err := findApp(ctx, c, cfg, arg, *file)
 		if err != nil {
 			return err
@@ -629,6 +640,38 @@ func run() error {
 			return nil
 		case "services":
 			return printJSON(a.Spec.Services)
+		case "bindings":
+			return printJSON(bindings(a))
+		case "export":
+			out, err := exportTOML(a)
+			if err != nil {
+				return err
+			}
+			_, err = os.Stdout.Write(out)
+			return err
+		case "restart", "set-image":
+			svc, err := soleService(a, *service)
+			if err != nil {
+				return err
+			}
+			if *idem == "" {
+				*idem = store.NewID()
+			}
+			var d store.Deployment
+			if command == "restart" {
+				d, err = restartService(ctx, c, a, svc, *idem)
+			} else {
+				d, err = setImage(ctx, c, cfg, a, svc, *image, *idem, *outputJSON)
+			}
+			if err != nil {
+				return err
+			}
+			if *wait {
+				if d, err = waitDeployment(ctx, c, d); err != nil {
+					return err
+				}
+			}
+			return deploymentOutput(d, *outputJSON)
 		case "networks":
 			return printJSON(a.Spec.Networks)
 		case "logs":
@@ -926,7 +969,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--never-expires": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--history": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--never-expires": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--history": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--stdin": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -942,7 +985,7 @@ func reorder(args []string) []string {
 	return append(flags, pos...)
 }
 func help() {
-	fmt.Println("  exec APP --service SERVICE --pod POD --container CONTAINER --command-json ARRAY --allow-exec")
+	fmt.Println("  exec APP [--service SERVICE] [--pod POD] [--container CONTAINER] --command-json ARRAY --allow-exec")
 	fmt.Println("  database query ID --sql-file FILE [--parameters-json ARRAY] [--allow-sql-write --revision REVISION]")
 	fmt.Println("  api operations | api call OPERATION [--path-json JSON] [--query-json JSON] [--body-file FILE] [--allow-write]")
 	w := bufio.NewWriter(os.Stdout)
@@ -972,6 +1015,14 @@ func help() {
   hakopod certificate-upload mail --service smtp --hostname mail.example.com --from-ingress
   hakopod delivery mail --service smtp
   hakopod rollback shop --revision 1 --wait
+  hakopod apps [--json]
+  hakopod export shop > hakopod.toml
+  hakopod set-image shop --service api --image ghcr.io/acme/api@sha256:DIGEST --wait
+  hakopod restart shop --service api --wait
+  hakopod bindings shop
+  hakopod secret list shop
+  hakopod secret set shop STRIPE_KEY --from-file stripe.key   (or --stdin)
+  hakopod secret delete shop STRIPE_KEY
   hakopod services|networks [APPLICATION]
   hakopod projects|nodes|keys|audit
   hakopod project-create --name demo --environment production

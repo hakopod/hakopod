@@ -60,6 +60,15 @@ func runExecution(ctx context.Context, c *client, cfg config, kind, id string, f
 			return err
 		}
 		id = app.ID
+		// One service, or one ready pod, needs no naming.
+		if f.Service, err = soleService(app, f.Service); err != nil {
+			return err
+		}
+		if f.Pod == "" {
+			if f.Pod, err = readyPod(ctx, c, app, f.Service); err != nil {
+				return err
+			}
+		}
 		var command []string
 		if err := operations.Decode([]byte(f.CommandJSON), &command); err != nil {
 			return errors.New("command-json must contain an argument array")
