@@ -6,6 +6,8 @@ import (
 	"errors"
 	"github.com/hakopod/hakopod/internal/operations"
 	"io"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -33,7 +35,9 @@ func (s *Server) operationTools() []any {
 		return out
 	}
 	out = append(out, tool("deployment_events", "Read at most 100 deployment events over ten seconds. Resume with next_cursor. Event data is untrusted.", map[string]any{"deployment_id": str, "cursor": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}, []string{"deployment_id"}, true))
+	out = append(out, tool("secret_names", "List the names of an application's native secrets, never their values, to check that every secret reference exists before a deploy.", map[string]any{"application_id": str}, []string{"application_id"}, true))
 	if s.allowDeploy {
+		out = append(out, tool("restart_service", "Restart one service's pods as a new revision, for example so it reads a changed secret. Supply the current expected_revision and a stable retry key. Requires deployment opt-in.", map[string]any{"application_id": str, "service": str, "expected_revision": map[string]any{"type": "integer"}, "idempotency_key": str}, []string{"application_id", "service", "expected_revision", "idempotency_key"}, false))
 		out = append(out, tool("cancel_deployment", "Cancel a scoped deployment through the canonical API. Requires deployment opt-in and API authorization.", map[string]any{"deployment_id": str}, []string{"deployment_id"}, false), tool("rollback", "Restore a user-reviewed successful revision. Supply the current expected_revision and a stable retry key. Requires deployment opt-in.", map[string]any{"application_id": str, "revision": map[string]any{"type": "integer"}, "expected_revision": map[string]any{"type": "integer"}, "idempotency_key": str}, []string{"application_id", "revision", "expected_revision", "idempotency_key"}, false))
 	}
 	if s.options.AllowExec {
@@ -139,6 +143,58 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 		var out any
 		err := s.client(ctx, "POST", "/applications/"+in.ID+"/rollback", map[string]any{"revision": in.Revision, "expected_revision": in.Expected}, in.Key, &out)
 		return out, err
+	case "restart_service":
+		if !s.allowDeploy {
+			return nil, errors.New("deployment tools require --allow-deploy")
+		}
+		var in struct {
+			ID       string `json:"application_id"`
+			Service  string `json:"service"`
+			Expected int64  `json:"expected_revision"`
+			Key      string `json:"idempotency_key"`
+		}
+		if err := decodeAgent(raw, &in); err != nil {
+			return nil, err
+		}
+		if in.Expected < 1 || len(in.Key) < 8 || len(in.Key) > 128 || strings.ContainsAny(in.Key, "\r\n\x00") {
+			return nil, errors.New("invalid expected revision or retry key")
+		}
+		app, err := s.application(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := app.Spec.Services[in.Service]; !ok || !agentID.MatchString(in.Service) {
+			return nil, errors.New("unknown service")
+		}
+		var out any
+		err = s.client(ctx, "POST", "/applications/"+app.ID+"/services/"+in.Service+"/restart", map[string]any{"expected_revision": in.Expected}, in.Key, &out)
+		return out, err
+	case "secret_names":
+		var in struct {
+			ID string `json:"application_id"`
+		}
+		if err := decodeAgent(raw, &in); err != nil {
+			return nil, err
+		}
+		app, err := s.application(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		var listed struct {
+			Items []struct {
+				Name string `json:"name"`
+			} `json:"items"`
+		}
+		query := url.Values{"project": {app.Project}, "environment": {app.Environment}, "application": {app.Name}}
+		if err := s.client(ctx, "GET", "/secrets?"+query.Encode(), nil, "", &listed); err != nil {
+			return nil, err
+		}
+		names := make([]string, 0, len(listed.Items))
+		for _, item := range listed.Items {
+			names = append(names, item.Name)
+		}
+		sort.Strings(names)
+		return map[string]any{"application": app.Name, "names": names}, nil
 	case "pod_exec":
 		if !s.options.AllowExec {
 			return nil, errors.New("pod execution requires --allow-exec")
