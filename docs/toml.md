@@ -85,6 +85,7 @@ DNS routing and certificate coverage are separate checks.
 | `files` | Up to 16 total mounts: named read-only files with mount_path and content or a scoped secret reference |
 | `bindings` | Up to 16 private HTTP/database URL environment bindings derived from service ports and scoped credentials |
 | `http` | Up to four additional named HTTP endpoints on declared TCP service ports, with optional assigned custom domains |
+| `ingress_timeout_seconds` | Optional 5–3600 seconds the ingress waits for a response or more streamed data before closing the request; omission uses the installation default of 30. Requires `public` and a `port`; rejected with `serverless`, which uses `serverless.request_timeout_seconds` |
 | `backend_http2` | false; true makes the ingress speak HTTP/2 (h2) to this service, for gRPC and other h2-only servers; requires `public` and a `port`; rejected with `serverless` or with named `http` endpoints |
 | `networks` | Omitted joins default; explicit nonempty list replaces default membership |
 | `network_access.from` | Optional allowlist of services in this application; an empty list denies local peer traffic |

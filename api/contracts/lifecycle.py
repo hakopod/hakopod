@@ -7,6 +7,7 @@ schemas['Service']['properties']['startup_timeout_seconds'] = {'type': 'integer'
 schemas['HTTPEndpoint'] = obj({'port': I, 'domain': S}, ['port'])
 schemas['Service']['properties']['http'] = mapping(ref('HTTPEndpoint'))
 schemas['Service']['properties']['backend_http2'] = {**B, "description": "Opt-in: the ingress speaks HTTP/2 (h2) to this service's backend, for gRPC and other h2-only servers. Requires public with a port. Rejected with serverless or with named http endpoints."}
+schemas['Service']['properties']['ingress_timeout_seconds'] = {'type': 'integer', 'minimum': 5, 'maximum': 3600, 'description': 'Seconds the ingress waits for this service to answer or send more data before closing the request, instead of the installation default of 30. For streaming and slow APIs. Requires public with a port; serverless services use serverless.request_timeout_seconds.'}
 schemas['ServiceStatus']['properties']['endpoints'] = mapping(S)
 
 schemas['BuildConfig']['properties']['build_args'] = mapping(S)

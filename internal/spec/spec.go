@@ -84,6 +84,9 @@ type Service struct {
 	TLS                     *TLSConfig              `json:"tls,omitempty" toml:"tls"`
 	// BackendHTTP2 makes the ingress speak HTTP/2 to this service, which gRPC needs.
 	BackendHTTP2 bool `json:"backend_http2,omitempty" toml:"backend_http2,omitempty"`
+	// IngressTimeoutSeconds lets one response take longer than the installation's
+	// ingress server timeout (30 seconds by default), for streaming and slow APIs.
+	IngressTimeoutSeconds int32 `json:"ingress_timeout_seconds,omitempty" toml:"ingress_timeout_seconds,omitempty"`
 }
 
 type Network struct {
@@ -568,6 +571,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "startup_timeout_seconds", a.StartupTimeoutSeconds, b.StartupTimeoutSeconds, false)
 		add(name, "readiness", a.Readiness, b.Readiness, false)
 		add(name, "backend_http2", a.BackendHTTP2, b.BackendHTTP2, false)
+		add(name, "ingress_timeout_seconds", a.IngressTimeoutSeconds, b.IngressTimeoutSeconds, false)
 		add(name, "update_strategy", a.UpdateStrategy, b.UpdateStrategy, false)
 		add(name, "env", a.Env, b.Env, true)
 		add(name, "command", a.Command, b.Command, false)

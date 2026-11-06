@@ -151,7 +151,7 @@ func normalizeJobAndFiles(s *Service) error {
 		}
 		// A job runs unattended and may be retried or scheduled, so nothing is
 		// left to reconcile the containers it created; use a long-running service.
-		if s.Replicas != 1 || s.Autoscaling != nil || s.Port != 0 || len(s.Ports) > 0 || s.Public || s.BackendHTTP2 || len(s.PublicTCP) > 0 || s.TLS != nil || s.Readiness != nil || s.Healthcheck != "" || len(s.CertificateMounts) > 0 || s.UpdateStrategy != "" || s.ContainerDaemon != "" {
+		if s.Replicas != 1 || s.Autoscaling != nil || s.Port != 0 || len(s.Ports) > 0 || s.Public || s.BackendHTTP2 || s.IngressTimeoutSeconds != 0 || len(s.PublicTCP) > 0 || s.TLS != nil || s.Readiness != nil || s.Healthcheck != "" || len(s.CertificateMounts) > 0 || s.UpdateStrategy != "" || s.ContainerDaemon != "" {
 			return fmt.Errorf("job: require one replica without listeners, readiness checks, certificates, autoscaling, update strategy or a container daemon binding")
 		}
 	}

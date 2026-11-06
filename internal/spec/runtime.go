@@ -36,6 +36,17 @@ func validateRuntimeService(service Service) error {
 			return errors.New("tls: resource names must use at most 63 lowercase letters, digits or hyphens")
 		}
 	}
+	if service.IngressTimeoutSeconds != 0 {
+		if service.IngressTimeoutSeconds < 5 || service.IngressTimeoutSeconds > 3600 {
+			return errors.New("ingress_timeout_seconds: use 5 to 3600 seconds")
+		}
+		if !service.Public || service.Port == 0 {
+			return errors.New("ingress_timeout_seconds: requires a public service with a port")
+		}
+		if service.Serverless != nil {
+			return errors.New("ingress_timeout_seconds: serverless services set serverless.request_timeout_seconds instead")
+		}
+	}
 	if service.BackendHTTP2 {
 		if !service.Public || service.Port == 0 {
 			return errors.New("backend_http2: requires a public service with a port")

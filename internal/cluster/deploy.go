@@ -795,6 +795,14 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 		// issuer annotation; the proxy logs one benign missing-rules warning.
 		wanted.Spec.Rules = []networkingv1.IngressRule{{Host: c.hostname(t, name)}}
 	}
+	if svc.IngressTimeoutSeconds > 0 {
+		// Only the server timeout is per ingress; the client timeout does not
+		// run while HAProxy waits for this backend's response.
+		if wanted.Annotations == nil {
+			wanted.Annotations = map[string]string{}
+		}
+		wanted.Annotations["haproxy.org/timeout-server"] = strconv.Itoa(int(svc.IngressTimeoutSeconds)) + "s"
+	}
 	if svc.BackendHTTP2 {
 		// HAProxy speaks HTTP/1.1 to backends unless the ingress asks for h2, which gRPC needs.
 		if wanted.Annotations == nil {

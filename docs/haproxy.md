@@ -185,7 +185,8 @@ with `backend_http2 = true` gets `haproxy.org/server-proto: h2` on its own
 generated ingress, so the ingress speaks HTTP/2 to that service's backend instead
 of HTTP/1.1. This is for gRPC and other servers that accept only h2. A few other
 specification fields also write fixed controller annotations, such as the
-serverless timeout and TLS redirect and issuer annotations, but a specification
+serverless timeout, `ingress_timeout_seconds` (as `haproxy.org/timeout-server`)
+and TLS redirect and issuer annotations, but a specification
 cannot set arbitrary annotations, and the HAProxy editor still cannot set them.
 The annotation applies to the whole ingress, so it is rejected alongside named
 `http` endpoints, whose backends speak HTTP/1.1.
