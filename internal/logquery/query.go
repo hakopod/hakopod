@@ -462,8 +462,32 @@ func metadataBytes(value any) int {
 	}
 }
 
+var (
+	// A level word that opens the line, as Python logging, uvicorn and
+	// structlog's console renderer print it: "ERROR:root:", "ERROR   msg",
+	// "[WARNING] msg". Only the first word counts, so a level mentioned later
+	// in the text never sets severity.
+	leadingLevel = regexp.MustCompile(`^\[?(TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|CRITICAL|FATAL)\]?(?:[\s:|]|$)`)
+	// Used only when a JSON line is too large to decode: the first level key.
+	jsonLevel = regexp.MustCompile(`"(?:severity|level|levelname)"\s*:\s*"([A-Za-z]+)"`)
+)
+
+// severityOf maps a level name to its canonical rank name, or "".
+func severityOf(level string) string {
+	level = strings.ToUpper(level)
+	if _, ok := ranks[level]; !ok {
+		return ""
+	}
+	if level == "WARN" {
+		return "WARNING"
+	}
+	return level
+}
+
 // ParseEntry keeps the original message and exposes structured JSON fields when
-// the workload emitted them. It never substitutes a guessed timestamp or level.
+// the workload emitted them. Severity comes from a JSON level field, or from a
+// level word that starts a plain-text line; it never substitutes a guessed
+// timestamp.
 func ParseEntry(line, service, pod, container string) Entry {
 	e := Entry{Service: service, Pod: pod, Container: container, Message: line, Severity: "DEFAULT", Fields: map[string]any{}}
 	if stamp, rest, ok := strings.Cut(line, " "); ok {
@@ -475,6 +499,15 @@ func ParseEntry(line, service, pod, container string) Entry {
 	allowed, limited := metadataAllowed(e.Message)
 	e.MetadataOmitted = limited
 	if !allowed {
+		if limited {
+			if m := jsonLevel.FindStringSubmatch(e.Message); m != nil {
+				if level := severityOf(m[1]); level != "" {
+					e.Severity = level
+				}
+			}
+		} else if m := leadingLevel.FindStringSubmatch(strings.TrimLeft(e.Message, " \t")); m != nil {
+			e.Severity = severityOf(m[1])
+		}
 		return e
 	}
 	dec := json.NewDecoder(strings.NewReader(e.Message))
@@ -482,13 +515,9 @@ func ParseEntry(line, service, pod, container string) Entry {
 	var fields map[string]any
 	if dec.Decode(&fields) == nil && fields != nil {
 		e.Fields = fields
-		for _, key := range []string{"severity", "level", "log.level"} {
-			if level, ok := fields[key].(string); ok {
-				level = strings.ToUpper(level)
-				if _, ok := ranks[level]; ok {
-					if level == "WARN" {
-						level = "WARNING"
-					}
+		for _, key := range []string{"severity", "level", "log.level", "levelname"} {
+			if raw, ok := fields[key].(string); ok {
+				if level := severityOf(raw); level != "" {
 					e.Severity = level
 					break
 				}
