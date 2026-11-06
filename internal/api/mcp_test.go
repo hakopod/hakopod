@@ -96,8 +96,9 @@ func TestHTTPMCPAuthenticationScopeAndReviewedDeployment(t *testing.T) {
 	}
 	expect(call("POST", endpoint, other, session, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, nil), 404)
 	expect(call("POST", endpoint, raw, session, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, map[string]string{"MCP-Protocol-Version": "1900-01-01"}), 400)
-	denied := call("POST", endpoint, raw, session, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"deploy","arguments":{"plan_id":"bad"}}}`, nil)
-	if !strings.Contains(denied.Body.String(), `"isError":true`) {
+	denied := call("POST", endpoint, raw, session, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"deploy","arguments":{"plan_id":"bad"},"_meta":{"progressToken":"t"}}}`, nil)
+	// Request metadata is accepted; the call reaches the tool and is refused there.
+	if !strings.Contains(denied.Body.String(), `"isError":true`) || strings.Contains(denied.Body.String(), "Invalid tool call") {
 		t.Fatal(denied.Body.String())
 	}
 	// Ten sessions per key; the eleventh is refused, and DELETE releases capacity.

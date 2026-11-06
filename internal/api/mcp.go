@@ -313,6 +313,7 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request, routes http.Handler
 		var call struct {
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
+			Meta      json.RawMessage `json:"_meta"` // MCP request metadata, e.g. a progress token
 		}
 		decoder := json.NewDecoder(bytes.NewReader(request.Params))
 		decoder.DisallowUnknownFields()

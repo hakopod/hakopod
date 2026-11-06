@@ -111,6 +111,7 @@ func ServeWithStream(ctx context.Context, c RequestFunc, cfg Scope, options Opti
 			var call struct {
 				Name      string          `json:"name"`
 				Arguments json.RawMessage `json:"arguments"`
+				Meta      json.RawMessage `json:"_meta"` // MCP request metadata, e.g. a progress token
 			}
 			err := decodeAgent(req.Params, &call)
 			var result any
