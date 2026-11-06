@@ -321,7 +321,7 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request, routes http.Handler
 			mcpRPCError(w, 200, request.ID, -32602, "Invalid tool call")
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.WithValue(r.Context(), mcpContextKey{}, r), 30*time.Second)
+		ctx, cancel := context.WithTimeout(s.mcpToolContext(r), 30*time.Second)
 		defer cancel()
 		data, err := session.agent.Call(ctx, call.Name, call.Arguments)
 		if err != nil {
@@ -362,6 +362,36 @@ func (w *mcpResponse) Write(data []byte) (int, error) {
 	}
 	return w.body.Write(data)
 }
+
+type mcpGateKey struct{}
+
+// mcpToolContext carries the MCP request and the server's agent-policy gate to
+// the requesters, which dispatch into the inner routes and so skip
+// authenticate.
+func (s *Server) mcpToolContext(r *http.Request) context.Context {
+	ctx := context.WithValue(r.Context(), mcpContextKey{}, r)
+	return context.WithValue(ctx, mcpGateKey{}, s.gateAgentAccess)
+}
+
+// mcpGate applies agent policies to one inner dispatch for a machine key,
+// writing the refusal into w. An embedded handler is skipped: its routes
+// re-enter through authenticate with the forwarded credential, which gates it.
+func mcpGate(ctx context.Context, original *http.Request, w http.ResponseWriter, inner *http.Request) bool {
+	if _, embedded := original.Context().Value(mcpEmbeddingKey{}).(string); embedded {
+		return true
+	}
+	p, ok := original.Context().Value(principalKey{}).(store.Principal)
+	if !ok || p.CredentialType != "machine" {
+		return true
+	}
+	gate, ok := ctx.Value(mcpGateKey{}).(func(http.ResponseWriter, *http.Request, store.Principal) bool)
+	if !ok {
+		problem(w, 503, "agent_policy_unavailable", "Agent policies could not be loaded. Try again.")
+		return false
+	}
+	return gate(w, inner, p)
+}
+
 func mcpRequester(routes http.Handler) agent.RequestFunc {
 	return func(ctx context.Context, method, path string, body any, key string, out any) error {
 		original, ok := ctx.Value(mcpContextKey{}).(*http.Request)
@@ -383,10 +413,13 @@ func mcpRequester(routes http.Handler) agent.RequestFunc {
 		request.Body = io.NopCloser(bytes.NewReader(encoded))
 		request.ContentLength = int64(len(encoded))
 		request.Header = mcpDispatchHeaders(original)
+		setMCPApproval(ctx, request.Header)
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Idempotency-Key", key)
 		response := &mcpResponse{header: make(http.Header)}
-		routes.ServeHTTP(response, request)
+		if mcpGate(ctx, original, response, request) {
+			routes.ServeHTTP(response, request)
+		}
 		if response.overflow {
 			return errors.New("MCP response is too large; narrow the request")
 		}

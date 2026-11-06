@@ -139,7 +139,7 @@ func TestSlackDeliveryTextCoversCatalogWithSafeRuntimeContext(t *testing.T) {
 		if text == "" {
 			t.Fatalf("catalog event %q did not render", definition.ID)
 		}
-		if definition.ID == "alarm.opened" || definition.ID == "alarm.resolved" || definition.ID == "audit" {
+		if definition.ID == "alarm.opened" || definition.ID == "alarm.resolved" || definition.ID == "audit" || strings.HasPrefix(definition.ID, "agent.") {
 			continue
 		}
 		if !strings.Contains(text, "Hakopod "+definition.Label) || !strings.Contains(text, "Application ID: app_01H8R23PNRQRQ2MGZ1V6N1M7XV") || !strings.Contains(text, "Runtime phase: recovery") || !strings.Contains(text, "Revision: 7") || !strings.Contains(text, "Recovery revision: 6") {
@@ -151,5 +151,21 @@ func TestSlackDeliveryTextCoversCatalogWithSafeRuntimeContext(t *testing.T) {
 	}
 	if text := slackDeliveryText("not-a-real-event", payload); text != "" {
 		t.Fatalf("unknown event rendered: %q", text)
+	}
+}
+
+func TestSlackDeliveryTextRendersAgentPolicyEvents(t *testing.T) {
+	text := slackDeliveryText("agent.approval.requested", store.JSON(map[string]any{
+		"schema_version": 1, "approval_id": "a1", "policy_name": "Production deploys need approval", "key_name": "deploy-agent",
+		"operation": "createDeployment", "project": "shop", "environment": "production", "expires_at": "2026-11-06T14:05:00Z",
+	}))
+	if text != `Hakopod Approval requested: key deploy-agent wants createDeployment in shop/production (policy "Production deploys need approval"). Expires 14:05 UTC. Open Approvals in Hakopod.` {
+		t.Fatalf("approval text: %q", text)
+	}
+	text = slackDeliveryText("agent.policy.exception", store.JSON(map[string]any{
+		"policy_name": "No deploys <b>", "key_name": "deploy-agent", "operation": "createDeployment", "project": "shop", "environment": "production",
+	}))
+	if text != `Hakopod Policy exception used: key deploy-agent ran createDeployment in shop/production while an alarm is active (policy "No deploys &lt;b&gt;").` {
+		t.Fatalf("exception text: %q", text)
 	}
 }

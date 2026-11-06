@@ -424,6 +424,8 @@ func run() error {
 		return managedPlatformCommand(ctx, c, cfg.Project, cfg.Environment, fs.Args(), *file, *idem, *name)
 	case "previews", "preview-create", "preview-delete":
 		return previewCommand(ctx, c, cfg, command, arg, *name, *branch, *file, *idem, *ttl, *discardPreview)
+	case "approval":
+		return approvalCommand(ctx, c, arg, *outputJSON)
 	case "api":
 		if *installation {
 			if *project != "" || *environment != "" {
@@ -790,12 +792,27 @@ func anonymousClient(cfg config) (*client, error) {
 	return &client{url: strings.TrimRight(cfg.URL, "/"), key: cfg.Key, workspace: cfg.Workspace, http: &http.Client{Timeout: defaultRequestTimeout, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return errors.New("API redirects are not allowed") }}}, nil
 }
 func (c *client) request(ctx context.Context, method, path string, in any, idem string, out any) error {
-	var body io.Reader
+	var b []byte
 	if in != nil {
-		b, err := json.Marshal(in)
-		if err != nil {
+		var err error
+		if b, err = json.Marshal(in); err != nil {
 			return err
 		}
+	}
+	err := c.send(ctx, method, path, b, in != nil, idem, operations.ApprovalFrom(ctx), out)
+	var approval *approvalRequiredError
+	if !errors.As(err, &approval) || operations.ApprovalFrom(ctx) != "" || !approvalInteractive() {
+		return err
+	}
+	if err := c.waitApproval(ctx, approval); err != nil {
+		return err
+	}
+	// The server runs an approval only for the identical request, so reuse the same bytes.
+	return c.send(ctx, method, path, b, in != nil, idem, approval.ID, out)
+}
+func (c *client) send(ctx context.Context, method, path string, b []byte, hasBody bool, idem, approval string, out any) error {
+	var body io.Reader
+	if hasBody {
 		body = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.url+"/api/v1"+path, body)
@@ -806,6 +823,9 @@ func (c *client) request(ctx context.Context, method, path string, in any, idem 
 	req.Header.Set("Content-Type", "application/json")
 	if idem != "" {
 		req.Header.Set("Idempotency-Key", idem)
+	}
+	if approval != "" {
+		req.Header.Set("Hakopod-Approval", approval)
 	}
 	res, err := c.http.Do(req)
 	if err != nil {
@@ -864,6 +884,14 @@ func responseError(res *http.Response) error {
 	if res.StatusCode == 401 {
 		// CLI sessions expire after 12 hours; name the way back in.
 		message += "\nThe session has expired or the credential was revoked. Sign in again with hakopod login (add the same --allow-* grants), or check the API key in use."
+	}
+	if body.Error.Code == "approval_required" && operations.ValidApprovalID(res.Header.Get("Hakopod-Approval-Id")) {
+		id := res.Header.Get("Hakopod-Approval-Id")
+		expires, _ := time.Parse(time.RFC3339, res.Header.Get("Hakopod-Approval-Expires"))
+		if !strings.Contains(message, id) {
+			message += " (approval_id=" + id + ")"
+		}
+		return &approvalRequiredError{ID: id, ExpiresAt: expires, Message: message}
 	}
 	return &exitError{code, message}
 }
@@ -987,6 +1015,7 @@ func reorder(args []string) []string {
 func help() {
 	fmt.Println("  exec APP [--service SERVICE] [--pod POD] [--container CONTAINER] --command-json ARRAY --allow-exec")
 	fmt.Println("  database query ID --sql-file FILE [--parameters-json ARRAY] [--allow-sql-write --revision REVISION]")
+	fmt.Println("  approval ID [--json]   show an agent-policy approval; approve or deny it in Hakopod → Approvals")
 	fmt.Println("  api operations | api call OPERATION [--path-json JSON] [--query-json JSON] [--body-file FILE] [--allow-write]")
 	w := bufio.NewWriter(os.Stdout)
 	defer w.Flush()

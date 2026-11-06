@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -149,6 +150,8 @@ func slackDeliveryText(event string, payload []byte) string {
 		return slackText("Hakopod audit event", value["action"], value["resource"])
 	case "test":
 		return "Hakopod Slack test message."
+	case "agent.approval.requested", "agent.policy.exception":
+		return slackAgentText(event, value)
 	}
 	if _, text, ok := securityNotificationText(value); ok && event == "security.advisory" {
 		lines := strings.Split(text, "\n")
@@ -224,4 +227,29 @@ func slackSafeText(value string) string {
 		return value[:2500] + "..."
 	}
 	return value
+}
+
+// slackAgentText renders the two agent policy events as one plain sentence.
+func slackAgentText(event string, value map[string]any) string {
+	field := func(key, fallback string) string {
+		if text, ok := value[key].(string); ok && text != "" {
+			return slackSafeText(text)
+		}
+		return fallback
+	}
+	where := field("project", "an unknown project")
+	if env := field("environment", ""); env != "" {
+		where += "/" + env
+	}
+	key, op, policy := field("key_name", "an unnamed key"), field("operation", "an operation"), field("policy_name", "an unnamed policy")
+	if event == "agent.policy.exception" {
+		return fmt.Sprintf("Hakopod Policy exception used: key %s ran %s in %s while an alarm is active (policy \"%s\").", key, op, where, policy)
+	}
+	expires := ""
+	if raw, ok := value["expires_at"].(string); ok {
+		if at, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			expires = " Expires " + at.UTC().Format("15:04") + " UTC."
+		}
+	}
+	return fmt.Sprintf("Hakopod Approval requested: key %s wants %s in %s (policy \"%s\").%s Open Approvals in Hakopod.", key, op, where, policy, expires)
 }

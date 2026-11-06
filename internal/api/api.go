@@ -32,6 +32,8 @@ import (
 type Server struct {
 	// access caches the installation access policy for accessGate.
 	access accessState
+	// agentPolicies caches published agent policies for gateAgentAccess.
+	agentPolicies agentPolicyCache
 	// appLogs reads stored application logs; built lazily by appLogReader.
 	appLogs            *applogs.Store
 	appLogsOnce        sync.Once
@@ -164,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerInvocationRoutes(routes)
 	s.registerSessionRoutes(routes)
 	s.registerMCPRoutes(routes)
+	s.registerAgentAccessRoutes(routes)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/certificates", s.backendCertificates)
 	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/certificates", s.uploadBackendCertificate)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/delivery", s.serviceDelivery)
@@ -368,6 +371,10 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		if s.Auth.DeploymentMode == cluster.DeploymentManagedCloud && (cloudInstallationRequest(r.Method, r.URL.Path) || (r.URL.Path == "/api/v1/license" && r.Method != "GET")) && !s.cloudOperator(p) {
 			failure(w, store.ErrForbidden)
+			return
+		}
+		// The gate restores any body it reads onto r, so the handler sees it whole.
+		if p.CredentialType == "machine" && !s.gateAgentAccess(w, r, p) {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
