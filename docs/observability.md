@@ -33,8 +33,11 @@ joins, regular-expression operators, and writes are not accepted.
 
 Fields include `timestamp`, `message`, `severity`, `pod`, `container`, and
 `service`. JSON object fields are accessible through `json.field` or
-`json.nested.field`. A structured string `severity`, `level`, or `log.level`
-sets the severity; plain text keeps `DEFAULT`, regardless of words it contains.
+`json.nested.field`. A structured string `severity`, `level`, `log.level` or
+`levelname` sets the severity. A plain-text line takes its severity only from an
+uppercase level word that opens it, as Python logging, uvicorn and structlog
+print them (`ERROR   message`, `ERROR:root:`, `[WARN] message`); any other text
+keeps `DEFAULT`, whatever words it contains later.
 The original log message remains visible. Missing JSON fields fail comparisons;
 use `IS NULL` to select them explicitly. Numeric unquoted literals compare
 numerically; quoted values compare as text.

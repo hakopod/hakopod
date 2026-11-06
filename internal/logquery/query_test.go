@@ -15,8 +15,13 @@ func TestStructuredMetadataLimitsPreserveSearchableMessage(t *testing.T) {
 	}
 	for _, message := range []string{deep, "{" + strings.Join(fields, ",") + "}", `{"message":"` + strings.Repeat("x", 64<<10) + `"}`} {
 		e := ParseEntry("2026-09-12T12:00:00Z "+message, "api", "pod-1", "app")
-		if !e.MetadataOmitted || len(e.Fields) != 0 || e.Message != message || e.Timestamp.IsZero() || e.Severity != "DEFAULT" {
-			t.Fatal("oversized structured metadata changed the original message or retained its object graph")
+		// An oversized object keeps only its first level key, read without decoding.
+		want := "DEFAULT"
+		if strings.Contains(message, `"level":"error"`) {
+			want = "ERROR"
+		}
+		if !e.MetadataOmitted || len(e.Fields) != 0 || e.Message != message || e.Timestamp.IsZero() || e.Severity != want {
+			t.Fatal("oversized structured metadata changed the original message or retained its object graph", e.Severity)
 		}
 		match, err := Compile(`message CONTAINS '"'`)
 		if err != nil || !match(e) {
@@ -97,10 +102,31 @@ func TestQueryBoundsAndInvalidGrammar(t *testing.T) {
 		t.Fatal("SQL quoted apostrophe failed", err)
 	}
 }
-func TestPlainLogsHaveNoInventedSeverityOrTime(t *testing.T) {
+func TestPlainLogsTakeOnlyALeadingLevelWord(t *testing.T) {
 	e := ParseEntry("ERROR nothing structured", "s", "p", "app")
-	if e.Severity != "DEFAULT" || !e.Timestamp.IsZero() || len(e.Fields) != 0 {
-		t.Fatal("invented metadata", e)
+	if e.Severity != "ERROR" || !e.Timestamp.IsZero() || len(e.Fields) != 0 {
+		t.Fatal("leading level word ignored or time invented", e)
+	}
+	for line, want := range map[string]string{
+		"2026-11-05T10:00:00Z ERROR   Claude API error (status 400)": "ERROR",
+		"ERROR:root:upstream refused":                                "ERROR",
+		"[WARN] retrying":                                            "WARNING",
+		"  INFO:     Application startup complete.":                  "INFO",
+		"request failed with ERROR 400":                              "DEFAULT",
+		"Error handling request":                                     "DEFAULT",
+		"ERRORS: 0":                                                  "DEFAULT",
+		"nothing to see":                                             "DEFAULT",
+	} {
+		if got := ParseEntry(line, "s", "p", "app").Severity; got != want {
+			t.Fatalf("%q: severity %s, want %s", line, got, want)
+		}
+	}
+	if got := ParseEntry(`{"event":"boom","levelname":"error"}`, "s", "p", "app").Severity; got != "ERROR" {
+		t.Fatal("levelname ignored", got)
+	}
+	match, err := Compile("severity >= ERROR")
+	if err != nil || !match(ParseEntry("ERROR   Claude API error (status 400)", "s", "p", "app")) {
+		t.Fatal("severity query misses a leading ERROR line")
 	}
 }
 func FuzzCompile(f *testing.F) {
