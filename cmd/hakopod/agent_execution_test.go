@@ -72,6 +72,12 @@ func TestExecResolvesApplicationName(t *testing.T) {
 		t.Fatal(execPath)
 	}
 }
+func TestResponseErrorNamesLoginForExpiredSession(t *testing.T) {
+	res := &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"unauthorized","message":"credential is invalid, expired, revoked, or disabled"}}`))}
+	if err := responseError(res); !strings.Contains(err.Error(), "hakopod login") {
+		t.Fatal(err)
+	}
+}
 func TestResponseErrorRetainsQueryOutcome(t *testing.T) {
 	res := &http.Response{StatusCode: 500, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"query_failed","message":"Query failed"},"outcome":"unknown","operation_id":"operation-1"}`))}
 	err := responseError(res)

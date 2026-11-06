@@ -33,6 +33,7 @@ func TestDatabaseQueryRequiresScopedGrantAndReviewedRevision(t *testing.T) {
 		return raw
 	}
 	reader := key("query-reader", []string{"databases:query"})
+	viewer := key("query-viewer", []string{"deployments:read"})
 	writer := key("query-writer", []string{"databases:query", "databases:write-query"})
 	id := store.NewID()
 	spec := managed.Spec{SchemaVersion: 1, Name: "query-revision-fixture", Engine: "postgresql", Version: "17", Mode: "standalone", Replicas: 1, CPU: "100m", Memory: "256Mi", StorageGiB: 1}
@@ -45,7 +46,8 @@ func TestDatabaseQueryRequiresScopedGrantAndReviewedRevision(t *testing.T) {
 		status            int
 		code              string
 	}{
-		{"wildcard cannot query", bootstrap, `{"sql":"SELECT 1"}`, 404, "not_found"},
+		{"wildcard cannot query", bootstrap, `{"sql":"SELECT 1"}`, 403, "database_query_grant_required"},
+		{"viewer learns the missing grant", viewer, `{"sql":"SELECT 1"}`, 403, "database_query_grant_required"},
 		{"reader cannot write", reader, `{"sql":"SELECT 1","read_only":false,"expected_revision":3}`, 404, "not_found"},
 		{"write requires revision", writer, `{"sql":"SELECT 1","read_only":false}`, 409, "database_query_revision_conflict"},
 		{"stale write revision", writer, `{"sql":"SELECT 1","read_only":false,"expected_revision":2}`, 409, "database_query_revision_conflict"},
