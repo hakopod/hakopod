@@ -45,6 +45,7 @@ import { Bot, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Copy, Empty, ErrorState, Loading, Note, RequestError } from './shared'
 import { AuthScreen } from './auth-screen'
 import { NotificationButton } from './notification-button'
+import { useAgentApprovals } from '../lib/agent-policies'
 
 const CommandPalette = lazy(() => import('./command-palette'))
 const ProjectWizard = lazy(() => import('./project-wizard'))
@@ -420,6 +421,7 @@ function Workspace({
     { to: '/networks', icon: 'network', label: 'Networks' },
     { to: '/requests', icon: 'activity', label: 'Requests' },
     { to: '/infrastructure', icon: 'server', label: 'Infrastructure' },
+    ...(identity.admin ? [{ to: '/approvals', icon: 'shield', label: 'Approvals' }] : []),
     ...(identity.can_manage_backups || identity.admin
       ? [{ to: '/backups', icon: 'archive', label: 'Backups' }]
       : []),
@@ -470,6 +472,7 @@ function Workspace({
         >
           {mobile && <Icon name={icon} size={18} />}
           <span>{label}</span>
+          {to === '/approvals' && <PendingApprovals />}
           {dashboardEdition.cloud && <Brackets />}
         </Link>
       ))
@@ -1002,4 +1005,14 @@ function Preferences({
       </div>
     </Dialog>
   )
+}
+
+// Mounted only for administrators, who see the Approvals entry; errors such as a missing license show nothing.
+function PendingApprovals() {
+  const pending = useAgentApprovals('pending').data?.pending || 0
+  return pending > 0 ? (
+    <span className="ml-1 rounded-full bg-muted px-1.5 text-xs tabular-nums" aria-label={`${pending} pending`}>
+      {pending}
+    </span>
+  ) : null
 }

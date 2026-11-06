@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlarmsRouteImport } from './routes/alarms'
+import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as BackupsRouteImport } from './routes/backups'
 import { Route as BuildsRouteImport } from './routes/builds'
 import { Route as DatabasesRouteImport } from './routes/databases'
@@ -85,6 +86,8 @@ import { Route as PlatformsPlatformIdConfigureRouteImport } from './routes/platf
 import { Route as PlatformsPlatformIdDeleteRouteImport } from './routes/platforms.$platformId.delete'
 import { Route as PlatformsPlatformIdRestoreRouteImport } from './routes/platforms.$platformId.restore'
 import { Route as PlatformsNewStepRouteImport } from './routes/platforms.new.$step'
+import { Route as SettingsAgentPoliciesPolicyIdRouteImport } from './routes/settings.agent-policies.$policyId'
+import { Route as SettingsAgentPoliciesNewRouteImport } from './routes/settings.agent-policies.new'
 import { Route as SettingsDnsProvidersNewRouteImport } from './routes/settings.dns-providers.new'
 import { Route as SettingsGitCallbackRouteImport } from './routes/settings.git.callback'
 import { Route as SettingsIntegrationsProviderRouteImport } from './routes/settings.integrations.$provider'
@@ -122,6 +125,11 @@ const IndexRoute = IndexRouteImport.update({
 const AlarmsRoute = AlarmsRouteImport.update({
   id: '/alarms',
   path: '/alarms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApprovalsRoute = ApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BackupsRoute = BackupsRouteImport.update({
@@ -519,6 +527,18 @@ const PlatformsNewStepRoute = PlatformsNewStepRouteImport.update({
   path: '/$step',
   getParentRoute: () => PlatformsNewRoute,
 } as any)
+const SettingsAgentPoliciesPolicyIdRoute =
+  SettingsAgentPoliciesPolicyIdRouteImport.update({
+    id: '/agent-policies/$policyId',
+    path: '/agent-policies/$policyId',
+    getParentRoute: () => SettingsRoute,
+  } as any)
+const SettingsAgentPoliciesNewRoute =
+  SettingsAgentPoliciesNewRouteImport.update({
+    id: '/agent-policies/new',
+    path: '/agent-policies/new',
+    getParentRoute: () => SettingsRoute,
+  } as any)
 const SettingsDnsProvidersNewRoute = SettingsDnsProvidersNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -682,6 +702,7 @@ const SynehqSScopeSplatRoute = SynehqSScopeSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alarms': typeof AlarmsRouteWithChildren
+  '/approvals': typeof ApprovalsRoute
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/databases': typeof DatabasesRouteWithChildren
@@ -756,6 +777,8 @@ export interface FileRoutesByFullPath {
   '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
   '/platforms/$platformId/restore': typeof PlatformsPlatformIdRestoreRoute
   '/platforms/new/$step': typeof PlatformsNewStepRoute
+  '/settings/agent-policies/$policyId': typeof SettingsAgentPoliciesPolicyIdRoute
+  '/settings/agent-policies/new': typeof SettingsAgentPoliciesNewRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -788,6 +811,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alarms': typeof AlarmsRouteWithChildren
+  '/approvals': typeof ApprovalsRoute
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/databases': typeof DatabasesRouteWithChildren
@@ -862,6 +886,8 @@ export interface FileRoutesByTo {
   '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
   '/platforms/$platformId/restore': typeof PlatformsPlatformIdRestoreRoute
   '/platforms/new/$step': typeof PlatformsNewStepRoute
+  '/settings/agent-policies/$policyId': typeof SettingsAgentPoliciesPolicyIdRoute
+  '/settings/agent-policies/new': typeof SettingsAgentPoliciesNewRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -895,6 +921,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/alarms': typeof AlarmsRouteWithChildren
+  '/approvals': typeof ApprovalsRoute
   '/backups': typeof BackupsRouteWithChildren
   '/builds': typeof BuildsRouteWithChildren
   '/databases': typeof DatabasesRouteWithChildren
@@ -969,6 +996,8 @@ export interface FileRoutesById {
   '/platforms/$platformId/delete': typeof PlatformsPlatformIdDeleteRoute
   '/platforms/$platformId/restore': typeof PlatformsPlatformIdRestoreRoute
   '/platforms/new/$step': typeof PlatformsNewStepRoute
+  '/settings/agent-policies/$policyId': typeof SettingsAgentPoliciesPolicyIdRoute
+  '/settings/agent-policies/new': typeof SettingsAgentPoliciesNewRoute
   '/settings/dns-providers/new': typeof SettingsDnsProvidersNewRoute
   '/settings/git/callback': typeof SettingsGitCallbackRoute
   '/settings/integrations/$provider': typeof SettingsIntegrationsProviderRoute
@@ -1003,6 +1032,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/alarms'
+    | '/approvals'
     | '/backups'
     | '/builds'
     | '/databases'
@@ -1077,6 +1107,8 @@ export interface FileRouteTypes {
     | '/platforms/$platformId/delete'
     | '/platforms/$platformId/restore'
     | '/platforms/new/$step'
+    | '/settings/agent-policies/$policyId'
+    | '/settings/agent-policies/new'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -1109,6 +1141,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/alarms'
+    | '/approvals'
     | '/backups'
     | '/builds'
     | '/databases'
@@ -1183,6 +1216,8 @@ export interface FileRouteTypes {
     | '/platforms/$platformId/delete'
     | '/platforms/$platformId/restore'
     | '/platforms/new/$step'
+    | '/settings/agent-policies/$policyId'
+    | '/settings/agent-policies/new'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -1215,6 +1250,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/alarms'
+    | '/approvals'
     | '/backups'
     | '/builds'
     | '/databases'
@@ -1289,6 +1325,8 @@ export interface FileRouteTypes {
     | '/platforms/$platformId/delete'
     | '/platforms/$platformId/restore'
     | '/platforms/new/$step'
+    | '/settings/agent-policies/$policyId'
+    | '/settings/agent-policies/new'
     | '/settings/dns-providers/new'
     | '/settings/git/callback'
     | '/settings/integrations/$provider'
@@ -1322,6 +1360,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlarmsRoute: typeof AlarmsRouteWithChildren
+  ApprovalsRoute: typeof ApprovalsRoute
   BackupsRoute: typeof BackupsRouteWithChildren
   BuildsRoute: typeof BuildsRouteWithChildren
   DatabasesRoute: typeof DatabasesRouteWithChildren
@@ -1363,6 +1402,13 @@ declare module '@tanstack/react-router' {
       path: '/alarms'
       fullPath: '/alarms'
       preLoaderRoute: typeof AlarmsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/approvals': {
+      id: '/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof ApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/backups': {
@@ -1883,6 +1929,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlatformsNewStepRouteImport
       parentRoute: typeof PlatformsNewRoute
     }
+    '/settings/agent-policies/$policyId': {
+      id: '/settings/agent-policies/$policyId'
+      path: '/agent-policies/$policyId'
+      fullPath: '/settings/agent-policies/$policyId'
+      preLoaderRoute: typeof SettingsAgentPoliciesPolicyIdRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/agent-policies/new': {
+      id: '/settings/agent-policies/new'
+      path: '/agent-policies/new'
+      fullPath: '/settings/agent-policies/new'
+      preLoaderRoute: typeof SettingsAgentPoliciesNewRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/dns-providers/new': {
       id: '/settings/dns-providers/new'
       path: '/new'
@@ -2368,6 +2428,8 @@ interface SettingsRouteChildren {
   SettingsProfileRoute: typeof SettingsProfileRoute
   SettingsSecretProvidersRoute: typeof SettingsSecretProvidersRouteWithChildren
   SettingsSmtpRoute: typeof SettingsSmtpRoute
+  SettingsAgentPoliciesPolicyIdRoute: typeof SettingsAgentPoliciesPolicyIdRoute
+  SettingsAgentPoliciesNewRoute: typeof SettingsAgentPoliciesNewRoute
   SettingsGitCallbackRoute: typeof SettingsGitCallbackRoute
   SettingsKeysNewRoute: typeof SettingsKeysNewRoute
   SettingsLoginProvidersProviderRoute: typeof SettingsLoginProvidersProviderRoute
@@ -2390,6 +2452,8 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsProfileRoute: SettingsProfileRoute,
   SettingsSecretProvidersRoute: SettingsSecretProvidersRouteWithChildren,
   SettingsSmtpRoute: SettingsSmtpRoute,
+  SettingsAgentPoliciesPolicyIdRoute: SettingsAgentPoliciesPolicyIdRoute,
+  SettingsAgentPoliciesNewRoute: SettingsAgentPoliciesNewRoute,
   SettingsGitCallbackRoute: SettingsGitCallbackRoute,
   SettingsKeysNewRoute: SettingsKeysNewRoute,
   SettingsLoginProvidersProviderRoute: SettingsLoginProvidersProviderRoute,
@@ -2459,6 +2523,7 @@ const ApplicationsApplicationIdRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlarmsRoute: AlarmsRouteWithChildren,
+  ApprovalsRoute: ApprovalsRoute,
   BackupsRoute: BackupsRouteWithChildren,
   BuildsRoute: BuildsRouteWithChildren,
   DatabasesRoute: DatabasesRouteWithChildren,

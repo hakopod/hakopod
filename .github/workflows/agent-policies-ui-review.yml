@@ -1,0 +1,61 @@
+name: Agent policies UI review
+on:
+  pull_request:
+    paths:
+      - 'web/src/components/agent-policy-*.tsx'
+      - 'web/src/components/agent-approvals.tsx'
+      - 'web/src/lib/agent-policies.ts'
+      - 'web/src/lib/agent-policy-form.ts'
+      - 'web/src/routes/settings.agent-policies.*'
+      - 'web/src/routes/approvals.tsx'
+      - 'web/src/routes/settings.tsx'
+      - 'web/review/agent-policies/**'
+      - '.github/workflows/agent-policies-ui-review.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agent-policies-ui-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  interface:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NODE_OPTIONS: --max-old-space-size=1024
+      HAKOPOD_PLAYWRIGHT_MODULE: ${{ github.workspace }}/.local/agent-policies-review-tools/node_modules/playwright/index.mjs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore public sources
+        run: |
+          git submodule update --init templates
+          python3 scripts/ui-source.py restore
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm --dir web install --frozen-lockfile
+      - name: Install the isolated browser review tool
+        run: |
+          npm install --prefix .local/agent-policies-review-tools --no-package-lock --ignore-scripts playwright@1.63.0
+          node .local/agent-policies-review-tools/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Render Agent policies and Approvals with synthetic data
+        run: |
+          node web/review/agent-policies/server.mjs > "$RUNNER_TEMP/agent-policies-review-server.log" 2>&1 &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent --max-time 1 http://127.0.0.1:4207/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node web/review/agent-policies/review.mjs
+      - name: Save screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-policies-ui-review
+          path: .local/agent-policies-review
+          if-no-files-found: error
