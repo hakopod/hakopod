@@ -4,6 +4,8 @@
 
 あなたのアプリを、あなたのルールで。Hakopod は、自分のサーバーでアプリをデプロイ・運用するためのオープンソースプラットフォームです。Git からの push、`docker-compose.yml` のインポート、テンプレートの選択のいずれかで始め、変更内容を確認してから、自分のドメインに TLS 付きでデプロイします。
 
+[![Hakopod dashboard](../screenshots/dashboard-app.webp)](https://hakopod.com/media/your-apps-your-terms/film.mp4)
+
 ```sh
 curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
 ```
@@ -51,7 +53,7 @@ Coolify、Dokploy、Openship はどれも良いツールで、今いちばん成
 | AI エージェント向け MCP | あり | あり | あり | あり |
 | 公式 Terraform プロバイダー | あり | — | コミュニティ製のみ | — |
 | マネージドデータベース | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
-| すぐにデプロイできるテンプレート | 57 | 300+ | 500+ | 42 |
+| すぐにデプロイできるテンプレート | 68 | 300+ | 500+ | 42 |
 | 監査ログ | あり（履歴のエクスポートは Pro） | あり | Enterprise | あり |
 | ライセンス | Apache-2.0 | Apache-2.0 | Apache-2.0、一部プロプライエタリなディレクトリあり | Apache-2.0 |
 

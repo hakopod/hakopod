@@ -4,6 +4,8 @@
 
 你的应用，你做主。Hakopod 是一个开源平台，用来在你自己的服务器上部署和运行应用：从 Git 推送、导入 `docker-compose.yml` 或选择模板，先查看将要发生的变更，再部署到你的域名并自动配置 TLS。
 
+[![Hakopod dashboard](../screenshots/dashboard-app.webp)](https://hakopod.com/media/your-apps-your-terms/film.mp4)
+
 ```sh
 curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
 ```
@@ -51,7 +53,7 @@ Coolify、Dokploy 和 Openship 都是好工具；如果你现在就想要最成�
 | 面向 AI 代理的 MCP | 支持 | 支持 | 支持 | 支持 |
 | 官方 Terraform Provider | 支持 | — | 仅社区版 | — |
 | 托管数据库 | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
-| 可直接部署的模板 | 57 | 300+ | 500+ | 42 |
+| 可直接部署的模板 | 68 | 300+ | 500+ | 42 |
 | 审计日志 | 支持；导出历史为 Pro | 支持 | Enterprise | 支持 |
 | 许可证 | Apache-2.0 | Apache-2.0 | Apache-2.0，另含一个专有目录 | Apache-2.0 |
 
