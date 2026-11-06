@@ -58,8 +58,8 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 	if cfg.CallTimeoutSeconds < 10 || cfg.CallTimeoutSeconds > cfg.IdleSeconds {
 		return fmt.Errorf("session call_timeout_seconds must be at least 10 and at most idle_seconds")
 	}
-	if svc.Job != nil || svc.Actions != nil || svc.Serverless != nil || svc.Autoscaling != nil || svc.GPU != nil || svc.Volume != nil || svc.ContainerDaemon != "" || svc.AWSIdentity != "" {
-		return fmt.Errorf("session cannot use another workload mode, autoscaling, GPU, persistent volume, container daemon or AWS identity")
+	if svc.Job != nil || svc.Actions != nil || svc.Serverless != nil || svc.Autoscaling != nil || svc.GPU != nil || svc.Volume != nil || svc.ContainerDaemon != "" || svc.AWSIdentity != "" || svc.Kubernetes != nil {
+		return fmt.Errorf("session cannot use another workload mode, autoscaling, GPU, persistent volume, container daemon, AWS identity or Kubernetes patches")
 	}
 	if svc.Port != 0 || len(svc.Ports) != 0 || svc.Public || len(svc.PublicTCP) != 0 || len(svc.HTTP) != 0 || svc.TLS != nil || svc.BackendHTTP2 || svc.IngressTimeoutSeconds != 0 || svc.NetworkAccess != nil || len(svc.Networks) != 0 || len(svc.PrivateEgress) != 0 {
 		return fmt.Errorf("session cannot expose ports or join application networks")
