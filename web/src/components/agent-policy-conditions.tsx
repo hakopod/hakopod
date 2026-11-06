@@ -19,6 +19,7 @@ export function ValuePicker({
   error,
   placeholder,
   mono = false,
+  single = false,
 }: {
   label: string
   values: string[]
@@ -28,6 +29,8 @@ export function ValuePicker({
   error?: boolean
   placeholder?: string
   mono?: boolean
+  // single keeps one value: picking replaces it and closes the list.
+  single?: boolean
 }) {
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
@@ -48,10 +51,13 @@ export function ValuePicker({
     .slice(0, 50)
   const add = (value: string) => {
     const next = value.trim()
-    if (next && !values.includes(next)) onChange([...values, next])
+    if (next && !values.includes(next)) onChange(single ? [next] : [...values, next])
     setText('')
     setActive(0)
-    input.current?.focus()
+    if (single) {
+      setOpen(false)
+      input.current?.blur()
+    } else input.current?.focus()
   }
   const typed =
     freeText && query && !options.some((o) => o.value.toLowerCase() === query) ? text.trim() : ''
@@ -93,7 +99,7 @@ export function ValuePicker({
           aria-invalid={error || undefined}
           className="h-7 min-w-28 flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-[var(--muted-foreground)]"
           value={text}
-          placeholder={values.length ? 'Add another' : placeholder}
+          placeholder={values.length ? (single ? '' : 'Add another') : placeholder}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
           onChange={(event) => {
@@ -157,7 +163,7 @@ export function ValuePicker({
               >
                 <span className="truncate text-sm">{option.label}</span>
                 {option.detail && (
-                  <span className="truncate font-mono text-xs text-[var(--muted-foreground)]">
+                  <span className="truncate text-xs text-[var(--muted-foreground)]">
                     {option.detail}
                   </span>
                 )}
