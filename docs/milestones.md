@@ -4,6 +4,17 @@ The first milestone's acceptance contract was written before implementation in
 docs/IMPLEMENTATION-CONTRACT.md. Implementation, individual verification and
 the full acceptance gate are recorded separately below.
 
+## Agent policies — 2026-11-06
+
+Agent policies govern requests made with machine keys: block, require approval,
+cap created key lifetimes, and allow during an active incident. Policies are
+versioned, run in Monitor or Enforced status, and need the `agent_policies`
+Pro entitlement. The [agent policies guide](agent-policies.md) describes the
+document, approval flow and limits.
+
+Implemented. Verification is pending: unit tests pass; store and acceptance
+tests run in CI. Not yet verified on a real cluster.
+
 ## Current operations expansion — 2026-09-12
 
 This update adds dedicated nested forms, 13 deployable database/application/agent
