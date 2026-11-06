@@ -64,8 +64,12 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 			if !ok {
 				continue
 			}
-			port := intstr.FromInt32(connection.Port)
-			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": DatabaseNamespace(b.ManagedDatabase)}}}}, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}}})
+			ports := []networkingv1.NetworkPolicyPort{}
+			for _, number := range append([]int32{connection.Port}, connection.ProtocolPorts...) {
+				port := intstr.FromInt32(number)
+				ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &port})
+			}
+			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{To: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": DatabaseNamespace(b.ManagedDatabase)}}}}, Ports: ports})
 		}
 		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
 			To:    []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kube-system"}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}}}},
