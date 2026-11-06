@@ -130,3 +130,31 @@ func TestApplicationEnvironmentValidationAndPreview(t *testing.T) {
 		t.Fatal("local override should make preview safe", err)
 	}
 }
+
+// A redacted review must still say which variables changed, without values.
+func TestEnvironmentDiffNamesOnlyChangedKeys(t *testing.T) {
+	before := Application{Name: "kole", Services: map[string]Service{"kole": {Image: "ghcr.io/syne/kole:1", Env: map[string]string{"KOLE_APP_API_URL": "http://app:3001", "LOG_LEVEL": "info", "OLD": "x"}}}}
+	after := Application{Name: "kole", Services: map[string]Service{"kole": {Image: "ghcr.io/syne/kole:1", Env: map[string]string{"KOLE_APP_API_URL": "http://app:3001/api", "LOG_LEVEL": "info", "NEW": "y"}}}}
+	var env *Change
+	for _, change := range Diff(&before, after) {
+		if change.Service == "kole" && change.Field == "env" {
+			env = &change
+		}
+	}
+	if env == nil || !env.Sensitive {
+		t.Fatal("environment change missing or not marked sensitive")
+	}
+	want := func(v any, keys ...string) {
+		m := v.(map[string]string)
+		if len(m) != len(keys) {
+			t.Fatalf("keys %v, want %v", m, keys)
+		}
+		for _, key := range keys {
+			if m[key] != "[redacted]" {
+				t.Fatalf("%s not redacted in %v", key, m)
+			}
+		}
+	}
+	want(env.Before, "KOLE_APP_API_URL", "OLD")
+	want(env.After, "KOLE_APP_API_URL", "NEW")
+}
