@@ -811,6 +811,10 @@ func responseError(res *http.Response) error {
 	if agentID.MatchString(body.Error.OperationID) {
 		message += " (operation_id=" + body.Error.OperationID + ")"
 	}
+	if res.StatusCode == 401 {
+		// CLI sessions expire after 12 hours; name the way back in.
+		message += "\nThe session has expired or the credential was revoked. Sign in again with hakopod login (add the same --allow-* grants), or check the API key in use."
+	}
 	return &exitError{code, message}
 }
 func waitDeployment(ctx context.Context, c *client, d store.Deployment) (store.Deployment, error) {

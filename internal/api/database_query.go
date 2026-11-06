@@ -63,7 +63,13 @@ func (s *Server) databaseQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !databaseQueryAllowed(who(r), d, q.IsReadOnly()) {
-		problem(w, 404, "not_found", "resource not found")
+		// Callers who can already see the database learn which grant is
+		// missing; everyone else gets the same answer as for no database.
+		if !who(r).AllowsDatabase(d.Project, d.Environment, false) {
+			problem(w, 404, "not_found", "resource not found")
+			return
+		}
+		problem(w, 403, "database_query_grant_required", "SQL queries need the databases:query permission (and databases:write-query for writes). CLI sessions get them with hakopod login --allow-sql or --allow-sql-write; API keys need them granted explicitly.")
 		return
 	}
 	capabilities := database.CapabilitiesForQuerySpec(d.Spec)
