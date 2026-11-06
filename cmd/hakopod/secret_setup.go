@@ -18,7 +18,7 @@ func setupDeploymentSecrets(ctx context.Context, c *client, project, environment
 		return nil
 	}
 	if noninteractive || !term.IsTerminal(int(os.Stdin.Fd())) {
-		return &exitError{2, "Missing application secrets: " + strings.Join(missing, ", ") + ". Save them through the dashboard or POST /api/v1/secrets/{name}, then retry. No deployment was submitted."}
+		return &exitError{2, missingSecretsMessage(app.Name, missing) + " No deployment was submitted."}
 	}
 	reader := bufio.NewReader(os.Stdin)
 	for _, name := range missing {
@@ -36,6 +36,12 @@ func setupDeploymentSecrets(ctx context.Context, c *client, project, environment
 		}
 	}
 	return nil
+}
+
+// Secrets belong to one application, so a reference to another
+// application's secret is missing here too.
+func missingSecretsMessage(application string, missing []string) string {
+	return "Missing application secrets: " + strings.Join(missing, ", ") + ". Secrets belong to one application (" + application + "); a secret saved for another application is not visible here. Save them through the dashboard or POST /api/v1/secrets/{name}?application=" + application + ", or reference an external secret provider to share one value between applications."
 }
 
 // Separate terminal input from transport so credential handling is exercised

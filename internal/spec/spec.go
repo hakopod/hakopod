@@ -507,6 +507,11 @@ func Diff(before *Application, after Application) []Change {
 			return
 		}
 		if sensitive {
+			if before, ok := a.(map[string]string); ok {
+				if after, ok := b.(map[string]string); ok {
+					a, b = changedKeys(before, after)
+				}
+			}
 			a, b = redact(a), redact(b)
 		}
 		changes = append(changes, Change{service, field, a, b, sensitive})
@@ -598,6 +603,23 @@ func Diff(before *Application, after Application) []Change {
 		}
 	}
 	return changes
+}
+
+// changedKeys keeps only the variables that were removed, added or changed,
+// so a redacted review still names exactly which keys a change touches.
+func changedKeys(before, after map[string]string) (map[string]string, map[string]string) {
+	removed, added := map[string]string{}, map[string]string{}
+	for key, value := range before {
+		if next, ok := after[key]; !ok || next != value {
+			removed[key] = value
+		}
+	}
+	for key, value := range after {
+		if previous, ok := before[key]; !ok || previous != value {
+			added[key] = value
+		}
+	}
+	return removed, added
 }
 
 func redact(value any) any {

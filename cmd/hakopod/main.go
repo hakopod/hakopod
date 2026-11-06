@@ -557,7 +557,14 @@ func run() error {
 			}
 		}
 		if command == "plan" {
-			return printJSON(plan)
+			if err := printJSON(plan); err != nil {
+				return err
+			}
+			// The plan is valid, but deploy would stop on these; say so here.
+			if len(plan.MissingSecrets) > 0 {
+				return &exitError{2, missingSecretsMessage(plan.Spec.Name, plan.MissingSecrets) + " The plan above cannot be deployed until they exist."}
+			}
+			return nil
 		}
 		if err = setupDeploymentSecrets(ctx, c, cfg.Project, cfg.Environment, plan.Spec, plan.MissingSecrets, *outputJSON); err != nil {
 			return err
