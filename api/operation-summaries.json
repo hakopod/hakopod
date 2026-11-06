@@ -356,5 +356,18 @@
   "discardApplicationDraft": "Discard the application's staged changes.",
   "getApplicationDraft": "Read the staged changes for the application, carried forward onto its current revision.",
   "planApplicationDraft": "Prepare a deployment plan from the application's staged changes.",
-  "stageApplicationDraft": "Stage a configuration change for the application without deploying it."
+  "stageApplicationDraft": "Stage a configuration change for the application without deploying it.",
+  "approveAgentApproval": "Approve one held machine-key request for a single retry.",
+  "createAgentPolicy": "Create an agent policy as an unpublished draft.",
+  "deleteAgentPolicy": "Delete an agent policy and its versions.",
+  "denyAgentApproval": "Deny one held machine-key request.",
+  "getAgentApproval": "Read one machine-key request held for approval.",
+  "getAgentPolicy": "Read an agent policy, its published document and its draft.",
+  "listAgentApprovals": "List machine-key requests held for approval.",
+  "listAgentPolicies": "List agent policies with status counts and pending approvals.",
+  "listAgentPolicyVersions": "List the published versions of an agent policy.",
+  "previewAgentPolicy": "Replay recorded machine-key requests against a policy document.",
+  "publishAgentPolicy": "Publish the draft of an agent policy as a new immutable version.",
+  "saveAgentPolicyDraft": "Save the draft of an agent policy.",
+  "simulateAgentPolicy": "Evaluate one hypothetical machine-key request against agent policies."
 }

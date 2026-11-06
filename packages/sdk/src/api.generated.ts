@@ -415,6 +415,195 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent-policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent policies with status counts and pending approvals. */
+        get: operations["listAgentPolicies"];
+        put?: never;
+        /** Create an agent policy as an unpublished draft. */
+        post: operations["createAgentPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-policies/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replay recorded machine-key requests against a policy document. */
+        post: operations["previewAgentPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-policies/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Evaluate one hypothetical machine-key request against agent policies. */
+        post: operations["simulateAgentPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-policies/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent policy, its published document and its draft. */
+        get: operations["getAgentPolicy"];
+        put?: never;
+        post?: never;
+        /** Delete an agent policy and its versions. */
+        delete: operations["deleteAgentPolicy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-policies/{id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save the draft of an agent policy. */
+        put: operations["saveAgentPolicyDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-policies/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish the draft of an agent policy as a new immutable version. */
+        post: operations["publishAgentPolicy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-policies/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the published versions of an agent policy. */
+        get: operations["listAgentPolicyVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List machine-key requests held for approval. */
+        get: operations["listAgentApprovals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-approvals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one machine-key request held for approval. */
+        get: operations["getAgentApproval"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-approvals/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve one held machine-key request for a single retry. */
+        post: operations["approveAgentApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-approvals/{id}/deny": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deny one held machine-key request. */
+        post: operations["denyAgentApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/applications/{id}/services/{service}/exec": {
         parameters: {
             query?: never;
@@ -6212,6 +6401,176 @@ export interface components {
             instance_url: string;
             jobs: components["schemas"]["ActionsProviderWorkflowJob"][];
         };
+        AgentPolicyCondition: {
+            /** @enum {string} */
+            field: "team" | "key" | "category" | "operation" | "project" | "environment";
+            /** @enum {string} */
+            operator: "is_any_of" | "is_none_of" | "matches";
+            values: string[];
+        };
+        AgentPolicyApprover: {
+            /** @enum {string} */
+            kind: "project_admins" | "team" | "identity";
+            id?: string;
+        };
+        AgentPolicyDocument: {
+            /** @constant */
+            schema_version: 1;
+            description: string;
+            when: components["schemas"]["AgentPolicyCondition"][];
+            then: {
+                /** @enum {string} */
+                effect: "block" | "require_approval";
+                approvers?: components["schemas"]["AgentPolicyApprover"][];
+                approval_ttl_seconds?: number;
+                max_credential_ttl_seconds?: number;
+            };
+            except?: {
+                active_incident: boolean;
+            };
+        };
+        AgentPolicy: {
+            id: string;
+            name: string;
+            /** @enum {string} */
+            status: "draft" | "enforced" | "monitor";
+            current_version: number;
+            revision: number;
+            document: components["schemas"]["AgentPolicyDocument"] | null;
+            draft: components["schemas"]["AgentPolicyDocument"] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_by: string;
+            updated_by_name: string;
+        };
+        AgentPolicyList: {
+            items: components["schemas"]["AgentPolicy"][];
+            summary: {
+                total: number;
+                enforced: number;
+                monitor: number;
+                draft: number;
+                pending_approvals: number;
+            };
+            licensed: boolean;
+            evaluating_since: string | null;
+        };
+        AgentPolicyCreateInput: {
+            name: string;
+            document: components["schemas"]["AgentPolicyDocument"];
+        };
+        AgentPolicyDraftInput: {
+            expected_revision: number;
+            name: string;
+            document: components["schemas"]["AgentPolicyDocument"];
+        };
+        AgentPolicyPublishInput: {
+            expected_revision: number;
+            /** @enum {string} */
+            status: "enforced" | "monitor";
+        };
+        AgentPolicyVersion: {
+            version: number;
+            name: string;
+            /** @enum {string} */
+            status: "enforced" | "monitor";
+            document: components["schemas"]["AgentPolicyDocument"];
+            /** Format: date-time */
+            published_at: string;
+            published_by: string;
+            published_by_name: string;
+        };
+        AgentPolicyPreviewInput: {
+            document: components["schemas"]["AgentPolicyDocument"];
+            days: number;
+        };
+        AgentPolicySample: {
+            /** Format: date-time */
+            observed_at: string;
+            key_id: string;
+            key_name: string;
+            operation: string;
+            category: string;
+            project: string;
+            environment: string;
+            /** @enum {string} */
+            decision: "allow" | "block" | "require_approval" | "approved" | "exception" | "monitor_block" | "monitor_approval";
+        };
+        AgentPolicyPreview: {
+            days: number;
+            evaluated: number;
+            matched: number;
+            require_approval: number;
+            blocked: number;
+            exceptions: number;
+            evaluating_since: string | null;
+            samples: components["schemas"]["AgentPolicySample"][];
+        };
+        AgentPolicyMatch: {
+            policy_id: string;
+            name: string;
+            version: number;
+            status: string;
+            effect: string;
+            exception: boolean;
+        };
+        AgentPolicySimulationInput: {
+            key_id: string;
+            operation: string;
+            project?: string;
+            environment?: string;
+            active_incident?: boolean;
+            policy_id?: string;
+            document?: components["schemas"]["AgentPolicyDocument"];
+        };
+        AgentPolicySimulation: {
+            /** @enum {string} */
+            decision: "allow" | "block" | "require_approval" | "approved" | "exception" | "monitor_block" | "monitor_approval";
+            policy: components["schemas"]["AgentPolicyMatch"] | null;
+            matches: components["schemas"]["AgentPolicyMatch"][];
+            reason: string;
+            category: string;
+        };
+        AgentApproval: {
+            id: string;
+            policy_id: string;
+            policy_name: string;
+            policy_version: number;
+            key_id: string;
+            key_name: string;
+            identity_id: string;
+            identity_name: string;
+            operation: string;
+            category: string;
+            method: string;
+            path: string;
+            project: string;
+            environment: string;
+            digest: string;
+            approvers: components["schemas"]["AgentPolicyApprover"][];
+            /** @enum {string} */
+            state: "pending" | "approved" | "denied" | "expired" | "consumed";
+            decided_by: string | null;
+            decided_by_name: string | null;
+            decided_at: string | null;
+            reason: string;
+            /** Format: date-time */
+            expires_at: string;
+            consumed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            can_decide: boolean;
+        };
+        AgentApprovalList: {
+            items: components["schemas"]["AgentApproval"][];
+            next_cursor: string;
+            pending: number;
+        };
+        AgentApprovalDecisionInput: {
+            reason?: string;
+        };
         PodExecInput: {
             pod: string;
             container: string;
@@ -9574,7 +9933,7 @@ export interface components {
         };
         SlackEventDefinition: {
             /** @enum {string} */
-            id: "alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory";
+            id: "alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory" | "agent.approval.requested" | "agent.policy.exception";
             category: string;
             label: string;
             description: string;
@@ -9605,7 +9964,7 @@ export interface components {
             reason?: string;
             team?: components["schemas"]["SlackTeam"];
             channel?: components["schemas"]["SlackChannel"];
-            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory")[];
+            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory" | "agent.approval.requested" | "agent.policy.exception")[];
             event_catalog: components["schemas"]["SlackEventDefinition"][];
             revision: number;
             manifest?: components["schemas"]["SlackManifest"];
@@ -9622,12 +9981,12 @@ export interface components {
             expected_revision: number;
         };
         SlackEventsInput: {
-            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory")[];
+            events: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory" | "agent.approval.requested" | "agent.policy.exception")[];
             expected_revision: number;
         };
         SlackDelivery: {
             id: number;
-            event: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory") | "test";
+            event: ("alarm.opened" | "alarm.resolved" | "audit" | "deployment.queued" | "deployment.started" | "deployment.succeeded" | "deployment.failed" | "deployment.cancelled" | "deployment.superseded" | "deployment.rollback.requested" | "deployment.cancellation.requested" | "application.created" | "application.configuration.updated" | "application.renamed" | "application.deleted" | "service.added" | "service.removed" | "service.renamed" | "service.configuration.updated" | "service.image.updated" | "service.variables.updated" | "service.resources.updated" | "service.scale.updated" | "service.suspended" | "service.resumed" | "service.restart.requested" | "service.network.updated" | "service.storage.updated" | "service.healthcheck.updated" | "service.placement.updated" | "service.command.updated" | "service.delivery.updated" | "service.update.started" | "service.ready" | "service.failed" | "service.job.scheduled" | "service.job.completed" | "service.certificate.renewed" | "security.advisory" | "agent.approval.requested" | "agent.policy.exception") | "test";
             /** @enum {string} */
             status: "pending" | "sending" | "sent" | "skipped" | "failed";
             attempts: number;
@@ -11266,6 +11625,437 @@ export interface operations {
                         /** Format: uuid */
                         hold_id: string;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAgentPolicies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPolicyList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createAgentPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPolicyCreateInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPolicy"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    previewAgentPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPolicyPreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPolicyPreview"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    simulateAgentPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPolicySimulationInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPolicySimulation"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAgentPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPolicy"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteAgentPolicy: {
+        parameters: {
+            query: {
+                expected_revision: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    saveAgentPolicyDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPolicyDraftInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPolicy"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    publishAgentPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPolicyPublishInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPolicy"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAgentPolicyVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["AgentPolicyVersion"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listAgentApprovals: {
+        parameters: {
+            query?: {
+                state?: "pending" | "decided";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentApprovalList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAgentApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentApproval"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    approveAgentApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgentApprovalDecisionInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentApproval"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    denyAgentApproval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgentApprovalDecisionInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentApproval"];
                 };
             };
             /** @description Error */
