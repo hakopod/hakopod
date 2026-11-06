@@ -28,6 +28,10 @@ hakopod export shop > hakopod.toml
 hakopod plan --file hakopod.toml        # 0 changes
 ```
 
+`hakopod manifests shop [--service api]` prints the Deployment, Service and
+Ingress Hakopod generates for the current revision, with any
+[Kubernetes patches](kubernetes-patches.md) applied, without applying anything.
+
 For the common case of shipping a new image there is no file at all. The
 command plans the live specification with one image replaced, prints the
 reviewed changes to stderr and deploys that plan:
