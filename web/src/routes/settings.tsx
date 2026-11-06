@@ -66,6 +66,7 @@ const VPNSettings = lazy(() =>
   import('../components/vpn-settings').then((module) => ({ default: module.VPNPanel })),
 )
 const AppLogSettings = lazy(() => import('../components/app-log-settings'))
+const KubernetesPatchSettings = lazy(() => import('../components/kubernetes-patch-settings'))
 const ProxySettings = lazy(() => import('../components/proxy-settings'))
 const SecretProviders = lazy(() =>
   import('../components/secret-providers').then((module) => ({
@@ -124,6 +125,7 @@ export const Route = createFileRoute('/settings')({
         'access',
         'vpn',
         'logs',
+        'kubernetes',
         'integrations',
         'private-destinations',
       ].includes(search.tab)
@@ -185,6 +187,7 @@ function Administration() {
           { id: 'audit', label: 'Audit events', group: 'Installation' },
           { id: 'agent-policies', label: 'Agent policies', group: 'Installation' },
           { id: 'logs', label: 'Logs', group: 'Installation' },
+          { id: 'kubernetes', label: 'Kubernetes patches', group: 'Installation' },
           ...(installation.allowed
             ? [
                 {
@@ -254,6 +257,7 @@ function Administration() {
                   {tab === 'audit' && <AuditLog />}
                   {tab === 'agent-policies' && <AgentPolicyList />}
                   {tab === 'logs' && <AppLogSettings />}
+                  {tab === 'kubernetes' && <KubernetesPatchSettings />}
                   {installation.allowed && tab === 'login-providers' && <LoginProviderSettings />}
                   {installation.allowed && tab === 'smtp' && <SMTPSettings />}
                   {installation.allowed && tab === 'edge' && <ProxySettings />}
