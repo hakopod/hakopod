@@ -128,6 +128,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       case '/api/alarms':
         data = { items: [], next_cursor: '', summary: { active: 0, unread: 0 } }
         break
+      case '/api/agent-approvals':
+        data = { items: [], next_cursor: '', pending: 0 }
+        break
       case '/api/auth/security':
         data = { password_enabled: true, totp_enabled: false, recovery_codes_remaining: 0, passkeys: [], mfa_verified: false, organization_mfa_required: false }
         break

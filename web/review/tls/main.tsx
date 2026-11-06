@@ -136,6 +136,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         break
       case '/api/security/advisories': data = { feed: { feed_enabled: true, osv_enabled: true, revision: 0, issued_at: null, expires_at: null, checked_at: null, stale: false, error: '' }, applications: [], summary: { affected_applications: 0, critical: 0, high: 0 } }; break
       case '/api/alarms': data = { items: [], next_cursor: '', summary: { active: 0, unread: 0 } }; break
+      case '/api/agent-approvals': data = { items: [], next_cursor: '', pending: 0 }; break
       case applicationPath: data = application; break
       case `${applicationPath}/draft`:
         status = 404
