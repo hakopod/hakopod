@@ -61,7 +61,7 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 	if svc.Job != nil || svc.Actions != nil || svc.Serverless != nil || svc.Autoscaling != nil || svc.GPU != nil || svc.Volume != nil || svc.ContainerDaemon != "" || svc.AWSIdentity != "" {
 		return fmt.Errorf("session cannot use another workload mode, autoscaling, GPU, persistent volume, container daemon or AWS identity")
 	}
-	if svc.Port != 0 || len(svc.Ports) != 0 || svc.Public || len(svc.PublicTCP) != 0 || len(svc.HTTP) != 0 || svc.TLS != nil || svc.BackendHTTP2 || svc.NetworkAccess != nil || len(svc.Networks) != 0 || len(svc.PrivateEgress) != 0 {
+	if svc.Port != 0 || len(svc.Ports) != 0 || svc.Public || len(svc.PublicTCP) != 0 || len(svc.HTTP) != 0 || svc.TLS != nil || svc.BackendHTTP2 || svc.IngressTimeoutSeconds != 0 || svc.NetworkAccess != nil || len(svc.Networks) != 0 || len(svc.PrivateEgress) != 0 {
 		return fmt.Errorf("session cannot expose ports or join application networks")
 	}
 	if len(svc.Secrets) != 0 || len(app.Secrets) != 0 || len(svc.Bindings) != 0 || len(svc.Files) != 0 || len(svc.Mounts) != 0 || len(svc.CertificateMounts) != 0 || len(svc.DependsOn) != 0 || app.InjectEnv {

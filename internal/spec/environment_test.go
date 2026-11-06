@@ -158,3 +158,32 @@ func TestEnvironmentDiffNamesOnlyChangedKeys(t *testing.T) {
 	want(env.Before, "KOLE_APP_API_URL", "OLD")
 	want(env.After, "KOLE_APP_API_URL", "NEW")
 }
+
+func TestIngressTimeoutValidation(t *testing.T) {
+	base := `schema_version = 1
+name = "gateway"
+
+[services.app]
+image = "ghcr.io/syne/claude-gateway:1"
+port = 8080
+`
+	cases := map[string]string{
+		"public = true\ningress_timeout_seconds = 600\n":                           "",
+		"public = true\ningress_timeout_seconds = 4\n":                             "5 to 3600",
+		"public = true\ningress_timeout_seconds = 3601\n":                          "5 to 3600",
+		"ingress_timeout_seconds = 600\n":                                          "public service",
+		"public = true\ningress_timeout_seconds = 60\n[services.app.serverless]\n": "serverless",
+	}
+	for extra, want := range cases {
+		app, err := Parse([]byte(base + extra))
+		if want == "" {
+			if err != nil || app.Services["app"].IngressTimeoutSeconds != 600 {
+				t.Fatalf("%q: %v", extra, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%q: got %v, want %q", extra, err, want)
+		}
+	}
+}

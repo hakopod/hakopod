@@ -651,7 +651,7 @@ func slackEventForServiceField(field string, before, after spec.Service) (string
 		return "service.scale.updated", "Service scale change accepted"
 	case "restart_nonce":
 		return "service.restart.requested", "Service restart requested"
-	case "network_access", "networks", "private_egress", "http", "port", "ports", "public_tcp", "public", "tls", "backend_http2":
+	case "network_access", "networks", "private_egress", "http", "port", "ports", "public_tcp", "public", "tls", "backend_http2", "ingress_timeout_seconds":
 		return "service.network.updated", "Service network change accepted"
 	case "volume", "mounts", "temporary_mounts", "certificate_mounts", "files":
 		return "service.storage.updated", "Service storage change accepted"

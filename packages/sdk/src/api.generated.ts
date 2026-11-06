@@ -5841,6 +5841,8 @@ export interface components {
             };
             /** @description Opt-in: the ingress speaks HTTP/2 (h2) to this service's backend, for gRPC and other h2-only servers. Requires public with a port. Rejected with serverless or with named http endpoints. */
             backend_http2?: boolean;
+            /** @description Seconds the ingress waits for this service to answer or send more data before closing the request, instead of the installation default of 30. For streaming and slow APIs. Requires public with a port; serverless services use serverless.request_timeout_seconds. */
+            ingress_timeout_seconds?: number;
             readiness?: components["schemas"]["Readiness"];
             /** @enum {string} */
             update_strategy?: "rolling" | "recreate";
