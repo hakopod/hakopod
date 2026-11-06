@@ -68,6 +68,7 @@ var catalog = []Feature{
 	{ID: "audit_history", Name: "User audit history and export", Plan: "pro", Description: "Inspect user activity with paginated history and bounded CSV exports."},
 	{ID: "private_access", Name: "Private management access", Plan: "pro", Description: "Restrict the dashboard, API, CLI and MCP to allowed networks or a VPN."},
 	{ID: "slack_notifications", Name: "Slack notifications", Plan: "pro", Description: "Deliver selected alarm, audit, deployment, application and service events to a connected Slack workspace."},
+	{ID: "agent_policies", Name: "Agent policies", Plan: "pro", Description: "Block machine-key requests or hold them until a person approves the exact request."},
 }
 
 // Preserve the original v1 entitlement names so installed licenses remain valid.
@@ -75,7 +76,7 @@ var catalog = []Feature{
 // imply advanced authority. Unsupported capabilities are not shown in the catalog.
 func knownEntitlement(id string) bool {
 	switch id {
-	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa", "multi_team", "oauth_login", "enterprise_sso", "managed_actions", "slack_notifications", "private_access":
+	case "teams", "invitations", "project_rbac", "custom_roles", "audit_history", "team_mfa", "multi_team", "oauth_login", "enterprise_sso", "managed_actions", "slack_notifications", "private_access", "agent_policies":
 		return true
 	}
 	return false

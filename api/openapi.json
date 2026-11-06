@@ -1899,6 +1899,721 @@
         "summary": "Release the provider hold for the Managed Actions service."
       }
     },
+    "/agent-policies": {
+      "get": {
+        "operationId": "listAgentPolicies",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPolicyList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "List agent policies with status counts and pending approvals."
+      },
+      "post": {
+        "operationId": "createAgentPolicy",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPolicy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPolicyCreateInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Create an agent policy as an unpublished draft."
+      }
+    },
+    "/agent-policies/preview": {
+      "post": {
+        "operationId": "previewAgentPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPolicyPreview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPolicyPreviewInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Replay recorded machine-key requests against a policy document."
+      }
+    },
+    "/agent-policies/simulate": {
+      "post": {
+        "operationId": "simulateAgentPolicy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPolicySimulation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPolicySimulationInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Evaluate one hypothetical machine-key request against agent policies."
+      }
+    },
+    "/agent-policies/{id}": {
+      "get": {
+        "operationId": "getAgentPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPolicy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Read an agent policy, its published document and its draft."
+      },
+      "delete": {
+        "operationId": "deleteAgentPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Delete an agent policy and its versions."
+      }
+    },
+    "/agent-policies/{id}/draft": {
+      "put": {
+        "operationId": "saveAgentPolicyDraft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPolicy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPolicyDraftInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Save the draft of an agent policy."
+      }
+    },
+    "/agent-policies/{id}/publish": {
+      "post": {
+        "operationId": "publishAgentPolicy",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPolicy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPolicyPublishInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Publish the draft of an agent policy as a new immutable version."
+      }
+    },
+    "/agent-policies/{id}/versions": {
+      "get": {
+        "operationId": "listAgentPolicyVersions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentPolicyVersion"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "List the published versions of an agent policy."
+      }
+    },
+    "/agent-approvals": {
+      "get": {
+        "operationId": "listAgentApprovals",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "decided"
+              ],
+              "default": "pending"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApprovalList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "List machine-key requests held for approval."
+      }
+    },
+    "/agent-approvals/{id}": {
+      "get": {
+        "operationId": "getAgentApproval",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApproval"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "identity",
+          "category": "read",
+          "exposure": "dedicated",
+          "permissions": [],
+          "prerequisite": "Use approval_status with the approval id from an approval_required error.",
+          "review": "none",
+          "sensitive_fields": []
+        },
+        "summary": "Read one machine-key request held for approval."
+      }
+    },
+    "/agent-approvals/{id}/approve": {
+      "post": {
+        "operationId": "approveAgentApproval",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApproval"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentApprovalDecisionInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Approve one held machine-key request for a single retry."
+      }
+    },
+    "/agent-approvals/{id}/deny": {
+      "post": {
+        "operationId": "denyAgentApproval",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentApproval"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentApprovalDecisionInput"
+              }
+            }
+          }
+        },
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "admin"
+          ],
+          "prerequisite": "An installation administrator manages agent policies and approvals from a browser session.",
+          "review": "canonical",
+          "sensitive_fields": []
+        },
+        "summary": "Deny one held machine-key request."
+      }
+    },
     "/applications/{id}/services/{service}/exec": {
       "post": {
         "operationId": "executePodCommand",
@@ -28129,6 +28844,786 @@
         ],
         "additionalProperties": false
       },
+      "AgentPolicyCondition": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "team",
+              "key",
+              "category",
+              "operation",
+              "project",
+              "environment"
+            ]
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "is_any_of",
+              "is_none_of",
+              "matches"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 1,
+            "maxItems": 16
+          }
+        },
+        "required": [
+          "field",
+          "operator",
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyApprover": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "project_admins",
+              "team",
+              "identity"
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyDocument": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "when": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPolicyCondition"
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "effect": {
+                "type": "string",
+                "enum": [
+                  "block",
+                  "require_approval"
+                ]
+              },
+              "approvers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AgentPolicyApprover"
+                },
+                "maxItems": 8
+              },
+              "approval_ttl_seconds": {
+                "type": "integer",
+                "minimum": 300,
+                "maximum": 86400
+              },
+              "max_credential_ttl_seconds": {
+                "type": "integer",
+                "minimum": 300,
+                "maximum": 2592000
+              }
+            },
+            "required": [
+              "effect"
+            ],
+            "additionalProperties": false
+          },
+          "except": {
+            "type": "object",
+            "properties": {
+              "active_incident": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "active_incident"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "schema_version",
+          "description",
+          "when",
+          "then"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicy": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "enforced",
+              "monitor"
+            ]
+          },
+          "current_version": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentPolicyDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentPolicyDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "updated_by_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "current_version",
+          "revision",
+          "document",
+          "draft",
+          "created_at",
+          "updated_at",
+          "updated_by",
+          "updated_by_name"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPolicy"
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "enforced": {
+                "type": "integer"
+              },
+              "monitor": {
+                "type": "integer"
+              },
+              "draft": {
+                "type": "integer"
+              },
+              "pending_approvals": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total",
+              "enforced",
+              "monitor",
+              "draft",
+              "pending_approvals"
+            ],
+            "additionalProperties": false
+          },
+          "licensed": {
+            "type": "boolean"
+          },
+          "evaluating_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "summary",
+          "licensed",
+          "evaluating_since"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyCreateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "document": {
+            "$ref": "#/components/schemas/AgentPolicyDocument"
+          }
+        },
+        "required": [
+          "name",
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyDraftInput": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "document": {
+            "$ref": "#/components/schemas/AgentPolicyDocument"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "name",
+          "document"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyPublishInput": {
+        "type": "object",
+        "properties": {
+          "expected_revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enforced",
+              "monitor"
+            ]
+          }
+        },
+        "required": [
+          "expected_revision",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyVersion": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enforced",
+              "monitor"
+            ]
+          },
+          "document": {
+            "$ref": "#/components/schemas/AgentPolicyDocument"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "published_by": {
+            "type": "string"
+          },
+          "published_by_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "name",
+          "status",
+          "document",
+          "published_at",
+          "published_by",
+          "published_by_name"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyPreviewInput": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/AgentPolicyDocument"
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        },
+        "required": [
+          "document",
+          "days"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicySample": {
+        "type": "object",
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "key_name": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block",
+              "require_approval",
+              "approved",
+              "exception",
+              "monitor_block",
+              "monitor_approval"
+            ]
+          }
+        },
+        "required": [
+          "observed_at",
+          "key_id",
+          "key_name",
+          "operation",
+          "category",
+          "project",
+          "environment",
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyPreview": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer"
+          },
+          "evaluated": {
+            "type": "integer"
+          },
+          "matched": {
+            "type": "integer"
+          },
+          "require_approval": {
+            "type": "integer"
+          },
+          "blocked": {
+            "type": "integer"
+          },
+          "exceptions": {
+            "type": "integer"
+          },
+          "evaluating_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPolicySample"
+            }
+          }
+        },
+        "required": [
+          "days",
+          "evaluated",
+          "matched",
+          "require_approval",
+          "blocked",
+          "exceptions",
+          "evaluating_since",
+          "samples"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicyMatch": {
+        "type": "object",
+        "properties": {
+          "policy_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string"
+          },
+          "exception": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "policy_id",
+          "name",
+          "version",
+          "status",
+          "effect",
+          "exception"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicySimulationInput": {
+        "type": "object",
+        "properties": {
+          "key_id": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "active_incident": {
+            "type": "boolean"
+          },
+          "policy_id": {
+            "type": "string"
+          },
+          "document": {
+            "$ref": "#/components/schemas/AgentPolicyDocument"
+          }
+        },
+        "required": [
+          "key_id",
+          "operation"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPolicySimulation": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "block",
+              "require_approval",
+              "approved",
+              "exception",
+              "monitor_block",
+              "monitor_approval"
+            ]
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentPolicyMatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPolicyMatch"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "policy",
+          "matches",
+          "reason",
+          "category"
+        ],
+        "additionalProperties": false
+      },
+      "AgentApproval": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "policy_id": {
+            "type": "string"
+          },
+          "policy_name": {
+            "type": "string"
+          },
+          "policy_version": {
+            "type": "integer"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "key_name": {
+            "type": "string"
+          },
+          "identity_id": {
+            "type": "string"
+          },
+          "identity_name": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "approvers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPolicyApprover"
+            }
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              "expired",
+              "consumed"
+            ]
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decided_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "consumed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "can_decide": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "policy_id",
+          "policy_name",
+          "policy_version",
+          "key_id",
+          "key_name",
+          "identity_id",
+          "identity_name",
+          "operation",
+          "category",
+          "method",
+          "path",
+          "project",
+          "environment",
+          "digest",
+          "approvers",
+          "state",
+          "decided_by",
+          "decided_by_name",
+          "decided_at",
+          "reason",
+          "expires_at",
+          "consumed_at",
+          "created_at",
+          "can_decide"
+        ],
+        "additionalProperties": false
+      },
+      "AgentApprovalList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentApproval"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "pending"
+        ],
+        "additionalProperties": false
+      },
+      "AgentApprovalDecisionInput": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
       "PodExecInput": {
         "type": "object",
         "properties": {
@@ -41151,7 +42646,9 @@
               "service.job.scheduled",
               "service.job.completed",
               "service.certificate.renewed",
-              "security.advisory"
+              "security.advisory",
+              "agent.approval.requested",
+              "agent.policy.exception"
             ]
           },
           "category": {
@@ -41300,7 +42797,9 @@
                 "service.job.scheduled",
                 "service.job.completed",
                 "service.certificate.renewed",
-                "security.advisory"
+                "security.advisory",
+                "agent.approval.requested",
+                "agent.policy.exception"
               ]
             }
           },
@@ -41416,7 +42915,9 @@
                 "service.job.scheduled",
                 "service.job.completed",
                 "service.certificate.renewed",
-                "security.advisory"
+                "security.advisory",
+                "agent.approval.requested",
+                "agent.policy.exception"
               ]
             },
             "minItems": 1,
@@ -41482,7 +42983,9 @@
                   "service.job.scheduled",
                   "service.job.completed",
                   "service.certificate.renewed",
-                  "security.advisory"
+                  "security.advisory",
+                  "agent.approval.requested",
+                  "agent.policy.exception"
                 ]
               },
               {

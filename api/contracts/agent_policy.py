@@ -2733,6 +2733,12 @@ for operation in ['stageApplicationDraft','discardApplicationDraft']:
 POLICIES['planApplicationDraft'] = {'boundary':'project','category':'deploy','exposure':'generic','permissions':['deployments:write'],'prerequisite':'','review':'none','sensitive_fields':[]}
 POLICIES['deployApplicationDraft'] = {'boundary':'project','category':'deploy','exposure':'generic','permissions':['deployments:write'],'prerequisite':'','review':'canonical','sensitive_fields':[]}
 
+# Agent policies govern machine keys, so only people in a browser session manage
+# them or decide approvals. A key reads its own approval through approval_status.
+for operation in ['listAgentPolicies','createAgentPolicy','previewAgentPolicy','simulateAgentPolicy','getAgentPolicy','deleteAgentPolicy','saveAgentPolicyDraft','publishAgentPolicy','listAgentPolicyVersions','listAgentApprovals','approveAgentApproval','denyAgentApproval']:
+    POLICIES[operation] = {'boundary':'installation','category':'human','exposure':'prerequisite','permissions':['admin'],'prerequisite':'An installation administrator manages agent policies and approvals from a browser session.','review':'canonical','sensitive_fields':[]}
+POLICIES['getAgentApproval'] = {'boundary':'identity','category':'read','exposure':'dedicated','permissions':[],'prerequisite':'Use approval_status with the approval id from an approval_required error.','review':'none','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

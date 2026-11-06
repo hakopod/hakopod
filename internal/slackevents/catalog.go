@@ -50,6 +50,8 @@ var catalog = []SlackEventDefinition{
 	{"service.job.completed", "Services", "Job completed", "A service job completes."},
 	{"service.certificate.renewed", "Services", "Certificate renewed", "A service certificate renewal completes."},
 	{"security.advisory", "Security", "Security advisory", "A published security advisory affects a running service."},
+	{"agent.approval.requested", "Agents", "Approval requested", "An agent policy holds a machine-key request until a person approves it."},
+	{"agent.policy.exception", "Agents", "Policy exception used", "An agent policy allows a matched request because an alarm is active."},
 }
 
 func Catalog() []SlackEventDefinition { return append([]SlackEventDefinition(nil), catalog...) }
