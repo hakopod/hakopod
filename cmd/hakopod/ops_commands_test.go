@@ -112,3 +112,30 @@ func TestRestartSetImageAndExecPodSelection(t *testing.T) {
 		t.Fatal(svc, err)
 	}
 }
+
+func TestManifestsRequestPath(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("manifests must only read: %s", r.Method)
+		}
+		paths = append(paths, r.URL.RequestURI())
+		io.WriteString(w, `{"revision":3,"manifests":"apiVersion: apps/v1\nkind: Deployment\n"}`)
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, key: "k", http: server.Client()}
+	a := store.Application{ID: "app", Name: "shop", Spec: spec.Application{Name: "shop", Services: map[string]spec.Service{"api": {Image: "nginx"}, "web": {Image: "nginx"}}}}
+	out, err := renderManifests(context.Background(), c, a, "api")
+	if err != nil || out != "apiVersion: apps/v1\nkind: Deployment\n" {
+		t.Fatal(out, err)
+	}
+	if _, err := renderManifests(context.Background(), c, a, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := renderManifests(context.Background(), c, a, "missing"); err == nil {
+		t.Fatal("unknown service accepted")
+	}
+	if len(paths) != 2 || paths[0] != "/api/v1/applications/app/manifests?service=api" || paths[1] != "/api/v1/applications/app/manifests" {
+		t.Fatal(paths)
+	}
+}

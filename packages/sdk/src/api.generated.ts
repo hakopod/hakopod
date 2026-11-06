@@ -2825,6 +2825,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/kubernetes-patches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the raw Kubernetes patch setting */
+        get: operations["getKubernetesPatchSettings"];
+        /** Turn raw Kubernetes patches on or off */
+        put: operations["putKubernetesPatchSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/manifests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Render an application's generated Kubernetes manifests
+         * @description Render the generated Kubernetes objects of the current revision without applying anything. Bindings resolved during a deployment are not shown. Requires deployments:read.
+         */
+        get: operations["getApplicationManifests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/license": {
         parameters: {
             query?: never;
@@ -5824,6 +5862,7 @@ export interface components {
             public_tcp?: components["schemas"]["PublicTCPListener"][];
             certificate_mounts?: components["schemas"]["CertificateMount"][];
             aws_identity?: string;
+            kubernetes?: components["schemas"]["KubernetesPatches"];
             job?: components["schemas"]["DeploymentJob"];
             files?: {
                 [key: string]: components["schemas"]["ConfigurationFile"];
@@ -8008,6 +8047,28 @@ export interface components {
         };
         InstallationAccessConfirmInput: {
             revision: number;
+        };
+        /** @description Opt-in patches on the objects Hakopod generates for a long-running service. Protected fields are refused. Adding or changing a patch needs the installation setting and kubernetes:patch. See docs/kubernetes-patches.md. */
+        KubernetesPatches: {
+            /** @description Strategic-merge patch, as YAML, applied to the generated Deployment. */
+            deployment?: string;
+            /** @description Strategic-merge patch, as YAML, applied to the generated ClusterIP Service. Requires a port. */
+            service?: string;
+            /** @description Strategic-merge patch, as YAML, applied to the generated Ingress. Requires public with a port; only haproxy.org/ annotations may change. */
+            ingress?: string;
+        };
+        KubernetesPatchSettings: {
+            enabled: boolean;
+            revision: number;
+        };
+        KubernetesPatchSettingsInput: {
+            enabled: boolean;
+            expected_revision: number;
+        };
+        ApplicationManifests: {
+            revision: number;
+            /** @description YAML documents for each long-running service's Deployment, Service and Ingress, patches applied. Secrets are never included. */
+            manifests: string;
         };
         LicenseFeature: {
             /** @description Feature identifier. Paid capabilities include multi_team, oauth_login and enterprise_sso; availability comes from enabled. */
@@ -17534,6 +17595,101 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getKubernetesPatchSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPatchSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putKubernetesPatchSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesPatchSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesPatchSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getApplicationManifests: {
+        parameters: {
+            query?: {
+                service?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationManifests"];
+                };
             };
             /** @description Error */
             default: {

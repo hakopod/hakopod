@@ -28,3 +28,14 @@ test('SQL write selection and removal preserve query dependencies', () => {
     false,
   )
 })
+test('Kubernetes patch selection requires write and leaves with it', () => {
+  assert.equal(toggleGrant([], 'kubernetes:patch', true).includes('deployments:write'), true)
+  assert.equal(
+    toggleGrant(
+      ['deployments:read', 'deployments:write', 'kubernetes:patch'],
+      'deployments:write',
+      false,
+    ).includes('kubernetes:patch'),
+    false,
+  )
+})
