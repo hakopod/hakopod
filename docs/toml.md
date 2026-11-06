@@ -86,6 +86,7 @@ DNS routing and certificate coverage are separate checks.
 | `bindings` | Up to 16 private HTTP/database URL environment bindings derived from service ports and scoped credentials |
 | `http` | Up to four additional named HTTP endpoints on declared TCP service ports, with optional assigned custom domains |
 | `ingress_timeout_seconds` | Optional 5–3600 seconds the ingress waits for a response or more streamed data before closing the request; omission uses the installation default of 30. Requires `public` and a `port`; rejected with `serverless`, which uses `serverless.request_timeout_seconds` |
+| `kubernetes` | Optional `deployment`, `service` and `ingress` YAML strategic-merge patches (each at most 16 KiB) applied to the objects Hakopod generates. Off until an administrator enables them; adding or changing one needs `kubernetes:patch`. Protected fields are refused. The `service` patch needs a port, the `ingress` patch `public` and a `port`; rejected on jobs, sessions, Actions pools and `serverless`. See [Kubernetes patches](kubernetes-patches.md) |
 | `backend_http2` | false; true makes the ingress speak HTTP/2 (h2) to this service, for gRPC and other h2-only servers; requires `public` and a `port`; rejected with `serverless` or with named `http` endpoints |
 | `networks` | Omitted joins default; explicit nonempty list replaces default membership |
 | `network_access.from` | Optional allowlist of services in this application; an empty list denies local peer traffic |

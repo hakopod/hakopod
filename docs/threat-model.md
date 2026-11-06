@@ -65,6 +65,24 @@ NetworkPolicies have host-traffic limitations; see ADR 0002. Image-pull, node
 administration and cluster API traffic are platform operations, not workload
 egress privileges. There is no claim of encrypted east-west application traffic.
 
+## Kubernetes patches
+
+[Kubernetes patches](kubernetes-patches.md) are off unless an installation
+administrator enables them, and adding or changing one needs `kubernetes:patch`,
+so the workload boundaries above hold for every service by default. With them
+on, a patch is applied to the generated object and compared with it; anything
+that would weaken those boundaries is refused, including service-account
+tokens, host namespaces and paths, security contexts, images, added containers,
+Secret, ConfigMap and projected volumes, Secret-backed environment, Hakopod
+labels (which carry network membership), node-originated probe hosts, external
+Service exposure and ingress routing or TLS. What a patch can do is plain too:
+tolerations, node selectors and affinity steer pods onto any node whose taints
+the patch tolerates, other than Hakopod's own pools, and `haproxy.org/` ingress
+annotations change how HAProxy treats that one service's traffic. An
+administrator who enables patches accepts that people holding `kubernetes:patch`
+make those placement and proxy choices. Disabling the setting stops new and
+changed patches but leaves existing ones applied until they are removed.
+
 ## Container daemon access
 
 `container_daemon` does not change the boundaries above. No host path is mounted,
