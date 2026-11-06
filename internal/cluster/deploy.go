@@ -660,6 +660,10 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 	if err := c.prepareRegistryCredential(ctx, t, name, svc, wanted); err != nil {
 		return 0, err
 	}
+	// Patches go last so the guard compares against everything Hakopod set.
+	if wanted, err = patchDeployment(name, svc, wanted); err != nil {
+		return 0, err
+	}
 	var generation int64
 	template := wanted
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -691,11 +695,13 @@ func (c *Client) applyDeployment(ctx context.Context, t Target, name string, svc
 		if wanted.Spec.Template.Annotations == nil {
 			wanted.Spec.Template.Annotations = map[string]string{}
 		}
+		patched := patchedAnnotations(current.Spec.Template.Annotations)
 		for key, value := range current.Spec.Template.Annotations {
-			if key != "hakopod.io/restart-nonce" && key != runtimeProfileAnnotation && key != environmentSnapshotLabel {
+			if key != "hakopod.io/restart-nonce" && key != runtimeProfileAnnotation && key != environmentSnapshotLabel && !patched[key] {
 				wanted.Spec.Template.Annotations[key] = value
 			}
 		}
+		dropPatchedAnnotations(current.Annotations)
 		for key, value := range wanted.Annotations {
 			if current.Annotations == nil {
 				current.Annotations = make(map[string]string)
@@ -737,12 +743,9 @@ func (c *Client) applyService(ctx context.Context, t Target, name string, svc sp
 		}
 		return api.Delete(ctx, name, deleteOptions(current))
 	}
-	wanted := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: labelsFor(t, name)}}
-	if svc.Serverless != nil {
-		wanted.Labels[serverlessBackendLabel] = "true"
-	}
-	for _, p := range spec.ServicePorts(svc) {
-		wanted.Spec.Ports = append(wanted.Spec.Ports, corev1.ServicePort{Name: p.Name, Port: p.Port, TargetPort: intstr.FromInt32(p.TargetPort), Protocol: corev1.Protocol(p.Protocol)})
+	wanted, patchErr := patchService(name, svc, serviceObject(t, name, svc))
+	if patchErr != nil {
+		return patchErr
 	}
 	if apierrors.IsNotFound(err) {
 		_, err = api.Create(ctx, wanted, metav1.CreateOptions{})
@@ -755,12 +758,32 @@ func (c *Client) applyService(ctx context.Context, t Target, name string, svc sp
 		return err
 	}
 	current.Spec.Selector, current.Spec.Ports, current.Spec.Type = wanted.Spec.Selector, wanted.Spec.Ports, wanted.Spec.Type
-	delete(current.Labels, serverlessBackendLabel)
-	if svc.Serverless != nil {
-		current.Labels[serverlessBackendLabel] = "true"
+	// Fields a patch may set; the API server restores defaults when one is removed.
+	current.Spec.SessionAffinity, current.Spec.SessionAffinityConfig = wanted.Spec.SessionAffinity, wanted.Spec.SessionAffinityConfig
+	current.Spec.PublishNotReadyAddresses, current.Spec.InternalTrafficPolicy, current.Spec.TrafficDistribution = wanted.Spec.PublishNotReadyAddresses, wanted.Spec.InternalTrafficPolicy, wanted.Spec.TrafficDistribution
+	current.Labels = wanted.Labels
+	if current.Annotations == nil {
+		current.Annotations = map[string]string{}
+	}
+	dropPatchedAnnotations(current.Annotations)
+	for key, value := range wanted.Annotations {
+		current.Annotations[key] = value
 	}
 	_, err = api.Update(ctx, current, metav1.UpdateOptions{})
 	return err
+}
+
+// serviceObject is the ClusterIP Service Hakopod generates for a service's
+// declared ports, before any Kubernetes patch.
+func serviceObject(t Target, name string, svc spec.Service) *corev1.Service {
+	wanted := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Selector: labelsFor(t, name)}}
+	if svc.Serverless != nil {
+		wanted.Labels[serverlessBackendLabel] = "true"
+	}
+	for _, p := range spec.ServicePorts(svc) {
+		wanted.Spec.Ports = append(wanted.Spec.Ports, corev1.ServicePort{Name: p.Name, Port: p.Port, TargetPort: intstr.FromInt32(p.TargetPort), Protocol: corev1.Protocol(p.Protocol)})
+	}
+	return wanted
 }
 
 func (c *Client) hostname(t Target, service string) string {
@@ -792,11 +815,49 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 		return err
 	}
 	api := c.kube.NetworkingV1().Ingresses(Namespace(t.ApplicationID))
+	wanted, err := c.ingressObject(ctx, t, name, svc)
+	if err != nil {
+		return err
+	}
+	if wanted, err = patchIngress(name, svc, wanted); err != nil {
+		return err
+	}
+	current, err := api.Get(ctx, name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		_, err = api.Create(ctx, wanted, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	if err := owned(current, t); err != nil {
+		return err
+	}
+	current.Spec, current.Labels = wanted.Spec, wanted.Labels
+	if current.Annotations == nil {
+		current.Annotations = map[string]string{}
+	}
+	dropPatchedAnnotations(current.Annotations)
+	delete(current.Annotations, "haproxy.org/timeout-server")
+	delete(current.Annotations, "cert-manager.io/cluster-issuer")
+	delete(current.Annotations, "cert-manager.io/issuer")
+	delete(current.Annotations, "haproxy.org/ssl-redirect")
+	delete(current.Annotations, "haproxy.org/server-proto")
+	for key, value := range wanted.Annotations {
+		current.Annotations[key] = value
+	}
+	_, err = api.Update(ctx, current, metav1.UpdateOptions{})
+	return err
+}
+
+// ingressObject is the ingress Hakopod generates for a service, before any
+// Kubernetes patch. It reads approved domains and TLS state but writes nothing.
+func (c *Client) ingressObject(ctx context.Context, t Target, name string, svc spec.Service) (*networkingv1.Ingress, error) {
 	pathType := networkingv1.PathTypePrefix
 	wanted := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labelsFor(t, name)}, Spec: networkingv1.IngressSpec{IngressClassName: ptr(c.options.IngressClass), Rules: []networkingv1.IngressRule{{Host: c.hostname(t, name), IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{{Path: "/", PathType: &pathType, Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: name, Port: networkingv1.ServiceBackendPort{Number: svc.Port}}}}}}}}}}}
 	hosts, err := c.serviceHostnames(ctx, t, name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, host := range hosts[1:] {
 		rule := wanted.Spec.Rules[0].DeepCopy()
@@ -833,33 +894,9 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 		wanted.Annotations["haproxy.org/server-proto"] = "h2"
 	}
 	if err := c.configureTLSIngress(ctx, t, name, svc, wanted); err != nil {
-		return err
+		return nil, err
 	}
-	current, err := api.Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = api.Create(ctx, wanted, metav1.CreateOptions{})
-		return err
-	}
-	if err != nil {
-		return err
-	}
-	if err := owned(current, t); err != nil {
-		return err
-	}
-	current.Spec, current.Labels = wanted.Spec, wanted.Labels
-	if current.Annotations == nil {
-		current.Annotations = map[string]string{}
-	}
-	delete(current.Annotations, "haproxy.org/timeout-server")
-	delete(current.Annotations, "cert-manager.io/cluster-issuer")
-	delete(current.Annotations, "cert-manager.io/issuer")
-	delete(current.Annotations, "haproxy.org/ssl-redirect")
-	delete(current.Annotations, "haproxy.org/server-proto")
-	for key, value := range wanted.Annotations {
-		current.Annotations[key] = value
-	}
-	_, err = api.Update(ctx, current, metav1.UpdateOptions{})
-	return err
+	return wanted, nil
 }
 
 func deleteOptions(meta metav1.Object) metav1.DeleteOptions {
