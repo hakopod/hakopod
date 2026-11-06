@@ -1,138 +1,330 @@
 {
   "bootstrap": {
-    "commit": "5fc8326f5a69c425366f36c8c6683f272f86e577",
-    "reviewed_release": "v0.1.0-alpha.78",
-    "tag": "v0.1.0-alpha.77",
+    "commit": "8d2dd18b4290259c47ce832b24811dba73aeab07",
+    "reviewed_release": "v0.1.0-alpha.79",
+    "tag": "v0.1.0-alpha.78",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py"
     ]
   },
-  "control_plane_commit": "5fc8326f5a69c425366f36c8c6683f272f86e577",
+  "control_plane_commit": "8d2dd18b4290259c47ce832b24811dba73aeab07",
   "delta": {
-    "baseline_sha256": "7a5ce37dda9179ce00a8928a1eb8d9b7b868606b91af72d3469f22b658595405",
+    "baseline_sha256": "06e136d6f2c2a9c621d3c4766d5b3af7ae7110143086a07a5e182122847ec176",
     "changes": [
       {
-        "after": "30fa17022311546ea12e5a9a1a57a135d29b1cda052190ee1cce75c4ab19875c",
-        "before": "1e070147d67ef3df0da828f2ccef5764c3a76f494c240297ce8d4acf1823616a",
+        "after": "6a4bafe26b4c1d77a58e4ad06393df0f85862e2f40cecefe6257c209bce450b1",
+        "before": null,
+        "path": "api/contracts/agent_access.py",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "521b66ec6928a2a6c53a7da9ae9d9295bb059a224ecb5a9b509ef232e67aa4ef",
+        "before": "5af9906b0cf0c8d6a3b6b307b0017fda26c2a312f6e59967a781c9a4ee25bb7e",
+        "path": "api/contracts/agent_policy.py",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "2c9d6e03f9fcf3539ccee61ff075b5137b44831bac244387b6ab06ace0f76edf",
+        "before": "ce3da9a27c24c102b3cdd66d5ea10ab49ebca94e7485ff644b2891b6f9c7c07d",
+        "path": "api/contracts/slack.py",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4c7964bd97f476a996a14e5c6769c0d4c5cae3fe024d032fe0c14b2cd2e7f40f",
+        "before": "c20ed867f5031a33e5ace873ef9811085f502ff6f4f5cc438f0b584b3d038c28",
+        "path": "api/generate.py",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "957fa710fc3626601a7a19e0f85f2f92760519937f940539dc5af888ae004c0c",
+        "before": null,
+        "path": "api/generate_policy_operations.py",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "e8ad05bb2bfdb44c50d03d1fc1d44788cd376fa40dd0cdefd56d0aff1cbbc501",
+        "before": "d89d0bd22f9e417592538f1dd02dbb02f595f30c8cb4e6350d0a061265c76892",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "b15cd5979e2166c6f8285f3be2cf9e678487eb3043ed92129db29990671f3b49",
+        "before": "a24df02601d4b166dd412a837e5eccfac54fc15310edab3589f0cb4ac906f55d",
+        "path": "api/operation-summaries.json",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c4b6a3def353765050c9a0b284508b10fddbf82a4ea3fa2bb0f77baef6d79bb3",
+        "before": "1699c0e193acbdf752b42486b500d252ec757a5d1974662908c689ecd5a2474c",
+        "path": "internal/agent/agent.go",
+        "reason": "Reviewed control-plane change (exec by application name and MCP request metadata; restart_service and secret_names MCP tools; agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "cec4efc5a731b7924bd952ed4a7bbc7e7b723aa68ca9e61527cf88be09f38d5b",
+        "before": "8b5ea2d7c8e94f6acb355790d88d9e5f381ae20a58373827004acc2ffd9f78e0",
+        "path": "internal/agent/agent_test.go",
+        "reason": "Reviewed control-plane change (exec by application name and MCP request metadata); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "3950cb5d3666fbd36c7a65df7feec3036e43aa74011b0a7d554e16a2656864e3",
+        "before": "05d49bb2ed01ee572029d863a44c6725eaf484ee578e8343aece3259d001e90a",
+        "path": "internal/agent/operations.go",
+        "reason": "Reviewed control-plane change (restart_service and secret_names MCP tools; agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "da840236324f2e8d39cef18500a47d84f0ea119b88cc0fe7d22de0e898dfac47",
+        "before": "56462d0668d191c3f1522213956c597077d707a02cd6074818538e7997ec1663",
+        "path": "internal/agent/operations_test.go",
+        "reason": "Reviewed control-plane change (restart_service and secret_names MCP tools; agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "255b7528d6dfd76a9850c257d1e51b7058d2c2ac024e7bfdbdba946f56fcaed3",
+        "before": null,
+        "path": "internal/agentaccess/document.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "80468c222b0155a871e7394d8072bb63761c58e911e7cce6e666f6035aa8c6f5",
+        "before": null,
+        "path": "internal/agentaccess/engine.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "9f1344c60e1891b64b63baa4388ca2ea05d59eb523a8a0cf6af707ae569bc831",
+        "before": null,
+        "path": "internal/agentaccess/engine_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "11c62cf50600c9ceb8f97de569b814baf775c1a7a9e73506687150ff71dd0c13",
+        "before": null,
+        "path": "internal/api/agent_access.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4d5f85bf64cc6aa5e7a534693d80aae58f5894d029fc080eb09825c530d53920",
+        "before": null,
+        "path": "internal/api/agent_access_gate.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "cdb30369555c26785bd4ebba9590dc63c302a559af2b3e336d563ac76267e839",
+        "before": null,
+        "path": "internal/api/agent_access_gate_mcp_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "b82f4cc8da00d8a1c2903a054b755c25b57e684960c10e50a6ed69b858e24a6a",
+        "before": null,
+        "path": "internal/api/agent_access_gate_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f0e242cc8b6c78d0a54c926b9de1a287bd0f8b602e666453edec5df4b1489897",
+        "before": null,
+        "path": "internal/api/agent_access_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "1cf79a77d8b9ed891f76f1803ee3ed6318084a19d3e106c7d1fcbbcad069a75c",
+        "before": "cf4f5a2df0cc61ea616add81efc5cc26c9cc5d12158fdf450148d899ecc7a402",
+        "path": "internal/api/api.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "8571adb626ea9b21e931e682e1e7a468660bb06bab8a73e307155f6c41f9827f",
+        "before": "69e36f0f8aa477d2829c18e2f0cad7aa3e6bacb9cd5d707593ebede2246dec1b",
+        "path": "internal/api/database_bindings.go",
+        "reason": "Reviewed control-plane change (ClickHouse bindings reaching HTTPS as well as native TLS); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "30d536ea0ca9c00748dd5c2a35bc4af6767800e8ccca2c3093665de99d7a9589",
+        "before": null,
+        "path": "internal/api/database_protocol_ports_test.go",
+        "reason": "Reviewed control-plane change (ClickHouse bindings reaching HTTPS as well as native TLS); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "8df2a09d0cbc542a5b9ad45b71f78c0e8e3ce3ffcbf8ec323c9f42d0724a9eba",
+        "before": "5ec6aa6fa7210bbf39b764cb28fbacfd674071b006367121ae61d9c01e749040",
+        "path": "internal/api/database_query.go",
+        "reason": "Reviewed control-plane change (missing SQL grant or expired login named instead of not_found); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "bcddf2dbd5aec054051db49a31d6b0146e2566ea45c84d1bf828a69054c9ed4e",
+        "before": "2c52d2f2e7110b9effa04d34fc6f25adf425b1a088188f96b23282a2e43920ed",
+        "path": "internal/api/database_query_integration_test.go",
+        "reason": "Reviewed control-plane change (missing SQL grant or expired login named instead of not_found); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "eaf79226cbaa1bd8c95c64d2ff613f0c92a7e39467e8f464db16a3db0071c6d3",
+        "before": "cd0a068e4d6aa3695427fddae55c8de88af12646fef0f9e298a8e8519fe96447",
+        "path": "internal/api/mcp.go",
+        "reason": "Reviewed control-plane change (exec by application name and MCP request metadata; agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "8a74b220813a0296d0a053cce4f9f045bd33b122975b60f3e0f480c1d1e98335",
+        "before": null,
+        "path": "internal/api/mcp_approval_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4c44bddc1c3a8083fca8ba2012217bf0691ba1686a695bda339551c26498de0d",
+        "before": "b535787e502fe607c952d74e0e458016bd77fb3b299daa57401886dc925a38da",
+        "path": "internal/api/mcp_embedding.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "295f61ac3fcd483294005d854737d48946e4bee1e434d7a6245ab7f6b6c21027",
+        "before": "6348c78768e6d6a5176a3593acbc44490970933c4a1e5f04bc38f5949010b089",
+        "path": "internal/api/mcp_stream.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "8d523494b9d0e17189209bfd3f7a49e2918291fed2025efe649c37ff8db656d5",
+        "before": "35bce74dc82b8546091337b5be494caca1a74bee567fff53298d65d1dd0a4bd4",
+        "path": "internal/api/mcp_test.go",
+        "reason": "Reviewed control-plane change (exec by application name and MCP request metadata); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c80b2b0555278df9abaa4f2eb475b1c99eb8f9ef2a9cf707e58833d72b9ada2e",
+        "before": "cb456a0bcbe379fb6467dfc16b13b2555ec8529a8bd398167632a692690faabc",
+        "path": "internal/api/slack_delivery.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "21bf22b38582b5ff37b0a2c54f69ab09f5e30137636cc57b46c27f611ef528d7",
+        "before": "8cd6fc8928e7e4772f734eb837341fe064e1d9f2f1b0b642793eeb33e1d42340",
+        "path": "internal/api/slack_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "43b3e4214baa277e26d1e0b32814a8593155fb8bb8986d8b3537137ae60efac6",
+        "before": "90cb0efeb0f1322f34af11c61b105f5ec558fcbd4b517b113e69c8b3b296fc47",
+        "path": "internal/cluster/cluster_test.go",
+        "reason": "Reviewed control-plane change (rollout wait that no longer fails healthy rollouts; ClickHouse bindings reaching HTTPS as well as native TLS); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "53aff66f510a366d645c5bde5e56f4242f3115f28b85ba19c14dbaa369e7b003",
+        "before": "daf219d8409b997a9ac971b8d66c6b35cb0b02267e417544afa4971eb44015b6",
+        "path": "internal/cluster/database_bindings.go",
+        "reason": "Reviewed control-plane change (ClickHouse bindings reaching HTTPS as well as native TLS); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "bef807033a13acc84341511707b19b13126edb8e43fa05b0ed714cde85794dd0",
+        "before": "0c59ebb7be9bfea803baad41e8e3422d30b2f7d29e860078dbb21a116b89409b",
+        "path": "internal/cluster/deploy.go",
+        "reason": "Reviewed control-plane change (rollout wait that no longer fails healthy rollouts); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4b7ca3e17ae3e985b653cae3b6f0735630d591feb0dc49930121ddb278f92c5f",
+        "before": "bceccfeb7e7f18e1b03b87327dab2ccdafbdf0e030ae761f5e96d20ba9528de8",
+        "path": "internal/cluster/policies.go",
+        "reason": "Reviewed control-plane change (ClickHouse bindings reaching HTTPS as well as native TLS); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d688d88242b0cb6c70d98572abc0c6268706957da6509fdef9cdd8f541ffd2ef",
+        "before": "f289a3cd718247f6e9fde4b293ebc7847c27bf82c6d596948083939b7133b5a9",
+        "path": "internal/license/license.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "e9726db5f8ee4433db793902f42fd7266a03e3b8677827f1e01dde0f03f25fdb",
+        "before": "3d0f59f7b717740d96edaad8bcfb54f5559de0aa790f7dc11b7349417c6c03a2",
+        "path": "internal/logquery/query.go",
+        "reason": "Reviewed control-plane change (log severity from a leading level word and levelname); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "658e3a9393de24e44fe5fadf9bc4722f737c23a2661c4b1f6d9aa5826c0c0c13",
+        "before": "5c1660180915a9799e8f71ef93e1283caafe4f441494b50430df7e66a0f6b31e",
+        "path": "internal/logquery/query_test.go",
+        "reason": "Reviewed control-plane change (log severity from a leading level word and levelname); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "95dca0e41fff986925b04710a2a248637ada9fd9be35690f60b40ce6851396ab",
+        "before": "bafe007a18c43aff2ba4d0efbb604718d3857df8306e2f177be38221e22f7809",
+        "path": "internal/management/runtime.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "5ea71ea88584537a885ea5b39fe72a23d09f68b7b70bf0cec1b068bd5d066423",
+        "before": null,
+        "path": "internal/operations/approval.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "53d240a208e94928f4fde9b586eb92cf76e7ec9885bc0b7cddeeb9ed5ab8ac0f",
+        "before": null,
+        "path": "internal/operations/approval_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "6f80149f64adaa74e85863afbd2dcfebd9155df5f5e9a026a72d3ce06361348f",
+        "before": null,
+        "path": "internal/operations/route_resolve.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "9e5574503a6e870fa3e7900bd3213d2aa409124525a4538227744189b2457a0c",
+        "before": null,
+        "path": "internal/operations/route_resolve_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c6a203f4de833cac9f51ab93c57c605f9ae8301b31f9d1a300c036e3971c49fa",
+        "before": "ca94f794692c4eb2149b3e89d39a9c833172351aebbce476099adb630bd18970",
+        "path": "internal/slackevents/catalog.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f11e4302c937b76105ba7d62c3fb6d40ab5f932f30760fe2768df9a665b94429",
+        "before": "d91b91bd0727f6f78c63de3109752dd0e42dffee10e81f18a718bec664b6c5bb",
+        "path": "internal/spec/environment_test.go",
+        "reason": "Reviewed control-plane change (missing secrets flagged at plan time and changed env keys named); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f276d0cb0b26d2791640c78aa66ff26dadd5035b43f7acb07e93f60d09d4bd8f",
+        "before": "7827bcfec361855185055c994dad7c4aa2ad9033052a12b5ac763dce65ff6f89",
+        "path": "internal/spec/spec.go",
+        "reason": "Reviewed control-plane change (missing secrets flagged at plan time and changed env keys named); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "efc49d9f0ba8a328acc43ab9ce392a131e13afcfdc42e4810e7ec4123145782c",
+        "before": null,
+        "path": "internal/store/109_agent_access.sql",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "cea2f7177bee3ece687f7577fceb6d29e9afa8192031606979dfa343f81bf45a",
+        "before": null,
+        "path": "internal/store/agent_access.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "500d72e049c723cdde60dd6c3932115a247bc0dac50127bd4c6d582140caf8b1",
+        "before": null,
+        "path": "internal/store/agent_access_test.go",
+        "reason": "Reviewed control-plane change (agent policies: policy storage and evaluation, the API key request gate, single-use approvals and their CLI and MCP support); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "cbc722f72b4a2110a957da3f9760766568cc1edb8261cc63a4129148030bb3a1",
+        "before": "7aa1766772d55c60a83e222a78b2a7f5bc441d523a209639650e03f9c4ef0dbd",
+        "path": "internal/worker/worker.go",
+        "reason": "Reviewed control-plane change (rollout wait that no longer fails healthy rollouts); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "62aacb9c207c56c25dd5e67a35a2b9df56bdd3c1ec0edad500753b0c27c24e52",
+        "before": "30fa17022311546ea12e5a9a1a57a135d29b1cda052190ee1cce75c4ab19875c",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Opens the alpha.78 chained review on the published alpha.77 records; verifier constants only, no change to what is verified."
-      },
-      {
-        "after": "07e754e38c75d87b0d7627f94b5abb7792cef18eceba1c7145f2b694f42c5f9a",
-        "before": null,
-        "path": "templates/blueprints/alertmanager/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "bafb5b19c397aeff6ac7467940bfc0794c2ddbff952ea35caa327e93029e6b1e",
-        "before": null,
-        "path": "templates/blueprints/alertmanager/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "a5aef3acd11cca2dbaaaeed774ff0b2e615d3650df9abbc85983eb2535526d57",
-        "before": null,
-        "path": "templates/blueprints/beszel/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "ffb15d1e01051033c45fc9b68c9a1510ced1fc5a786e30e91aaee8a92c1b2db4",
-        "before": null,
-        "path": "templates/blueprints/beszel/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "37c02388817de9c68fb5976efff213c92433e45be772ed7e7d797fe2281e021d",
-        "before": null,
-        "path": "templates/blueprints/listmonk/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "d334fbb96981c99e3df7c9730269649e1939304304d5cf79295a8e497e655c3f",
-        "before": null,
-        "path": "templates/blueprints/listmonk/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "63293d2233c57e46d82e6a506f03b5ad79da24aa552432c2b55007a8712fa73b",
-        "before": null,
-        "path": "templates/blueprints/loki/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "3ea2afb162ec5af5a5830b5a9d2b8137fb89d55e1617555b18cc458dd7228a1d",
-        "before": null,
-        "path": "templates/blueprints/loki/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "d1e3d8ad38818d4a2c921c5df961b9aea0907b18d012012dbad4c112d530473a",
-        "before": null,
-        "path": "templates/blueprints/otel-collector/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "15132288d31ea2c7aceaa8465e2288bf1530112473769bdf6894428c7b0e603a",
-        "before": null,
-        "path": "templates/blueprints/otel-collector/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "183578eb2dc121a4b51684cb959cf575578e425dc6ad052b6fbf46a443e4d810",
-        "before": null,
-        "path": "templates/blueprints/pgadmin/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "499782c23a36a2cdd1290c474f13bf0fb356d0915ba4de92ae4e6fa4aa024d09",
-        "before": null,
-        "path": "templates/blueprints/pgadmin/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "5076563ec1352db935ee2a875af97b23e4ac5943c970d21674356aa2d59a45fb",
-        "before": null,
-        "path": "templates/blueprints/radicale/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "5ad056fc031e587aa8115eee078d815b9b1656c3b0438d0a3c7d99f93cf175ea",
-        "before": null,
-        "path": "templates/blueprints/radicale/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "20880d66ee310ac0ec82c9866a87248e98d21d3354214c4b48ece9e7edf48fa7",
-        "before": null,
-        "path": "templates/blueprints/victoriametrics/README.md",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "5555a6203bdd3c3542c2723838f8769f3836fc2d7dc73e3053e9c8b282d25296",
-        "before": null,
-        "path": "templates/blueprints/victoriametrics/hakopod.toml",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "ae396b1d8010e542b2d1dfb8d83489406063eb2cd598e8bb6838a7bcc308c0b3",
-        "before": "662ed70d612bda1ae5db5148b1e6584951ea982c35e4557aaa0350b6a975684d",
-        "path": "templates/catalog.json",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "9d7b5edbf98ac127cb4d49454b3c96d31a0971f0ce78aa4f3ef33e85d460a763",
-        "before": "6b61e593839b2633b08f376239c0528d57c0d3a1074ee6e6fa7838f28b41f8b7",
-        "path": "templates/images.lock.json",
-        "reason": "Reviewed control-plane change (Radicale, Grafana Loki, VictoriaMetrics, Beszel, pgAdmin, listmonk, OpenTelemetry Collector and Alertmanager catalog presets); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Opens the alpha.79 chained review on the published alpha.78 records; verifier constants only, no change to what is verified."
       }
     ],
-    "current_sha256": "06e136d6f2c2a9c621d3c4766d5b3af7ae7110143086a07a5e182122847ec176"
+    "current_sha256": "8b572cedc8811477951453e8ba6fe5e5c64a82b0a5a09568f7e462fb2bd349dc"
   },
   "predecessor": {
-    "commit": "5fc8326f5a69c425366f36c8c6683f272f86e577",
-    "review_sha256": "6e6985c816ebda9662e026632c01f353a68d9f6ae5a53fda90f95bbd599c4f2c",
-    "tag": "v0.1.0-alpha.77"
+    "commit": "8d2dd18b4290259c47ce832b24811dba73aeab07",
+    "review_sha256": "3c63a898a3dc71365790c3f2fd9d38c5f44365b990a1ee46e746ca53ce1bd58e",
+    "tag": "v0.1.0-alpha.78"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -141,12 +333,12 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestSharedCatalogParametersAreDataAndBounded",
-      "TestSharedCatalogPlansContainNoTemplateMarkers"
+      "TestAgentAccessGateSkipsHumansAndQueueIsSafe",
+      "TestAgentApprovalFlow"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/42012089507"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42179229190"
   },
-  "reviewed_release": "v0.1.0-alpha.78",
+  "reviewed_release": "v0.1.0-alpha.79",
   "runtime": "myduck",
   "schema_version": 2
 }
