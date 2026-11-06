@@ -99,7 +99,7 @@ shared volumes), `topologySpreadConstraints`, `priorityClassName`,
 `enableServiceLinks`, `readinessGates` and new `emptyDir` or `downwardAPI`
 volumes. In each existing container: `env`, `resources` (cpu, memory and
 ephemeral-storage), `livenessProbe`, `readinessProbe`, `startupProbe`,
-`lifecycle`, `ports`, `volumeMounts` for volumes the patch adds, and
+`lifecycle`, `ports` without `hostPort` or `hostIP`, `volumeMounts` for volumes the patch adds, and
 `terminationMessagePath`/`terminationMessagePolicy`.
 
 **Service.** New labels and annotations, extra ports, `sessionAffinity`,

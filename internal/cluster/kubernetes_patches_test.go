@@ -131,6 +131,7 @@ func TestKubernetesDeploymentPatchProtectedFields(t *testing.T) {
 		"env-secret":          {app("env:\n  - name: STOLEN\n    valueFrom:\n      secretKeyRef:\n        name: other-environment\n        key: TOKEN"), "cannot read a Secret or ConfigMap"},
 		"gpu":                 {app("resources:\n  limits:\n    nvidia.com/gpu: 1"), "only cpu, memory and ephemeral-storage"},
 		"mount-unknown":       {app("volumeMounts:\n  - name: data\n    mountPath: /data"), "may mount only the volumes it adds"},
+		"host-port":           {app("ports:\n- containerPort: 9100\n  hostPort: 9100"), "cannot set hostPort or hostIP"},
 		"probe-host":          {app("livenessProbe:\n  httpGet:\n    host: 169.254.169.254\n    path: /\n    port: 80"), "probes cannot name a host"},
 		"hook-host":           {app("lifecycle:\n  preStop:\n    httpGet:\n      host: 10.0.0.1\n      path: /\n      port: 80"), "lifecycle cannot name a host"},
 		"replicas":            {"spec:\n  replicas: 5\n", "spec.replicas is protected"},
