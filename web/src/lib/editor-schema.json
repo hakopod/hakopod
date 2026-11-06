@@ -375,6 +375,29 @@
     ],
     "type": "object"
   },
+  "KubernetesPatches": {
+    "type": "object",
+    "properties": {
+      "deployment": {
+        "type": "string",
+        "maxLength": 16384,
+        "description": "Strategic-merge patch, as YAML, applied to the generated Deployment."
+      },
+      "service": {
+        "type": "string",
+        "maxLength": 16384,
+        "description": "Strategic-merge patch, as YAML, applied to the generated ClusterIP Service. Requires a port."
+      },
+      "ingress": {
+        "type": "string",
+        "maxLength": 16384,
+        "description": "Strategic-merge patch, as YAML, applied to the generated Ingress. Requires public with a port; only haproxy.org/ annotations may change."
+      }
+    },
+    "required": [],
+    "additionalProperties": false,
+    "description": "Opt-in patches on the objects Hakopod generates for a long-running service. Protected fields are refused. Adding or changing a patch needs the installation setting and kubernetes:patch. See docs/kubernetes-patches.md."
+  },
   "Mount": {
     "type": "object",
     "properties": {
@@ -807,6 +830,9 @@
       },
       "aws_identity": {
         "type": "string"
+      },
+      "kubernetes": {
+        "$ref": "#/components/schemas/KubernetesPatches"
       },
       "job": {
         "$ref": "#/components/schemas/DeploymentJob"

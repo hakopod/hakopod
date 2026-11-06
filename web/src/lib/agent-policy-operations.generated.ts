@@ -722,6 +722,13 @@ export const policyOperations = [
     "summary": "Read the staged changes for the application, carried forward onto its current revision."
   },
   {
+    "id": "getApplicationManifests",
+    "method": "GET",
+    "path": "/applications/{id}/manifests",
+    "category": "read",
+    "summary": "Render an application's generated Kubernetes manifests"
+  },
+  {
     "id": "getApplicationSecurity",
     "method": "GET",
     "path": "/applications/{id}/security",
@@ -944,6 +951,13 @@ export const policyOperations = [
     "path": "/applications/{id}/services/{service}/invocations/{invocation}/logs",
     "category": "read",
     "summary": "Read the encrypted terminal output for one owned job invocation."
+  },
+  {
+    "id": "getKubernetesPatchSettings",
+    "method": "GET",
+    "path": "/settings/kubernetes-patches",
+    "category": "admin",
+    "summary": "Get the raw Kubernetes patch setting"
   },
   {
     "id": "getLicenseStatus",
@@ -1784,6 +1798,13 @@ export const policyOperations = [
     "path": "/installation/smtp",
     "category": "admin",
     "summary": "Save the installation's SMTP settings."
+  },
+  {
+    "id": "putKubernetesPatchSettings",
+    "method": "PUT",
+    "path": "/settings/kubernetes-patches",
+    "category": "admin",
+    "summary": "Turn raw Kubernetes patches on or off"
   },
   {
     "id": "putPrivateEgressBinding",

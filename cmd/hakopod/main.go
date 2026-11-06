@@ -98,6 +98,7 @@ func run() error {
 	allowHostTerminal := fs.Bool("allow-host-terminal", false, "enable bounded host terminal sessions")
 	allowWrite := fs.Bool("allow-write", false, "enable contract operation mutations")
 	allowExec := fs.Bool("allow-exec", false, "enable bounded service pod execution")
+	allowKubernetesPatch := fs.Bool("allow-kubernetes-patch", false, "request kubernetes:patch to add or change raw Kubernetes patches")
 	allowSQL := fs.Bool("allow-sql", false, "enable bounded database SQL queries")
 	allowSQLWrite := fs.Bool("allow-sql-write", false, "enable database SQL writes with --allow-sql")
 	apiPathJSON := fs.String("path-json", "", "operation path parameters as a JSON object")
@@ -324,7 +325,7 @@ func run() error {
 				for _, grant := range []struct {
 					on         bool
 					permission string
-				}{{*allowExec, "pods:exec"}, {*allowSQL || *allowSQLWrite, "databases:query"}, {*allowSQLWrite, "databases:write-query"}} {
+				}{{*allowExec, "pods:exec"}, {*allowKubernetesPatch, "kubernetes:patch"}, {*allowSQL || *allowSQLWrite, "databases:query"}, {*allowSQLWrite, "databases:write-query"}} {
 					if grant.on && !slices.Contains(strings.Split(*permissions, ","), grant.permission) {
 						*permissions += "," + grant.permission
 					}
@@ -601,7 +602,7 @@ func run() error {
 			}
 		}
 		return deploymentOutput(d, *outputJSON)
-	case "status", "logs", "rollback", "services", "networks", "terminal", "certificates", "certificate-upload", "delivery", "test-connection", "inspect-binding", "bindings", "export", "restart", "set-image":
+	case "status", "logs", "rollback", "services", "networks", "terminal", "certificates", "certificate-upload", "delivery", "test-connection", "inspect-binding", "bindings", "export", "manifests", "restart", "set-image":
 		a, err := findApp(ctx, c, cfg, arg, *file)
 		if err != nil {
 			return err
@@ -649,6 +650,13 @@ func run() error {
 			return printJSON(a.Spec.Services)
 		case "bindings":
 			return printJSON(bindings(a))
+		case "manifests":
+			out, err := renderManifests(ctx, c, a, *service)
+			if err != nil {
+				return err
+			}
+			_, err = io.WriteString(os.Stdout, out)
+			return err
 		case "export":
 			out, err := exportTOML(a)
 			if err != nil {
@@ -1002,7 +1010,7 @@ func printJSON(v any) error {
 func mustWD() string { p, _ := os.Getwd(); return p }
 func reorder(args []string) []string {
 	flags, pos := []string{}, []string{}
-	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--never-expires": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--history": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--stdin": true, "--help": true, "-h": true}
+	bools := map[string]bool{"--credentials-stdin": true, "--disconnect": true, "--acknowledge-data-expiry": true, "--allow-deploy": true, "--allow-write": true, "--host-only": true, "--installation": true, "--allow-admin": true, "--allow-credentials": true, "--allow-exec": true, "--allow-kubernetes-patch": true, "--never-expires": true, "--allow-terminal": true, "--allow-host-terminal": true, "--allow-sql": true, "--allow-sql-write": true, "--json": true, "--wait": true, "--key-stdin": true, "--no-browser": true, "--follow": true, "--history": true, "--previous": true, "--from-ingress": true, "--no-network": true, "--stdin": true, "--help": true, "-h": true}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if strings.HasPrefix(a, "-") {
@@ -1051,6 +1059,7 @@ func help() {
   hakopod rollback shop --revision 1 --wait
   hakopod apps [--json]
   hakopod export shop > hakopod.toml
+  hakopod manifests shop [--service api]   generated Deployment/Service/Ingress YAML, patches applied
   hakopod set-image shop --service api --image ghcr.io/acme/api@sha256:DIGEST --wait
   hakopod restart shop --service api --wait
   hakopod bindings shop

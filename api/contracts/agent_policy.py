@@ -2717,6 +2717,11 @@ POLICIES['listApplicationLogSources'] = {'boundary':'project','category':'read',
 for operation in ['getAppLogSettings','putAppLogSettings']:
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
 
+# Raw Kubernetes patches: the installation switch is administration; the rendered manifests are a scoped read.
+for operation in ['getKubernetesPatchSettings','putKubernetesPatchSettings']:
+    POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
+POLICIES['getApplicationManifests'] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'prerequisite':'','review':'none','sensitive_fields':[]}
+
 # Security advisories: reads, fixes that accept a new revision, and installation settings.
 for operation in ['getSecurityOverview','getApplicationSecurity']:
     POLICIES[operation] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'prerequisite':'','review':'none','sensitive_fields':[]}

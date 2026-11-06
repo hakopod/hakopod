@@ -314,7 +314,7 @@ func devicePermissions(in []string) ([]string, error) {
 	}
 	seen := map[string]bool{}
 	for _, p := range in {
-		if !contains([]string{"admin", "agent:admin", "agent:credentials", "deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query", "networks:write", "git:manage", "applications:manage", "nodes:terminal"}, p) {
+		if !contains([]string{"admin", "agent:admin", "agent:credentials", "deployments:read", "deployments:write", "logs:read", "pods:exec", "kubernetes:patch", "databases:query", "databases:write-query", "networks:write", "git:manage", "applications:manage", "nodes:terminal"}, p) {
 			return nil, ErrForbidden
 		}
 		if seen[p] {

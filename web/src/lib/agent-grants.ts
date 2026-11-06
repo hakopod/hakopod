@@ -5,6 +5,7 @@ export const workloadGrants = [
   ['logs:read', 'Read logs and requests'],
   ['deployments:approve', 'Review workload requests'],
   ['pods:exec', 'Execute commands in service containers'],
+  ['kubernetes:patch', 'Add or change raw Kubernetes patches'],
   ['databases:query', 'Run read-only SQL queries'],
   ['databases:write-query', 'Run SQL queries that change data'],
   ['networks:write', 'Manage private networks'],
@@ -14,6 +15,7 @@ export const workloadGrants = [
 ] as const
 export const executionGrants = [
   ['pods:exec', 'Execute commands in service containers'],
+  ['kubernetes:patch', 'Add or change raw Kubernetes patches'],
   ['databases:query', 'Run read-only SQL queries'],
   ['databases:write-query', 'Run SQL queries that change data'],
   ['agent:credentials', 'Retrieve authorized credentials'],
@@ -24,12 +26,15 @@ export function toggleGrant(current: string[], grant: string, checked: boolean) 
     next.add(grant)
     if (grant !== 'deployments:read') next.add('deployments:read')
     if (grant === 'databases:write-query') next.add('databases:query')
-    if (grant === 'agent:credentials') next.add('deployments:write')
+    if (grant === 'agent:credentials' || grant === 'kubernetes:patch') next.add('deployments:write')
   } else {
     next.delete(grant)
     if (grant === 'deployments:read') return []
     if (grant === 'databases:query') next.delete('databases:write-query')
-    if (grant === 'deployments:write') next.delete('agent:credentials')
+    if (grant === 'deployments:write') {
+      next.delete('agent:credentials')
+      next.delete('kubernetes:patch')
+    }
   }
   return [...next]
 }
