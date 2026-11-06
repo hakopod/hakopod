@@ -100,6 +100,23 @@ func soleService(a store.Application, service string) (string, error) {
 	return "", &exitError{2, "--service is required for a multi-service application"}
 }
 
+// renderManifests fetches the YAML Hakopod generates for the current revision.
+// It applies nothing; an empty service renders every long-running service.
+func renderManifests(ctx context.Context, c *client, a store.Application, service string) (string, error) {
+	path := "/applications/" + a.ID + "/manifests"
+	if service != "" {
+		if _, ok := a.Spec.Services[service]; !ok {
+			return "", &exitError{2, "unknown service " + service}
+		}
+		path += "?service=" + url.QueryEscape(service)
+	}
+	var out struct {
+		Manifests string `json:"manifests"`
+	}
+	err := c.request(ctx, "GET", path, nil, "", &out)
+	return out.Manifests, err
+}
+
 func restartService(ctx context.Context, c *client, a store.Application, service, idem string) (store.Deployment, error) {
 	var d store.Deployment
 	err := c.request(ctx, "POST", "/applications/"+a.ID+"/services/"+url.PathEscape(service)+"/restart", map[string]any{"expected_revision": a.Revision}, idem, &d)

@@ -77,7 +77,7 @@ type ProjectRole struct {
 func rolePermissions(role string) []string {
 	switch role {
 	case "admin":
-		return []string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query", "agent:credentials", "networks:write", "git:manage", "applications:manage"}
+		return []string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "kubernetes:patch", "databases:query", "databases:write-query", "agent:credentials", "networks:write", "git:manage", "applications:manage"}
 	case "developer":
 		return []string{"deployments:read", "deployments:write", "logs:read"}
 	case "viewer":

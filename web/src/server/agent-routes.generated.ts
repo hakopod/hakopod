@@ -806,6 +806,27 @@ export const agentRoutes = [
     "boundary": "installation"
   },
   {
+    "id": "getKubernetesPatchSettings",
+    "method": "GET",
+    "path": "/settings/kubernetes-patches",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "putKubernetesPatchSettings",
+    "method": "PUT",
+    "path": "/settings/kubernetes-patches",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "getApplicationManifests",
+    "method": "GET",
+    "path": "/applications/{id}/manifests",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "getLicenseStatus",
     "method": "GET",
     "path": "/license",

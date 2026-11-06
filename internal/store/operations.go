@@ -205,6 +205,19 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	if a.Revision != expected {
 		return Deployment{}, fmt.Errorf("%w: expected %d, current revision is %d; plan again", ErrConflict, expected, a.Revision)
 	}
+	if spec.KubernetesPatchesChanged(a.Spec, next) || seed != nil && spec.KubernetesPatchesChanged(a.Spec, *seed) {
+		settings, _, err := kubernetesPatchSettings(ctx, tx)
+		if err != nil {
+			return Deployment{}, err
+		}
+		for _, candidate := range []*spec.Application{&next, seed} {
+			if candidate != nil {
+				if err = kubernetesPatchGate(p, project, env, a.Spec, *candidate, settings.Enabled); err != nil {
+					return Deployment{}, err
+				}
+			}
+		}
+	}
 	if err = s.checkApplicationAllocation(ctx, tx, a, next); err != nil {
 		return Deployment{}, err
 	}
@@ -651,7 +664,7 @@ func slackEventForServiceField(field string, before, after spec.Service) (string
 		return "service.scale.updated", "Service scale change accepted"
 	case "restart_nonce":
 		return "service.restart.requested", "Service restart requested"
-	case "network_access", "networks", "private_egress", "http", "port", "ports", "public_tcp", "public", "tls", "backend_http2", "ingress_timeout_seconds":
+	case "network_access", "networks", "private_egress", "http", "port", "ports", "public_tcp", "public", "tls", "backend_http2", "ingress_timeout_seconds", "kubernetes":
 		return "service.network.updated", "Service network change accepted"
 	case "volume", "mounts", "temporary_mounts", "certificate_mounts", "files":
 		return "service.storage.updated", "Service storage change accepted"

@@ -20,12 +20,12 @@ type CustomRole struct {
 // Custom roles grant only existing project capabilities, never installation or
 // membership administration. A missing or expired role grants no authority.
 func validRolePermissions(permissions []string) bool {
-	if len(permissions) == 0 || len(permissions) > 7 {
+	if len(permissions) == 0 || len(permissions) > 8 {
 		return false
 	}
 	seen := map[string]bool{}
 	for _, permission := range permissions {
-		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "databases:query", "databases:write-query", "agent:credentials"}, permission) {
+		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "kubernetes:patch", "databases:query", "databases:write-query", "agent:credentials"}, permission) {
 			return false
 		}
 		seen[permission] = true

@@ -12416,6 +12416,153 @@
         "summary": "Revoke a VPN device profile."
       }
     },
+    "/settings/kubernetes-patches": {
+      "get": {
+        "operationId": "getKubernetesPatchSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesPatchSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get the raw Kubernetes patch setting",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "put": {
+        "operationId": "putKubernetesPatchSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesPatchSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubernetesPatchSettingsInput"
+              }
+            }
+          }
+        },
+        "summary": "Turn raw Kubernetes patches on or off",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/applications/{id}/manifests": {
+      "get": {
+        "operationId": "getApplicationManifests",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationManifests"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Render the generated Kubernetes objects of the current revision without applying anything. Bindings resolved during a deployment are not shown. Requires deployments:read.",
+        "summary": "Render an application's generated Kubernetes manifests",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/license": {
       "get": {
         "operationId": "getLicenseStatus",
@@ -26730,6 +26877,9 @@
           "aws_identity": {
             "type": "string"
           },
+          "kubernetes": {
+            "$ref": "#/components/schemas/KubernetesPatches"
+          },
           "job": {
             "$ref": "#/components/schemas/DeploymentJob"
           },
@@ -35148,6 +35298,78 @@
         },
         "required": [
           "revision"
+        ],
+        "additionalProperties": false
+      },
+      "KubernetesPatches": {
+        "type": "object",
+        "properties": {
+          "deployment": {
+            "type": "string",
+            "maxLength": 16384,
+            "description": "Strategic-merge patch, as YAML, applied to the generated Deployment."
+          },
+          "service": {
+            "type": "string",
+            "maxLength": 16384,
+            "description": "Strategic-merge patch, as YAML, applied to the generated ClusterIP Service. Requires a port."
+          },
+          "ingress": {
+            "type": "string",
+            "maxLength": 16384,
+            "description": "Strategic-merge patch, as YAML, applied to the generated Ingress. Requires public with a port; only haproxy.org/ annotations may change."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "description": "Opt-in patches on the objects Hakopod generates for a long-running service. Protected fields are refused. Adding or changing a patch needs the installation setting and kubernetes:patch. See docs/kubernetes-patches.md."
+      },
+      "KubernetesPatchSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "KubernetesPatchSettingsInput": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "ApplicationManifests": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "manifests": {
+            "type": "string",
+            "description": "YAML documents for each long-running service's Deployment, Service and Ingress, patches applied. Secrets are never included."
+          }
+        },
+        "required": [
+          "revision",
+          "manifests"
         ],
         "additionalProperties": false
       },
