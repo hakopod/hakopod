@@ -87,6 +87,9 @@ type Service struct {
 	// IngressTimeoutSeconds lets one response take longer than the installation's
 	// ingress server timeout (30 seconds by default), for streaming and slow APIs.
 	IngressTimeoutSeconds int32 `json:"ingress_timeout_seconds,omitempty" toml:"ingress_timeout_seconds,omitempty"`
+	// Kubernetes holds strategic-merge patches applied to the objects Hakopod
+	// generates for this service. See docs/kubernetes-patches.md.
+	Kubernetes *KubernetesPatches `json:"kubernetes,omitempty" toml:"kubernetes,omitempty"`
 }
 
 type Network struct {
@@ -384,6 +387,9 @@ func Normalize(input Application) (Application, error) {
 		if err := normalizeJobAndFiles(&svc); err != nil {
 			return Application{}, fmt.Errorf("%s: %w", field, err)
 		}
+		if err := normalizeKubernetes(&svc); err != nil {
+			return Application{}, fmt.Errorf("%s.%w", field, err)
+		}
 		app.Services[name] = svc
 	}
 	if err := validateNamedStorage(app); err != nil {
@@ -572,6 +578,7 @@ func Diff(before *Application, after Application) []Change {
 		add(name, "readiness", a.Readiness, b.Readiness, false)
 		add(name, "backend_http2", a.BackendHTTP2, b.BackendHTTP2, false)
 		add(name, "ingress_timeout_seconds", a.IngressTimeoutSeconds, b.IngressTimeoutSeconds, false)
+		add(name, "kubernetes", a.Kubernetes, b.Kubernetes, false)
 		add(name, "update_strategy", a.UpdateStrategy, b.UpdateStrategy, false)
 		add(name, "env", a.Env, b.Env, true)
 		add(name, "command", a.Command, b.Command, false)
