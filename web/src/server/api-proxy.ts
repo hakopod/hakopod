@@ -67,6 +67,8 @@ export const allowed = [
   /^audit\/(?:history|export)$/,
   /^alarms(?:\/[A-Za-z0-9_-]+\/(?:read|acknowledge))?$/,
   /^alarm-settings$/,
+  /^agent-policies(?:\/(?:preview|simulate|[a-f0-9]{32}(?:\/(?:draft|publish|versions))?))?$/,
+  /^agent-approvals(?:\/[a-f0-9]{32}(?:\/(?:approve|deny))?)?$/,
   /^security\/(?:advisories|settings)$/,
   /^applications\/[A-Za-z0-9_-]+\/security(?:\/(?:check|apply|policy))?$/,
   /^virtual-networks(?:\/[A-Za-z0-9_-]+(?:\/candidates)?)?$/,
