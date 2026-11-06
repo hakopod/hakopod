@@ -6,6 +6,10 @@ Your apps. Your rules. Hakopod is an open-source platform for deploying and
 running your apps on servers you own: push from Git, import a `docker-compose.yml`
 or pick a template, review what will change, then deploy with TLS on your domain.
 
+[![The Hakopod dashboard showing a three-service application, its custom domain and recent revisions](docs/screenshots/dashboard-app.webp)](https://hakopod.com/media/your-apps-your-terms/film.mp4)
+
+<sub>Watch the [one-minute tour](https://hakopod.com/media/your-apps-your-terms/film.mp4).</sub>
+
 ```sh
 curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
 ```
@@ -46,6 +50,8 @@ and limits, so check it before relying on one.
 - **Private by default.** Services share a private network; only the ones you
   mark public get an address.
 
+![An agent asked why checkout returns 502s finds a stale DATABASE_URL, proposes a one-line plan and rolls out the fix after approval](docs/media/hakopod-agent.gif)
+
 ## How it compares
 
 Coolify, Dokploy and Openship are good tools, and if you want the most mature
@@ -65,7 +71,7 @@ differ, based on each project's own documentation in October 2026:
 | MCP for AI agents | Yes | Yes | Yes | Yes |
 | Official Terraform provider | Yes | — | Community only | — |
 | Managed databases | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
-| Ready-to-deploy templates | 57 | 300+ | 500+ | 42 |
+| Ready-to-deploy templates | 68 | 300+ | 500+ | 42 |
 | Audit log | Yes; history export is Pro | Yes | Enterprise | Yes |
 | License | Apache-2.0 | Apache-2.0 | Apache-2.0, plus a proprietary directory | Apache-2.0 |
 

@@ -4,6 +4,8 @@
 
 Tus apps, tus reglas. Hakopod es una plataforma de código abierto para desplegar y operar tus aplicaciones en servidores propios: haz push desde Git, importa un `docker-compose.yml` o elige una plantilla, revisa qué va a cambiar y despliega con TLS en tu dominio.
 
+[![Hakopod dashboard](../screenshots/dashboard-app.webp)](https://hakopod.com/media/your-apps-your-terms/film.mp4)
+
 ```sh
 curl -fsSL https://hakopod.com/scripts/installer.sh | sudo sh
 ```
@@ -51,7 +53,7 @@ Coolify, Dokploy y Openship son buenas herramientas, y si hoy quieres la opción
 | MCP para agentes de IA | Sí | Sí | Sí | Sí |
 | Proveedor oficial de Terraform | Sí | — | Solo de la comunidad | — |
 | Bases de datos gestionadas | PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, Vitess, Oracle Free | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, ClickHouse | PostgreSQL, MySQL, MariaDB, MongoDB, Redis, libSQL | PostgreSQL, MySQL, MongoDB, Redis |
-| Plantillas listas para desplegar | 57 | 300+ | 500+ | 42 |
+| Plantillas listas para desplegar | 68 | 300+ | 500+ | 42 |
 | Registro de auditoría | Sí; exportar el historial es Pro | Sí | Enterprise | Sí |
 | Licencia | Apache-2.0 | Apache-2.0 | Apache-2.0, más un directorio propietario | Apache-2.0 |
 
