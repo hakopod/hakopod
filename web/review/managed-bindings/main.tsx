@@ -99,6 +99,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     else if (url.pathname === '/api/license') data = { valid: false, plan: 'free', state: 'inactive', installation_id: 'review-installation', revision: 1, edition: 'community', catalog: [] }
     else if (url.pathname === '/api/security/advisories') data = { feed: { feed_enabled: true, osv_enabled: true, revision: 0, issued_at: null, expires_at: null, checked_at: null, stale: false, error: '' }, applications: [], summary: { affected_applications: 0, critical: 0, high: 0 } }
     else if (url.pathname === '/api/alarms') data = { items: [], next_cursor: '', summary: { active: 0, unread: 0 } }
+    else if (url.pathname === '/api/agent-approvals') data = { items: [], next_cursor: '', pending: 0 }
     else if (url.pathname === '/api/applications') data = { items: scenario === 'empty' ? [] : [application, secondApplication], next_cursor: '' }
     else if (url.pathname === `/api/applications/${applicationID}` || url.pathname === `/api/applications/${secondApplicationID}`) {
       if (scenario === 'application-error') { status = 503; data = fail('The selected application could not be loaded.') }
