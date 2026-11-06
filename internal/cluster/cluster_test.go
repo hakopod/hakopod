@@ -382,3 +382,28 @@ func TestRolloutTimeoutNamesPodAndRechecksReadiness(t *testing.T) {
 		t.Fatalf("final readiness check missed a ready rollout: %v %v", ready, err)
 	}
 }
+
+// A ClickHouse binding reaches both its native TLS port and HTTPS; nothing
+// else on the database namespace opens.
+func TestDatabaseBindingEgressOpensProtocolPorts(t *testing.T) {
+	target := testTarget(t)
+	svc := target.Spec.Services["api"]
+	svc.Bindings = map[string]spec.Binding{"CLICKHOUSE_URL": {ManagedDatabase: "f8b0006ab9b3001a9ad5a41a6bca68d1", Endpoint: "read_write"}}
+	target.Spec.Services["api"] = svc
+	target.databaseConnections = map[string]map[string]DatabaseConnection{"api": {"CLICKHOUSE_URL": {URL: "clickhouse://fixture", Port: 9440, ProtocolPorts: []int32{8443}}}}
+	var ports []int32
+	for _, policy := range policies(target) {
+		for _, rule := range policy.Spec.Egress {
+			for _, peer := range rule.To {
+				if peer.NamespaceSelector != nil && peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] == DatabaseNamespace("f8b0006ab9b3001a9ad5a41a6bca68d1") {
+					for _, port := range rule.Ports {
+						ports = append(ports, port.Port.IntVal)
+					}
+				}
+			}
+		}
+	}
+	if fmt.Sprint(ports) != "[9440 8443]" {
+		t.Fatalf("database egress ports %v", ports)
+	}
+}

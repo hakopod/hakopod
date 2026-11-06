@@ -102,7 +102,9 @@ flowchart LR
 ```
 
 Native client traffic uses TLS on port 9440; the HTTP interface uses HTTPS on
-8443. Interserver transfers use TLS on 9010. Keeper client and Raft traffic use
+8443. A binding's URL uses the native port, and the bound service may reach
+both 9440 and 8443 on the database, so clients that speak HTTP can connect
+with the same credentials. Interserver transfers use TLS on 9010. Keeper client and Raft traffic use
 mutually verified TLS on 9281 and 9444. The management listener on 9000 binds
 only to loopback. Application credentials are separate from the bootstrap,
 monitoring and recovery accounts. Application users cannot administer server

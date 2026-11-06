@@ -18,6 +18,10 @@ type DatabaseConnection struct {
 	ExternalIPs []string
 	URL         string
 	Port        int32
+	// ProtocolPorts are other ports of the same database host that speak a
+	// different protocol, such as ClickHouse HTTPS beside native TLS. The
+	// binding's egress policy opens them too; the URL still uses Port.
+	ProtocolPorts []int32
 	// Public CA material only; no database or cluster private key is copied.
 	CA string
 }
@@ -71,6 +75,12 @@ func (c *Client) snapshotDatabaseBindings(ctx context.Context, target *Target) e
 			connection, ok := connections[name][key]
 			if !ok || connection.URL == "" || len(connection.URL) > 8192 || connection.Port != 5432 && connection.Port != 6379 && connection.Port != 3306 && connection.Port != 6446 && connection.Port != 6447 && connection.Port != 27017 && connection.Port != 9440 && connection.Port != 2484 {
 				return fmt.Errorf("managed database connection snapshot is incomplete")
+			}
+			for _, port := range connection.ProtocolPorts {
+				// Only ClickHouse serves a second protocol on its database host today.
+				if port != 8443 || len(connection.ProtocolPorts) > 1 {
+					return fmt.Errorf("managed database connection snapshot is incomplete")
+				}
 			}
 			if b.Password != nil {
 				password, exists := target.secretValues[name][spec.BindingSecretKey(key)]

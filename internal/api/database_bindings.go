@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -127,7 +128,7 @@ func (s *Server) ConfigureDatabaseBindings() {
 					if b.Password != nil {
 						password = nil
 					}
-					result[name][variable] = cluster.DatabaseConnection{URL: managedDatabaseURL(d, b, endpoint, password), Port: int32(endpoint.Port), CA: trusts[d.ID]}
+					result[name][variable] = cluster.DatabaseConnection{URL: managedDatabaseURL(d, b, endpoint, password), Port: int32(endpoint.Port), ProtocolPorts: protocolPorts(d.Observation.Endpoints, endpoint), CA: trusts[d.ID]}
 					found = true
 					break
 				}
@@ -138,6 +139,24 @@ func (s *Server) ConfigureDatabaseBindings() {
 		}
 		return result, nil
 	})
+}
+
+// protocolPorts lists the other ports on the bound endpoint's host that serve
+// a different protocol rather than a different role, so a ClickHouse binding
+// can reach HTTPS 8443 as well as native 9440. Role endpoints (read_write,
+// read_only, cluster) are never added; a binding chooses exactly one of those.
+func protocolPorts(endpoints []database.Endpoint, bound database.Endpoint) []int32 {
+	var ports []int32
+	for _, e := range endpoints {
+		if e.Host != bound.Host || e.Port == bound.Port || e.Purpose == "read_write" || e.Purpose == "read_only" || e.Purpose == "cluster" {
+			continue
+		}
+		if !slices.Contains(ports, int32(e.Port)) {
+			ports = append(ports, int32(e.Port))
+		}
+	}
+	slices.Sort(ports)
+	return ports
 }
 
 // managedDatabaseURL never persists its result. The worker replaces referenced
