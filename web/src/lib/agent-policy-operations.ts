@@ -1,11 +1,12 @@
-import { agentRoutes } from '../server/agent-routes.generated'
+import { policyOperations } from './agent-policy-operations.generated'
 import { humanizeOperation } from './agent-policy-form'
 
 // Operations an API key can call, from the generated contract, for the operation picker.
-export const operationOptions = agentRoutes
-  .map((route) => ({
-    value: route.id,
-    label: humanizeOperation(route.id),
-    detail: `${route.method} ${route.path}`,
+// Search covers the readable name, the operation id and its summary.
+export const operationOptions = policyOperations
+  .map((operation) => ({
+    value: operation.id,
+    label: humanizeOperation(operation.id),
+    detail: operation.summary,
   }))
   .sort((a, b) => a.label.localeCompare(b.label))

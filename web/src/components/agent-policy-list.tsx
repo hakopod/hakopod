@@ -78,7 +78,7 @@ export function AgentPolicyList() {
                     </Link>
                   }
                   detail={
-                    <span className="block truncate">
+                    <span className="line-clamp-2 [overflow-wrap:anywhere]">
                       {policy.document?.description || policy.draft?.description}
                     </span>
                   }

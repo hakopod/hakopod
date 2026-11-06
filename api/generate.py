@@ -137,3 +137,5 @@ doc={"openapi":"3.1.0", "info":{"title":"Hakopod Management API","version":"0.1.
 Path(__file__).with_name("openapi.json").write_text(json.dumps(doc,indent=2)+"\n")
 
 runpy.run_path(str(Path(__file__).with_name("generate_agent_routes.py")), run_name="__main__")
+
+runpy.run_path(str(Path(__file__).with_name("generate_policy_operations.py")), run_name="__main__")

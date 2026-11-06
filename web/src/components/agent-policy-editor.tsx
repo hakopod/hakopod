@@ -519,7 +519,7 @@ function Editor({
           )}
         </form>
 
-        <aside className="grid min-w-0 content-start gap-4 lg:sticky lg:top-4 lg:self-start">
+        <aside className="grid min-w-0 content-start gap-4">
           <div className="rounded-[var(--radius-card)] border border-[var(--hairline)] bg-[var(--card)] p-4">
             <AgentPolicyImpact document={doc} valid={valid} />
           </div>
@@ -717,7 +717,8 @@ function TestRequest({
         <ValuePicker
           label="Operation"
           values={operation}
-          onChange={(values) => setOperation(values.slice(-1))}
+          onChange={setOperation}
+          single
           options={lookups.operation}
           freeText={false}
           placeholder="Search operations"
@@ -728,7 +729,8 @@ function TestRequest({
         <ValuePicker
           label="Environment"
           values={environment}
-          onChange={(values) => setEnvironment(values.slice(-1))}
+          onChange={setEnvironment}
+          single
           options={lookups.environment}
           placeholder="Any environment"
         />
