@@ -20,6 +20,17 @@ type appPlan struct {
 	Warnings         []string         `json:"warnings"`
 	ResourceProfiles any              `json:"resource_profiles"`
 	MissingSecrets   []string         `json:"missing_secrets"`
+	// LastReleaseFailed: the stored spec belongs to a failed release, so a
+	// plan without changes still retries it.
+	LastReleaseFailed bool `json:"last_release_failed"`
+}
+
+// retryNote explains why a plan without changes is still worth deploying.
+func retryNote(plan appPlan) string {
+	if len(plan.Changes) > 0 || !plan.LastReleaseFailed {
+		return ""
+	}
+	return fmt.Sprintf("the last release (revision %d) failed; deploying again will retry it", plan.ExpectedRevision)
 }
 
 func planApplication(ctx context.Context, c *client, cfg config, data []byte, envFiles map[string]string, service string) (appPlan, error) {
@@ -50,6 +61,9 @@ func planMergedApplication(ctx context.Context, c *client, cfg config, app spec.
 func submitDeployment(ctx context.Context, c *client, cfg config, plan appPlan, idem string, jsonOut bool) (store.Deployment, error) {
 	in := map[string]any{"project": cfg.Project, "environment": cfg.Environment, "spec": plan.Spec, "expected_revision": plan.ExpectedRevision}
 	if !jsonOut {
+		if note := retryNote(plan); note != "" {
+			fmt.Fprintln(os.Stderr, note)
+		}
 		fmt.Fprintf(os.Stderr, "Submitting %s revision %d (%d changes); retry key %s\n", plan.Spec.Name, plan.ExpectedRevision+1, len(plan.Changes), idem)
 	}
 	var d store.Deployment

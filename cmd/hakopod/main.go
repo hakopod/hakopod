@@ -573,6 +573,9 @@ func run() error {
 			if err := printJSON(plan); err != nil {
 				return err
 			}
+			if note := retryNote(plan); note != "" {
+				fmt.Fprintln(os.Stderr, note)
+			}
 			// The plan is valid, but deploy would stop on these; say so here.
 			if len(plan.MissingSecrets) > 0 {
 				return &exitError{2, missingSecretsMessage(plan.Spec.Name, plan.MissingSecrets) + " The plan above cannot be deployed until they exist."}

@@ -105,8 +105,10 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	if err != nil {
 		return Observation{}, err
 	}
+	// From here on the cluster may have changed: failures report an
+	// observation. An empty one means nothing was applied.
 	if err := c.bootstrap(ctx, target); err != nil {
-		return Observation{}, err
+		return c.observationAfterFailure(target), err
 	}
 	if err := c.cleanupFiles(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
@@ -116,7 +118,7 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	}
 	emit(Event{Type: "policy", Message: "Namespace, resource budgets and network isolation policies applied before workload changes"})
 	if err := sleepContext(ctx, c.options.PolicySettleTime); err != nil {
-		return Observation{}, err
+		return c.observationAfterFailure(target), err
 	}
 	// Establish stable DNS before starting containers. No service selects pods
 	// outside this application; no private port is published as a NodePort.

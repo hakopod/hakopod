@@ -27942,6 +27942,10 @@
               "type": "string"
             }
           },
+          "last_release_failed": {
+            "type": "boolean",
+            "description": "The latest release of this application failed. A plan without changes then still retries it when deployed."
+          },
           "resource_profiles": {
             "type": "object",
             "additionalProperties": {
@@ -32276,6 +32280,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "last_release_failed": {
+            "type": "boolean",
+            "description": "The latest release of this application failed. A plan without changes then still retries it when deployed."
           },
           "resource_profiles": {
             "type": "object",
@@ -43217,6 +43225,10 @@
               "type": "string"
             }
           },
+          "last_release_failed": {
+            "type": "boolean",
+            "description": "The latest release of this application failed. A plan without changes then still retries it when deployed."
+          },
           "resource_profiles": {
             "type": "object",
             "additionalProperties": {
@@ -43372,6 +43384,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "last_release_failed": {
+            "type": "boolean",
+            "description": "The latest release of this application failed. A plan without changes then still retries it when deployed."
           },
           "resource_profiles": {
             "type": "object",
@@ -43757,6 +43773,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "last_release_failed": {
+            "type": "boolean",
+            "description": "The latest release of this application failed. A plan without changes then still retries it when deployed."
           },
           "resource_profiles": {
             "type": "object",

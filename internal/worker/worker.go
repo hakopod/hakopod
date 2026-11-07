@@ -305,6 +305,13 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	}
 	message := err.Error()
 	emit(cluster.Event{Type: "failed", Message: message})
+	if observation.Status == "" {
+		// Deploy stopped before it changed the cluster, so there is nothing to
+		// recover. The stored observation still describes what runs.
+		emit(cluster.Event{Type: "recovery_skipped", Message: "No workload was changed; the running release was left in place."})
+		w.finish(parent, c, "failed", message, observation)
+		return
+	}
 	if observation.Attempt != nil && len(observation.Attempt.Failed) > 0 {
 		emit(cluster.Event{Type: "resume_available", Message: "Healthy independent services were retained. Resume retries failed and dependent services at this accepted revision."})
 		w.finish(parent, c, "failed", message, observation)
