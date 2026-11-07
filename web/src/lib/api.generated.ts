@@ -6161,6 +6161,8 @@ export interface components {
             warnings: string[];
             required_secrets?: string[];
             missing_secrets?: string[];
+            /** @description The latest release of this application failed. A plan without changes then still retries it when deployed. */
+            last_release_failed?: boolean;
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -7264,6 +7266,8 @@ export interface components {
             warnings: string[];
             required_secrets?: string[];
             missing_secrets?: string[];
+            /** @description The latest release of this application failed. A plan without changes then still retries it when deployed. */
+            last_release_failed?: boolean;
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -10041,6 +10045,8 @@ export interface components {
             warnings: string[];
             required_secrets?: string[];
             missing_secrets?: string[];
+            /** @description The latest release of this application failed. A plan without changes then still retries it when deployed. */
+            last_release_failed?: boolean;
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -10083,6 +10089,8 @@ export interface components {
             warnings: string[];
             required_secrets?: string[];
             missing_secrets?: string[];
+            /** @description The latest release of this application failed. A plan without changes then still retries it when deployed. */
+            last_release_failed?: boolean;
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
@@ -10183,6 +10191,8 @@ export interface components {
             warnings: string[];
             required_secrets: string[];
             missing_secrets?: string[];
+            /** @description The latest release of this application failed. A plan without changes then still retries it when deployed. */
+            last_release_failed?: boolean;
             resource_profiles?: {
                 [key: string]: {
                     CPURequest?: string;
