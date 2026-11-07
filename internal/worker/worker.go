@@ -305,7 +305,7 @@ func (w *Worker) run(parent context.Context, c *store.Claim) {
 	}
 	message := err.Error()
 	emit(cluster.Event{Type: "failed", Message: message})
-	if observation.Status == "" {
+	if errors.Is(err, cluster.ErrNotApplied) {
 		// Deploy stopped before it changed the cluster, so there is nothing to
 		// recover. The stored observation still describes what runs.
 		emit(cluster.Event{Type: "recovery_skipped", Message: "No workload was changed; the running release was left in place."})
