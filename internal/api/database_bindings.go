@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/database"
@@ -87,15 +88,16 @@ func (s *Server) ConfigureDatabaseBindings() {
 		}
 		passwords := map[string][]byte{}
 		trusts := map[string]string{}
+		kube := s.Cluster.ForContext(ctx)
 		for id, d := range databases {
-			observed, err := s.Cluster.ObserveDatabase(ctx, d)
-			if err != nil || observed.Status != "ready" {
-				return nil, fmt.Errorf("managed database is not healthy")
+			observed, err := checkBoundDatabase(ctx, kube.ObserveDatabase, d, databaseRetryDelay)
+			if err != nil {
+				return nil, err
 			}
 			d.Observation = observed
 			databases[id] = d
 			if d.Spec.TLSRequired() {
-				trust, err := s.Cluster.DatabaseTrust(ctx, d)
+				trust, err := kube.DatabaseTrust(ctx, d)
 				if err != nil {
 					return nil, err
 				}
@@ -139,6 +141,47 @@ func (s *Server) ConfigureDatabaseBindings() {
 		}
 		return result, nil
 	})
+}
+
+// databaseRetryDelay is the pause before the given retry of a health check.
+func databaseRetryDelay(attempt int) time.Duration { return time.Duration(attempt) * time.Second }
+
+// checkBoundDatabase is the live health gate for a deployment's managed
+// database binding. A transient Kubernetes API failure is retried twice, after
+// one and two seconds, before the deployment fails. Every error names the
+// database and says whether its health was unknown or known to be bad.
+func checkBoundDatabase(ctx context.Context, observe func(context.Context, database.Resource) (database.Observation, error), d database.Resource, delay func(int) time.Duration) (database.Observation, error) {
+	var err error
+	for attempt := range 3 {
+		if attempt > 0 {
+			timer := time.NewTimer(delay(attempt))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return database.Observation{}, fmt.Errorf("managed database %s (%s): %w", d.Spec.Name, d.ID, err)
+			case <-timer.C:
+			}
+		}
+		var observed database.Observation
+		observed, err = observe(ctx, d)
+		if err == nil {
+			if observed.Status != "ready" {
+				reason := observed.Status
+				if observed.Message != "" {
+					reason += ": " + observed.Message
+				}
+				return observed, fmt.Errorf("managed database %s (%s) is not healthy: %s", d.Spec.Name, d.ID, reason)
+			}
+			return observed, nil
+		}
+		if !cluster.TransientAPIError(err) || ctx.Err() != nil {
+			break
+		}
+	}
+	if cluster.ThrottledAPIError(err) {
+		return database.Observation{}, fmt.Errorf("could not check managed database %s (%s) health: Kubernetes API client throttled", d.Spec.Name, d.ID)
+	}
+	return database.Observation{}, fmt.Errorf("managed database %s (%s): %w", d.Spec.Name, d.ID, err)
 }
 
 // protocolPorts lists the other ports on the bound endpoint's host that serve

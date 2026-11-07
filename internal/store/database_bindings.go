@@ -28,6 +28,19 @@ func managedDatabaseIDs(app spec.Application) []string {
 	return ids
 }
 
+// databaseNotReadyError is still a conflict (HTTP 409, CLI exit 4), but its
+// message names the database instead of the generic conflict text.
+type databaseNotReadyError struct{ d database.Resource }
+
+func (e databaseNotReadyError) Error() string {
+	if e.d.DeletedAt != nil {
+		return fmt.Sprintf("managed database %s (%s) was deleted", e.d.Spec.Name, e.d.ID)
+	}
+	return fmt.Sprintf("managed database %s (%s) is not ready: status %s", e.d.Spec.Name, e.d.ID, e.d.Status)
+}
+
+func (databaseNotReadyError) Is(target error) bool { return target == ErrConflict }
+
 func validateDatabaseBinding(d database.Resource, b spec.Binding) error {
 	if err := b.ValidateManagedOptions(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInput, err)
@@ -48,8 +61,10 @@ func validateDatabaseBinding(d database.Resource, b spec.Binding) error {
 	if d.Spec.Engine == "duckdb" && (b.Username != "" && b.Username != myduckUser || b.Database != "" && b.Database != "app" || b.Password != nil) {
 		return fmt.Errorf("%w: managed DuckDB (MyDuck) currently supports only its protocol account, app database and managed password", ErrInput)
 	}
-	if d.DeletedAt != nil || d.Status != "ready" || d.Observation.Status != "ready" {
-		return fmt.Errorf("%w: managed database is not ready", ErrConflict)
+	// Only the lifecycle status gates here. The observed health can be stale
+	// or briefly unknown; the deployment checks it live before using it.
+	if d.DeletedAt != nil || d.Status != "ready" {
+		return databaseNotReadyError{d}
 	}
 	if d.Recovery != nil && (d.Recovery.RestoredAt == nil || d.Recovery.InspectedAt == nil) {
 		return fmt.Errorf("%w: inspect the completed recovery before connecting an application", ErrConflict)

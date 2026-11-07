@@ -118,6 +118,12 @@ type Client struct {
 	dynamic    dynamic.Interface
 	options    Options
 	http       *http.Client
+	// backgroundKube and backgroundDynamic share the cluster connection
+	// settings but have their own client-side rate limiter. Background marks
+	// the view returned by Background.
+	backgroundKube    kubernetes.Interface
+	backgroundDynamic dynamic.Interface
+	background        bool
 }
 
 type Target struct {
@@ -326,7 +332,7 @@ func newClient(kubeconfig string, verified *rest.Config, options Options) (*Clie
 	if err != nil {
 		return nil, fmt.Errorf("Kubernetes configuration unavailable: %w", err)
 	}
-	config.QPS, config.Burst = 10, 20
+	config.QPS, config.Burst = 50, 100
 	// Ordinary requests have a transport deadline. Logs and interactive exec
 	// use a separate configuration and their own bounded session contexts.
 	config.Timeout = 30 * time.Second
@@ -338,6 +344,18 @@ func newClient(kubeconfig string, verified *rest.Config, options Options) (*Clie
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes resource client: %w", err)
+	}
+	// Periodic observation and maintenance get their own limiter, so a busy
+	// resync or database health loop cannot queue deploy requests behind it.
+	backgroundConfig := rest.CopyConfig(config)
+	backgroundConfig.QPS, backgroundConfig.Burst = 30, 60
+	backgroundKube, err := kubernetes.NewForConfig(backgroundConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create Kubernetes background client: %w", err)
+	}
+	backgroundDynamic, err := dynamic.NewForConfig(backgroundConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create Kubernetes background resource client: %w", err)
 	}
 	if options.RolloutTimeout <= 0 {
 		options.RolloutTimeout = 180 * time.Second
@@ -372,7 +390,43 @@ func newClient(kubeconfig string, verified *rest.Config, options Options) (*Clie
 	}
 	execConfig := rest.CopyConfig(config)
 	execConfig.Timeout = 0 // Interactive exec is bounded by its session context.
-	return &Client{kube: kube, dynamic: dynamicClient, options: options, http: client, clusterCA: ca, execConfig: execConfig}, nil
+	return &Client{kube: kube, dynamic: dynamicClient, options: options, http: client, clusterCA: ca, execConfig: execConfig, backgroundKube: backgroundKube, backgroundDynamic: backgroundDynamic}, nil
+}
+
+// Background returns a view of c for periodic observation and maintenance.
+// It has the same configuration but sends Kubernetes requests through a
+// separate client-side rate limiter, so background load cannot starve deploys.
+// Settings are copied when it is called; take a new view rather than keeping
+// one across reconfiguration. Without a background client it returns c.
+func (c *Client) Background() *Client {
+	if c == nil || c.background || c.backgroundKube == nil {
+		return c
+	}
+	return &Client{
+		actionsReconcile:     c.actionsReconcile,
+		actionsObserve:       c.actionsObserve,
+		publicTCPAck:         c.publicTCPAck,
+		databasePublicTCPAck: c.databasePublicTCPAck,
+		edgeAck:              c.edgeAck,
+		execConfig:           c.execConfig,
+		clusterCA:            c.clusterCA,
+		kube:                 c.backgroundKube,
+		dynamic:              c.backgroundDynamic,
+		options:              c.options,
+		http:                 c.http,
+		background:           true,
+	}
+}
+
+type backgroundContext struct{}
+
+// ForContext returns the background view when ctx comes from background work.
+// Resolvers called back from cluster code use it to stay on the same limiter.
+func (c *Client) ForContext(ctx context.Context) *Client {
+	if ctx.Value(backgroundContext{}) != nil {
+		return c.Background()
+	}
+	return c
 }
 
 // Namespace is independent of display names, so application renames cannot
