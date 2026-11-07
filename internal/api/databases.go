@@ -7,11 +7,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/database"
 	"github.com/hakopod/hakopod/internal/store"
 )
@@ -720,6 +722,9 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 		return
 	}
 	stopLookup()
+	// Periodic observation uses the background client so its load cannot
+	// throttle deployments.
+	kube := s.Cluster.Background()
 	maintenance, stopMaintenance := context.WithTimeout(ctx, 20*time.Second)
 	defer stopMaintenance()
 	var identityErr, networkPolicyErr, nativeStorageErr error
@@ -730,7 +735,7 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 		} else if claim == nil {
 			nativeStorageErr = store.ErrConflict
 		} else {
-			nativeStorageErr = s.Cluster.ReconcileVitessBackupAuthority(maintenance, d, func() error { return claim.Check(maintenance) })
+			nativeStorageErr = kube.ReconcileVitessBackupAuthority(maintenance, d, func() error { return claim.Check(maintenance) })
 			claim.Release()
 		}
 	}
@@ -744,10 +749,10 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 			networkPolicyErr = e
 		} else if claim != nil {
 			if renewIdentity {
-				identityErr = s.Cluster.RenewDatabaseIdentity(maintenance, d, func() error { return claim.Check(maintenance) })
+				identityErr = kube.RenewDatabaseIdentity(maintenance, d, func() error { return claim.Check(maintenance) })
 			}
 			if reconcileNetworkPolicy {
-				networkPolicyErr = s.Cluster.ReconcileDatabaseNetworkPolicy(maintenance, d, func() error { return claim.Check(maintenance) })
+				networkPolicyErr = kube.ReconcileDatabaseNetworkPolicy(maintenance, d, func() error { return claim.Check(maintenance) })
 			}
 			claim.Release()
 		}
@@ -755,7 +760,13 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 	stopMaintenance()
 	observe, stop := context.WithTimeout(ctx, 25*time.Second)
 	defer stop()
-	o, err := s.Cluster.ObserveDatabase(observe, d)
+	o, err := kube.ObserveDatabase(observe, d)
+	if cluster.TransientAPIError(err) {
+		// A throttled or timed-out API request says nothing about the
+		// database. Keep the last observation; its timestamp shows its age.
+		slog.Warn("managed database observation deferred", "database", d.ID, "error", err)
+		return
+	}
 	if err != nil {
 		o.Status = "unknown"
 		o.Message = "Database health could not be verified."
@@ -763,7 +774,7 @@ func (s *Server) refreshDatabaseObservation(parent context.Context) {
 	if identityErr != nil && o.TLS != nil {
 		o.TLS.Message = "Automatic certificate renewal could not complete. Check controller availability and certificate expiry."
 	}
-	if networkPolicyErr != nil {
+	if networkPolicyErr != nil && !cluster.TransientAPIError(networkPolicyErr) {
 		o.Status = "unknown"
 		o.Message = "Database network policy could not be refreshed. Reconciliation will retry."
 	}

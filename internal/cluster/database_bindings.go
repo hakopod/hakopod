@@ -53,7 +53,11 @@ func (c *Client) snapshotDatabaseBindings(ctx context.Context, target *Target) e
 			return err
 		}
 	}
-	connections, err := c.options.DatabaseBindings(ctx, target.Project, target.Environment, target.Spec)
+	resolveCtx := ctx
+	if c.background {
+		resolveCtx = context.WithValue(ctx, backgroundContext{}, true)
+	}
+	connections, err := c.options.DatabaseBindings(resolveCtx, target.Project, target.Environment, target.Spec)
 	if err != nil {
 		return err
 	}
