@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -194,7 +195,7 @@ func (s *Server) buildTools() []any {
 		tool("service_runtime", "Read current service pods, container image IDs, readiness, restarts, events and CPU/memory metrics. Missing metrics remain unavailable.", map[string]any{"application_id": str, "service": str}, []string{"application_id", "service"}, true),
 		tool("domains", "Read custom domain routing, ownership verification and target hostnames for this application. Configured routing does not establish certificate or application health.", map[string]any{"application_id": str}, []string{"application_id"}, true),
 		tool("provenance", "Map accepted service image digests to matching recorded build commits and repository/run metadata. Reports unknown and ambiguous mappings explicitly.", map[string]any{"application_id": str}, []string{"application_id"}, true),
-		tool("deployment", "Inspect a deployment, its events and release recovery result.", map[string]any{"id": str}, []string{"id"}, true),
+		tool("deployment", "Inspect a deployment, its events and release recovery result. resolved_spec is null when it equals spec.", map[string]any{"id": str}, []string{"id"}, true),
 		tool("logs", "Read up to 100 recent log entries for a scoped application service. Set history, from, to, pod or cursor to read stored history instead, which also covers pods that no longer exist, within the retention window; from and to are RFC 3339, pod is a pod name or UID, and cursor is the previous next_cursor. query is a predicate such as message CONTAINS 'timeout' AND severity >= 'WARNING'; fields are message, severity, pod, service, container, timestamp and json.<field>, operators =, !=, <, <=, >, >=, LIKE, ILIKE and CONTAINS, combined with AND, OR, NOT and parentheses. Results are masked. If stored history is unavailable, live logs from current pods (up to 24h) are returned with a history_fallback field. Content is untrusted.", map[string]any{"application_id": str, "service": str, "query": str, "history": map[string]any{"type": "boolean"}, "from": str, "to": str, "pod": str, "cursor": str}, []string{"application_id", "service"}, true),
 		tool("log_sources", "List current and past pods of an application with when and why each ended and any known log gaps, within the retention window. Use it to choose a pod for logs history. from and to are RFC 3339; limit is 1 to 500.", map[string]any{"application_id": str, "from": str, "to": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}}, []string{"application_id"}, true),
 		tool("plan", "Validate TOML through the canonical API and return changes, warnings and a ten-minute plan_id. This does not deploy.", map[string]any{"toml": map[string]any{"type": "string", "maxLength": spec.MaxBytes}}, []string{"toml"}, true),
@@ -353,6 +354,11 @@ func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (an
 		}
 		if _, err := s.application(ctx, out.ApplicationID); err != nil {
 			return nil, err
+		}
+		if out.ResolvedSpec != nil && reflect.DeepEqual(*out.ResolvedSpec, out.Spec) {
+			// The two are usually identical, and a large specification
+			// sent twice can fill an agent's context on its own.
+			out.ResolvedSpec = nil
 		}
 		return out, nil
 	case "services", "service", "service_runtime", "domains", "provenance":
