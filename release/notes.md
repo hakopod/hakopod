@@ -1,26 +1,23 @@
-Hakopod 0.1.0-alpha.81 stops background work from failing deploys, and lets services patch the Kubernetes objects Hakopod generates for them.
+Hakopod 0.1.0-alpha.82 routes thousands of customer domains to one service, and lets Claude connect to Hakopod's MCP endpoint by signing in.
 
-- **Deploys no longer fail a healthy database check.** On busy installations the 15-second resync and the database health loops used up the Kubernetes client's request budget, and the deploy gate reported "managed database is not healthy" while every database was fine. Background work now has its own client limit, the main client allows 50 requests per second, and database bindings refresh at most every 10 minutes (or when the database changes). The gate retries throttled or timed-out checks and names the database and the cause, for example "could not check managed database orders (ID) health: Kubernetes API client throttled". A rotated database password now reaches running pods within 10 minutes.
-- **A deploy that changed nothing says so.** It skips recovery, keeps the last observation, and `plan` tells you that deploying again retries the failed release.
-- **Kubernetes patches.** With the installation switch on (Settings, Kubernetes patches) and the new `kubernetes:patch` permission, a service can carry strategic-merge patches for its Deployment, Service and Ingress, such as tolerations, affinity, probes or `haproxy.org/*` annotations. A guard keeps Hakopod's security fields (images, security context, service account, host access, secret-backed env, Ingress routes and TLS) as generated. `hakopod manifests APP` shows the rendered objects. See docs/kubernetes-patches.md.
-- `hakopod virtual-networks [NAME]` reads virtual networks, and planning a network change needs read access only.
-- `termination_grace_seconds` accepts up to 3600; services that update by recreate get the grace period added to their rollout budget.
-- Log history with `--since` reads newest first, and JSON lines cut at 16 KiB keep their level.
+- **SaaS custom hostnames.** A public HTTP service with `[services.NAME.custom_hostnames] enabled = true` can carry up to 1000 customer domains by default, added through the API, CLI or MCP with no deployment per hostname. The customer points a CNAME at the service. Hakopod checks DNS, routes the hostname through shard Ingresses of up to 100 hosts, and issues a certificate per hostname. A hostname that resolves by address instead of CNAME also needs a TXT ownership record. Administrators turn the feature on per installation, and attaching hostnames needs the new `hostnames:manage` permission. See docs/custom-hostnames.md.
+- **Sign in to HTTP MCP from Claude.** Add `https://HOST/api/v1/mcp?project=P&environment=E` as a custom connector, sign in to Hakopod and approve. The connection gets read and log access, and deploy access with `allow_deploy=true`. Exec, SQL and terminal connections still use an API key. See docs/http-mcp.md.
+- The MCP `logs` tool returned no entries; it now returns them. MCP tools accept an application name as well as its ID, the `logs` description gives the query syntax, and `deployment` no longer sends the specification twice.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.81/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.81
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.82/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.82
 ```
 
-Upgrade an alpha.79 or alpha.80 installation:
+Upgrade an alpha.80 or alpha.81 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.81/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.81
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.82/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.82
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
