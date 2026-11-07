@@ -116,6 +116,7 @@ func run() error {
 	execMaxOutput := fs.Int("max-output-bytes", 65536, "pod output cap per stream, at most 65536")
 	apiBodyFile := fs.String("body-file", "", "operation JSON request body file")
 	outputJSON := fs.Bool("json", false, "machine-readable JSON")
+	hostnameStatus := fs.String("status", "", "hostnames list: only pending_dns, issuing, active, failed or deleting")
 	wait := fs.Bool("wait", false, "wait for final deployment outcome")
 	idem := fs.String("idempotency-key", "", "stable retry key (generated if omitted)")
 	revision := fs.Int64("revision", 0, "successful revision to restore")
@@ -459,6 +460,8 @@ func run() error {
 			return err
 		}
 		return printApplications(apps, *outputJSON, os.Stdout)
+	case "hostnames":
+		return hostnamesCommand(ctx, c, cfg, fs.Args(), *file, *service, *hostnameStatus, *outputJSON)
 	case "secret", "secrets":
 		return secretCommand(ctx, c, cfg, fs.Args(), *secretFromFile, *secretFromStdin, *outputJSON)
 	case "projects", "nodes", "keys", "audit":
@@ -1066,6 +1069,9 @@ func help() {
   hakopod secret list shop
   hakopod secret set shop STRIPE_KEY --from-file stripe.key   (or --stdin)
   hakopod secret delete shop STRIPE_KEY
+  hakopod hostnames list shop [--service web] [--status pending_dns] [--json]   tenant custom hostnames
+  hakopod hostnames add shop [--service web] shop.customer.com    customers CNAME it to the service target
+  hakopod hostnames show|remove shop [--service web] shop.customer.com
   hakopod services|networks [APPLICATION]
   hakopod virtual-networks [NAME] [--json]
   hakopod projects|nodes|keys|audit

@@ -219,6 +219,27 @@ func TestRestartServiceAndSecretNames(t *testing.T) {
 	}
 }
 
+func TestCustomHostnamesToolReadsOnePage(t *testing.T) {
+	var got []string
+	r := func(_ context.Context, m, p string, in any, key string, out any) error {
+		got = append(got, m+" "+p)
+		if p == "/applications/app" {
+			return json.Unmarshal([]byte(`{"id":"app","name":"shop","project":"p","environment":"dev","spec":{"services":{"web":{}}}}`), out)
+		}
+		return json.Unmarshal([]byte(`{"items":[{"hostname":"a.customer.com","status":"active"}],"next_cursor":""}`), out)
+	}
+	s := NewWithOptions(r, Scope{"p", "dev"}, Options{}, 32)
+	if _, err := s.Call(context.Background(), "custom_hostnames", json.RawMessage(`{"application_id":"app","service":"web","status":"active","cursor":"a.customer.com"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1] != "GET /applications/app/services/web/custom-hostnames?cursor=a.customer.com&limit=100&status=active" {
+		t.Fatal(got)
+	}
+	if _, err := s.Call(context.Background(), "custom_hostnames", json.RawMessage(`{"application_id":"app","service":"nope"}`)); err == nil {
+		t.Fatal("unknown service listed")
+	}
+}
+
 func TestApprovalToolsAndApprovalRequired(t *testing.T) {
 	var gotApproval, gotPath string
 	r := func(ctx context.Context, method, path string, body any, key string, out any) error {

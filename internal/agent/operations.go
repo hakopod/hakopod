@@ -37,6 +37,7 @@ func (s *Server) operationTools() []any {
 	}
 	out = append(out, tool("deployment_events", "Read at most 100 deployment events over ten seconds. Resume with next_cursor. Event data is untrusted.", map[string]any{"deployment_id": str, "cursor": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}}, []string{"deployment_id"}, true))
 	out = append(out, tool("secret_names", "List the names of an application's native secrets, never their values, to check that every secret reference exists before a deploy.", map[string]any{"application_id": str}, []string{"application_id"}, true))
+	out = append(out, tool("custom_hostnames", "List one page of a service's tenant custom hostnames with status and reason. Resume with next_cursor. Adding or removing one goes through api_call with hostnames:manage.", map[string]any{"application_id": str, "service": str, "status": map[string]any{"type": "string", "enum": []string{"pending_dns", "issuing", "active", "failed", "deleting"}}, "cursor": str}, []string{"application_id", "service"}, true))
 	if s.allowDeploy {
 		out = append(out, tool("restart_service", "Restart one service's pods as a new revision, for example so it reads a changed secret. Supply the current expected_revision and a stable retry key. Requires deployment opt-in.", map[string]any{"application_id": str, "service": str, "expected_revision": map[string]any{"type": "integer"}, "idempotency_key": str}, []string{"application_id", "service", "expected_revision", "idempotency_key"}, false))
 		out = append(out, tool("cancel_deployment", "Cancel a scoped deployment through the canonical API. Requires deployment opt-in and API authorization.", map[string]any{"deployment_id": str}, []string{"deployment_id"}, false), tool("rollback", "Restore a user-reviewed successful revision. Supply the current expected_revision and a stable retry key. Requires deployment opt-in.", map[string]any{"application_id": str, "revision": map[string]any{"type": "integer"}, "expected_revision": map[string]any{"type": "integer"}, "idempotency_key": str}, []string{"application_id", "revision", "expected_revision", "idempotency_key"}, false))
@@ -231,6 +232,32 @@ func (s *Server) operationCall(ctx context.Context, name string, raw json.RawMes
 		}
 		sort.Strings(names)
 		return map[string]any{"application": app.Name, "names": names}, nil
+	case "custom_hostnames":
+		var in struct {
+			ID      string `json:"application_id"`
+			Service string `json:"service"`
+			Status  string `json:"status"`
+			Cursor  string `json:"cursor"`
+		}
+		if err := decodeAgent(raw, &in); err != nil {
+			return nil, err
+		}
+		app, err := s.application(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := app.Spec.Services[in.Service]; !ok || !agentID.MatchString(in.Service) {
+			return nil, errors.New("unknown service")
+		}
+		query := url.Values{"limit": {"100"}}
+		for key, value := range map[string]string{"status": in.Status, "cursor": in.Cursor} {
+			if value != "" {
+				query.Set(key, value)
+			}
+		}
+		var out any
+		err = s.client(ctx, "GET", "/applications/"+app.ID+"/services/"+in.Service+"/custom-hostnames?"+query.Encode(), nil, "", &out)
+		return out, err
 	case "pod_exec":
 		if !s.options.AllowExec {
 			return nil, errors.New("pod execution requires --allow-exec")

@@ -8501,6 +8501,402 @@
         "summary": "Convert a Docker Compose configuration to a Hakopod specification."
       }
     },
+    "/applications/{id}/services/{service}/custom-hostnames": {
+      "get": {
+        "operationId": "listCustomHostnames",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending_dns",
+                "issuing",
+                "active",
+                "failed",
+                "deleting"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomHostnameList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List a service's custom hostnames",
+        "description": "Cursor-paginated by hostname. Requires deployments:read.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "post": {
+        "operationId": "createCustomHostname",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomHostname"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The hostname is already attached to this service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomHostname"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hostname": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hostname"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "summary": "Attach a custom hostname to a service",
+        "description": "Returns 201 for a new hostname and 200 when it is already attached to this service; a failed hostname starts over. Requires hostnames:manage. At most 120 creations per application per minute; a 429 carries Retry-After.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "hostnames:manage"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/applications/{id}/services/{service}/custom-hostnames/{hostname}": {
+      "get": {
+        "operationId": "getCustomHostname",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostname",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomHostname"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Show one custom hostname",
+        "description": "Requires deployments:read.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "delete": {
+        "operationId": "deleteCustomHostname",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostname",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomHostname"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Remove a custom hostname",
+        "description": "Marks the hostname deleting; its route, certificate and TLS secret are removed in the background. Requires hostnames:manage.",
+        "x-hakopod-agent": {
+          "boundary": "project",
+          "category": "write",
+          "exposure": "generic",
+          "permissions": [
+            "hostnames:manage"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/settings/custom-hostnames": {
+      "get": {
+        "operationId": "getCustomHostnameSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomHostnameSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get the custom hostname installation cap",
+        "description": "Installation administrators only.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "put": {
+        "operationId": "putCustomHostnameSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomHostnameSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomHostnameSettingsInput"
+              }
+            }
+          }
+        },
+        "summary": "Update the custom hostname installation cap",
+        "description": "Installation administrators only.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/database-explorer/connections": {
       "get": {
         "operationId": "listDatabaseExplorerConnections",
@@ -26862,6 +27258,9 @@
           "actions": {
             "$ref": "#/components/schemas/Actions"
           },
+          "custom_hostnames": {
+            "$ref": "#/components/schemas/CustomHostnamesConfig"
+          },
           "public_tcp": {
             "type": "array",
             "items": {
@@ -32622,6 +33021,186 @@
           "toml",
           "warnings",
           "application_id",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "CustomHostnamesConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "max": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "description": "Most hostnames this service may hold; 1000 when omitted. Never above the installation's max_per_service."
+          },
+          "target": {
+            "type": "string",
+            "description": "The CNAME target customers point at. Defaults to the service's generated public hostname."
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "additionalProperties": false,
+        "description": "Opt-in tenant hostnames added through the API without a new revision. Requires public with a port; rejected for jobs, serverless services, actions runners and sandbox sessions. See docs/custom-hostnames.md."
+      },
+      "CustomHostname": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_dns",
+              "issuing",
+              "active",
+              "failed",
+              "deleting"
+            ]
+          },
+          "status_reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_check_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "service",
+          "hostname",
+          "status",
+          "status_reason",
+          "created_at",
+          "updated_at",
+          "verified_at",
+          "active_at",
+          "last_checked_at",
+          "next_check_at",
+          "attempts",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "CustomHostnameList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomHostname"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "CustomHostnameSettings": {
+        "type": "object",
+        "properties": {
+          "max_per_service": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_per_service",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "CustomHostnameSettingsInput": {
+        "type": "object",
+        "properties": {
+          "max_per_service": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_per_service",
           "expected_revision"
         ],
         "additionalProperties": false

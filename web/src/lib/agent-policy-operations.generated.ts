@@ -253,6 +253,13 @@ export const policyOperations = [
     "summary": "Create a backup schedule."
   },
   {
+    "id": "createCustomHostname",
+    "method": "POST",
+    "path": "/applications/{id}/services/{service}/custom-hostnames",
+    "category": "write",
+    "summary": "Attach a custom hostname to a service"
+  },
+  {
     "id": "createCustomRole",
     "method": "POST",
     "path": "/roles",
@@ -426,6 +433,13 @@ export const policyOperations = [
     "path": "/backup-schedules/{id}",
     "category": "backup",
     "summary": "Delete the backup schedule."
+  },
+  {
+    "id": "deleteCustomHostname",
+    "method": "DELETE",
+    "path": "/applications/{id}/services/{service}/custom-hostnames/{hostname}",
+    "category": "write",
+    "summary": "Remove a custom hostname"
   },
   {
     "id": "deleteCustomRole",
@@ -755,6 +769,20 @@ export const policyOperations = [
     "path": "/cloud/capabilities",
     "category": "read",
     "summary": "Read capabilities exposed by the current Cloud connection."
+  },
+  {
+    "id": "getCustomHostname",
+    "method": "GET",
+    "path": "/applications/{id}/services/{service}/custom-hostnames/{hostname}",
+    "category": "read",
+    "summary": "Show one custom hostname"
+  },
+  {
+    "id": "getCustomHostnameSettings",
+    "method": "GET",
+    "path": "/settings/custom-hostnames",
+    "category": "admin",
+    "summary": "Get the custom hostname installation cap"
   },
   {
     "id": "getDatabaseApplicationProvisioningOperation",
@@ -1303,6 +1331,13 @@ export const policyOperations = [
     "summary": "List backup jobs."
   },
   {
+    "id": "listCustomHostnames",
+    "method": "GET",
+    "path": "/applications/{id}/services/{service}/custom-hostnames",
+    "category": "read",
+    "summary": "List a service's custom hostnames"
+  },
+  {
     "id": "listCustomRoles",
     "method": "GET",
     "path": "/roles",
@@ -1770,6 +1805,13 @@ export const policyOperations = [
     "path": "/settings/app-logs",
     "category": "admin",
     "summary": "Update application log history settings"
+  },
+  {
+    "id": "putCustomHostnameSettings",
+    "method": "PUT",
+    "path": "/settings/custom-hostnames",
+    "category": "admin",
+    "summary": "Update the custom hostname installation cap"
   },
   {
     "id": "putDNSProvider",

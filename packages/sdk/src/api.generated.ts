@@ -1978,6 +1978,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/applications/{id}/services/{service}/custom-hostnames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a service's custom hostnames
+         * @description Cursor-paginated by hostname. Requires deployments:read.
+         */
+        get: operations["listCustomHostnames"];
+        put?: never;
+        /**
+         * Attach a custom hostname to a service
+         * @description Returns 201 for a new hostname and 200 when it is already attached to this service; a failed hostname starts over. Requires hostnames:manage. At most 120 creations per application per minute; a 429 carries Retry-After.
+         */
+        post: operations["createCustomHostname"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/applications/{id}/services/{service}/custom-hostnames/{hostname}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show one custom hostname
+         * @description Requires deployments:read.
+         */
+        get: operations["getCustomHostname"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a custom hostname
+         * @description Marks the hostname deleting; its route, certificate and TLS secret are removed in the background. Requires hostnames:manage.
+         */
+        delete: operations["deleteCustomHostname"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/custom-hostnames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the custom hostname installation cap
+         * @description Installation administrators only.
+         */
+        get: operations["getCustomHostnameSettings"];
+        /**
+         * Update the custom hostname installation cap
+         * @description Installation administrators only.
+         */
+        put: operations["putCustomHostnameSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/database-explorer/connections": {
         parameters: {
             query?: never;
@@ -5859,6 +5931,7 @@ export interface components {
             };
             autoscaling?: components["schemas"]["Autoscaling"];
             actions?: components["schemas"]["Actions"];
+            custom_hostnames?: components["schemas"]["CustomHostnamesConfig"];
             public_tcp?: components["schemas"]["PublicTCPListener"][];
             certificate_mounts?: components["schemas"]["CertificateMount"][];
             aws_identity?: string;
@@ -7355,6 +7428,47 @@ export interface components {
             toml: string;
             warnings: string[];
             application_id: string;
+            expected_revision: number;
+        };
+        /** @description Opt-in tenant hostnames added through the API without a new revision. Requires public with a port; rejected for jobs, serverless services, actions runners and sandbox sessions. See docs/custom-hostnames.md. */
+        CustomHostnamesConfig: {
+            enabled: boolean;
+            /** @description Most hostnames this service may hold; 1000 when omitted. Never above the installation's max_per_service. */
+            max?: number;
+            /** @description The CNAME target customers point at. Defaults to the service's generated public hostname. */
+            target?: string;
+        };
+        CustomHostname: {
+            id: string;
+            application_id: string;
+            service: string;
+            hostname: string;
+            /** @enum {string} */
+            status: "pending_dns" | "issuing" | "active" | "failed" | "deleting";
+            status_reason: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            verified_at: string | null;
+            active_at: string | null;
+            last_checked_at: string | null;
+            /** Format: date-time */
+            next_check_at: string;
+            attempts: number;
+            target: string;
+        };
+        CustomHostnameList: {
+            items: components["schemas"]["CustomHostname"][];
+            next_cursor: string;
+            target: string;
+        };
+        CustomHostnameSettings: {
+            max_per_service: number;
+            revision: number;
+        };
+        CustomHostnameSettingsInput: {
+            max_per_service: number;
             expected_revision: number;
         };
         DatabaseExplorerConnection: {
@@ -15280,6 +15394,217 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComposeImport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listCustomHostnames: {
+        parameters: {
+            query?: {
+                status?: "pending_dns" | "issuing" | "active" | "failed" | "deleting";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomHostnameList"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createCustomHostname: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    hostname: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The hostname is already attached to this service */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomHostname"];
+                };
+            };
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomHostname"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getCustomHostname: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                hostname: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomHostname"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteCustomHostname: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                service: string;
+                hostname: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomHostname"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getCustomHostnameSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomHostnameSettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putCustomHostnameSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomHostnameSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomHostnameSettings"];
                 };
             };
             /** @description Error */

@@ -269,6 +269,29 @@
     ],
     "additionalProperties": false
   },
+  "CustomHostnamesConfig": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "max": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50000,
+        "description": "Most hostnames this service may hold; 1000 when omitted. Never above the installation's max_per_service."
+      },
+      "target": {
+        "type": "string",
+        "description": "The CNAME target customers point at. Defaults to the service's generated public hostname."
+      }
+    },
+    "required": [
+      "enabled"
+    ],
+    "additionalProperties": false,
+    "description": "Opt-in tenant hostnames added through the API without a new revision. Requires public with a port; rejected for jobs, serverless services, actions runners and sandbox sessions. See docs/custom-hostnames.md."
+  },
   "DeploymentJob": {
     "type": "object",
     "properties": {
@@ -815,6 +838,9 @@
       },
       "actions": {
         "$ref": "#/components/schemas/Actions"
+      },
+      "custom_hostnames": {
+        "$ref": "#/components/schemas/CustomHostnamesConfig"
       },
       "public_tcp": {
         "type": "array",

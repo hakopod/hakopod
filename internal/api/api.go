@@ -90,6 +90,7 @@ type Server struct {
 	dnsClient               func(dnsprovider.Provider, dnsprovider.Credentials) (dnsprovider.Client, error)
 	mu                      sync.Mutex
 	buckets                 map[string]bucket
+	hostnameCreates         map[string]hostnameWindow
 	concurrent              chan struct{}
 	streams                 chan struct{}
 	terminalMu              sync.Mutex
@@ -136,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerLoginProviderRoutes(routes)
 	s.registerProfileRoutes(routes)
 	s.registerDomainRoutes(routes)
+	s.registerCustomHostnameRoutes(routes)
 	s.registerDraftRoutes(routes)
 	s.registerBackupRoutes(routes)
 	s.registerDatabaseRoutes(routes)

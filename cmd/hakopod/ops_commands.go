@@ -260,3 +260,66 @@ func readyPod(ctx context.Context, c *client, a store.Application, service strin
 	sort.Strings(ready)
 	return "", &exitError{2, service + " has " + fmt.Sprint(len(ready)) + " ready pods; choose one with --pod: " + strings.Join(ready, ", ")}
 }
+
+// hostnamesCommand manages a service's tenant custom hostnames. The service
+// may be omitted when the application has only one.
+func hostnamesCommand(ctx context.Context, c *client, cfg config, args []string, file, service, status string, jsonOut bool) error {
+	usage := &exitError{2, "usage: hakopod hostnames list APP [--service S] [--status STATUS] | hostnames add|show|remove APP [--service S] HOSTNAME"}
+	if len(args) < 2 {
+		return usage
+	}
+	verb := args[0]
+	if !(verb == "list" && len(args) == 2) && !((verb == "add" || verb == "show" || verb == "remove") && len(args) == 3) {
+		return usage
+	}
+	a, err := findApp(ctx, c, cfg, args[1], file)
+	if err != nil {
+		return err
+	}
+	if service, err = soleService(a, service); err != nil {
+		return err
+	}
+	base := "/applications/" + a.ID + "/services/" + url.PathEscape(service) + "/custom-hostnames"
+	var out store.CustomHostname
+	switch verb {
+	case "list":
+		items := []store.CustomHostname{}
+		for cursor := ""; ; {
+			query := url.Values{"limit": {"500"}}
+			if status != "" {
+				query.Set("status", status)
+			}
+			if cursor != "" {
+				query.Set("cursor", cursor)
+			}
+			var page struct {
+				Items      []store.CustomHostname `json:"items"`
+				NextCursor string                 `json:"next_cursor"`
+			}
+			if err := c.request(ctx, "GET", base+"?"+query.Encode(), nil, "", &page); err != nil {
+				return err
+			}
+			items = append(items, page.Items...)
+			if cursor = page.NextCursor; cursor == "" {
+				break
+			}
+		}
+		if jsonOut {
+			return printJSON(items)
+		}
+		for _, h := range items {
+			fmt.Printf("%s\t%s\t%s\n", h.Hostname, h.Status, h.StatusReason)
+		}
+		return nil
+	case "add":
+		err = c.request(ctx, "POST", base, map[string]string{"hostname": args[2]}, "", &out)
+	case "show":
+		err = c.request(ctx, "GET", base+"/"+url.PathEscape(args[2]), nil, "", &out)
+	case "remove":
+		err = c.request(ctx, "DELETE", base+"/"+url.PathEscape(args[2]), nil, "", &out)
+	}
+	if err != nil {
+		return err
+	}
+	return printJSON(out)
+}
