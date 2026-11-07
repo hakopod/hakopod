@@ -468,7 +468,8 @@ var (
 	// "[WARNING] msg". Only the first word counts, so a level mentioned later
 	// in the text never sets severity.
 	leadingLevel = regexp.MustCompile(`^\[?(TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|CRITICAL|FATAL)\]?(?:[\s:|]|$)`)
-	// Used only when a JSON line is too large to decode: the first level key.
+	// Used only when a JSON line is too large or too broken to decode: the
+	// first level key.
 	jsonLevel = regexp.MustCompile(`"(?:severity|level|levelname)"\s*:\s*"([A-Za-z]+)"`)
 )
 
@@ -499,7 +500,9 @@ func ParseEntry(line, service, pod, container string) Entry {
 	allowed, limited := metadataAllowed(e.Message)
 	e.MetadataOmitted = limited
 	if !allowed {
-		if limited {
+		// Too large to decode, or not valid JSON although it opens like it,
+		// such as a JSON line truncated at MaxLineBytes: take the level key.
+		if limited || strings.HasPrefix(strings.TrimSpace(e.Message), "{") {
 			if m := jsonLevel.FindStringSubmatch(e.Message); m != nil {
 				if level := severityOf(m[1]); level != "" {
 					e.Severity = level

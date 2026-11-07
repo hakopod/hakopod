@@ -26,6 +26,9 @@ type logQueryRequest struct {
 	To      *time.Time `json:"to,omitempty"`
 	PodUID  string     `json:"pod_uid,omitempty"`
 	Cursor  string     `json:"cursor,omitempty"`
+	// Order is "asc" (default, oldest first) or "desc" (newest first). A
+	// cursor continues in the order of the page that returned it.
+	Order string `json:"order,omitempty"`
 }
 
 func (s *Server) queryLogs(w http.ResponseWriter, r *http.Request) {
@@ -196,6 +199,8 @@ func historyWindow(req logQueryRequest, now time.Time, retentionDays int) (from,
 		return from, to, 0, "select a valid pod name"
 	case len(req.Container) > 63 || req.Container != "" && len(validation.IsDNS1123Label(req.Container)) > 0:
 		return from, to, 0, "select a valid container name"
+	case req.Order != "" && req.Order != "asc" && req.Order != "desc":
+		return from, to, 0, `order must be "asc" or "desc"`
 	}
 	limit = req.Limit
 	if limit == 0 {
@@ -273,7 +278,7 @@ func (s *Server) queryHistory(w http.ResponseWriter, r *http.Request, a store.Ap
 
 func (s *Server) fillHistory(ctx context.Context, out *historyResult, a store.Application, req logQueryRequest, match logquery.Predicate, from, to time.Time, limit int, now time.Time) error {
 	// The application ID always comes from the authorized application.
-	q := applogs.ReadQuery{ApplicationID: a.ID, From: from, To: to, Services: []string{req.Service}, Limit: limit, Cursor: req.Cursor}
+	q := applogs.ReadQuery{ApplicationID: a.ID, From: from, To: to, Services: []string{req.Service}, Limit: limit, Cursor: req.Cursor, Descending: req.Order == "desc"}
 	if req.PodUID != "" {
 		q.PodUIDs = []string{req.PodUID}
 	}

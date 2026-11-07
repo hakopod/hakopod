@@ -106,12 +106,16 @@ GET  /api/v1/applications/{id}/log-sources?from=...&to=...&limit=200
   retention window. `since_seconds` can replace `from`.
 - `limit` is 1 to 2,000 (default 500). `pod_uid` selects one pod. `pod` (a name)
   is also accepted. The usual `query` filter applies.
+- `order` is `asc` (default, oldest first) or `desc` (newest first).
 - If more lines match, the response has `next_cursor`. Send it back as `cursor`
-  with the same other fields to continue.
+  with the same other fields, including `order`, to continue.
 - The `history` object in the response says whether history is `available`
   (with a plain-English `message` if not), `collected_through`, `scan_limited`,
   `retention_days` and `gaps` (pod, seconds, note). A single query reads at most
   64 MiB of stored text and then stops with `scan_limited`.
+- A JSON line that is cut short (lines are stored up to 16 KiB) or otherwise
+  invalid has no fields, but its `level`, `severity` or `levelname` key still
+  sets its severity.
 - `log-sources` lists current and past pods: name, service, revision, node,
   start, end, reason, restarts, known gap, and whether the pod is `current`.
   `limit` is 1 to 500 (default 200).
@@ -134,6 +138,9 @@ hakopod logs pods shop --since 7d
   `2h` or `3d`. With history, `--since` may go up to 30d.
 - `--pod` takes a pod name or UID. The CLI follows `next_cursor` and stops at
   `--limit` lines (default 1000).
+- With only `--since`, the CLI reads newest first, so the line and scan limits
+  keep the most recent lines, and prints them oldest first. With `--from` or
+  `--to` it reads the window from its start.
 - `hakopod logs pods` prints POD, SERVICE, REVISION, STARTED, ENDED, REASON and
   GAP. Gaps and "history unavailable" messages go to stderr.
 - History is a snapshot, so it cannot be combined with `--follow`.
