@@ -9286,6 +9286,11 @@ export interface components {
             to?: string;
             pod_uid?: string;
             cursor?: string;
+            /**
+             * @description History order: asc (the default) is oldest first, desc newest first. A cursor continues in the order of the page that returned it.
+             * @enum {string}
+             */
+            order?: "asc" | "desc";
         };
         LogQueryResult: {
             entries: components["schemas"]["LogEntry"][];

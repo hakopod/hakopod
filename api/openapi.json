@@ -40083,6 +40083,14 @@
           "cursor": {
             "type": "string",
             "maxLength": 512
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "History order: asc (the default) is oldest first, desc newest first. A cursor continues in the order of the page that returned it."
           }
         },
         "required": [

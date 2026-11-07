@@ -183,6 +183,24 @@ func TestAppLogQueryHistoryMapsStoredLinesAndGaps(t *testing.T) {
 	if len(out["entries"].([]any)) != 1 {
 		t.Fatalf("second page: %v", out)
 	}
+	// Newest first: the first page holds the latest lines and its cursor
+	// continues towards older ones.
+	messages := func(out map[string]any) []string {
+		var got []string
+		for _, e := range out["entries"].([]any) {
+			got = append(got, e.(map[string]any)["message"].(string))
+		}
+		return got
+	}
+	_, out = f.call(t, "POST", "/applications/"+f.appID+"/logs/query", f.reader1, map[string]any{"service": "web", "history": true, "since_seconds": 7200, "limit": 2, "order": "desc"})
+	cursor, _ = out["next_cursor"].(string)
+	if got := messages(out); len(got) != 2 || got[0] != "shutting down" || cursor == "" {
+		t.Fatalf("first descending page: %v", out)
+	}
+	_, out = f.call(t, "POST", "/applications/"+f.appID+"/logs/query", f.reader1, map[string]any{"service": "web", "history": true, "since_seconds": 7200, "limit": 2, "order": "desc", "cursor": cursor})
+	if got := messages(out); len(got) != 1 || got[0] != "server started" {
+		t.Fatalf("second descending page: %v", out)
+	}
 }
 
 func TestAppLogQueryWithoutHistoryKeepsLiveBehaviour(t *testing.T) {
@@ -238,6 +256,7 @@ func TestAppLogQueryHistoryValidation(t *testing.T) {
 		"limit too high":       {"limit": 2001},
 		"bad query":            {"query": "(("},
 		"bad service":          {"service": "nope"},
+		"bad order":            {"order": "newest"},
 	}
 	for name, extra := range cases {
 		body := map[string]any{"service": "web", "history": true}
