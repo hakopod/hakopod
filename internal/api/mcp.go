@@ -363,6 +363,11 @@ func (w *mcpResponse) Write(data []byte) (int, error) {
 	return w.body.Write(data)
 }
 
+// SetWriteDeadline lets guarded handlers such as log queries write here. The
+// buffer never blocks on a reader and Write caps its size, so there is nothing
+// for a deadline to bound.
+func (w *mcpResponse) SetWriteDeadline(time.Time) error { return nil }
+
 type mcpGateKey struct{}
 
 // mcpToolContext carries the MCP request and the server's agent-policy gate to
