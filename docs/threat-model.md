@@ -83,6 +83,20 @@ administrator who enables patches accepts that people holding `kubernetes:patch`
 make those placement and proxy choices. Disabling the setting stops new and
 changed patches but leaves existing ones applied until they are removed.
 
+## Custom hostnames
+
+[SaaS custom hostnames](custom-hostnames.md) prove control of a domain only by
+its DNS: anyone holding `hostnames:manage` on an application can attach any
+hostname that already CNAMEs, or resolves, to that service's target, including
+a domain whose owner meant it for another tenant of the same SaaS. Hakopod
+cannot tell tenants apart; the SaaS must check that the customer asking owns
+the domain before calling the API, and its service should answer only for
+hostnames its own records know. A certificate is requested only after the
+hostname resolves to the target, and HTTP-01 succeeds only for a domain whose
+traffic reaches the installation, so a hostname pointing elsewhere is never
+routed or issued. A hostname is unique across the installation and cannot also
+be an application domain.
+
 ## Container daemon access
 
 `container_daemon` does not change the boundaries above. No host path is mounted,

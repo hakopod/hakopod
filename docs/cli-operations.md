@@ -67,6 +67,12 @@ Running pods keep the old value until they restart; `secret set` says so and
 names the restart command. To share one value between applications, reference
 an external secret provider instead of copying it.
 
+## Tenant hostnames
+
+`hakopod hostnames list|add|show|remove APP [--service S] [HOSTNAME]` manages a
+service's [SaaS custom hostnames](custom-hostnames.md); `list` takes
+`--status pending_dns` and `--json`.
+
 ## Run a command in a pod
 
 `exec` picks the service when there is only one and the pod when exactly one is
@@ -83,6 +89,7 @@ interactive work.
 
 ## Agents
 
-The stdio and HTTP MCP servers offer `secret_names` (names only) and, with
+The stdio and HTTP MCP servers offer `secret_names` (names only),
+`custom_hostnames` (one page of a service's tenant hostnames) and, with
 deployment opt-in, `restart_service`. No MCP tool sets a secret value, so
 values never pass through an agent.

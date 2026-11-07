@@ -1,7 +1,9 @@
 # Configure domains after deployment
 
 Keep custom domain mappings in application TOML, including on first deployment
-or Git import. Hakopod saves each new hostname as pending and provides its DNS
+or Git import. For domains your own customers bring to a multi-tenant service,
+by the hundreds or thousands, use [SaaS custom hostnames](custom-hostnames.md)
+instead; they need no TOML entry or revision per hostname. Hakopod saves each new hostname as pending and provides its DNS
 verification records under the application's Domains page. The application page
 links to that setup when a desired domain is inactive.
 

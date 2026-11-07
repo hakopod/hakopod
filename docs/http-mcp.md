@@ -47,6 +47,7 @@ cannot use it directly. Do not put a key in the URL, a repository or a ticket.
 | `service_runtime` | Pods, container image IDs, readiness, restarts, events and available CPU/memory metrics |
 | `domains` | Custom domain routing and verification state |
 | `secret_names` | Names of an application's native secrets, never their values |
+| `custom_hostnames` | One page of a service's SaaS custom hostnames with status and reason; adding or removing one uses `api_call` with `hostnames:manage` |
 | `provenance` | Accepted image digest mapped to verified build commit, repository and run metadata |
 | `deployment` | Release details, events and recovery result |
 | `logs` | Up to 100 recent matching service log entries |
