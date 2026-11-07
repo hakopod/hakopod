@@ -276,3 +276,22 @@ func TestApprovalToolsAndApprovalRequired(t *testing.T) {
 		t.Fatal("accepted bad approval id")
 	}
 }
+
+func TestApplicationToolsAcceptAName(t *testing.T) {
+	r := func(_ context.Context, m, p string, in any, key string, out any) error {
+		switch {
+		case p == "/applications/0ed1ea04daed35bba5a60f60fd029a7c":
+			return json.Unmarshal([]byte(`{"id":"0ed1ea04daed35bba5a60f60fd029a7c","name":"shop","project":"p","environment":"dev","spec":{"services":{"web":{}}}}`), out)
+		case strings.HasPrefix(p, "/applications?") && strings.Contains(p, "project=p"):
+			return json.Unmarshal([]byte(`{"items":[{"id":"0ed1ea04daed35bba5a60f60fd029a7c","name":"shop"}]}`), out)
+		}
+		return errors.New("resource not found")
+	}
+	s := NewWithOptions(r, Scope{"p", "dev"}, Options{}, 32)
+	if a, err := s.application(context.Background(), "shop"); err != nil || a.ID != "0ed1ea04daed35bba5a60f60fd029a7c" {
+		t.Fatal(a.ID, err)
+	}
+	if _, err := s.application(context.Background(), "missing"); err == nil || err.Error() != "resource not found" {
+		t.Fatal("unknown name", err)
+	}
+}
