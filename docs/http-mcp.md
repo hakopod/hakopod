@@ -32,9 +32,29 @@ working immediately, including within existing MCP sessions.
 Project connections reject browser sessions, cookies and unscoped administrator keys.
 Separate installation and host-only connections require their explicit grants and options.
 See the [connection guide](agent-parity/connection-workflows.md).
-This endpoint supports static bearer credentials, not OAuth discovery or dynamic
-client registration. Clients that require an interactive OAuth connection
-cannot use it directly. Do not put a key in the URL, a repository or a ticket.
+Do not put a key in the URL, a repository or a ticket.
+
+## Connect Claude
+
+Clients that sign in with OAuth, such as a Claude custom connector or
+`claude mcp add --transport http`, need no key. Add the connector with the URL:
+
+```text
+https://YOUR_HAKOPOD_HOST/api/v1/mcp?project=demo&environment=development
+```
+
+Append `&allow_deploy=true` to allow deployments. The client opens Hakopod in
+your browser. Sign in, check the project, environment and permissions on the
+consent page, and approve. The client registers itself, uses PKCE and receives
+a CLI session for that project and environment with `deployments:read` and
+`logs:read`, plus `deployments:write` with `allow_deploy=true`. You must be able
+to grant that access yourself. The session lasts 12 hours, then the client asks
+you to sign in again. It appears with your other sessions and can be revoked
+there.
+
+Sign-in requires the installation's public URL to be configured. Any other
+connection option, such as `allow_exec`, `allow_sql`, `allow_terminal`,
+`installation` or `host_only`, still needs an API key.
 
 ## Application and service details
 
