@@ -379,6 +379,9 @@ func (c *Client) deployService(ctx context.Context, target Target, name string, 
 		if err := c.applyIngress(ctx, target, name, svc); err != nil {
 			return err
 		}
+		if err := c.reconcileServiceCustomHostnames(ctx, target, name, svc); err != nil {
+			return fmt.Errorf("%s custom hostnames: %w", name, err)
+		}
 		automatic := false
 		for _, mount := range svc.CertificateMounts {
 			automatic = automatic || mount.Source == "ingress"
@@ -834,20 +837,26 @@ func (c *Client) applyIngress(ctx context.Context, t Target, name string, svc sp
 		return err
 	}
 	current.Spec, current.Labels = wanted.Spec, wanted.Labels
-	if current.Annotations == nil {
-		current.Annotations = map[string]string{}
-	}
-	dropPatchedAnnotations(current.Annotations)
-	delete(current.Annotations, "haproxy.org/timeout-server")
-	delete(current.Annotations, "cert-manager.io/cluster-issuer")
-	delete(current.Annotations, "cert-manager.io/issuer")
-	delete(current.Annotations, "haproxy.org/ssl-redirect")
-	delete(current.Annotations, "haproxy.org/server-proto")
-	for key, value := range wanted.Annotations {
-		current.Annotations[key] = value
-	}
+	current.Annotations = mergeIngressAnnotations(current.Annotations, wanted.Annotations)
 	_, err = api.Update(ctx, current, metav1.UpdateOptions{})
 	return err
+}
+
+// mergeIngressAnnotations replaces the annotations Hakopod generates and keeps
+// those another controller added. It returns a new map.
+func mergeIngressAnnotations(current, wanted map[string]string) map[string]string {
+	out := map[string]string{}
+	for key, value := range current {
+		out[key] = value
+	}
+	dropPatchedAnnotations(out)
+	for _, key := range []string{"haproxy.org/timeout-server", "cert-manager.io/cluster-issuer", "cert-manager.io/issuer", "haproxy.org/ssl-redirect", "haproxy.org/server-proto"} {
+		delete(out, key)
+	}
+	for key, value := range wanted {
+		out[key] = value
+	}
+	return out
 }
 
 // ingressObject is the ingress Hakopod generates for a service, before any
@@ -1301,7 +1310,10 @@ func (c *Client) cleanup(ctx context.Context, t Target) error {
 			names[service] = true
 		}
 	}
-	ingresses, err := c.kube.NetworkingV1().Ingresses(ns).List(ctx, options)
+	// Tenant hostname shards can number in the hundreds; they have their own cleanup.
+	ingressOptions := options
+	ingressOptions.LabelSelector += ",!" + customHostnameLabel
+	ingresses, err := c.kube.NetworkingV1().Ingresses(ns).List(ctx, ingressOptions)
 	if err != nil {
 		return err
 	}
@@ -1324,6 +1336,9 @@ func (c *Client) cleanup(ctx context.Context, t Target) error {
 		if item.Labels[serviceKey] == item.Name {
 			names[item.Name] = true
 		}
+	}
+	if err := c.cleanupCustomHostnames(ctx, t); err != nil {
+		return err
 	}
 	ordered := make([]string, 0, len(names))
 	for name := range names {

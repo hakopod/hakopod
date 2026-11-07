@@ -75,6 +75,22 @@ func (w *Worker) Run(ctx context.Context) {
 			}
 		}
 	}()
+	// Tenant hostnames: DNS checks, routing, certificates and removal. One lane
+	// keeps DNS lookups and shard writes off the deployment workers.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		timer := time.NewTicker(15 * time.Second)
+		defer timer.Stop()
+		for ctx.Err() == nil {
+			w.runCustomHostnames(ctx)
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+			}
+		}
+	}()
 	// Namespace deletion can wait for Kubernetes finalizers. Give expiry its own
 	// single bounded lane so a stuck preview does not delay normal deployments.
 	wg.Add(1)

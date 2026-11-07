@@ -99,6 +99,8 @@ type Options struct {
 	// PolicySettleTime accounts for asynchronous CNI policy propagation before
 	// starting pods. It is a best-effort delay, not a hostile-tenant guarantee.
 	PolicySettleTime time.Duration
+	// CustomHostnames returns one service's routed tenant hostnames, oldest first.
+	CustomHostnames func(context.Context, string, string) ([]string, error)
 }
 
 type Client struct {
