@@ -47,6 +47,9 @@ func validateRuntimeService(service Service) error {
 			return errors.New("ingress_timeout_seconds: serverless services set serverless.request_timeout_seconds instead")
 		}
 	}
+	if err := validateCustomHostnames(service); err != nil {
+		return err
+	}
 	if service.BackendHTTP2 {
 		if !service.Public || service.Port == 0 {
 			return errors.New("backend_http2: requires a public service with a port")
