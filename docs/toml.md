@@ -96,7 +96,7 @@ DNS routing and certificate coverage are separate checks.
 | `run_as_group`, `fs_group` | Optional positive process and volume group IDs; default to run_as_user |
 | `read_only_root_filesystem` | false; true makes the image filesystem read-only, with writable data and temporary mounts declared separately |
 | `working_dir` | Image default; optional clean absolute directory |
-| `termination_grace_seconds` | 30; optional 1–300 seconds for graceful shutdown |
+| `termination_grace_seconds` | 30; optional 1–3600 seconds for graceful shutdown. A service that updates by recreate (`update_strategy = "recreate"`, a `volume`, `mounts` or a node profile) starts new pods only after the old ones stop, so its rollout and deployment deadlines include this period |
 | `registry_credential` | Name of a managed credential in this application's project/environment; no credential value |
 | `secrets` | Up to32 environment-variable bindings such as `DATABASE_URL = { ref = "database-url" }` |
 | `volume` | One persistent data directory: `mount_path`, `size_gib` (1–200), optional `storage_class`; one replica, no HPA |

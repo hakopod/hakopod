@@ -100,7 +100,7 @@ func TestRuntimeControlsRejectUnsafeOrUnboundedValues(t *testing.T) {
 		},
 		"invalid-group":   func(a *Application) { s := a.Services["api"]; s.RunAsGroup = -1; a.Services["api"] = s },
 		"bad-working-dir": func(a *Application) { s := a.Services["api"]; s.WorkingDir = "relative"; a.Services["api"] = s },
-		"excessive-grace": func(a *Application) { s := a.Services["api"]; s.TerminationGraceSeconds = 301; a.Services["api"] = s },
+		"excessive-grace": func(a *Application) { s := a.Services["api"]; s.TerminationGraceSeconds = 3601; a.Services["api"] = s },
 		"unknown-peer": func(a *Application) {
 			s := a.Services["api"]
 			s.NetworkAccess.From = []string{"unknown"}
