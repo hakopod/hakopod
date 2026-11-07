@@ -126,11 +126,15 @@ type treeAppResult struct {
 
 // networkAccessError explains the common case: machine keys cannot manage virtual networks
 // (403 from the server, 404 from the dashboard proxy that does not forward the route).
-func networkAccessError(err error) error {
+// Planning needs only read access, so the administrator hint is for applying.
+func networkAccessError(err error, applying bool) error {
 	msg := "network.toml: " + err.Error()
 	var e *exitError
-	if errors.As(err, &e) && (e.code == 3 || strings.HasPrefix(e.message, "not_found:")) || strings.Contains(err.Error(), "HTTP 403") || strings.Contains(err.Error(), "HTTP 404") {
+	denied := errors.As(err, &e) && (e.code == 3 || strings.HasPrefix(e.message, "not_found:")) || strings.Contains(err.Error(), "HTTP 403") || strings.Contains(err.Error(), "HTTP 404")
+	if denied && applying {
 		msg += "; managing virtual networks requires a project administrator. Apply network.toml with an administrator login, or rerun with --no-network to deploy only the applications."
+	} else if denied {
+		msg += "; planning network.toml needs read access to this project and environment, or rerun with --no-network to plan only the applications."
 	}
 	return &exitError{exitCode(err), msg}
 }
@@ -163,14 +167,14 @@ func treeCommand(ctx context.Context, c *client, cfg config, command, root strin
 	} else if tree.Network != nil {
 		p, err := planNetwork(ctx, c, cfg.Project, cfg.Environment, tree.NetworkData)
 		if err != nil {
-			return networkAccessError(err)
+			return networkAccessError(err, command == "deploy")
 		}
 		np, netOut = &p, &p
 	}
 	if command == "deploy" && np != nil {
 		r, err := applyNetwork(ctx, c, cfg.Project, cfg.Environment, *np)
 		if err != nil {
-			return networkAccessError(err)
+			return networkAccessError(err, true)
 		}
 		netOut = &r
 		if !jsonOut {

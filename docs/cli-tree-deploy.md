@@ -182,8 +182,9 @@ This reviews the network and every application and deploys nothing. As with a
 `plan` on one file, the `env_file` references of a folder with a `hakopod.toml`
 are imported into its secrets during review; a merged folder cannot use them. An application that relies on a grant
 the network file adds may show a plan error until the network has been applied.
-`--no-network` skips the network review as well, for keys that cannot manage
-networks.
+Reviewing the network needs only read access to the project and environment.
+`--no-network` skips the network review as well, for keys without that access
+or when the dashboard proxy does not forward the network routes.
 
 ## Deploy
 

@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/url"
+	"strings"
 
 	"github.com/hakopod/hakopod/internal/spec"
 )
@@ -65,4 +68,62 @@ func applyNetwork(ctx context.Context, c *client, project, environment string, p
 	}
 	res.Name, res.Revision = out.Name, out.Revision
 	return res, nil
+}
+
+// virtualNetworksCommand lists the environment's virtual networks, or shows
+// one as canonical TOML. hakopod networks APP lists one application's networks.
+func virtualNetworksCommand(ctx context.Context, c *client, cfg config, args []string, jsonOut bool, out io.Writer) error {
+	if len(args) > 1 {
+		return &exitError{2, "usage: hakopod virtual-networks [NAME] [--json]"}
+	}
+	scope := "?" + url.Values{"project": {cfg.Project}, "environment": {cfg.Environment}}.Encode()
+	if len(args) == 1 {
+		var network struct {
+			TOML string `json:"toml"`
+		}
+		var raw json.RawMessage
+		if err := c.request(ctx, "GET", "/virtual-networks/"+url.PathEscape(args[0])+scope, nil, "", &raw); err != nil {
+			return err
+		}
+		if jsonOut {
+			return printJSON(raw)
+		}
+		if err := json.Unmarshal(raw, &network); err != nil {
+			return err
+		}
+		_, err := io.WriteString(out, network.TOML)
+		return err
+	}
+	var list struct {
+		Items []struct {
+			Name        string   `json:"name"`
+			Description string   `json:"description"`
+			Segments    []string `json:"segments"`
+			Revision    int64    `json:"revision"`
+		} `json:"items"`
+	}
+	var raw json.RawMessage
+	if err := c.request(ctx, "GET", "/virtual-networks"+scope, nil, "", &raw); err != nil {
+		return err
+	}
+	if jsonOut {
+		return printJSON(raw)
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return err
+	}
+	if len(list.Items) == 0 {
+		_, err := fmt.Fprintf(out, "No virtual networks in %s/%s\n", cfg.Project, cfg.Environment)
+		return err
+	}
+	for _, n := range list.Items {
+		line := fmt.Sprintf("%s\trevision %d\tsegments: %s", n.Name, n.Revision, strings.Join(n.Segments, ", "))
+		if n.Description != "" {
+			line += "\t" + n.Description
+		}
+		if _, err := fmt.Fprintln(out, line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
