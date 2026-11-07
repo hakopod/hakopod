@@ -38,7 +38,7 @@ func workloadQuota(q *corev1.ResourceQuota, a spec.Application) {
 func configureWorkload(d *appsv1.Deployment, s spec.Service) {
 	p := &d.Spec.Template.Spec
 	c := &p.Containers[0]
-	if s.UpdateStrategy == "recreate" {
+	if spec.Recreates(s) {
 		d.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
 	}
 	if s.NodeName != "" {
@@ -64,12 +64,8 @@ func configureWorkload(d *appsv1.Deployment, s spec.Service) {
 	}
 	p.SecurityContext.FSGroupChangePolicy = ptr(corev1.FSGroupChangeOnRootMismatch)
 	if v := s.Volume; v != nil {
-		d.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
 		p.Volumes = append(p.Volumes, corev1.Volume{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: d.Name + "-data"}}})
 		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{Name: "data", MountPath: v.MountPath})
-	}
-	if len(s.Mounts) > 0 {
-		d.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
 	}
 	seen := map[string]bool{}
 	for _, m := range s.Mounts {

@@ -561,6 +561,7 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 	if seconds < 30 {
 		seconds = 30
 	}
+	seconds += int32(recreateGrace(t, svc).Seconds())
 	result := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: Namespace(t.ApplicationID), Labels: labels, Annotations: map[string]string{"hakopod.io/revision": strconv.FormatInt(t.Revision, 10), "hakopod.io/operation": t.OperationID}},
 		Spec: appsv1.DeploymentSpec{Replicas: ptr(serviceReplicas(svc)), Selector: &metav1.LabelSelector{MatchLabels: labels}, RevisionHistoryLimit: ptr(int32(2)), MinReadySeconds: 2, ProgressDeadlineSeconds: &seconds,
@@ -987,9 +988,18 @@ func rolloutGrace(timeout time.Duration) time.Duration {
 	return min(timeout/2, 60*time.Second)
 }
 
+// recreateGrace is how long a Recreate rollout of svc can wait for its old
+// pods to stop before it starts new ones. Rolling updates do not wait.
+func recreateGrace(t Target, svc spec.Service) time.Duration {
+	if spec.Recreates(svc) || t.policy != nil && t.policy.Recreate {
+		return spec.TerminationGrace(svc)
+	}
+	return 0
+}
+
 func (c *Client) waitReady(ctx context.Context, t Target, service string, generation int64) error {
 	timeout := serviceStartupTimeout(t.Spec.Services[service], c.options.RolloutTimeout)
-	budget := timeout + rolloutGrace(timeout)
+	budget := timeout + rolloutGrace(timeout) + recreateGrace(t, t.Spec.Services[service])
 	waitCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	err := c.awaitReady(waitCtx, t, service, generation, budget)
