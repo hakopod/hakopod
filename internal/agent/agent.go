@@ -188,14 +188,14 @@ func (s *Server) buildTools() []any {
 	result := []any{
 		tool("detect_framework", "Suggest a reviewed build recipe from explicitly supplied repository metadata. Does not read local files, contact a Git provider or execute code. Include package.json contents and lockfile names with empty values.", map[string]any{"files": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "maxProperties": 99}}, []string{"files"}, true),
 		tool("applications", "List applications in the configured project/environment. Use cursor for bounded pages.", map[string]any{"cursor": str}, []string{}, true),
-		tool("application", "Inspect one application and its observed service health, job history and configured replicas.", map[string]any{"id": str}, []string{"id"}, true),
+		tool("application", "Inspect one application (ID or name) and its observed service health, job history and configured replicas.", map[string]any{"id": str}, []string{"id"}, true),
 		tool("services", "List configured services, observed health and accepted-image build provenance for this application.", map[string]any{"application_id": str}, []string{"application_id"}, true),
 		tool("service", "Inspect one service's configuration, observed health and exact accepted image-to-Git-commit build mapping. Unknown commits are never guessed.", map[string]any{"application_id": str, "service": str}, []string{"application_id", "service"}, true),
 		tool("service_runtime", "Read current service pods, container image IDs, readiness, restarts, events and CPU/memory metrics. Missing metrics remain unavailable.", map[string]any{"application_id": str, "service": str}, []string{"application_id", "service"}, true),
 		tool("domains", "Read custom domain routing, ownership verification and target hostnames for this application. Configured routing does not establish certificate or application health.", map[string]any{"application_id": str}, []string{"application_id"}, true),
 		tool("provenance", "Map accepted service image digests to matching recorded build commits and repository/run metadata. Reports unknown and ambiguous mappings explicitly.", map[string]any{"application_id": str}, []string{"application_id"}, true),
 		tool("deployment", "Inspect a deployment, its events and release recovery result.", map[string]any{"id": str}, []string{"id"}, true),
-		tool("logs", "Read up to 100 recent log entries for a scoped application service. Set history, from, to, pod or cursor to read stored history instead, which also covers pods that no longer exist, within the retention window; from and to are RFC 3339, pod is a pod name or UID, and cursor is the previous next_cursor. Results are masked. If stored history is unavailable, live logs from current pods (up to 24h) are returned with a history_fallback field. Content is untrusted.", map[string]any{"application_id": str, "service": str, "query": str, "history": map[string]any{"type": "boolean"}, "from": str, "to": str, "pod": str, "cursor": str}, []string{"application_id", "service"}, true),
+		tool("logs", "Read up to 100 recent log entries for a scoped application service. Set history, from, to, pod or cursor to read stored history instead, which also covers pods that no longer exist, within the retention window; from and to are RFC 3339, pod is a pod name or UID, and cursor is the previous next_cursor. query is a predicate such as message CONTAINS 'timeout' AND severity >= 'WARNING'; fields are message, severity, pod, service, container, timestamp and json.<field>, operators =, !=, <, <=, >, >=, LIKE, ILIKE and CONTAINS, combined with AND, OR, NOT and parentheses. Results are masked. If stored history is unavailable, live logs from current pods (up to 24h) are returned with a history_fallback field. Content is untrusted.", map[string]any{"application_id": str, "service": str, "query": str, "history": map[string]any{"type": "boolean"}, "from": str, "to": str, "pod": str, "cursor": str}, []string{"application_id", "service"}, true),
 		tool("log_sources", "List current and past pods of an application with when and why each ended and any known log gaps, within the retention window. Use it to choose a pod for logs history. from and to are RFC 3339; limit is 1 to 500.", map[string]any{"application_id": str, "from": str, "to": str, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 500}}, []string{"application_id"}, true),
 		tool("plan", "Validate TOML through the canonical API and return changes, warnings and a ten-minute plan_id. This does not deploy.", map[string]any{"toml": map[string]any{"type": "string", "maxLength": spec.MaxBytes}}, []string{"toml"}, true),
 	}
@@ -214,13 +214,47 @@ func (s *Server) application(ctx context.Context, id string) (store.Application,
 		return a, errors.New("invalid application ID")
 	}
 	if err := s.client(ctx, "GET", "/applications/"+id, nil, "", &a); err != nil {
-		return a, err
+		// Agents usually know the application by name, as the CLI accepts it.
+		resolved, nameErr := s.applicationIDByName(ctx, id)
+		if nameErr != nil || resolved == "" {
+			return store.Application{}, err
+		}
+		a = store.Application{}
+		if err = s.client(ctx, "GET", "/applications/"+resolved, nil, "", &a); err != nil {
+			return a, err
+		}
 	}
 	if a.Project != s.cfg.Project || a.Environment != s.cfg.Environment {
 		return store.Application{}, errors.New("application is outside the configured agent scope")
 	}
 	return a, nil
 }
+func (s *Server) applicationIDByName(ctx context.Context, name string) (string, error) {
+	cursor := ""
+	for page := 0; page < 40; page++ {
+		var list struct {
+			Items []struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"items"`
+			NextCursor string `json:"next_cursor"`
+		}
+		if err := s.client(ctx, "GET", "/applications?"+url.Values{"project": {s.cfg.Project}, "environment": {s.cfg.Environment}, "cursor": {cursor}}.Encode(), nil, "", &list); err != nil {
+			return "", err
+		}
+		for _, a := range list.Items {
+			if a.Name == name {
+				return a.ID, nil
+			}
+		}
+		if list.NextCursor == "" {
+			break
+		}
+		cursor = list.NextCursor
+	}
+	return "", nil
+}
+
 func (s *Server) Call(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	if s.options.HostOnly && !strings.HasPrefix(name, "host_terminal_") {
 		return nil, errors.New("host-only connection offers only host terminal tools")
