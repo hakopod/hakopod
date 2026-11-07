@@ -47,25 +47,25 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	}
 	normalized, err := spec.Normalize(target.Spec)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	target.Spec = spec.RuntimeEnvironment(normalized)
 	for name, svc := range target.Spec.Services {
 		if !strings.Contains(svc.Image, "@sha256:") {
-			return Observation{}, fmt.Errorf("%s: deployment requires a resolved immutable image digest", name)
+			return Observation{}, NotApplied(fmt.Errorf("%s: deployment requires a resolved immutable image digest", name))
 		}
 		if (svc.Public || certificateOnlyIngress(svc)) && c.options.AppDomain == "" {
-			return Observation{}, fmt.Errorf("%s: configure HAKOPOD_APP_DOMAIN before exposing a public service", name)
+			return Observation{}, NotApplied(fmt.Errorf("%s: configure HAKOPOD_APP_DOMAIN before exposing a public service", name))
 		}
 	}
 	if target.ApplicationID == "" {
-		return Observation{}, fmt.Errorf("application ID is required")
+		return Observation{}, NotApplied(fmt.Errorf("application ID is required"))
 	}
 	if err := beforeStep(ctx, target); err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	if err := c.resolveVirtualNetworks(ctx, &target); err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	// Delivery preflight reads the certificate this ingress carries, so the
 	// certificate-only ingress has to exist before validation runs. Applying it
@@ -73,40 +73,40 @@ func (c *Client) Deploy(ctx context.Context, target Target, emit func(Event)) (O
 	// reconcile below leaves it untouched. Only the apply moves early; deleting
 	// an ingress still waits until preflight has accepted the release.
 	if err := c.reconcileCertificateIngresses(ctx, target); err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	preflight, err := c.ValidateDeliveryWithReport(ctx, target)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	target.sharedVolumeNodes = preflight.sharedVolumeNodes
 	if err := c.validateWorkloadKinds(ctx, target); err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	target.policy, err = c.workloadPolicy(ctx, target)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	if err := c.snapshotWorkloadSecrets(ctx, &target); err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	if err := c.snapshotDatabaseBindings(ctx, &target); err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	target.privateEgress, err = c.resolvePrivateEgress(ctx, target, false)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	target.containerDaemon, err = c.resolveContainerDaemons(target)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
 	target.serverlessGatewayIPs, err = c.serverlessGatewaySources(ctx, target)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, NotApplied(err)
 	}
-	// From here on the cluster may have changed: failures report an
-	// observation. An empty one means nothing was applied.
+	// From here on the cluster may have changed, so failures report an
+	// observation and are not marked NotApplied.
 	if err := c.bootstrap(ctx, target); err != nil {
 		return c.observationAfterFailure(target), err
 	}
@@ -398,6 +398,25 @@ func (c *Client) deployService(ctx context.Context, target Target, name string, 
 	}
 	emit(Event{Type: "ready", Service: name, Message: "All desired replicas are ready on the new revision"})
 	return nil
+}
+
+// ErrNotApplied marks a deploy that stopped before it changed anything in the
+// cluster, such as a failed preflight or database health gate. There is
+// nothing to recover and the running release is untouched.
+var ErrNotApplied = errors.New("no workload was changed")
+
+type notAppliedError struct{ err error }
+
+func (e notAppliedError) Error() string   { return e.err.Error() }
+func (e notAppliedError) Unwrap() []error { return []error{e.err, ErrNotApplied} }
+
+// NotApplied wraps err so callers can tell, with errors.Is(err, ErrNotApplied),
+// that the deploy changed nothing. The message is unchanged.
+func NotApplied(err error) error {
+	if err == nil {
+		return nil
+	}
+	return notAppliedError{err}
 }
 
 func (c *Client) observationAfterFailure(target Target) Observation {

@@ -21,8 +21,8 @@ func (f *preApplyRuntime) Deploy(ctx context.Context, target cluster.Target, emi
 	}
 	f.calls++
 	if target.Spec.Services["web"].Env["REVISION"] == "bad" {
-		// Cluster code returns an empty observation before it applies anything.
-		return cluster.Observation{}, errors.New("could not check managed database orders (db1) health: Kubernetes API client throttled")
+		// Cluster code marks a failure before it applies anything as NotApplied.
+		return cluster.Observation{}, cluster.NotApplied(errors.New("could not check managed database orders (db1) health: Kubernetes API client throttled"))
 	}
 	return cluster.Observation{Revision: target.Revision, ObservedAt: time.Now(), Status: "healthy", Services: []cluster.ServiceStatus{}}, nil
 }
