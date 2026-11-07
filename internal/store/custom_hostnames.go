@@ -47,13 +47,26 @@ type CustomHostname struct {
 	LastCheckedAt *time.Time `json:"last_checked_at"`
 	NextCheckAt   time.Time  `json:"next_check_at"`
 	Attempts      int        `json:"attempts"`
+	// Verification is the TXT record a hostname needs when it reaches the
+	// installation by address rather than by a CNAME to this service's target.
+	Verification DNSRecord `json:"verification"`
 }
 
-const hostnameCols = "id,application_id,service,hostname,status,status_reason,created_at,updated_at,verified_at,active_at,last_checked_at,next_check_at,attempts"
+type DNSRecord struct {
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// HostnameChallengeName is where the verification token is published.
+func HostnameChallengeName(host string) string { return "_hakopod-challenge." + host }
+
+const hostnameCols = "id,application_id,service,hostname,status,status_reason,created_at,updated_at,verified_at,active_at,last_checked_at,next_check_at,attempts,verification_token"
 
 func scanHostname(r scanner) (CustomHostname, error) {
 	var h CustomHostname
-	err := r.Scan(&h.ID, &h.ApplicationID, &h.Service, &h.Hostname, &h.Status, &h.StatusReason, &h.CreatedAt, &h.UpdatedAt, &h.VerifiedAt, &h.ActiveAt, &h.LastCheckedAt, &h.NextCheckAt, &h.Attempts)
+	err := r.Scan(&h.ID, &h.ApplicationID, &h.Service, &h.Hostname, &h.Status, &h.StatusReason, &h.CreatedAt, &h.UpdatedAt, &h.VerifiedAt, &h.ActiveAt, &h.LastCheckedAt, &h.NextCheckAt, &h.Attempts, &h.Verification.Value)
+	h.Verification.Type, h.Verification.Name = "TXT", HostnameChallengeName(h.Hostname)
 	return h, err
 }
 
@@ -263,7 +276,7 @@ func (s *Store) CreateCustomHostname(ctx context.Context, p Principal, a Applica
 	if count >= limit {
 		return h, false, fmt.Errorf("%w: this service already has %d custom hostnames, its limit", ErrConflict, limit)
 	}
-	h, err = scanHostname(tx.QueryRow(ctx, "INSERT INTO custom_hostnames(id,application_id,service,hostname) VALUES($1,$2,$3,$4) RETURNING "+hostnameCols, NewID(), a.ID, service, host))
+	h, err = scanHostname(tx.QueryRow(ctx, "INSERT INTO custom_hostnames(id,application_id,service,hostname,verification_token) VALUES($1,$2,$3,$4,$5) RETURNING "+hostnameCols, NewID(), a.ID, service, host, NewID()+NewID()))
 	if err != nil {
 		return h, false, err
 	}

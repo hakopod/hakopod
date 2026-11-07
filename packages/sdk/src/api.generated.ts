@@ -7438,6 +7438,12 @@ export interface components {
             /** @description The CNAME target customers point at. Defaults to the service's generated public hostname. */
             target?: string;
         };
+        CustomHostnameDNSRecord: {
+            /** @enum {string} */
+            type: "CNAME" | "TXT";
+            name: string;
+            value: string;
+        };
         CustomHostname: {
             id: string;
             application_id: string;
@@ -7457,6 +7463,10 @@ export interface components {
             next_check_at: string;
             attempts: number;
             target: string;
+            /** @description The record customers add: the hostname as a CNAME to target. */
+            cname: components["schemas"]["CustomHostnameDNSRecord"];
+            /** @description A TXT record at _hakopod-challenge.<hostname> holding this hostname's token. Needed only when the hostname reaches the target by address, such as an apex ALIAS or a flattened CNAME; a CNAME to target needs nothing else. */
+            verification: components["schemas"]["CustomHostnameDNSRecord"];
         };
         CustomHostnameList: {
             items: components["schemas"]["CustomHostname"][];

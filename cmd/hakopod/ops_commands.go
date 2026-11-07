@@ -280,7 +280,9 @@ func hostnamesCommand(ctx context.Context, c *client, cfg config, args []string,
 		return err
 	}
 	base := "/applications/" + a.ID + "/services/" + url.PathEscape(service) + "/custom-hostnames"
-	var out store.CustomHostname
+	// Single records print as the API returns them: with the CNAME to add and
+	// the TXT verification an apex domain needs.
+	var out map[string]any
 	switch verb {
 	case "list":
 		items := []store.CustomHostname{}

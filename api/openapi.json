@@ -33048,6 +33048,30 @@
         "additionalProperties": false,
         "description": "Opt-in tenant hostnames added through the API without a new revision. Requires public with a port; rejected for jobs, serverless services, actions runners and sandbox sessions. See docs/custom-hostnames.md."
       },
+      "CustomHostnameDNSRecord": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "CNAME",
+              "TXT"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "value"
+        ],
+        "additionalProperties": false
+      },
       "CustomHostname": {
         "type": "object",
         "properties": {
@@ -33126,6 +33150,14 @@
           },
           "target": {
             "type": "string"
+          },
+          "cname": {
+            "$ref": "#/components/schemas/CustomHostnameDNSRecord",
+            "description": "The record customers add: the hostname as a CNAME to target."
+          },
+          "verification": {
+            "$ref": "#/components/schemas/CustomHostnameDNSRecord",
+            "description": "A TXT record at _hakopod-challenge.<hostname> holding this hostname's token. Needed only when the hostname reaches the target by address, such as an apex ALIAS or a flattened CNAME; a CNAME to target needs nothing else."
           }
         },
         "required": [
@@ -33142,7 +33174,9 @@
           "last_checked_at",
           "next_check_at",
           "attempts",
-          "target"
+          "target",
+          "cname",
+          "verification"
         ],
         "additionalProperties": false
       },
