@@ -18,6 +18,7 @@ const routes: [RegExp, string[]][] = [
   [/^builds\/[A-Za-z0-9_-]+\/runs(?:\/[A-Za-z0-9_-]+)?$/, ['GET']],
   [/^builds\/[A-Za-z0-9_-]+\/runs\/[A-Za-z0-9_-]+\/(?:plan|deploy)$/, ['POST']],
   [/^auth\/device\/(?:start|token)$/, ['POST']],
+  [/^oauth\/(?:register|token)$/, ['POST']],
   // Session calls retain explicit owner and generation authority.
   [/^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/sessions$/, ['GET', 'POST']],
   [
@@ -133,7 +134,7 @@ export async function forwardAutomationAPI(request: Request) {
       headers: { ...privateHeaders, Allow: route[1].join(', ') },
     })
   const authorization = request.headers.get('Authorization')
-  const deviceExchange = /^auth\/device\/(start|token)$/.test(path)
+  const deviceExchange = /^(?:auth\/device\/(?:start|token)|oauth\/(?:register|token))$/.test(path)
   if (!deviceExchange && !/^Bearer (hp_|hs_)/.test(authorization || ''))
     return Response.json(
       { error: { code: 'unauthorized', message: 'A CLI session or machine API key is required.' } },

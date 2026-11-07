@@ -23,6 +23,7 @@ import { Route as SecurityRouteImport } from './routes/security'
 import { Route as SessionRouteImport } from './routes/session'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TemplatesRouteImport } from './routes/templates'
+import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known.$'
 import { Route as AlarmsSettingsRouteImport } from './routes/alarms.settings'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as ApplicationsApplicationIdRouteImport } from './routes/applications.$applicationId'
@@ -37,6 +38,7 @@ import { Route as DatabasesImportRouteImport } from './routes/databases.import'
 import { Route as DatabasesNewRouteImport } from './routes/databases.new'
 import { Route as DeploymentsDeploymentIdRouteImport } from './routes/deployments.$deploymentId'
 import { Route as InfrastructureCleanupRouteImport } from './routes/infrastructure.cleanup'
+import { Route as LoginAuthorizeRouteImport } from './routes/login.authorize'
 import { Route as LoginDeviceRouteImport } from './routes/login.device'
 import { Route as LoginForgotRouteImport } from './routes/login.forgot'
 import { Route as LoginInviteRouteImport } from './routes/login.invite'
@@ -187,6 +189,11 @@ const TemplatesRoute = TemplatesRouteImport.update({
   path: '/templates',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownSplatRoute = DotwellKnownSplatRouteImport.update({
+  id: '/.well-known/$',
+  path: '/.well-known/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AlarmsSettingsRoute = AlarmsSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -257,6 +264,11 @@ const InfrastructureCleanupRoute = InfrastructureCleanupRouteImport.update({
   id: '/cleanup',
   path: '/cleanup',
   getParentRoute: () => InfrastructureRoute,
+} as any)
+const LoginAuthorizeRoute = LoginAuthorizeRouteImport.update({
+  id: '/login/authorize',
+  path: '/login/authorize',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const LoginDeviceRoute = LoginDeviceRouteImport.update({
   id: '/login/device',
@@ -714,6 +726,7 @@ export interface FileRoutesByFullPath {
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/alarms/settings': typeof AlarmsSettingsRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
@@ -728,6 +741,7 @@ export interface FileRoutesByFullPath {
   '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/infrastructure/cleanup': typeof InfrastructureCleanupRoute
+  '/login/authorize': typeof LoginAuthorizeRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
@@ -823,6 +837,7 @@ export interface FileRoutesByTo {
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/alarms/settings': typeof AlarmsSettingsRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
@@ -837,6 +852,7 @@ export interface FileRoutesByTo {
   '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/infrastructure/cleanup': typeof InfrastructureCleanupRoute
+  '/login/authorize': typeof LoginAuthorizeRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
@@ -933,6 +949,7 @@ export interface FileRoutesById {
   '/session': typeof SessionRoute
   '/settings': typeof SettingsRouteWithChildren
   '/templates': typeof TemplatesRouteWithChildren
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/alarms/settings': typeof AlarmsSettingsRoute
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
@@ -947,6 +964,7 @@ export interface FileRoutesById {
   '/databases/new': typeof DatabasesNewRoute
   '/deployments/$deploymentId': typeof DeploymentsDeploymentIdRoute
   '/infrastructure/cleanup': typeof InfrastructureCleanupRoute
+  '/login/authorize': typeof LoginAuthorizeRoute
   '/login/device': typeof LoginDeviceRoute
   '/login/forgot': typeof LoginForgotRoute
   '/login/invite': typeof LoginInviteRoute
@@ -1044,6 +1062,7 @@ export interface FileRouteTypes {
     | '/session'
     | '/settings'
     | '/templates'
+    | '/.well-known/$'
     | '/alarms/settings'
     | '/api/$'
     | '/applications/$applicationId'
@@ -1058,6 +1077,7 @@ export interface FileRouteTypes {
     | '/databases/new'
     | '/deployments/$deploymentId'
     | '/infrastructure/cleanup'
+    | '/login/authorize'
     | '/login/device'
     | '/login/forgot'
     | '/login/invite'
@@ -1153,6 +1173,7 @@ export interface FileRouteTypes {
     | '/session'
     | '/settings'
     | '/templates'
+    | '/.well-known/$'
     | '/alarms/settings'
     | '/api/$'
     | '/applications/$applicationId'
@@ -1167,6 +1188,7 @@ export interface FileRouteTypes {
     | '/databases/new'
     | '/deployments/$deploymentId'
     | '/infrastructure/cleanup'
+    | '/login/authorize'
     | '/login/device'
     | '/login/forgot'
     | '/login/invite'
@@ -1262,6 +1284,7 @@ export interface FileRouteTypes {
     | '/session'
     | '/settings'
     | '/templates'
+    | '/.well-known/$'
     | '/alarms/settings'
     | '/api/$'
     | '/applications/$applicationId'
@@ -1276,6 +1299,7 @@ export interface FileRouteTypes {
     | '/databases/new'
     | '/deployments/$deploymentId'
     | '/infrastructure/cleanup'
+    | '/login/authorize'
     | '/login/device'
     | '/login/forgot'
     | '/login/invite'
@@ -1372,11 +1396,13 @@ export interface RootRouteChildren {
   SessionRoute: typeof SessionRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   TemplatesRoute: typeof TemplatesRouteWithChildren
+  DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ApiSplatRoute: typeof ApiSplatRoute
   ApplicationsApplicationIdRoute: typeof ApplicationsApplicationIdRouteWithChildren
   ApplicationsImportRoute: typeof ApplicationsImportRoute
   ApplicationsNewRoute: typeof ApplicationsNewRoute
   DeploymentsDeploymentIdRoute: typeof DeploymentsDeploymentIdRoute
+  LoginAuthorizeRoute: typeof LoginAuthorizeRoute
   LoginDeviceRoute: typeof LoginDeviceRoute
   LoginForgotRoute: typeof LoginForgotRoute
   LoginInviteRoute: typeof LoginInviteRoute
@@ -1488,6 +1514,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplatesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/$': {
+      id: '/.well-known/$'
+      path: '/.well-known/$'
+      fullPath: '/.well-known/$'
+      preLoaderRoute: typeof DotwellKnownSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/alarms/settings': {
       id: '/alarms/settings'
       path: '/settings'
@@ -1585,6 +1618,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/infrastructure/cleanup'
       preLoaderRoute: typeof InfrastructureCleanupRouteImport
       parentRoute: typeof InfrastructureRoute
+    }
+    '/login/authorize': {
+      id: '/login/authorize'
+      path: '/login/authorize'
+      fullPath: '/login/authorize'
+      preLoaderRoute: typeof LoginAuthorizeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/login/device': {
       id: '/login/device'
@@ -2535,11 +2575,13 @@ const rootRouteChildren: RootRouteChildren = {
   SessionRoute: SessionRoute,
   SettingsRoute: SettingsRouteWithChildren,
   TemplatesRoute: TemplatesRouteWithChildren,
+  DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ApiSplatRoute: ApiSplatRoute,
   ApplicationsApplicationIdRoute: ApplicationsApplicationIdRouteWithChildren,
   ApplicationsImportRoute: ApplicationsImportRoute,
   ApplicationsNewRoute: ApplicationsNewRoute,
   DeploymentsDeploymentIdRoute: DeploymentsDeploymentIdRoute,
+  LoginAuthorizeRoute: LoginAuthorizeRoute,
   LoginDeviceRoute: LoginDeviceRoute,
   LoginForgotRoute: LoginForgotRoute,
   LoginInviteRoute: LoginInviteRoute,

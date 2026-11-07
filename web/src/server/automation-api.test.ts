@@ -1,7 +1,7 @@
 import { forwardAutomationAPI } from './automation-api.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { proxy } from './api-proxy.ts'
+import { allowed, proxy } from './api-proxy.ts'
 
 test('external database automation routes keep method boundaries and exclude credential reads', async (t) => {
   const id = 'e'.repeat(32)
@@ -494,6 +494,37 @@ test('public device exchange strips ambient credentials and only accepts POST', 
     405,
   )
   assert.equal(mocked.mock.callCount(), 1)
+})
+
+test('OAuth registration and token exchange are public and keep the form body', async (t) => {
+  const mocked = t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+    const headers = new Headers(init?.headers)
+    assert.match(new URL(String(url)).pathname, /^\/api\/v1\/oauth\/(register|token)$/)
+    assert.equal(headers.get('Authorization'), null)
+    assert.equal(headers.get('Cookie'), null)
+    if (String(url).endsWith('/token')) {
+      assert.equal(headers.get('Content-Type'), 'application/x-www-form-urlencoded')
+      assert.equal(
+        new TextDecoder().decode(init?.body as Uint8Array),
+        'grant_type=authorization_code',
+      )
+    }
+    return Response.json({})
+  })
+  for (const [path, type, body] of [
+    ['register', 'application/json', '{}'],
+    ['token', 'application/x-www-form-urlencoded', 'grant_type=authorization_code'],
+  ]) {
+    const request = new Request(`https://dashboard.example/api/v1/oauth/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': type, Authorization: 'Bearer hs_unrelated', Cookie: 'a=b' },
+      body,
+    })
+    assert.equal((await proxy({ request, params: { _splat: `v1/oauth/${path}` } })).status, 200)
+  }
+  assert.equal(mocked.mock.callCount(), 2)
+  assert.ok(allowed.some((pattern) => pattern.test('oauth/authorize')))
+  assert.ok(!allowed.some((pattern) => pattern.test('oauth/token')))
 })
 
 test('SQL and pod execution preserve exact bearer requests and reject other methods', async (t) => {
