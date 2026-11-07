@@ -810,7 +810,10 @@ func (s *Server) planInput(w http.ResponseWriter, r *http.Request, in input, ext
 	if in.Provenance == nil {
 		in.Provenance = map[string]store.SourceBuild{}
 	}
-	plan := map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles, "provenance": in.Provenance}
+	// The stored spec is the last accepted one even when its release failed,
+	// so the diff can be empty although deploying would retry that release.
+	lastReleaseFailed := current != nil && (current.Status == "failed" || current.Status == "recovered")
+	plan := map[string]any{"application_id": id, "expected_revision": rev, "spec": next, "changes": spec.Diff(previous, next), "warnings": warnings, "resource_profiles": spec.Profiles, "provenance": in.Provenance, "last_release_failed": lastReleaseFailed}
 	maps.Copy(plan, extra)
 	s.writeDeploymentPlan(w, r, in.Project, in.Environment, next, plan)
 }

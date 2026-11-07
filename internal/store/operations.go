@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -526,6 +527,17 @@ func (s *Store) LastHealthy(ctx context.Context, app string, before int64) (*spe
 	}
 	return &a, err
 }
+
+// storableObservation rejects a result without a status, such as the empty
+// observation of a deploy that stopped before changing anything. Storing it
+// would replace what is known about the running release with nothing.
+func storableObservation(result any) bool {
+	var observed struct {
+		Status string `json:"status"`
+	}
+	return json.Unmarshal(JSON(result), &observed) == nil && observed.Status != ""
+}
+
 func finishTransaction(ctx context.Context, tx pgx.Tx, d Deployment, status, message string, result any) error {
 	if status != "succeeded" && status != "failed" && status != "cancelled" {
 		return errors.New("operation can only finish succeeded, failed or cancelled")
@@ -553,7 +565,7 @@ func finishTransaction(ctx context.Context, tx pgx.Tx, d Deployment, status, mes
 			appStatus = "empty"
 		}
 	}
-	if _, err = tx.Exec(ctx, "UPDATE applications SET observed=CASE WHEN revision=$3 THEN $2 ELSE observed END,status=CASE WHEN revision=$3 THEN $4 ELSE 'queued' END,updated_at=now() WHERE id=$1", d.ApplicationID, JSON(result), d.Revision, appStatus); err != nil {
+	if _, err = tx.Exec(ctx, "UPDATE applications SET observed=CASE WHEN revision=$3 AND $5 THEN $2 ELSE observed END,status=CASE WHEN revision=$3 THEN $4 ELSE 'queued' END,updated_at=now() WHERE id=$1", d.ApplicationID, JSON(result), d.Revision, appStatus, storableObservation(result)); err != nil {
 		return err
 	}
 	return nil
