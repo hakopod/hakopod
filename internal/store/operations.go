@@ -304,6 +304,9 @@ func (s *Store) acceptGuarded(ctx context.Context, p Principal, project, env str
 	if err = s.reserveDomains(ctx, tx, a.ID, next); err != nil {
 		return Deployment{}, err
 	}
+	if err = acceptCustomHostnames(ctx, tx, a.ID, next); err != nil {
+		return Deployment{}, err
+	}
 	var pending int
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM deployments WHERE application_id=$1 AND status IN ('queued','running')", a.ID).Scan(&pending); err != nil {
 		return Deployment{}, err
@@ -676,7 +679,7 @@ func slackEventForServiceField(field string, before, after spec.Service) (string
 		return "service.scale.updated", "Service scale change accepted"
 	case "restart_nonce":
 		return "service.restart.requested", "Service restart requested"
-	case "network_access", "networks", "private_egress", "http", "port", "ports", "public_tcp", "public", "tls", "backend_http2", "ingress_timeout_seconds", "kubernetes":
+	case "network_access", "networks", "private_egress", "http", "port", "ports", "public_tcp", "public", "tls", "backend_http2", "ingress_timeout_seconds", "custom_hostnames", "kubernetes":
 		return "service.network.updated", "Service network change accepted"
 	case "volume", "mounts", "temporary_mounts", "certificate_mounts", "files":
 		return "service.storage.updated", "Service storage change accepted"

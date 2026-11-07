@@ -25,7 +25,7 @@ func validRolePermissions(permissions []string) bool {
 	}
 	seen := map[string]bool{}
 	for _, permission := range permissions {
-		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "kubernetes:patch", "databases:query", "databases:write-query", "agent:credentials"}, permission) {
+		if seen[permission] || !contains([]string{"deployments:read", "deployments:write", "logs:read", "pods:exec", "kubernetes:patch", "hostnames:manage", "databases:query", "databases:write-query", "agent:credentials"}, permission) {
 			return false
 		}
 		seen[permission] = true

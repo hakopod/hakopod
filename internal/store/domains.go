@@ -74,6 +74,13 @@ func (s *Store) BeginDomainVerification(ctx context.Context, p Principal, a Appl
 	if existing != "" && existing != a.ID {
 		return d, fmt.Errorf("%w: hostname is already reserved by another application", ErrConflict)
 	}
+	var tenant bool
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM custom_hostnames WHERE hostname=$1)", host).Scan(&tenant); err != nil {
+		return d, err
+	}
+	if tenant {
+		return d, fmt.Errorf("%w: hostname is attached as a custom hostname", ErrConflict)
+	}
 	var count int
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM domain_verifications WHERE application_id=$1 AND hostname<>$2", a.ID, host).Scan(&count); err != nil {
 		return d, err

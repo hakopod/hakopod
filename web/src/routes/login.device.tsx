@@ -225,6 +225,7 @@ const permissionLabels: Record<string, { label: string; risk?: boolean }> = {
   'jobs:read': { label: 'See jobs' },
   'sessions:read': { label: 'See sign-in sessions' },
   'networks:write': { label: 'Change private networks' },
+  'hostnames:manage': { label: 'Attach and remove custom hostnames' },
   'pods:exec': { label: 'Run commands in service containers', risk: true },
   'kubernetes:patch': { label: 'Add or change raw Kubernetes patches', risk: true },
   'databases:query': { label: 'Query databases', risk: true },
