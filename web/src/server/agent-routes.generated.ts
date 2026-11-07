@@ -512,6 +512,48 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "listCustomHostnames",
+    "method": "GET",
+    "path": "/applications/{id}/services/{service}/custom-hostnames",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "createCustomHostname",
+    "method": "POST",
+    "path": "/applications/{id}/services/{service}/custom-hostnames",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "getCustomHostname",
+    "method": "GET",
+    "path": "/applications/{id}/services/{service}/custom-hostnames/{hostname}",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "deleteCustomHostname",
+    "method": "DELETE",
+    "path": "/applications/{id}/services/{service}/custom-hostnames/{hostname}",
+    "category": "write",
+    "boundary": "project"
+  },
+  {
+    "id": "getCustomHostnameSettings",
+    "method": "GET",
+    "path": "/settings/custom-hostnames",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "putCustomHostnameSettings",
+    "method": "PUT",
+    "path": "/settings/custom-hostnames",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "listDatabaseExplorerConnections",
     "method": "GET",
     "path": "/database-explorer/connections",

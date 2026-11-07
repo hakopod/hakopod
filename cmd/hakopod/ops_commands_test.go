@@ -139,3 +139,54 @@ func TestManifestsRequestPath(t *testing.T) {
 		t.Fatal(paths)
 	}
 }
+
+func TestHostnamesRequestPaths(t *testing.T) {
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/applications":
+			io.WriteString(w, `{"items":[{"id":"app","name":"shop"}]}`)
+		case r.URL.Path == "/api/v1/applications/app":
+			io.WriteString(w, `{"id":"app","name":"shop","spec":{"name":"shop","services":{"web":{"image":"nginx"}}}}`)
+		default:
+			body, _ := io.ReadAll(r.Body)
+			calls = append(calls, r.Method+" "+r.URL.RequestURI()+" "+string(body))
+			if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/custom-hostnames") {
+				if r.URL.Query().Get("cursor") == "" {
+					io.WriteString(w, `{"items":[{"hostname":"a.customer.com","status":"active"}],"next_cursor":"a.customer.com"}`)
+				} else {
+					io.WriteString(w, `{"items":[{"hostname":"b.customer.com","status":"pending_dns"}],"next_cursor":""}`)
+				}
+				return
+			}
+			io.WriteString(w, `{"hostname":"shop.customer.com","status":"pending_dns"}`)
+		}
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, key: "k", http: server.Client()}
+	cfg := config{Project: "demo", Environment: "production"}
+	ctx := context.Background()
+	for _, args := range [][]string{{"list", "shop"}, {"add", "shop", "shop.customer.com"}, {"show", "shop", "shop.customer.com"}, {"remove", "shop", "shop.customer.com"}} {
+		status := ""
+		if args[0] == "list" {
+			status = "active"
+		}
+		if err := hostnamesCommand(ctx, c, cfg, args, "", "", status, true); err != nil {
+			t.Fatal(args, err)
+		}
+	}
+	base := "/api/v1/applications/app/services/web/custom-hostnames"
+	want := []string{
+		"GET " + base + "?limit=500&status=active ",
+		"GET " + base + "?cursor=a.customer.com&limit=500&status=active ",
+		"POST " + base + ` {"hostname":"shop.customer.com"}`,
+		"GET " + base + "/shop.customer.com ",
+		"DELETE " + base + "/shop.customer.com ",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(calls, "\n"), strings.Join(want, "\n"))
+	}
+	if err := hostnamesCommand(ctx, c, cfg, []string{"add", "shop"}, "", "", "", false); err == nil {
+		t.Fatal("add without a hostname accepted")
+	}
+}

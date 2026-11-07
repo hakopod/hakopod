@@ -2744,6 +2744,14 @@ for operation in ['listAgentPolicies','createAgentPolicy','previewAgentPolicy','
     POLICIES[operation] = {'boundary':'installation','category':'human','exposure':'prerequisite','permissions':['admin'],'prerequisite':'An installation administrator manages agent policies and approvals from a browser session.','review':'canonical','sensitive_fields':[]}
 POLICIES['getAgentApproval'] = {'boundary':'identity','category':'read','exposure':'dedicated','permissions':[],'prerequisite':'Use approval_status with the approval id from an approval_required error.','review':'none','sensitive_fields':[]}
 
+# Custom hostnames: scoped reads, writes that need their own grant, and the installation cap.
+for operation in ['listCustomHostnames','getCustomHostname']:
+    POLICIES[operation] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'prerequisite':'','review':'none','sensitive_fields':[]}
+for operation in ['createCustomHostname','deleteCustomHostname']:
+    POLICIES[operation] = {'boundary':'project','category':'write','exposure':'generic','permissions':['hostnames:manage'],'prerequisite':'','review':'canonical','sensitive_fields':[]}
+for operation in ['getCustomHostnameSettings','putCustomHostnameSettings']:
+    POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
+
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:
