@@ -86,6 +86,11 @@ func historyBody(o historyOptions, now time.Time) (map[string]any, error) {
 		from = t
 	}
 	body := map[string]any{"service": o.Service, "query": o.Query, "history": true, "from": from.Format(time.RFC3339)}
+	if o.From == "" && o.To == "" {
+		// Only --since: read newest first so the page and scan limits keep
+		// the most recent lines. printHistoryLogs prints them oldest first.
+		body["order"] = "desc"
+	}
 	if o.To != "" {
 		to, err := parseWhen(o.To, now)
 		if err != nil {
@@ -160,7 +165,15 @@ func printLiveFallback(ctx context.Context, c *client, appID string, history map
 }
 
 // printHistoryLogs follows next_cursor until limit lines are printed or no cursor remains.
+// Newest-first pages are collected and printed in chronological order at the end.
 func printHistoryLogs(ctx context.Context, c *client, appID string, body map[string]any, limit int, live liveOptions, out, errOut io.Writer) error {
+	descending := body["order"] == "desc"
+	var lines []string
+	defer func() {
+		for i := len(lines) - 1; i >= 0; i-- {
+			fmt.Fprint(out, lines[i])
+		}
+	}()
 	printed, seenGaps := 0, map[string]bool{}
 	cursor := ""
 	for pages := 1; ; pages++ {
@@ -200,7 +213,12 @@ func printHistoryLogs(ctx context.Context, c *client, appID string, body map[str
 			}
 		}
 		for _, e := range res.Entries {
-			fmt.Fprintf(out, "%s %s r%d %s\n", e.Timestamp.UTC().Format(time.RFC3339Nano), e.Pod, e.Restart, e.Message)
+			line := fmt.Sprintf("%s %s r%d %s\n", e.Timestamp.UTC().Format(time.RFC3339Nano), e.Pod, e.Restart, e.Message)
+			if descending {
+				lines = append(lines, line)
+			} else {
+				fmt.Fprint(out, line)
+			}
 		}
 		printed += len(res.Entries)
 		cursor = res.NextCursor
@@ -208,7 +226,11 @@ func printHistoryLogs(ctx context.Context, c *client, appID string, body map[str
 			return nil
 		}
 		if printed >= limit {
-			fmt.Fprintf(errOut, "Stopped after %d lines; more are available. Raise --limit or narrow the time window.\n", printed)
+			more := "more are available"
+			if descending {
+				more = "older lines are available"
+			}
+			fmt.Fprintf(errOut, "Stopped after %d lines; %s. Raise --limit or narrow the time window.\n", printed, more)
 			return nil
 		}
 		if pages >= logPageCap {

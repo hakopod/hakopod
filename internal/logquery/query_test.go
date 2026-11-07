@@ -32,9 +32,31 @@ func TestStructuredMetadataLimitsPreserveSearchableMessage(t *testing.T) {
 	if e := ParseEntry(valid, "api", "pod-1", "app"); e.MetadataOmitted || len(e.Fields) == 0 {
 		t.Fatal("supported nested metadata was omitted")
 	}
+	// A JSON prefix is not a structured object, but its level key still
+	// names the severity, as for an oversized line.
 	for _, invalid := range []string{`{"level":"error"} trailing`, `{"level":"error"}{"next":1}`, `{"level":"error"`} {
-		if e := ParseEntry(invalid, "api", "pod-1", "app"); len(e.Fields) != 0 || e.Severity != "DEFAULT" {
-			t.Fatal("a JSON prefix was mistaken for a complete structured log object")
+		if e := ParseEntry(invalid, "api", "pod-1", "app"); len(e.Fields) != 0 || e.Severity != "ERROR" {
+			t.Fatal("a JSON prefix was mistaken for a complete structured log object, or its level was lost", e.Severity)
+		}
+	}
+}
+
+func TestTruncatedJSONLineKeepsItsLevel(t *testing.T) {
+	// The collector cuts lines at 16 KiB, which leaves invalid JSON.
+	full := `{"time":"2026-11-06T10:00:00Z","levelname":"warning","msg":"` + strings.Repeat("x", 20<<10) + `"}`
+	truncated := full[:16<<10]
+	e := ParseEntry("2026-11-06T10:00:00Z "+truncated, "api", "pod-1", "app")
+	if e.Severity != "WARNING" || len(e.Fields) != 0 || e.Message != truncated {
+		t.Fatalf("truncated JSON line: severity %s, %d fields", e.Severity, len(e.Fields))
+	}
+	for line, want := range map[string]string{
+		`{"severity":"ERROR","msg":"cut`: "ERROR",
+		`  {"msg":"no level, cut`:        "DEFAULT",
+		`{not json at all} ERROR`:        "DEFAULT",
+		`{"level":"verbose","msg":"cut`:  "DEFAULT",
+	} {
+		if got := ParseEntry(line, "s", "p", "app").Severity; got != want {
+			t.Errorf("%q: severity %s, want %s", line, got, want)
 		}
 	}
 }
