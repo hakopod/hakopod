@@ -86,16 +86,27 @@ changed patches but leaves existing ones applied until they are removed.
 ## Custom hostnames
 
 [SaaS custom hostnames](custom-hostnames.md) prove control of a domain only by
-its DNS: anyone holding `hostnames:manage` on an application can attach any
-hostname that already CNAMEs, or resolves, to that service's target, including
-a domain whose owner meant it for another tenant of the same SaaS. Hakopod
-cannot tell tenants apart; the SaaS must check that the customer asking owns
-the domain before calling the API, and its service should answer only for
-hostnames its own records know. A certificate is requested only after the
-hostname resolves to the target, and HTTP-01 succeeds only for a domain whose
-traffic reaches the installation, so a hostname pointing elsewhere is never
-routed or issued. A hostname is unique across the installation and cannot also
-be an application domain.
+its DNS. A CNAME to a service's target names that service, so anyone holding
+`hostnames:manage` on the application can attach any hostname that already
+CNAMEs to its target, including a domain whose owner meant it for another
+tenant of the same SaaS. Hakopod cannot tell one SaaS's tenants apart; the SaaS
+must check that the customer asking owns the domain before calling the API,
+and its service should answer only for hostnames its own records know.
+
+Addresses do not name a service: every application shares the ingress
+addresses, so a domain whose A or AAAA records point at the installation could
+otherwise be claimed by whichever application asked first. A hostname that
+reaches the target only by address therefore also needs a TXT record at
+`_hakopod-challenge.<hostname>` holding a random 32-byte token issued for that
+one hostname record and shown only to callers who can read that application.
+
+A certificate is requested only after these checks pass, and HTTP-01 succeeds
+only for a domain whose traffic reaches the installation, so a hostname
+pointing elsewhere is never routed or issued. A hostname is unique across the
+installation and cannot also be an application domain. Uniqueness applies
+from the moment a hostname is attached, before it verifies, so an application
+can hold a name it cannot prove, blocking others from attaching it, until it
+removes the hostname.
 
 ## Container daemon access
 

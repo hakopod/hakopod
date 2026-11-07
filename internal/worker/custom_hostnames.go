@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net"
@@ -17,10 +18,12 @@ import (
 type hostnameResolver interface {
 	LookupCNAME(context.Context, string) (string, error)
 	LookupHost(context.Context, string) ([]string, error)
+	LookupTXT(context.Context, string) ([]string, error)
 }
 
-// The pure Go resolver asks the configured name servers on every check and
-// keeps no cache, so an early miss cannot stick until a negative TTL expires.
+// The pure Go resolver asks the configured name servers for every CNAME,
+// address and TXT check and keeps no cache, so an early miss cannot stick
+// until a negative TTL expires.
 var hostnameDNS hostnameResolver = &net.Resolver{PreferGo: true}
 
 type customHostnameRuntime interface {
@@ -29,11 +32,16 @@ type customHostnameRuntime interface {
 	CustomHostnameCertificates(context.Context, cluster.Target, string) (map[string]cluster.CustomHostnameCertificate, bool, error)
 }
 
-// verifyHostnameDNS accepts a hostname whose CNAME chain ends at target, or
-// that resolves to at least one of target's addresses. Either way its traffic
-// reaches this installation, which is what HTTP-01 issuance needs.
-func verifyHostnameDNS(ctx context.Context, r hostnameResolver, host, target string) (bool, string) {
-	if cname, err := r.LookupCNAME(ctx, host); err == nil && strings.EqualFold(strings.TrimSuffix(cname, "."), target) {
+// verifyHostnameDNS accepts a hostname whose CNAME chain ends at target: the
+// target is specific to this service, so the CNAME shows the domain's owner
+// meant it. A hostname that only resolves to one of target's addresses (an
+// apex ALIAS or flattened CNAME) also needs the per-hostname token in a TXT
+// record, because the shared ingress address says nothing about which service
+// the owner chose; without it, any app could claim a domain aimed at another.
+func verifyHostnameDNS(ctx context.Context, r hostnameResolver, host, target, generated, token string) (bool, string) {
+	// The resolver reports only the end of a CNAME chain, so a custom target that
+	// itself points at the generated hostname ends there; both are this service's.
+	if cname, err := r.LookupCNAME(ctx, host); err == nil && (strings.EqualFold(strings.TrimSuffix(cname, "."), target) || strings.EqualFold(strings.TrimSuffix(cname, "."), generated)) {
 		return true, ""
 	}
 	addresses, err := r.LookupHost(ctx, host)
@@ -44,12 +52,22 @@ func verifyHostnameDNS(ctx context.Context, r hostnameResolver, host, target str
 	if err != nil {
 		return false, fmt.Sprintf("The target %s does not resolve.", target)
 	}
-	for _, address := range addresses {
-		if slices.Contains(expected, address) {
-			return true, ""
+	if !slices.ContainsFunc(addresses, func(a string) bool { return slices.Contains(expected, a) }) {
+		return false, fmt.Sprintf("%s does not point at %s. Replace its records with a CNAME record pointing at %s.", host, target, target)
+	}
+	name := store.HostnameChallengeName(host)
+	records, err := r.LookupTXT(ctx, name)
+	if err == nil && token != "" {
+		for _, value := range records {
+			if subtle.ConstantTimeCompare([]byte(value), []byte(token)) == 1 {
+				return true, ""
+			}
 		}
 	}
-	return false, fmt.Sprintf("%s does not point at %s. Replace its records with a CNAME record pointing at %s.", host, target, target)
+	if err != nil || len(records) == 0 {
+		return false, fmt.Sprintf("%s reaches %s by address but not through a CNAME, so the TXT record %s is also needed and was not found. Add it, or use a CNAME record instead.", host, target, name)
+	}
+	return false, fmt.Sprintf("%s reaches %s by address but not through a CNAME, and the TXT record %s does not hold this hostname's verification value.", host, target, name)
 }
 
 // runCustomHostnames advances one batch of due hostnames: DNS checks with
@@ -95,7 +113,8 @@ func (w *Worker) customHostnameService(ctx context.Context, runtime customHostna
 	}
 	target := cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec}
 	svc := a.Spec.Services[service]
-	dnsTarget := runtime.ServiceHostname(target, service)
+	generated := runtime.ServiceHostname(target, service)
+	dnsTarget := generated
 	if svc.CustomHostnames != nil && svc.CustomHostnames.Target != "" {
 		dnsTarget = svc.CustomHostnames.Target
 	}
@@ -108,7 +127,7 @@ func (w *Worker) customHostnameService(ctx context.Context, runtime customHostna
 				continue // The release that turns the feature on has not run yet.
 			}
 			lookup, cancel := context.WithTimeout(ctx, 10*time.Second)
-			matched, reason := verifyHostnameDNS(lookup, hostnameDNS, h.Hostname, dnsTarget)
+			matched, reason := verifyHostnameDNS(lookup, hostnameDNS, h.Hostname, dnsTarget, generated, h.Verification.Value)
 			cancel()
 			next := store.HostnameAfterDNS(h, matched, reason, time.Now())
 			if err := w.Store.SaveCustomHostnameState(ctx, h.Status, next); err != nil {

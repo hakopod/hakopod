@@ -129,9 +129,20 @@ func TestCustomHostnamesStore(t *testing.T) {
 	if err != nil || !created || h.Status != HostnamePendingDNS {
 		t.Fatal(h, created, err)
 	}
+	if len(h.Verification.Value) != 64 || h.Verification.Type != "TXT" || h.Verification.Name != "_hakopod-challenge.shop.customer.com" {
+		t.Fatal("a hostname needs its own 32-byte TXT verification token", h.Verification)
+	}
 	again, created, err := db.CreateCustomHostname(ctx, p, a, "api", "shop.customer.com")
-	if err != nil || created || again.ID != h.ID {
+	if err != nil || created || again.ID != h.ID || again.Verification != h.Verification {
 		t.Fatal("create must be idempotent for the same service", again, created, err)
+	}
+	// A failed hostname added again starts over with the token the customer already published.
+	if _, err = db.Pool.Exec(ctx, "UPDATE custom_hostnames SET status='failed' WHERE id=$1", h.ID); err != nil {
+		t.Fatal(err)
+	}
+	retried, _, err := db.CreateCustomHostname(ctx, p, a, "api", "shop.customer.com")
+	if err != nil || retried.Status != HostnamePendingDNS || retried.Verification != h.Verification {
+		t.Fatal("retry must restart DNS checks and keep the token", retried, err)
 	}
 	if _, _, err = db.CreateCustomHostname(ctx, p, a, "api", "x.apps.example.test"); !errors.Is(err, ErrInput) {
 		t.Fatalf("installation domains must be refused: %v", err)

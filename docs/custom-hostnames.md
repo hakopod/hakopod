@@ -56,17 +56,30 @@ Each customer adds one record at their DNS provider:
 shop.customer.com.  CNAME  web-0123456789ab.apps.example.com.
 ```
 
-The target is returned as `target` on every API response, so your onboarding
-screen can show it. A CNAME can sit behind further CNAMEs. For an apex domain
-such as `customer.com`, which cannot carry a CNAME, the customer uses their
-provider's ALIAS or CNAME flattening; Hakopod accepts a hostname whose
-addresses include one of the target's addresses.
+Every API response carries that record as `cname` (and the target alone as
+`target`), so your onboarding screen can show it. A CNAME can sit behind
+further CNAMEs as long as the chain ends at the target or at the service's
+generated hostname.
+
+An apex domain such as `customer.com` cannot carry a CNAME, so the customer
+uses their provider's ALIAS record or CNAME flattening, which publishes the
+target's addresses instead. Addresses alone do not show which service the
+domain is meant for, because every service on the installation shares them,
+so such a hostname also needs the TXT record returned as `verification`:
+
+```
+_hakopod-challenge.customer.com.  TXT  "4f9c2a7e0b13d58c..."   # the full 64-character value
+```
+
+The value is random and belongs to that one hostname; it stays the same if
+the hostname fails and is added again. A hostname with a plain CNAME needs no
+TXT record. `status_reason` says which of the two is missing.
 
 ## Lifecycle
 
 | Status | What is happening |
 |---|---|
-| `pending_dns` | Waiting for the hostname to resolve to the target. Not routed. |
+| `pending_dns` | Waiting for a CNAME to the target, or for the target's address plus the TXT verification. Not routed. |
 | `issuing` | DNS matched. The hostname is routed and a certificate is requested. |
 | `active` | The certificate is ready, or the installation has no TLS issuer and the hostname is served over HTTP. |
 | `failed` | Hakopod stopped trying. `status_reason` says why. Add the hostname again to start over. |
@@ -75,8 +88,8 @@ addresses include one of the target's addresses.
 DNS is checked about 15 seconds after the hostname is added, then after 1
 minute, 5 minutes, 30 minutes and every 6 hours. A hostname that does not
 point at the target within 7 days becomes `failed`. `status_reason` names what
-was found and what to change. Lookups use Hakopod's own resolver without a
-cache, so a check made before the customer's record existed does not hide the
+was found and what to change. CNAME, address and TXT lookups use Hakopod's
+own resolver without a cache, so a check made before the customer's record existed does not hide the
 record later; the customer's provider and any resolver in front of the
 installation can still cache an earlier negative answer for its TTL.
 

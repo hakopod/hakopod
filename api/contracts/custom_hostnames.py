@@ -8,11 +8,14 @@ schemas["CustomHostnamesConfig"]["description"] = "Opt-in tenant hostnames added
 schemas["Service"]["properties"]["custom_hostnames"] = ref("CustomHostnamesConfig")
 NULLABLE_TIME = {"anyOf": [T, {"type": "null"}]}
 HOSTNAME_STATUS = {"type": "string", "enum": ["pending_dns", "issuing", "active", "failed", "deleting"]}
+schemas["CustomHostnameDNSRecord"] = obj({"type": {"type": "string", "enum": ["CNAME", "TXT"]}, "name": S, "value": S}, ["type", "name", "value"])
 schemas["CustomHostname"] = obj({
     "id": S, "application_id": S, "service": S, "hostname": S, "status": HOSTNAME_STATUS, "status_reason": S,
     "created_at": T, "updated_at": T, "verified_at": NULLABLE_TIME, "active_at": NULLABLE_TIME,
     "last_checked_at": NULLABLE_TIME, "next_check_at": T, "attempts": I, "target": S,
-}, ["id", "application_id", "service", "hostname", "status", "status_reason", "created_at", "updated_at", "verified_at", "active_at", "last_checked_at", "next_check_at", "attempts", "target"])
+    "cname": {**ref("CustomHostnameDNSRecord"), "description": "The record customers add: the hostname as a CNAME to target."},
+    "verification": {**ref("CustomHostnameDNSRecord"), "description": "A TXT record at _hakopod-challenge.<hostname> holding this hostname's token. Needed only when the hostname reaches the target by address, such as an apex ALIAS or a flattened CNAME; a CNAME to target needs nothing else."},
+}, ["id", "application_id", "service", "hostname", "status", "status_reason", "created_at", "updated_at", "verified_at", "active_at", "last_checked_at", "next_check_at", "attempts", "target", "cname", "verification"])
 schemas["CustomHostnameList"] = obj({"items": array(ref("CustomHostname")), "next_cursor": S, "target": S}, ["items", "next_cursor", "target"])
 schemas["CustomHostnameSettings"] = obj({"max_per_service": {"type": "integer", "minimum": 1, "maximum": 50000}, "revision": I}, ["max_per_service", "revision"])
 schemas["CustomHostnameSettingsInput"] = obj({"max_per_service": {"type": "integer", "minimum": 1, "maximum": 50000}, "expected_revision": I}, ["max_per_service", "expected_revision"])

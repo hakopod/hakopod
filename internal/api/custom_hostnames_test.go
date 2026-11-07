@@ -99,6 +99,14 @@ func TestCustomHostnameAPI(t *testing.T) {
 	if status != 201 || out["hostname"] != "shop.customer.com" || out["status"] != "pending_dns" {
 		t.Fatalf("create: %d %v", status, out)
 	}
+	verification, _ := out["verification"].(map[string]any)
+	cname, _ := out["cname"].(map[string]any)
+	if token, _ := verification["value"].(string); verification["type"] != "TXT" || verification["name"] != "_hakopod-challenge.shop.customer.com" || len(token) != 64 {
+		t.Fatalf("create must return the TXT verification: %v", verification)
+	}
+	if cname["type"] != "CNAME" || cname["name"] != "shop.customer.com" || cname["value"] != out["target"] {
+		t.Fatalf("create must return the CNAME instruction: %v", cname)
+	}
 	if status, _, _ = call("POST", "", manager, map[string]string{"hostname": "shop.customer.com"}); status != 200 {
 		t.Fatalf("repeat create must be idempotent: %d", status)
 	}

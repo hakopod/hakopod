@@ -22,6 +22,13 @@ type hostnameWindow struct {
 type customHostnameView struct {
 	store.CustomHostname
 	Target string `json:"target"`
+	// CNAME is the record customers add. An apex that can only use an ALIAS or
+	// a flattened CNAME also needs the TXT record in Verification.
+	CNAME store.DNSRecord `json:"cname"`
+}
+
+func hostnameView(h store.CustomHostname, target string) customHostnameView {
+	return customHostnameView{h, target, store.DNSRecord{Type: "CNAME", Name: h.Hostname, Value: target}}
 }
 
 func (s *Server) registerCustomHostnameRoutes(m *http.ServeMux) {
@@ -107,7 +114,7 @@ func (s *Server) createCustomHostname(w http.ResponseWriter, r *http.Request) {
 	if created {
 		status = 201
 	}
-	write(w, status, customHostnameView{h, target})
+	write(w, status, hostnameView(h, target))
 }
 
 func (s *Server) listCustomHostnames(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +146,7 @@ func (s *Server) listCustomHostnames(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]customHostnameView, 0, len(items))
 	for _, h := range items {
-		views = append(views, customHostnameView{h, target})
+		views = append(views, hostnameView(h, target))
 	}
 	write(w, 200, map[string]any{"items": views, "next_cursor": next, "target": target})
 }
@@ -154,7 +161,7 @@ func (s *Server) getCustomHostname(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	write(w, 200, customHostnameView{h, target})
+	write(w, 200, hostnameView(h, target))
 }
 
 func (s *Server) deleteCustomHostname(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +174,7 @@ func (s *Server) deleteCustomHostname(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	write(w, 202, customHostnameView{h, target})
+	write(w, 202, hostnameView(h, target))
 }
 
 type customHostnameSettingsView struct {
