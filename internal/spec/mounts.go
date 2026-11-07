@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -43,6 +44,22 @@ func allowedMount(p string) bool {
 	return true
 }
 
+// Recreates reports whether a rollout of s stops its old pods before starting
+// new ones: update_strategy = "recreate", a volume, named mounts or a node
+// profile. Such a rollout waits out the old pods' termination grace period.
+// A rolling update does not, because terminating pods are not counted.
+func Recreates(s Service) bool {
+	return s.UpdateStrategy == "recreate" || s.Volume != nil || len(s.Mounts) > 0 || s.NodeProfile != ""
+}
+
+// TerminationGrace is the shutdown allowance a pod of s gets.
+func TerminationGrace(s Service) time.Duration {
+	if s.TerminationGraceSeconds > 0 {
+		return time.Duration(s.TerminationGraceSeconds) * time.Second
+	}
+	return 30 * time.Second
+}
+
 func validateMountControls(s Service) error {
 	for _, id := range []int64{s.RunAsGroup, s.FSGroup} {
 		if id < 0 || id > 2147483647 {
@@ -52,8 +69,8 @@ func validateMountControls(s Service) error {
 	if s.WorkingDir != "" && s.WorkingDir != "/" && !cleanDirectory(s.WorkingDir) {
 		return fmt.Errorf("working_dir must be a clean absolute directory")
 	}
-	if s.TerminationGraceSeconds < 0 || s.TerminationGraceSeconds > 300 {
-		return fmt.Errorf("termination_grace_seconds must be 1–300 or omitted for 30 seconds")
+	if s.TerminationGraceSeconds < 0 || s.TerminationGraceSeconds > 3600 {
+		return fmt.Errorf("termination_grace_seconds must be 1–3600 or omitted for 30 seconds")
 	}
 	if len(s.Mounts)+len(s.TemporaryMounts)+len(s.CertificateMounts) > 16 {
 		return fmt.Errorf("at most 16 named, temporary and certificate mounts per service")

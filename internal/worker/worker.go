@@ -397,6 +397,7 @@ func deploymentRuntimeTimeout(runtime Runtime, app spec.Application, fallback ti
 		} else {
 			requested += owner.ServiceRolloutTimeout()
 		}
+		requested += recreateGrace(service)
 	}
 	if len(app.Services) == 0 {
 		return fallback
@@ -422,18 +423,31 @@ func deploymentAttemptTimeout(app spec.Application, fallback time.Duration) time
 			}
 			continue
 		}
-		if service.StartupTimeoutSeconds != 0 {
+		grace := time.Duration(0)
+		if service.TerminationGraceSeconds != 0 {
+			grace = recreateGrace(service)
+		}
+		if service.StartupTimeoutSeconds != 0 || grace > 0 {
 			if !explicit {
 				requested = 30 * time.Second
 				explicit = true
 			}
-			requested += time.Duration(service.StartupTimeoutSeconds) * time.Second
+			requested += time.Duration(service.StartupTimeoutSeconds)*time.Second + grace
 		}
 	}
 	if !explicit {
 		return fallback
 	}
 	return max(fallback, requested)
+}
+
+// recreateGrace is the time a Recreate rollout spends waiting for the old pods
+// to stop, which comes out of the same deadline as their startup.
+func recreateGrace(service spec.Service) time.Duration {
+	if spec.Recreates(service) {
+		return spec.TerminationGrace(service)
+	}
+	return 0
 }
 
 func deploymentRecoveryBudgetSpec(deployment store.Deployment, previous *store.Deployment) spec.Application {
