@@ -491,6 +491,7 @@ func (w *Worker) Resync(ctx context.Context) {
 	defer timer.Stop()
 	cursor := ""
 	var renewalRound uint64
+	refreshes := map[string]bindingRefresh{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -514,6 +515,7 @@ func (w *Worker) Resync(ctx context.Context) {
 				continue
 			}
 			cursor = ids[len(ids)-1]
+			runtime := w.background()
 			for _, id := range ids {
 				if ctx.Err() != nil {
 					return
@@ -527,9 +529,9 @@ func (w *Worker) Resync(ctx context.Context) {
 					continue
 				}
 				a.Spec = effective
-				w.renewCertificates(ctx, a, renewalRound)
+				w.renewCertificates(ctx, runtime, a, renewalRound, refreshes)
 				observeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				o, err := w.Cluster.Observe(observeCtx, cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec})
+				o, err := runtime.Observe(observeCtx, cluster.Target{Project: a.Project, Environment: a.Environment, ApplicationID: a.ID, Revision: a.Revision, Spec: a.Spec})
 				cancel()
 				if err != nil {
 					// Keep the last good observation rather than replacing it
@@ -546,8 +548,56 @@ func (w *Worker) Resync(ctx context.Context) {
 	}
 }
 
+// background returns the runtime for the periodic resync. A cluster client
+// gives it a separate rate limiter so resync load cannot starve deployments.
+func (w *Worker) background() Runtime {
+	if client, ok := w.Cluster.(*cluster.Client); ok && client != nil {
+		return client.Background()
+	}
+	return w.Cluster
+}
+
+// bindingRefreshInterval bounds how often the resync re-resolves one
+// service's database bindings. Each refresh observes every bound managed
+// database live (tens of Kubernetes requests and pod execs), so running it on
+// every 15-second pass for every application exhausted the client's rate
+// limit. Database issuers renew 30 days and leaf certificates well before
+// expiry, so ten minutes keeps CA trust rotation far ahead of any expiry. A
+// change to a bound database's revision or CA fingerprint refreshes on the
+// next pass, and a refresh that started a rollout is checked again on the
+// next pass until its pods are verified.
+const bindingRefreshInterval = 10 * time.Minute
+
+type bindingRefresh struct {
+	at  time.Time
+	key string
+}
+
+// bindingRefreshDue is the refresh cadence: never refreshed, the bound
+// databases changed, or the interval passed.
+func bindingRefreshDue(last bindingRefresh, key string, now time.Time) bool {
+	return last.at.IsZero() || last.key != key || now.Sub(last.at) >= bindingRefreshInterval
+}
+
+// bindingRefreshKey identifies the stored state of the managed databases a
+// service binds: identity, revision and observed CA fingerprint.
+func (w *Worker) bindingRefreshKey(ctx context.Context, svc spec.Service) (string, error) {
+	ids := []string{}
+	for _, b := range svc.Bindings {
+		if b.ManagedDatabase != "" {
+			ids = append(ids, b.ManagedDatabase)
+		}
+	}
+	if len(ids) == 0 {
+		return "", nil
+	}
+	var key string
+	err := w.Store.Pool.QueryRow(ctx, "SELECT COALESCE(string_agg(id||':'||revision||':'||COALESCE(observation->'tls'->>'ca_fingerprint',''),',' ORDER BY id),'') FROM managed_databases WHERE id=ANY($1)", ids).Scan(&key)
+	return key, err
+}
+
 // Maintenance shares the deployment claim and rechecks it before each write.
-func (w *Worker) renewCertificates(parent context.Context, a store.Application, round uint64) {
+func (w *Worker) renewCertificates(parent context.Context, runtime Runtime, a store.Application, round uint64, refreshes map[string]bindingRefresh) {
 	names := []string{}
 	for _, name := range spec.Names(a.Spec) {
 		needsMaintenance := false
@@ -582,23 +632,35 @@ func (w *Worker) renewCertificates(parent context.Context, a store.Application, 
 	emit := func(event cluster.Event) {
 		_ = w.Store.Event(ctx, claim.OperationID, event.Type, event.Message, event.Service)
 	}
-	err = w.Cluster.RenewBackendCertificates(ctx, target, emit, selected)
+	err = runtime.RenewBackendCertificates(ctx, target, emit, selected)
 	if err == nil {
-		if runtime, ok := w.Cluster.(interface {
+		if runtime, ok := runtime.(interface {
 			RefreshExternalDatabaseEgress(context.Context, cluster.Target, func(cluster.Event), string) error
 		}); ok {
 			err = runtime.RefreshExternalDatabaseEgress(ctx, target, emit, selected)
 		}
 	}
-	if err == nil {
-		if runtime, ok := w.Cluster.(interface {
+	refreshID := a.ID + "/" + selected
+	key, keyErr := w.bindingRefreshKey(ctx, a.Spec.Services[selected])
+	if err == nil && keyErr == nil && bindingRefreshDue(refreshes[refreshID], key, time.Now()) {
+		rolledOut := false
+		refreshEmit := func(event cluster.Event) {
+			rolledOut = rolledOut || event.Type == "binding_rollout"
+			emit(event)
+		}
+		if runtime, ok := runtime.(interface {
 			RefreshDatabaseBindings(context.Context, cluster.Target, func(cluster.Event), string) error
 		}); ok {
-			err = runtime.RefreshDatabaseBindings(ctx, target, emit, selected)
-		} else if runtime, ok := w.Cluster.(interface {
+			err = runtime.RefreshDatabaseBindings(ctx, target, refreshEmit, selected)
+		} else if runtime, ok := runtime.(interface {
 			RenewDatabaseTrust(context.Context, cluster.Target, func(cluster.Event), string) error
 		}); ok {
-			err = runtime.RenewDatabaseTrust(ctx, target, emit, selected)
+			err = runtime.RenewDatabaseTrust(ctx, target, refreshEmit, selected)
+		}
+		if rolledOut {
+			delete(refreshes, refreshID)
+		} else {
+			refreshes[refreshID] = bindingRefresh{at: time.Now(), key: key}
 		}
 	}
 	if err != nil && ctx.Err() == nil {

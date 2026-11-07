@@ -608,7 +608,7 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 	}
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, DatabaseNamespace(d.ID), metav1.GetOptions{})
 	if err != nil {
-		return o, fmt.Errorf("database namespace is unavailable")
+		return o, fmt.Errorf("database namespace is unavailable: %w", err)
 	}
 	if ns.Labels[databaseOwner] != d.ID || ns.Labels[managedBy] != "hakopod" {
 		return o, fmt.Errorf("database namespace ownership changed")
@@ -616,7 +616,7 @@ func (c *Client) ObserveDatabase(ctx context.Context, d database.Resource) (resu
 	gvr, _ := databaseGVR(d.Spec)
 	object, err := c.dynamic.Resource(gvr).Namespace(ns.Name).Get(ctx, "database", metav1.GetOptions{})
 	if err != nil {
-		return o, fmt.Errorf("database controller state is unavailable")
+		return o, fmt.Errorf("database controller state is unavailable: %w", err)
 	}
 	if object.GetLabels()[databaseOwner] != d.ID {
 		return o, fmt.Errorf("database controller ownership changed")
