@@ -11,6 +11,9 @@
   "POST /api/v1/integrations/slack/cloud-events/claim": "Internal Cloud Slack relay protocol. Workspace integration owns event delivery.",
   "POST /api/v1/managed-platforms/{id}/native-migrate": "Native acceptance probe. Only the separately tagged acceptance build registers this route.",
   "POST /api/v1/managed-platforms/{id}/native-probe": "Native acceptance probe. Only the separately tagged acceptance build registers this route.",
+  "POST /api/v1/oauth/authorize": "Dashboard consent step of the MCP OAuth sign-in. Only the dashboard authorization page calls it.",
+  "POST /api/v1/oauth/register": "OAuth dynamic client registration (RFC 7591) for MCP clients. The protocol defines the request and response.",
+  "POST /api/v1/oauth/token": "OAuth token endpoint for MCP clients. It takes form-encoded RFC 6749 requests and returns OAuth errors.",
   "PUT /api/v1/integrations/slack/cloud-events/source": "Internal Cloud Slack relay protocol. Workspace integration owns event delivery.",
   "PUT /api/v1/internal/neon/storage-controller/{platform}/{revision}/{notification}": "Internal Neon storage notification protocol. The enrolled controller signs the notification."
 }

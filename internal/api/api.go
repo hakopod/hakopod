@@ -168,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerInvocationRoutes(routes)
 	s.registerSessionRoutes(routes)
 	s.registerMCPRoutes(routes)
+	s.registerOAuthRoutes(mux, routes)
 	s.registerAgentAccessRoutes(routes)
 	routes.HandleFunc("GET /api/v1/applications/{id}/services/{service}/certificates", s.backendCertificates)
 	routes.HandleFunc("POST /api/v1/applications/{id}/services/{service}/certificates", s.uploadBackendCertificate)
@@ -347,6 +348,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		raw, err := s.authenticateToken(r)
 		if err != nil {
+			if errors.Is(err, store.ErrUnauthorized) {
+				s.mcpChallenge(w, r)
+			}
 			failure(w, err)
 			return
 		}
@@ -354,6 +358,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		p, err := s.Store.Authenticate(ctx, raw)
 		cancel()
 		if err != nil {
+			if errors.Is(err, store.ErrUnauthorized) {
+				s.mcpChallenge(w, r)
+			}
 			failure(w, err)
 			return
 		}
