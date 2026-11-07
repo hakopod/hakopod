@@ -54,6 +54,13 @@ type DeviceDetails struct {
 }
 
 func (s *Store) StartDevice(ctx context.Context, project, environment string, permissions []string) (DeviceAuthorization, error) {
+	return s.startDevice(ctx, project, environment, permissions, oauthGrant{})
+}
+
+// oauthGrant binds a device code to the OAuth authorization that started it.
+type oauthGrant struct{ identity, client, redirectURI, challenge string }
+
+func (s *Store) startDevice(ctx context.Context, project, environment string, permissions []string, grant oauthGrant) (DeviceAuthorization, error) {
 	if (project == "") != (environment == "") {
 		return DeviceAuthorization{}, ErrInput
 	}
@@ -103,7 +110,7 @@ func (s *Store) StartDevice(ctx context.Context, project, environment string, pe
 	if count >= 1000 {
 		return DeviceAuthorization{}, ErrBusy
 	}
-	if _, err = tx.Exec(ctx, "INSERT INTO device_codes(id,digest,user_code,project,environment,permissions,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+interval '10 minutes')", NewID(), sum[:], userCode, project, environment, permissions); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO device_codes(id,digest,user_code,project,environment,permissions,expires_at,identity_id,oauth_client_id,oauth_redirect_uri,oauth_code_challenge) VALUES($1,$2,$3,$4,$5,$6,now()+interval '10 minutes',NULLIF($7,''),$8,$9,$10)", NewID(), sum[:], userCode, project, environment, permissions, grant.identity, grant.client, grant.redirectURI, grant.challenge); err != nil {
 		return DeviceAuthorization{}, err
 	}
 	return DeviceAuthorization{token, userCode, 600, 5}, tx.Commit(ctx)
@@ -179,13 +186,20 @@ func (s *Store) ApproveDevice(ctx context.Context, p Principal, code string, app
 			}
 		}
 	}
-	result, err := s.Pool.Exec(ctx, "UPDATE device_codes SET identity_id=$2,approved=$3,mfa_verified=$4,project=$5,environment=$6,scope_id=$7 WHERE user_code=$1 AND approved IS NULL AND consumed_at IS NULL AND expires_at>now()", v.UserCode, p.ID, approve, p.MFAVerified, v.Project, v.Environment, v.ScopeID)
+	// Only the person who started an OAuth authorization may decide it.
+	result, err := s.Pool.Exec(ctx, "UPDATE device_codes SET identity_id=$2,approved=$3,mfa_verified=$4,project=$5,environment=$6,scope_id=$7 WHERE user_code=$1 AND approved IS NULL AND consumed_at IS NULL AND expires_at>now() AND (oauth_client_id='' OR identity_id=$2)", v.UserCode, p.ID, approve, p.MFAVerified, v.Project, v.Environment, v.ScopeID)
 	if err == nil && result.RowsAffected() != 1 {
 		return ErrConflict
 	}
 	return err
 }
 func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
+	return s.pollDevice(ctx, token, nil)
+}
+
+// pollDevice issues the session for an approved code. CLI codes are redeemed
+// without exchange; OAuth codes only with one, and any failed exchange burns them.
+func (s *Store) pollDevice(ctx context.Context, token string, exchange *OAuthExchange) (Session, error) {
 	if len(token) != 64 {
 		return Session{}, ErrUnauthorized
 	}
@@ -195,17 +209,32 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 		return Session{}, err
 	}
 	defer tx.Rollback(ctx)
-	var id, identity, project, environment, scopeID string
+	var id, identity, project, environment, scopeID, client, redirectURI, challenge string
 	var approved *bool
 	var verified bool
 	var permissions []string
 	var polled *time.Time
-	err = tx.QueryRow(ctx, "SELECT id,COALESCE(identity_id,''),project,environment,permissions,approved,last_polled_at,mfa_verified,scope_id FROM device_codes WHERE digest=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE", sum[:]).Scan(&id, &identity, &project, &environment, &permissions, &approved, &polled, &verified, &scopeID)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err = tx.QueryRow(ctx, "SELECT id,COALESCE(identity_id,''),project,environment,permissions,approved,last_polled_at,mfa_verified,scope_id,oauth_client_id,oauth_redirect_uri,oauth_code_challenge FROM device_codes WHERE digest=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE", sum[:]).Scan(&id, &identity, &project, &environment, &permissions, &approved, &polled, &verified, &scopeID, &client, &redirectURI, &challenge)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (client == "") != (exchange == nil)) {
 		return Session{}, ErrUnauthorized
 	}
 	if err != nil {
 		return Session{}, err
+	}
+	if exchange != nil {
+		if _, err = tx.Exec(ctx, "UPDATE device_codes SET consumed_at=now() WHERE id=$1", id); err != nil {
+			return Session{}, err
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return Session{}, err
+		}
+		if approved == nil || !exchange.matches(client, redirectURI, challenge) {
+			return Session{}, ErrUnauthorized
+		}
+		if !*approved {
+			return Session{}, ErrDenied
+		}
+		return s.issueDeviceSession(ctx, identity, project, environment, scopeID, permissions, verified)
 	}
 	if polled != nil && time.Since(*polled) < 5*time.Second {
 		return Session{}, ErrSlowDown
@@ -228,6 +257,9 @@ func (s *Store) PollDevice(ctx context.Context, token string) (Session, error) {
 	if !*approved {
 		return Session{}, ErrDenied
 	}
+	return s.issueDeviceSession(ctx, identity, project, environment, scopeID, permissions, verified)
+}
+func (s *Store) issueDeviceSession(ctx context.Context, identity, project, environment, scopeID string, permissions []string, verified bool) (Session, error) {
 	session, err := s.NewVerifiedSession(ctx, identity, "cli", project, environment, permissions, verified)
 	if err != nil {
 		return Session{}, err
