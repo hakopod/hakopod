@@ -295,3 +295,19 @@ func TestApplicationToolsAcceptAName(t *testing.T) {
 		t.Fatal("unknown name", err)
 	}
 }
+
+func TestDeploymentToolSendsTheSpecificationOnce(t *testing.T) {
+	r := func(_ context.Context, m, p string, in any, key string, out any) error {
+		if p == "/deployments/d" {
+			return json.Unmarshal([]byte(`{"id":"d","application_id":"app","spec":{"name":"shop"},"resolved_spec":{"name":"shop"}}`), out)
+		}
+		return json.Unmarshal([]byte(`{"id":"app","name":"shop","project":"p","environment":"dev"}`), out)
+	}
+	out, err := NewWithOptions(r, Scope{"p", "dev"}, Options{}, 32).Call(context.Background(), "deployment", json.RawMessage(`{"id":"d"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded, _ := json.Marshal(out); strings.Count(string(encoded), `"shop"`) != 1 {
+		t.Fatal(string(encoded))
+	}
+}
