@@ -114,3 +114,12 @@ func TestResponseWritesStopOnCancellationAndDeadline(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPResponseAcceptsGuardedWrites(t *testing.T) {
+	w := &mcpResponse{header: make(http.Header)}
+	writes := guardResponseWrites(context.Background(), w, time.Second)
+	defer writes.stop()
+	if !writes.begin() {
+		t.Fatal("guarded handler could not write to an MCP response")
+	}
+}
