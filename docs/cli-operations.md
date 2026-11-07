@@ -11,6 +11,10 @@ hakopod apps                 # one line per application: ID, name, revision, sta
 hakopod apps --json
 hakopod bindings shop        # every service's database and service bindings
 hakopod secret list shop     # secret names only; values never leave the server
+hakopod virtual-networks     # the environment's virtual networks and their segments
+hakopod virtual-networks backend          # one network as canonical TOML
+hakopod virtual-networks backend --json   # with its current connections
+hakopod networks shop        # the networks one application's services join
 ```
 
 ## Change a running application

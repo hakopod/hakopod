@@ -134,7 +134,16 @@ func TestScopedMachineNetworkManagement(t *testing.T) {
 		return w.Body.Bytes()
 	}
 	body := map[string]any{"project": "demo", "environment": "development", "expected_revision": 0, "toml": "name='shared'\n[segments.data]\napplications=['orders']"}
-	call("POST", "/virtual-networks/plan", oldKey, body, 403)
+	// Planning writes nothing: read access is enough. Applying is not.
+	in.Application, in.Permissions = "", []string{"deployments:read"}
+	_, readKey, err := db.CreateKey(ctx, owner, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call("POST", "/virtual-networks/plan", readKey, body, 200)
+	call("POST", "/virtual-networks", readKey, body, 403)
+	call("POST", "/virtual-networks/plan", oldKey, body, 200)
+	call("POST", "/virtual-networks", oldKey, body, 403)
 	call("POST", "/virtual-networks/plan", networkKey, body, 200)
 	created := call("POST", "/virtual-networks", networkKey, body, 201)
 	var saved struct {
