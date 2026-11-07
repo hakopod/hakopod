@@ -1,360 +1,282 @@
 {
   "bootstrap": {
-    "commit": "4d347265ad346fb7eb9c6aa8e5e797dfdcd22feb",
-    "reviewed_release": "v0.1.0-alpha.81",
-    "tag": "v0.1.0-alpha.80",
+    "commit": "94e37145ddf337f3cc1f6ab2383f6331a1101403",
+    "reviewed_release": "v0.1.0-alpha.82",
+    "tag": "v0.1.0-alpha.81",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py"
     ]
   },
-  "control_plane_commit": "4d347265ad346fb7eb9c6aa8e5e797dfdcd22feb",
+  "control_plane_commit": "94e37145ddf337f3cc1f6ab2383f6331a1101403",
   "delta": {
-    "baseline_sha256": "45fa7ffae1073304bece90e6587512a9bc81a3419779d5a3b5017b5e905e2c60",
+    "baseline_sha256": "fde50ecd0ac4717b16a4abc62e6f457289790ed4dc689018c6090af3aed879e4",
     "changes": [
       {
-        "after": "07cd4f13c88740b99c6b6a05104e5314193ed0f30f85c08da0e63bf2fd85f814",
-        "before": "521b66ec6928a2a6c53a7da9ae9d9295bb059a224ecb5a9b509ef232e67aa4ef",
+        "after": "44e097359658fbeff788e32d1c23e5299fbbd5e5045aaeeb3bbf2832e69e8c90",
+        "before": "07cd4f13c88740b99c6b6a05104e5314193ed0f30f85c08da0e63bf2fd85f814",
         "path": "api/contracts/agent_policy.py",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "35469c75cc2eb762f804f35a11e71858c05ffaec5860ca7ba4e404ba89803ab4",
+        "after": "0e21cd44b1f6f9bba84b584bb320e2c02e252ada4e1d41a44f68543bac7ccf21",
         "before": null,
-        "path": "api/contracts/kubernetes_patches.py",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "api/contracts/custom_hostnames.py",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "88536d6d54e8baa7a1ac0dbb502172e0fc7a5c245854a01fbcb8de05be30f62d",
-        "before": "f388ad05aabb7e0c93f3ef36556f7d1df32b26ead9661dbded0ddde15bac771e",
-        "path": "api/contracts/observability.py",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "9e5583f2aece8cb59ca56719c0e91cbcfc12763445f8c0b834a7bbb61de88705",
-        "before": "4c7964bd97f476a996a14e5c6769c0d4c5cae3fe024d032fe0c14b2cd2e7f40f",
-        "path": "api/generate.py",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "c809244b146a6bb6e4581a72f3075cf8a6e78fb05a740b6181b9405a19816411",
-        "before": "a5388b66cb65f6ce06d180be2944f961edebddab480549bd7500523f94979744",
+        "after": "4ab6e2a277cbf76d931bb228de6cd1ab8a0ec4e29694c33c3ebaaf4ebc6051bf",
+        "before": "c809244b146a6bb6e4581a72f3075cf8a6e78fb05a740b6181b9405a19816411",
         "path": "api/openapi.json",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "9ccfd6b2b07e8eaac4ffb7a13db80cbdc42b858fc9796a36f6efe3f029270758",
-        "before": "1cf79a77d8b9ed891f76f1803ee3ed6318084a19d3e106c7d1fcbbcad069a75c",
+        "after": "e7d37c82c104b1d11f093181248925321f0ca9cd4a29a91ec0e9e0e1c3396e53",
+        "before": "bd3e40d2493565ff37944917451a535a644c6ee5ffa67e6fd53a66d1c385ea0f",
+        "path": "api/route_coverage_exclusions.json",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "06045aaa7c276ae95bfbcd4f7746a86cf976060837e677675bbd3ba345200d2e",
+        "before": "22c8961f3f144ff66e2525db08c15a275478da826ea5029649abcc6b9b7e04e0",
+        "path": "cmd/hakopod-server/main.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "04d2ff5d408e14bbcad5829d082ebc585c8635fb7ee2bb67b171f6b8bc135d64",
+        "before": "c4b6a3def353765050c9a0b284508b10fddbf82a4ea3fa2bb0f77baef6d79bb3",
+        "path": "internal/agent/agent.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f10395dcec58b6a2bbc5a40581f8c47cc6b3ca754038f75dbcf9742c0d9c969c",
+        "before": "3950cb5d3666fbd36c7a65df7feec3036e43aa74011b0a7d554e16a2656864e3",
+        "path": "internal/agent/operations.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4d7844566e2c1107b96c5ac49f00b585c2c172acdcc6f7cee4f56a22833dee6e",
+        "before": "da840236324f2e8d39cef18500a47d84f0ea119b88cc0fe7d22de0e898dfac47",
+        "path": "internal/agent/operations_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "74667b34c11d9443386105249385b1cec6b73d8ccaf587777566a89705ab8ee0",
+        "before": "9ccfd6b2b07e8eaac4ffb7a13db80cbdc42b858fc9796a36f6efe3f029270758",
         "path": "internal/api/api.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "e17bb097e97d68e95d7d835cf86762171b623b02aa2fbb2b9c285303fb1b6619",
-        "before": "9d80bdd5e5ee7caf680bd81e056e2bde5f3d65c45706e48390fd143a02f4d486",
-        "path": "internal/api/app_log_history_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "0a3a89fd6a92bf330aea28e3e1a67346ff020f4a144d82f918e6f9c80f5ab79f",
+        "before": "11be1724cef006e187b831d7098529701d703ca3bc04a23f6c809ad2ba5f9a49",
+        "path": "internal/api/cloud_policy.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "931a47fbe64532a38b280e476e95bedd88410ae9909d9f4185435169f29f0fa8",
+        "after": "52f2266d5573678a012784d6a236361408abd0c93f7229fcd24933b9adb1e812",
         "before": null,
-        "path": "internal/api/database_binding_gate_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/api/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "e15797794fcb59a32a51ee65c41436e7990fc7c715e1da4791002e75d2690e9d",
-        "before": "8571adb626ea9b21e931e682e1e7a468660bb06bab8a73e307155f6c41f9827f",
-        "path": "internal/api/database_bindings.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "2df77705a9bbb173e56f5cf7127e3b2227914911e2dba8c42b2ccc0be252b07d",
-        "before": "35f325103921fd19b6dd5c753ce735356c7ea2266e015b80cb19c58c4539f11f",
-        "path": "internal/api/databases.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "25e3cfe62464ad64ff985f7c5634cfdc8a0ed448287e6ce9c9256e15cc6e5331",
+        "after": "367a9957e143e77a73a085e2a90974956ce9c7943f827c7a7e0006c167955469",
         "before": null,
-        "path": "internal/api/kubernetes_patches.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/api/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "c3d4d5d75d9cddb24ae8486acb3d6c7c3b789c39099ed3c4e755778d3669e252",
+        "after": "4a3dad15792f9dbe40b23ab92f535d6ad254ebd9d7b57cc848c43647dfe388a7",
+        "before": "eaf79226cbaa1bd8c95c64d2ff613f0c92a7e39467e8f464db16a3db0071c6d3",
+        "path": "internal/api/mcp.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "02f01cb5cdd637de762fde788497233d6c16b0c19886c0a665741cfbd2eabc7e",
         "before": null,
-        "path": "internal/api/kubernetes_patches_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/api/oauth.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "0ce2fcf57d31e36b4789908c41b4a634388a55a0da101e0740288f4ff324415a",
+        "after": "3f275cfe8352732b53d9b8d90cc4a0bf5ef3bee01dfe8ef9fa8294010ef850e7",
         "before": null,
-        "path": "internal/api/log_order_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/api/oauth_flow_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "89237adf354e8d89e5acbe9a161ba1bf3f46ff0ba5f9a7af136ebca60175e30d",
-        "before": "841c793073aff909e9687ad24228527ec443b028bdd3a09971ca3922f68ede80",
-        "path": "internal/api/logquery.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "36e6417a8fc1bf9e03ec3b05b12716d447ba2335631cb6d1c49bc3f539c724da",
+        "before": null,
+        "path": "internal/api/oauth_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "311092229badbcc725cff50b12743d3af8d37082bb8b83e5ded22bb888ca58f1",
-        "before": "33f910e0757648b7b6edf3cc95d40c1f3d793a99b282e3716378489646fff750",
+        "after": "7d9404f1a593482e256966d260f0b10bbc80597d91178dd9a17c0af31d968def",
+        "before": "1a07646214eb6717d2fce521c9e8495a3b40c915d4a6417435baad3fb65fde09",
+        "path": "internal/api/response_guard_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c63f736f0539c0c6959ec39e724805934e8bed2ea3609cebc3fecfa12d6950ea",
+        "before": "311092229badbcc725cff50b12743d3af8d37082bb8b83e5ded22bb888ca58f1",
         "path": "internal/api/runtime_scope.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "c321f78152236786affe85dafed6df37b1c9d5967c189481a3257aa800525dab",
+        "after": "4e327d137a3411b540a68bec4e0bdffb95c4d8de234189bcd4a17aac32ab8a60",
         "before": null,
-        "path": "internal/api/virtual_network_scope_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/cluster/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "0c5f4663302ac8c6a452c4ce9d1d307cafc1fbc5b25ef72f3ff40843e0ea5531",
-        "before": "bb80c1067303b4398249f7a3e7f3d88fb0ee88ba2b837e3548b7e3bc6ddd45ed",
-        "path": "internal/api/virtual_networks.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "b65973487758113c73d397e21e672f29b195de0df6cf325b684a40f76fe3e8f8",
+        "before": null,
+        "path": "internal/cluster/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "201bcdb5540d962a7373f9f3728f6472d56dc6cef290f68d37da984a11117e79",
-        "before": "f74533efbe0fb5412331a4170c79642353cf23bd1b44f38ad879faa095e51705",
-        "path": "internal/api/virtual_networks_integration_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "cdcf1b41f66dc823f498834dab7e2a5757cfde44511f3b42ad96a20cfed9ae31",
-        "before": "53aff66f510a366d645c5bde5e56f4242f3115f28b85ba19c14dbaa369e7b003",
-        "path": "internal/cluster/database_bindings.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "0738eee391395f81364efa276ec99240c423169dd09c5c3da38bcefdb18fd5dc",
-        "before": "6ac6a995e802e32e5acd681854273017b587d44fe9ad05051d83b96fd5b4e980",
-        "path": "internal/cluster/databases.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "7590c88904b676d39fd63bfc89d77645066fa77ebc8addad317fec462d0a714e",
-        "before": "d1748f3381b904f9af5b9cc1aaa60467daa6d92f52e3882739610866816bc832",
-        "path": "internal/cluster/delivery.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "f1cd509a5ade85b1d6fb1780d38b924b95735fe4dca7b78b0c154e24d7e913ca",
-        "before": "450b70c7f04003591e734a6d28663b848255215796973263d30489abcd43c481",
+        "after": "b6d99ebb68fdd4aea7f1fcf30f6a088fb5c49ed436641356653f8952cb9f2eca",
+        "before": "f1cd509a5ade85b1d6fb1780d38b924b95735fe4dca7b78b0c154e24d7e913ca",
         "path": "internal/cluster/deploy.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "531755824c62804c2bbd483887febcc23caa5f23ddfafa046dc1201a0fff10be",
-        "before": null,
-        "path": "internal/cluster/kubernetes_patches.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "d58d56c047d32301160037dce1e724d5a243c83f22b1079677ba27eadacd2375",
-        "before": null,
-        "path": "internal/cluster/kubernetes_patches_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "e090e1ebb3c2dc6a30513d8276e4f891cea3d6c62a5b1ca89d91149cad70f689",
-        "before": null,
-        "path": "internal/cluster/not_applied_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "a28876f0a74895e622bb3b125272dde5c1f80dd904122146b820894ee2dd15f7",
-        "before": null,
-        "path": "internal/cluster/termination_grace_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "a4d5e377d05943e2c0e3ce7d1e1c9adc9b46216934984b70b1d429e66191fe97",
-        "before": null,
-        "path": "internal/cluster/transient.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "55d96b6710762fd6f41f7112618ca2bcdf292ffaf4ed57fb4f1572d4a98365ae",
-        "before": null,
-        "path": "internal/cluster/transient_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "3cc2d80d44ecfde1a5410baccd99058522c8b3734c27a407710ab03040d9921e",
-        "before": "186e5f6ab04bb65533beeba3592f3c382e46f961fd01b21c1184e24c8a9b3fb4",
+        "after": "2a868511a8c4c69357c1fd482a01f562a3674d67a410367dc3b1b9aee73dad94",
+        "before": "3cc2d80d44ecfde1a5410baccd99058522c8b3734c27a407710ab03040d9921e",
         "path": "internal/cluster/types.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "d4ee0f9a67b1a1a5adbda860ec06fb5741d16d287eda27de1592ba56501f0c6c",
-        "before": "03e5e443dbf0d21adebe1f8e04a23269e76e2bca1d15759a7a55e8f40cf889c1",
-        "path": "internal/cluster/workloads.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "11eec09283f2789d00dd0699f95434b05818892a32c7396ba2afa3accc5d449a",
-        "before": "e9726db5f8ee4433db793902f42fd7266a03e3b8677827f1e01dde0f03f25fdb",
-        "path": "internal/logquery/query.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "75ffdfdd55a33bb62e835388e20d1adfada7451cfe86bbfc0897bc01d66e021e",
-        "before": "658e3a9393de24e44fe5fadf9bc4722f737c23a2661c4b1f6d9aa5826c0c0c13",
-        "path": "internal/logquery/query_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "b5381648cd74610274d662064cf8ca6a3546bc1f7e9be9eea89dca68c7b6eb31",
-        "before": "c68b92a493098d494743ec9740dd57fce5899773fe739e6ad80264a7b14fa7e8",
-        "path": "internal/spec/actions.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "996519ced4a857009ee9e21841ebb640cbb1f86b9841f1d874b0e313d3f3745c",
+        "after": "5a689cf2d255cfecf17d5f1fc1646b09011c3b13ea7d7a470f35ddbb1ff8e6be",
         "before": null,
-        "path": "internal/spec/kubernetes.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/spec/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "cc693f88ab1bec0c1985c7fbb727b8dc9d7baf9c5ae19dca2c39f76f7499c7f3",
+        "after": "c59f96c44a633dc5e90fb455c5dbe586b411fc5910d1df4cc0b2bf4ff497fdfb",
         "before": null,
-        "path": "internal/spec/kubernetes_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/spec/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "3b9654bd044361ae0abd1aca9aea51f6272e8ec8132ef79a120e995f9cd82a24",
-        "before": "e52da721a8132c9c82f4116ebd537592889bdad208041863b788de070a43e36c",
-        "path": "internal/spec/lifecycle.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "ac9ac38d55eeb7c7d11e67a0ed58c98e2630ace698f7ff28712ac64d1e34ee1a",
+        "before": "052cfbb6eab9d3fec3ab2815494ed56ebecda88e049a61ffb83afef59048ce17",
+        "path": "internal/spec/runtime.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "e8e8f10504bf73f8a412995e4c743c4d0c2c5af0dea7c49b6a1fc6b2e2fc6584",
-        "before": "04f954ac7177bb654299f64945252a10579b764acfd439cbc650c001d2c4cdff",
-        "path": "internal/spec/mounts.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "94198e5807e00dd33925de6e8cf659bf51dab85521c9c2dd64045240751b59f3",
-        "before": "64a85ab11034eb57d38a5ca25068a772abb01eb99942a86a7d23c5753d1b4ded",
-        "path": "internal/spec/runtime_controls_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "50b2c073902ad2bdfff0e4a47f1e3f993951eae928ee726bf913a7823f7504d3",
-        "before": "2f98c7fb683e2567c35c264a1ca11fcd28ad23bdc13d3550f9c572c668ec4ed6",
-        "path": "internal/spec/sandbox_sessions.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "29c81a18bca2212f48ddd02ec6449023610a6bd2bfa5d3f1bfd376f81276eca4",
-        "before": "f249ca14c90e112e7ec1ebdc7fe8ed953bd779e531a10e3f9a4efb5c5b4540c8",
+        "after": "b01477a1dad3e4419cd63afd4f1934a8b4c88d31cccfbacedb8b15da70ea85f2",
+        "before": "29c81a18bca2212f48ddd02ec6449023610a6bd2bfa5d3f1bfd376f81276eca4",
         "path": "internal/spec/spec.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "7265f78e868193200c363b9f8e75661a191c199c6665186dd6fc7006f43e7ac5",
+        "after": "268fc7169a240bcb21eac68475fa3f3d8307d33bf6906ab057194ca6b84de7be",
         "before": null,
-        "path": "internal/spec/termination_grace_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/store/110_custom_hostnames.sql",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "6b6078410c7caa28c8a0383e6e270cb490a72ef4cf9f718679961f9c1c7182da",
-        "before": "200cb3ba46a950ebabe1bbdc6421756e3d5bb9ecc666683fa8a825254b1f1b5a",
+        "after": "48ad4085ac1d638e7a9edd45dd257ea3d47ac2b1736af9e3d1ff2a9f96f15fa6",
+        "before": null,
+        "path": "internal/store/111_custom_hostname_tokens.sql",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "e62afdbd2f7deca993050611f2d51bdea8217e8299f807d4450ec5cabe3ee0d4",
+        "before": null,
+        "path": "internal/store/112_oauth_clients.sql",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c776a2cc29324c3c4b02340910327079a223d8569b93e1653ecac443c4313412",
+        "before": null,
+        "path": "internal/store/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "10143be6f218c269885b08567b777d586c6142e1a789260d7a9b37d770103e32",
+        "before": null,
+        "path": "internal/store/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "36c14407faf6dffd35147b4f3d726d715020ba2c20919af8d527cc51be1426d9",
+        "before": "6b6078410c7caa28c8a0383e6e270cb490a72ef4cf9f718679961f9c1c7182da",
         "path": "internal/store/custom_roles.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "0f85daf7a69bbd42605b6a4a0c1be87df023afda7ab228f3d7e2657c419fe87a",
-        "before": null,
-        "path": "internal/store/database_binding_gate_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "737a55f3424db2a13355cd9c16388c15cd0e67abda0412639397f3c61e49ccfc",
-        "before": "2e31a1781f5942e2a74fb0437331e5c239d2720fdf6b8b436747b26f018d5659",
-        "path": "internal/store/database_bindings.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "7b947ebd6c83bab844d87cbcdcf244e1fbcbb67cf1cb236cbfe91fa5e5a72c4e",
-        "before": "b9b4878a4d44655dc088948fbeeb165df543a0fd3124b537bf60c6f46add546c",
+        "after": "2dfe96051277990c62516f4ca4e4e30c244de32c2e0adc4a9d5d3a071a38fb8a",
+        "before": "7b947ebd6c83bab844d87cbcdcf244e1fbcbb67cf1cb236cbfe91fa5e5a72c4e",
         "path": "internal/store/device.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "0813a6dba1b1166e8cde4fd8c3157823044cc9e38bd2bcb89dcaeac3dd306660",
-        "before": null,
-        "path": "internal/store/finish_observation_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "a9b3fdcbf581bd082a29d342ecaea480ae74bd4afc58ed4d5dea5ee25ab44807",
+        "before": "29f256473483116495ef61cf84d6dcc9628f7b256e9a0bf497f22e21fb24943d",
+        "path": "internal/store/domains.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "a325569768e72cb262d87c6eef6900f4b6f54f23542776ce587913fde6615a1f",
-        "before": "b3bcf637ba95cec55d332ff144fea211f6f2d3ca9cf20abb2acad009bc14e748",
+        "after": "a99d60479cdf068e847a8ec1ec96485098f3de0b3849ed1e5b39d1d0b88db434",
+        "before": "a325569768e72cb262d87c6eef6900f4b6f54f23542776ce587913fde6615a1f",
         "path": "internal/store/humans.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "815047df0069f0d7e67c115ad4c3d254f0e60060be1b0696e226f9c26793eee3",
+        "after": "f543fc51981bb6979610c3797e612e605de7bc9ddd7a5bdefaf4a44b2729cff5",
         "before": null,
-        "path": "internal/store/kubernetes_patches.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/store/oauth.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "ee85deeb012ae22dbf27865d6945f8d8f903b4efbed9449c1988a785a9c807e1",
+        "after": "2633f444b54cdb3f6dce3a06b0a4acbea89d5a34f61bcf299259736ef59b8977",
         "before": null,
-        "path": "internal/store/kubernetes_patches_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/store/oauth_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "39e0a16cb9bad175487ff3cb1d0a64a3b72bfbef7137a5b1bcd1ec136df47551",
-        "before": "aa97f245d9442c66ce87aa90f120073219ca45e601e29051135bcc4b55a5f528",
+        "after": "aea14ff4aec9a2789a2741bf20756ec7ffb6fa623a93e979eb27d10ff3bfc6b9",
+        "before": "39e0a16cb9bad175487ff3cb1d0a64a3b72bfbef7137a5b1bcd1ec136df47551",
         "path": "internal/store/operations.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "423dfb4fcbaebc1a4522bdd333cdb74d68d2d5c8390edf29986a03265ae5a415",
-        "before": "0e0b1229676eb9d59080e32edd0e2212f8be77532b2840e165afc5c3eae20c0a",
+        "after": "ed546ea5adc0ae147eb88a541c3326c06db5915a0a9dad6a56fcad4a76f9706e",
+        "before": "423dfb4fcbaebc1a4522bdd333cdb74d68d2d5c8390edf29986a03265ae5a415",
         "path": "internal/store/store.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "d7be3e5ef3206960ee94fc6e56976f6a7b9407d176e07c526b8776e71aca64c6",
+        "after": "a9d1a8bc98e9d7871973c1f2ac7940c81a146c03017f0922adb7c81e06f1e3d7",
         "before": null,
-        "path": "internal/worker/binding_refresh_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/worker/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "cd0cee8eab455a78cba9078f6792e07cf67eecb5a43b5c18b7864b14737ef80c",
+        "after": "fdc212d893662000dc6395b6e8e2d5f57478101b4da7f28a83039b713a585037",
         "before": null,
-        "path": "internal/worker/preapply_failure_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/worker/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "65d32346e0fe34133f2961af253481314bdf967bd1fe95fb481693800f0e0309",
-        "before": null,
-        "path": "internal/worker/termination_grace_test.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "dc39f573e88ed908f32d153e13042b9f9d109aa3394f56e5686e9d4edf903e0c",
-        "before": "cbc722f72b4a2110a957da3f9760766568cc1edb8261cc63a4129148030bb3a1",
+        "after": "d64f44277096d39b72355a09e09ee3719d8d5401fd6c2d6802698c6654b8f348",
+        "before": "dc39f573e88ed908f32d153e13042b9f9d109aa3394f56e5686e9d4edf903e0c",
         "path": "internal/worker/worker.go",
-        "reason": "Reviewed control-plane change (Kubernetes client limits and health gate errors, binding refresh cadence, not-applied deploys, virtual network plans, termination grace budgets, log history order, Kubernetes patches behind an installation switch, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "219e8b71955b5e2fcb4933709fa6e88a10f353d1fa31191ca6e381c7d555da50",
-        "before": "d79cdc7d229c1d1759b87c0299ebcc542daa56a830b0a0d6c217d283f8e225e8",
+        "after": "52a43fea85f2a67ff4e7b2ea6e174f6f29e45276c4473100319d6468d2ee8851",
+        "before": "219e8b71955b5e2fcb4933709fa6e88a10f353d1fa31191ca6e381c7d555da50",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Opens the alpha.81 chained review on the published alpha.80 records; verifier constants only, no change to what is verified."
+        "reason": "Opens the alpha.82 chained review on the published alpha.81 records; verifier constants only, no change to what is verified."
       }
     ],
-    "current_sha256": "fde50ecd0ac4717b16a4abc62e6f457289790ed4dc689018c6090af3aed879e4"
+    "current_sha256": "47937e06bd5b408f23a089070d5aebe8678100976d3c7dbf38c18cab84de6b74"
   },
   "predecessor": {
-    "commit": "4d347265ad346fb7eb9c6aa8e5e797dfdcd22feb",
-    "review_sha256": "5af61e9eeb6fc0d95b513c3e630ccd2b65e09360f9fe1d5aa53470da47ea3047",
-    "tag": "v0.1.0-alpha.80"
+    "commit": "94e37145ddf337f3cc1f6ab2383f6331a1101403",
+    "review_sha256": "5f1d7aa3f6396d4d7d4666982f2a96ae71fd304a2636fb556d0a803898edd76a",
+    "tag": "v0.1.0-alpha.81"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -363,13 +285,13 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestDeployPreflightFailureIsNotApplied",
-      "TestWorkerActionsStopDoesNotExtendOtherChangesOrRecovery",
-      "TestWorkerOrdinaryDeploymentKeepsDeadline"
+      "TestOAuthAuthorizationCodeReachesMCP",
+      "TestOAuthCodeRequiresPKCEAndIsSingleUse",
+      "TestMCPResponseAcceptsGuardedWrites"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/42343489966"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42379692675"
   },
-  "reviewed_release": "v0.1.0-alpha.81",
+  "reviewed_release": "v0.1.0-alpha.82",
   "runtime": "oracle-free",
   "schema_version": 2
 }
