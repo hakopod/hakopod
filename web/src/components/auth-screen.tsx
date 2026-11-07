@@ -228,7 +228,8 @@ export function AuthScreen({
   }
   function rememberReturn() {
     const destination = new URL(window.location.href)
-    if (!['/login/invite', '/login/device'].includes(destination.pathname)) return
+    if (!['/login/invite', '/login/device', '/login/authorize'].includes(destination.pathname))
+      return
     if (destination.pathname === '/login/invite')
       destination.searchParams.set('workspace', workspace)
     try {
