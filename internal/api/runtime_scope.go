@@ -26,7 +26,7 @@ func scopedRuntimePrincipal(p store.Principal, scope RuntimeScope) (store.Princi
 		return store.Principal{}, store.ErrForbidden
 	}
 	permissions := []string{}
-	for _, value := range []string{"deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "pods:exec", "kubernetes:patch", "databases:query", "databases:write-query", "agent:credentials"} {
+	for _, value := range []string{"deployments:read", "deployments:write", "logs:read", "networks:write", "git:manage", "applications:manage", "pods:exec", "kubernetes:patch", "hostnames:manage", "databases:query", "databases:write-query", "agent:credentials"} {
 		// A scope cannot convert an administrator wildcard into an execution grant.
 		if (p.CredentialType == "machine" || p.CredentialType == "cli") && slices.Contains([]string{"pods:exec", "kubernetes:patch", "databases:query", "databases:write-query", "agent:credentials"}, value) && !slices.Contains(p.Permissions, value) {
 			continue

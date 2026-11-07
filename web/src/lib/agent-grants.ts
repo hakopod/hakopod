@@ -8,6 +8,7 @@ export const workloadGrants = [
   ['kubernetes:patch', 'Add or change raw Kubernetes patches'],
   ['databases:query', 'Run read-only SQL queries'],
   ['databases:write-query', 'Run SQL queries that change data'],
+  ['hostnames:manage', 'Attach and remove custom hostnames'],
   ['networks:write', 'Manage private networks'],
   ['git:manage', 'Manage Git sources and builds'],
   ['applications:manage', 'Delete applications'],
