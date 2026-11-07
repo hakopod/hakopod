@@ -142,7 +142,10 @@ broader policies that permit traffic outside these rules.
 
 ## Permissions and changes
 
-Project administrators manage network grants. Application-scoped deployment
+Project administrators manage network grants. Planning a network change only
+needs read access to the project and environment, so a CI key can review
+`network.toml` with `hakopod plan --dir`; applying it still requires an
+administrator. Application-scoped deployment
 keys can connect their application only to approved segments. Hakopod checks
 grants during planning, durable acceptance and cluster deployment. These checks
 also apply to configurations received through GitHub, GitLab or the REST API.
@@ -157,6 +160,18 @@ applied resources, so their references remain protected until a later successful
 release retires them. A subsequent failed release does not revive connections
 retired by an earlier successful detach. Rolling back to an old connection still
 requires its current grant.
+
+## From the CLI
+
+```sh
+hakopod virtual-networks                  # list networks in this project/environment
+hakopod virtual-networks commerce         # print its canonical TOML
+hakopod virtual-networks commerce --json  # include its current connections
+hakopod networks shop                     # the networks one application joins
+```
+
+The printed TOML is the form to keep as `network.toml`; see
+[deploying a folder of applications](cli-tree-deploy.md).
 
 ## API and limits
 

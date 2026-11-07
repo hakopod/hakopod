@@ -225,9 +225,11 @@ func parseVirtualNetworkInput(in virtualNetworkInput) (spec.VirtualNetwork, erro
 	return spec.ParseVirtualNetwork([]byte(in.TOML))
 }
 
+// Planning writes nothing, so read access is enough; applying stays with
+// project administrators.
 func (s *Server) planVirtualNetwork(w http.ResponseWriter, r *http.Request) {
 	var in virtualNetworkInput
-	if !decode(w, r, &in) || !networkScope(w, r, in.Project, in.Environment, true) {
+	if !decode(w, r, &in) || !networkScope(w, r, in.Project, in.Environment, false) {
 		return
 	}
 	if !validVirtualNetworkExpectation(in) {

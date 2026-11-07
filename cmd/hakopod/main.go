@@ -450,6 +450,8 @@ func run() error {
 			cfg.Environment = ""
 		}
 		return serveAgentAccess(ctx, c, cfg, agent.Options{HostOnly: *hostOnly, Installation: *installation, AllowAdmin: *allowAdmin, AllowCredentials: *allowCredentials, AllowDeploy: *allowDeploy, AllowWrite: *allowWrite, AllowExec: *allowExec, AllowTerminal: *allowTerminal, AllowHostTerminal: *allowHostTerminal, AllowSQL: *allowSQL, AllowSQLWrite: *allowSQLWrite}, os.Stdin, os.Stdout)
+	case "virtual-networks":
+		return virtualNetworksCommand(ctx, c, cfg, fs.Args(), *outputJSON, os.Stdout)
 	case "apps", "applications":
 		apps, err := listApplications(ctx, c, cfg)
 		if err != nil {
@@ -1056,6 +1058,7 @@ func help() {
   hakopod secret set shop STRIPE_KEY --from-file stripe.key   (or --stdin)
   hakopod secret delete shop STRIPE_KEY
   hakopod services|networks [APPLICATION]
+  hakopod virtual-networks [NAME] [--json]
   hakopod projects|nodes|keys|audit
   hakopod project-create --name demo --environment production
   hakopod key-create --name ci --project demo --environment production --ttl 24h
@@ -1127,8 +1130,10 @@ Common flags: --file, --project, --environment, --service, --json.
 Folder trees: --dir ROOT reads an optional ROOT/network.toml and one hakopod.toml per
 subfolder; --only a,b limits it to those folders or application names. The network is
 applied first, then applications deploy in folder order, stopping at the first failure.
-Managing virtual networks requires a project administrator; CI machine keys can pass
---no-network to validate network.toml locally and deploy only the applications.
+Planning network.toml needs read access; applying it requires a project administrator,
+so CI machine keys can pass --no-network to deploy only the applications.
+hakopod virtual-networks lists the environment's networks, and with NAME prints that
+network's canonical TOML; hakopod networks APP lists one application's networks.
 Exit codes: 0 success/accepted, 1 transport/server, 2 input, 3 forbidden,
 4 revision conflict, 5 failed/cancelled release. --wait exits only at terminal state.
 Logs are live and ephemeral; disconnecting does not cancel deployments.`)
