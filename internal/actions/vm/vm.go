@@ -15,6 +15,22 @@ const (
 	TagCapacity     = "hakopod-capacity"
 	TagPool         = "hakopod-pool"
 	TagSlot         = "hakopod-slot"
+	// TagPoolState marks warm pool instances: standby while stopped and
+	// waiting for a job, claimed once a slot took one, builder for an
+	// instance that becomes a hakopod-minimal image. Slot instances have none.
+	TagPoolState = "hakopod-pool-state"
+	// TagImage records the image a standby was prepared from.
+	TagImage = "hakopod-image"
+)
+
+// Capacity image settings besides an AMI ID or resolve:ssm: parameter.
+const (
+	// ImageRunsOnFull is RunsOn's public build of GitHub's Ubuntu 24.04
+	// runner image, with Docker and the runner preinstalled.
+	ImageRunsOnFull = "runs-on-full"
+	// ImageHakopodMinimal is an image Hakopod builds in the customer's
+	// account: stock Ubuntu with Docker, the pinned runner and a boot unit.
+	ImageHakopodMinimal = "hakopod-minimal"
 )
 
 // Instance states use EC2's names: pending, running, shutting-down,
@@ -45,6 +61,20 @@ type LaunchInput struct {
 	InstanceTypes []string
 	Spot          bool
 	UserData      string
+	Image         string // resolved by Provider.Image; empty is stock Ubuntu 24.04
+	// StopOnShutdown keeps the instance when it powers off, for standbys and
+	// image builders. Runners terminate on shutdown.
+	StopOnShutdown bool
+	DiskGiB        int64 // zero uses the capacity's
+}
+
+// Image is a machine image Hakopod created; State is pending, available or
+// failed.
+type Image struct {
+	ID        string
+	State     string
+	CreatedAt time.Time
+	Tags      map[string]string
 }
 
 var ErrNotFound = errors.New("the cloud has no record of this instance")
@@ -65,4 +95,20 @@ type Provider interface {
 	// Check proves the credentials and network settings without launching.
 	// It returns warnings worth showing an administrator.
 	Check(context.Context) ([]string, error)
+
+	// Image resolves a capacity's image setting to what Launch takes.
+	Image(ctx context.Context, setting string) (string, error)
+	// Claim readies a stopped standby for one job and starts it: the tags
+	// and user data are replaced, and the instance terminates on shutdown.
+	Claim(ctx context.Context, id, userData string, tags map[string]string) error
+	// ConsoleOutput returns the instance's recent serial console output.
+	ConsoleOutput(ctx context.Context, id string) (string, error)
+	// CreateImage images a stopped instance; the image and its snapshots
+	// carry the tags and this installation's.
+	CreateImage(ctx context.Context, instance, name string, tags map[string]string) (string, error)
+	// Images lists images carrying every given tag and this installation's.
+	Images(ctx context.Context, tags map[string]string) ([]Image, error)
+	// DeleteImage deregisters an image of this installation and deletes its
+	// snapshots.
+	DeleteImage(ctx context.Context, id string) error
 }

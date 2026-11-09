@@ -84,7 +84,17 @@ func (f *fakeEC2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body += `<item><reservationId>r-1</reservationId><ownerId>123456789012</ownerId><groupSet/><instancesSet>` + item + `</instancesSet></item>`
 		}
 		w.Write([]byte(body + `</reservationSet></DescribeInstancesResponse>`))
-	case "TerminateInstances", "DeleteLaunchTemplate", "DescribeSubnets":
+	case "DescribeImages":
+		body := `<DescribeImagesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><requestId>1</requestId><imagesSet>`
+		if r.Form.Get("ImageId.1") != "ami-other" {
+			body += image("ami-old", "2026-10-01T00:00:00.000Z", "inst") + image("ami-new", "2026-11-01T00:00:00.000Z", "inst")
+		} else {
+			body += image("ami-other", "2026-11-01T00:00:00.000Z", "someone-else")
+		}
+		w.Write([]byte(body + `</imagesSet></DescribeImagesResponse>`))
+	case "CreateImage":
+		w.Write([]byte(`<CreateImageResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><requestId>1</requestId><imageId>ami-built</imageId></CreateImageResponse>`))
+	case "TerminateInstances", "DeleteLaunchTemplate", "DescribeSubnets", "CreateTags", "ModifyInstanceAttribute", "StartInstances", "DeregisterImage", "DeleteSnapshot":
 		w.Write([]byte(`<` + action + `Response><requestId>1</requestId></` + action + `Response>`))
 	case "DescribeSecurityGroups":
 		w.Write([]byte(`<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
@@ -117,6 +127,12 @@ func tagged(id, installation, state, reason string) string {
 <blockDeviceMapping><item><deviceName>/dev/sda1</deviceName><ebs><volumeId>vol-1</volumeId></ebs></item></blockDeviceMapping>` + lifecycle + `
 <tagSet><item><key>` + vm.TagInstallation + `</key><value>` + installation + `</value></item><item><key>Name</key><value>runner</value></item></tagSet>
 </item>`
+}
+
+func image(id, created, installation string) string {
+	return `<item><imageId>` + id + `</imageId><imageState>available</imageState><creationDate>` + created + `</creationDate>
+<blockDeviceMapping><item><deviceName>/dev/sda1</deviceName><ebs><snapshotId>snap-` + id + `</snapshotId></ebs></item></blockDeviceMapping>
+<tagSet><item><key>` + vm.TagInstallation + `</key><value>` + installation + `</value></item></tagSet></item>`
 }
 
 func testClient(t *testing.T, f *fakeEC2) *Client {
@@ -274,5 +290,66 @@ func TestAWSErrorKeepsTheCode(t *testing.T) {
 	}
 	if err := awsError("read the subnets", errors.New("dial tcp: no route")); !strings.Contains(err.Error(), "assume the capacity's role") {
 		t.Fatal(err)
+	}
+}
+
+func TestImagesAndClaim(t *testing.T) {
+	f := &fakeEC2{fleet: fleetLaunched, instances: map[string]string{
+		"i-standby": tagged("i-standby", "inst", "stopped", ""),
+		"i-running": tagged("i-running", "inst", "running", ""),
+		"i-other":   tagged("i-other", "someone-else", "stopped", ""),
+	}}
+	c := testClient(t, f)
+	ctx := context.Background()
+	got, err := c.Image(ctx, vm.ImageRunsOnFull)
+	form := f.form("DescribeImages")
+	if err != nil || got != "ami-new" || form.Get("Owner.1") != "135269210855" || form.Get("Filter.1.Value.1") != "runs-on-v2.2-ubuntu24-full-arm64-*" {
+		t.Fatal(got, err, form)
+	}
+	if again, _ := c.Image(ctx, vm.ImageRunsOnFull); again != "ami-new" || len(f.calls["DescribeImages"]) != 1 {
+		t.Fatal("RunsOn's image was not cached")
+	}
+	if got, _ := c.Image(ctx, "resolve:ssm:/team/runner-ami"); got != "resolve:ssm:/team/runner-ami" {
+		t.Fatal(got)
+	}
+
+	if _, err = c.Launch(ctx, vm.LaunchInput{Name: "standby", InstanceTypes: []string{"t4g.small"}, Image: "ami-new", StopOnShutdown: true, DiskGiB: 8}); err != nil {
+		t.Fatal(err)
+	}
+	lt := f.form("CreateLaunchTemplate")
+	if lt.Get("LaunchTemplateData.ImageId") != "ami-new" || lt.Get("LaunchTemplateData.InstanceInitiatedShutdownBehavior") != "stop" || lt.Get("LaunchTemplateData.BlockDeviceMapping.1.Ebs.VolumeSize") != "8" {
+		t.Fatal("standby launch", lt)
+	}
+
+	if err = c.Claim(ctx, "i-other", "#!/bin/bash\n", nil); err == nil {
+		t.Fatal("claimed another installation's instance")
+	}
+	if err = c.Claim(ctx, "i-running", "#!/bin/bash\n", nil); err == nil {
+		t.Fatal("claimed a standby that is not stopped")
+	}
+	if err = c.Claim(ctx, "i-standby", "#!/bin/bash\n", map[string]string{vm.TagSlot: "slot1", vm.TagPoolState: "claimed"}); err != nil {
+		t.Fatal(err)
+	}
+	tags, modify := f.form("CreateTags"), f.calls["ModifyInstanceAttribute"]
+	if tags.Get("ResourceId.1") != "i-standby" || tags.Get("Tag.1.Key") != vm.TagPoolState || tags.Get("Tag.2.Value") != "slot1" || len(modify) != 2 ||
+		modify[0].Get("InstanceInitiatedShutdownBehavior.Value") != "terminate" || modify[1].Get("UserData.Value") != base64.StdEncoding.EncodeToString([]byte("#!/bin/bash\n")) ||
+		f.form("StartInstances").Get("InstanceId.1") != "i-standby" {
+		t.Fatal("claim requests", tags, modify)
+	}
+
+	id, err := c.CreateImage(ctx, "i-standby", "hakopod-minimal-ci", map[string]string{vm.TagCapacity: "ci"})
+	create := f.form("CreateImage")
+	if err != nil || id != "ami-built" || create.Get("TagSpecification.1.ResourceType") != "image" || create.Get("TagSpecification.2.ResourceType") != "snapshot" ||
+		create.Get("TagSpecification.2.Tag.2.Key") != vm.TagInstallation || create.Get("TagSpecification.2.Tag.2.Value") != "inst" {
+		t.Fatal(id, err, create)
+	}
+	if _, err = c.CreateImage(ctx, "i-other", "x", nil); err == nil {
+		t.Fatal("imaged another installation's instance")
+	}
+	if err = c.DeleteImage(ctx, "ami-other"); err == nil || f.calls["DeregisterImage"] != nil {
+		t.Fatal("deleted another installation's image")
+	}
+	if err = c.DeleteImage(ctx, "ami-old"); err != nil || f.form("DeregisterImage").Get("ImageId") != "ami-old" || f.form("DeleteSnapshot").Get("SnapshotId") != "snap-ami-old" {
+		t.Fatal("image not deleted with its snapshot", err)
 	}
 }
