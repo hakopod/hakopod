@@ -1,0 +1,62 @@
+name: Actions VM acceptance
+# Launches one t4g.nano spot instance in the acceptance account, which powers
+# itself off at boot, and terminates it. Manual only: it spends real money,
+# a fraction of a cent per run. Setup: docs/managed-actions.md, "Acceptance
+# in a real account".
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: AWS region
+        required: true
+        default: eu-central-1
+      subnet:
+        description: Subnet ID with outbound internet access
+        required: true
+      security_group:
+        description: Egress-only security group ID in the subnet's VPC
+        required: true
+      external_id:
+        description: External ID the role's trust policy requires
+        required: true
+        default: hakopod-acceptance
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: actions-vm-acceptance
+  cancel-in-progress: false
+jobs:
+  spot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      AWS_REGION: ${{ inputs.region }}
+      AWS_ROLE_ARN: ${{ secrets.HAKOPOD_ACTIONS_VM_ROLE_ARN }}
+      AWS_EC2_METADATA_DISABLED: 'true'
+      HAKOPOD_AWS_ACCEPTANCE: '1'
+      HAKOPOD_ACTIONS_VM_ROLE_ARN: ${{ secrets.HAKOPOD_ACTIONS_VM_ROLE_ARN }}
+      HAKOPOD_ACTIONS_VM_EXTERNAL_ID: ${{ inputs.external_id }}
+      HAKOPOD_ACTIONS_VM_SUBNET: ${{ inputs.subnet }}
+      HAKOPOD_ACTIONS_VM_SECURITY_GROUP: ${{ inputs.security_group }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build the test
+        run: go test -c -o "$RUNNER_TEMP/aws.test" ./internal/actions/vm/aws
+      # Hakopod's own web identity code exchanges the GitHub OIDC token, the
+      # same path an EKS or projected service account token takes. Fetch it
+      # last: it is short-lived.
+      - name: Fetch the GitHub OIDC token
+        run: |
+          echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/aws-web-identity" >> "$GITHUB_ENV"
+          curl --fail --silent --show-error --max-time 30 \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value > "$RUNNER_TEMP/aws-web-identity"
+          test -s "$RUNNER_TEMP/aws-web-identity"
+      - name: Launch, observe and terminate one spot instance
+        run: |
+          cd internal/actions/vm/aws
+          "$RUNNER_TEMP/aws.test" -test.run '^TestAcceptanceSpotInstance$' -test.count=1 -test.v -test.timeout 7m
