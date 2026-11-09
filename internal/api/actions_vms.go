@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/actions/vm"
 	vmaws "github.com/hakopod/hakopod/internal/actions/vm/aws"
 	"github.com/hakopod/hakopod/internal/cluster"
@@ -348,6 +349,62 @@ func (s *Server) reapActionsVMs(ctx context.Context) {
 			slog.Warn("Actions VM reaper could not sweep a capacity", "capacity", c.Name, "error", err.Error())
 		}
 	}
+	if err := s.rerunEvictedJobs(ctx); err != nil {
+		slog.Warn("Actions spot reruns could not be checked", "error", err.Error())
+	}
+}
+
+// rerunEvictedJobs asks GitHub to rerun the failed jobs of runs that lost a
+// runner to a spot interruption, at most spot_retries attempts per run. Each
+// rerun grants the pool on-demand launches for the jobs it lost. Outcomes,
+// including a refusal, are kept on the eviction and shown in pool status.
+func (s *Server) rerunEvictedJobs(ctx context.Context) error {
+	pending, err := s.Store.PendingActionsReruns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, e := range pending {
+		p, err := s.Store.ActionsPool(ctx, e.ApplicationID, e.Service)
+		if err != nil {
+			return err
+		}
+		if p == nil || p.Config.Actions == nil {
+			continue
+		}
+		jobs, err := s.Store.ClaimActionsRerun(ctx, e, p.Config.Actions.EffectiveSpotRetries())
+		if err != nil || jobs == 0 {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		failure := ""
+		config := p.Config
+		jobsAccess := *config.Actions
+		jobsAccess.Credential = jobsAccess.EffectiveJobsCredential()
+		config.Actions = &jobsAccess
+		client, err := s.runnerClient(ctx, actionsTarget(*p), config)
+		if err == nil {
+			rerun, ok := client.(interface {
+				RerunFailedJobs(context.Context, string, int64) error
+			})
+			if !ok {
+				return errors.New("the runner provider cannot rerun jobs")
+			}
+			err = rerun.RerunFailedJobs(ctx, e.Repository, e.RunID)
+		}
+		var status *actions.StatusError
+		switch {
+		case errors.As(err, &status) && (status.Status == 403 || status.Status == 404):
+			failure = fmt.Sprintf("GitHub refused the rerun (HTTP %d). Give the pool's jobs credential Actions write permission on %s.", status.Status, e.Repository)
+		case err != nil:
+			failure = "The rerun could not be requested: " + safeActionsError(err)
+		}
+		if err = s.Store.FinishActionsRerun(ctx, e, jobs, failure); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Server) reapActionsCapacity(ctx context.Context, c store.ActionsCapacity, now time.Time) error {
