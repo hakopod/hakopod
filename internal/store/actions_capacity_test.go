@@ -28,6 +28,9 @@ func TestActionsCapacityValidation(t *testing.T) {
 		"max":      func(c *ActionsCapacity) { c.MaxInstances = 0 },
 		"scope":    func(c *ActionsCapacity) { c.Environments = []string{"demo"} },
 		"external": func(c *ActionsCapacity) { c.ExternalID = "a b" },
+		"image":    func(c *ActionsCapacity) { c.Image = "ubuntu" },
+		"runs-on":  func(c *ActionsCapacity) { c.DiskGiB = 20 },
+		"warm":     func(c *ActionsCapacity) { c.WarmPool = 3 },
 	} {
 		c := testCapacity("aws-spot")
 		mutate(&c)
@@ -36,8 +39,15 @@ func TestActionsCapacityValidation(t *testing.T) {
 		}
 	}
 	c := testCapacity("aws-spot")
-	if err := c.normalize(); err != nil || c.DiskGiB != 100 {
+	if err := c.normalize(); err != nil || c.DiskGiB != 100 || c.Image != "runs-on-full" {
 		t.Fatal(c, err)
+	}
+	for _, image := range []string{"hakopod-minimal", "ami-0123456789abcdef0", "resolve:ssm:/team/runner-ami"} {
+		c := testCapacity("aws-spot")
+		c.Image, c.DiskGiB, c.WarmPool = image, 20, 2
+		if err := c.normalize(); err != nil {
+			t.Fatal(image, err)
+		}
 	}
 	if !c.Allows("demo", "development") || c.Allows("demo", "production") {
 		t.Fatal("environment scope")
@@ -132,12 +142,22 @@ func TestActionsCapacitySettingsAndVMSlots(t *testing.T) {
 	if err = db.SaveActionsVMConfig(ctx, slots[0].ID, make([]byte, 40)); err != nil {
 		t.Fatal(err)
 	}
-	if err = db.RecordActionsInstance(ctx, slots[0].ID, "i-0abc", "c7i.xlarge", "spot"); err != nil {
+	if err = db.RecordActionsInstance(ctx, slots[0].ID, "i-0abc", "c7i.xlarge", "spot", "cold"); err != nil {
 		t.Fatal(err)
 	}
 	v, err := db.ActionsSlot(ctx, slots[0].ID)
-	if err != nil || v == nil || v.InstanceID != "i-0abc" || v.EncryptedRegistration != nil || v.InstanceLifecycle != "spot" {
+	if err != nil || v == nil || v.InstanceID != "i-0abc" || v.EncryptedRegistration != nil || v.InstanceLifecycle != "spot" || v.InstanceSource != "cold" {
 		t.Fatal("instance not recorded or configuration kept", v, err)
+	}
+	// A standby goes to one slot only.
+	if ok, err := db.ClaimActionsStandby(ctx, slots[1].ID, "i-0abc", "t4g.small"); err != nil || ok {
+		t.Fatal("an instance was claimed by a second slot", ok, err)
+	}
+	if ok, err := db.ClaimActionsStandby(ctx, slots[1].ID, "i-0def", "t4g.small"); err != nil || !ok {
+		t.Fatal("standby not claimed", ok, err)
+	}
+	if v, _ := db.ActionsSlot(ctx, slots[1].ID); v.InstanceSource != "standby" || v.InstanceLifecycle != "on-demand" {
+		t.Fatal("standby claim not recorded", v)
 	}
 	found, err := db.ActionsVMSlots(ctx, []string{slots[0].ID, NewID()})
 	if err != nil || len(found) != 1 || found[slots[0].ID].PoolRemoved {

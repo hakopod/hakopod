@@ -2059,6 +2059,57 @@
         }
       }
     },
+    "/settings/actions-capacity/{name}/build-image": {
+      "post": {
+        "operationId": "buildActionsCapacityImage",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionsCapacityImage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Build a hakopod-minimal image",
+        "description": "Installation administrators only. The capacity's image must be hakopod-minimal. The Actions worker launches a stock Ubuntu builder in the capacity's account, installs Docker and the pinned runner, images it and removes older images; launches use the previous image until the new one is available. Audited.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/agent-policies": {
       "get": {
         "operationId": "listAgentPolicies",
@@ -29022,6 +29073,14 @@
               "spot",
               "on-demand"
             ]
+          },
+          "instance_source": {
+            "type": "string",
+            "enum": [
+              "cold",
+              "standby"
+            ],
+            "description": "VM slots: launched for this job, or a stopped standby of the capacity's warm pool started for it."
           }
         },
         "required": [
@@ -29724,6 +29783,17 @@
             "minItems": 1,
             "maxItems": 100,
             "description": "project/environment pairs allowed to use this capacity, or \"*\" for every environment."
+          },
+          "image": {
+            "type": "string",
+            "pattern": "^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200})$",
+            "description": "runs-on-full (default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal: an image Hakopod builds in this account with build-image. Or an AMI ID or resolve:ssm: parameter of your own Ubuntu image."
+          },
+          "warm_pool": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50,
+            "description": "Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0."
           }
         },
         "required": [
@@ -29740,6 +29810,53 @@
           "environments"
         ],
         "additionalProperties": false
+      },
+      "ActionsCapacityImage": {
+        "type": "object",
+        "properties": {
+          "capacity": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "building",
+              "available",
+              "failed"
+            ]
+          },
+          "builder_id": {
+            "type": "string",
+            "description": "The instance installing the image while it builds."
+          },
+          "building_image_id": {
+            "type": "string",
+            "description": "The image being created; launches keep image_id until it is available."
+          },
+          "image_id": {
+            "type": "string",
+            "description": "The image launches use."
+          },
+          "message": {
+            "type": "string"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "capacity",
+          "state",
+          "requested_at",
+          "updated_at"
+        ],
+        "additionalProperties": false,
+        "description": "A capacity's hakopod-minimal image build."
       },
       "ActionsCapacitySettings": {
         "type": "object",
@@ -29760,13 +29877,21 @@
           },
           "revision": {
             "type": "integer"
+          },
+          "images": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ActionsCapacityImage"
+            },
+            "description": "hakopod-minimal image builds, keyed by capacity."
           }
         },
         "required": [
           "external_id",
           "installation_id",
           "capacities",
-          "revision"
+          "revision",
+          "images"
         ],
         "additionalProperties": false
       },

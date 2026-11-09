@@ -329,7 +329,7 @@ func hostnamesCommand(ctx context.Context, c *client, cfg config, args []string,
 // actionsCapacityCommand manages the installation's Actions capacity. set
 // replaces the whole list from a TOML file of [[capacity]] tables.
 func actionsCapacityCommand(ctx context.Context, c *client, args []string, launch, jsonOut bool, out io.Writer) error {
-	usage := &exitError{2, "usage: hakopod actions capacity list | set FILE | test NAME [--launch]"}
+	usage := &exitError{2, "usage: hakopod actions capacity list | set FILE | test NAME [--launch] | build-image NAME"}
 	if len(args) < 2 || args[0] != "capacity" {
 		return usage
 	}
@@ -338,6 +338,11 @@ func actionsCapacityCommand(ctx context.Context, c *client, args []string, launc
 		InstallationID string                  `json:"installation_id"`
 		Capacities     []store.ActionsCapacity `json:"capacities"`
 		Revision       int64                   `json:"revision"`
+		Images         map[string]struct {
+			State   string `json:"state"`
+			ImageID string `json:"image_id"`
+			Message string `json:"message"`
+		} `json:"images"`
 	}
 	switch {
 	case args[1] == "list" && len(args) == 2:
@@ -353,7 +358,11 @@ func actionsCapacityCommand(ctx context.Context, c *client, args []string, launc
 			if v.Spot {
 				lifecycle = "spot"
 			}
-			fmt.Fprintf(out, "%s\t%s %s\t%s %s\tmax %d\t%s\n", v.Name, v.Cloud, v.Region, v.Architecture, lifecycle, v.MaxInstances, strings.Join(v.InstanceTypes, ","))
+			image := v.Image
+			if b, ok := current.Images[v.Name]; ok {
+				image += fmt.Sprintf(" (%s %s)", b.State, b.ImageID)
+			}
+			fmt.Fprintf(out, "%s\t%s %s\t%s %s\tmax %d, warm %d\t%s\t%s\n", v.Name, v.Cloud, v.Region, v.Architecture, lifecycle, v.MaxInstances, v.WarmPool, strings.Join(v.InstanceTypes, ","), image)
 		}
 		return nil
 	case args[1] == "set" && len(args) == 3:
@@ -384,6 +393,16 @@ func actionsCapacityCommand(ctx context.Context, c *client, args []string, launc
 			return err
 		}
 		return printJSON(result)
+	case args[1] == "build-image" && len(args) == 3:
+		var result map[string]any
+		if err := c.request(ctx, "POST", "/settings/actions-capacity/"+url.PathEscape(args[2])+"/build-image", map[string]any{}, "", &result); err != nil {
+			return err
+		}
+		if jsonOut {
+			return printJSON(result)
+		}
+		fmt.Fprintf(out, "building a hakopod-minimal image for %s; hakopod actions capacity list shows its progress\n", args[2])
+		return nil
 	}
 	return usage
 }

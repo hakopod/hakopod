@@ -155,6 +155,13 @@ export const agentRoutes = [
     "boundary": "installation"
   },
   {
+    "id": "buildActionsCapacityImage",
+    "method": "POST",
+    "path": "/settings/actions-capacity/{name}/build-image",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "getDatabaseQueryCapabilities",
     "method": "GET",
     "path": "/databases/{id}/query-capabilities",

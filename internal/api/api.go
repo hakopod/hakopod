@@ -228,6 +228,7 @@ func (s *Server) Handler() http.Handler {
 	routes.HandleFunc("GET /api/v1/settings/actions-capacity", s.getActionsCapacity)
 	routes.HandleFunc("PUT /api/v1/settings/actions-capacity", s.putActionsCapacity)
 	routes.HandleFunc("POST /api/v1/settings/actions-capacity/{name}/test", s.testActionsCapacity)
+	routes.HandleFunc("POST /api/v1/settings/actions-capacity/{name}/build-image", s.buildActionsCapacityImage)
 	routes.HandleFunc("GET /api/v1/applications/{id}/manifests", s.applicationManifests)
 	routes.HandleFunc("GET /api/v1/nodes", s.nodes)
 	routes.HandleFunc("GET /api/v1/placement/nodes", s.placementNodes)

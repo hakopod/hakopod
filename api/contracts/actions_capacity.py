@@ -5,6 +5,7 @@ schemas["ActionsSlot"]["properties"].update({
     "instance_id": {**S, "description": "VM slots: the cloud instance running this slot's job."},
     "instance_type": S,
     "instance_lifecycle": {"type": "string", "enum": ["spot", "on-demand"]},
+    "instance_source": {"type": "string", "enum": ["cold", "standby"], "description": "VM slots: launched for this job, or a stopped standby of the capacity's warm pool started for it."},
 })
 schemas["ActionsEviction"] = obj({
     "slot_id": S, "capacity": S, "instance_id": S, "instance_type": S, "evicted_at": T,
@@ -32,17 +33,29 @@ schemas["ActionsCapacity"] = obj({
     "disk_gib": {"type": "integer", "minimum": 20, "maximum": 2000, "description": "Encrypted root volume size. Defaults to 100."},
     "max_instances": {"type": "integer", "minimum": 1, "maximum": 1000, "description": "Hard ceiling on instances across every pool using this capacity."},
     "environments": {"type": "array", "items": S, "minItems": 1, "maxItems": 100, "description": "project/environment pairs allowed to use this capacity, or \"*\" for every environment."},
+    "image": {"type": "string", "pattern": "^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200})$", "description": "runs-on-full (default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal: an image Hakopod builds in this account with build-image. Or an AMI ID or resolve:ssm: parameter of your own Ubuntu image."},
+    "warm_pool": {"type": "integer", "minimum": 0, "maximum": 50, "description": "Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0."},
 }, ["name", "cloud", "region", "role_arn", "subnet_ids", "security_group_ids", "instance_types", "architecture", "spot", "max_instances", "environments"])
-schemas["ActionsCapacitySettings"] = obj({"external_id": {**S, "description": "Generated once per installation. Put it in each role's trust policy as sts:ExternalId."}, "installation_id": {**S, "description": "Value of the hakopod-installation tag on every instance; condition the role's TerminateInstances on it."}, "capacities": array(ref("ActionsCapacity")), "revision": I}, ["external_id", "installation_id", "capacities", "revision"])
+schemas["ActionsCapacityImage"] = obj({
+    "capacity": S, "state": {"type": "string", "enum": ["building", "available", "failed"]},
+    "builder_id": {**S, "description": "The instance installing the image while it builds."},
+    "building_image_id": {**S, "description": "The image being created; launches keep image_id until it is available."},
+    "image_id": {**S, "description": "The image launches use."},
+    "message": S, "requested_at": T, "updated_at": T,
+}, ["capacity", "state", "requested_at", "updated_at"])
+schemas["ActionsCapacityImage"]["description"] = "A capacity's hakopod-minimal image build."
+schemas["ActionsCapacitySettings"] = obj({"external_id": {**S, "description": "Generated once per installation. Put it in each role's trust policy as sts:ExternalId."}, "installation_id": {**S, "description": "Value of the hakopod-installation tag on every instance; condition the role's TerminateInstances on it."}, "capacities": array(ref("ActionsCapacity")), "revision": I, "images": {**mapping(ref("ActionsCapacityImage")), "description": "hakopod-minimal image builds, keyed by capacity."}}, ["external_id", "installation_id", "capacities", "revision", "images"])
 schemas["ActionsCapacityInput"] = obj({"capacities": {"type": "array", "items": ref("ActionsCapacity"), "maxItems": 20}, "expected_revision": I}, ["capacities", "expected_revision"])
 schemas["ActionsCapacityTestInput"] = obj({"launch": {**B, "description": "Also launch the smallest on-demand instance of the capacity's architecture and terminate it."}})
 schemas["ActionsCapacityTest"] = obj({"capacity": S, "external_id": S, "warnings": array(S), "instance_id": S, "instance_type": S}, ["capacity", "external_id", "warnings"])
 route("/settings/actions-capacity", "get", "getActionsCapacity", ref("ActionsCapacitySettings"))
 route("/settings/actions-capacity", "put", "putActionsCapacity", ref("ActionsCapacitySettings"), ref("ActionsCapacityInput"))
 route("/settings/actions-capacity/{name}/test", "post", "testActionsCapacity", ref("ActionsCapacityTest"), ref("ActionsCapacityTestInput"))
+route("/settings/actions-capacity/{name}/build-image", "post", "buildActionsCapacityImage", ref("ActionsCapacityImage"), status="202")
 for path, method, text, description in [
     ("/settings/actions-capacity", "get", "Get the Actions capacity", "Installation administrators only. The first read generates the installation's external ID."),
     ("/settings/actions-capacity", "put", "Replace the Actions capacity", "Installation administrators only. Optimistic revision; a capacity still used by a pool cannot be removed. Every change is audited."),
+    ("/settings/actions-capacity/{name}/build-image", "post", "Build a hakopod-minimal image", "Installation administrators only. The capacity's image must be hakopod-minimal. The Actions worker launches a stock Ubuntu builder in the capacity's account, installs Docker and the pinned runner, images it and removes older images; launches use the previous image until the new one is available. Audited."),
     ("/settings/actions-capacity/{name}/test", "post", "Test an Actions capacity", "Installation administrators only. Assumes the role and reads the subnets and security groups. With launch, starts and terminates one small on-demand instance."),
 ]:
     paths[path][method]["summary"] = text

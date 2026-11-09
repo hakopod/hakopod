@@ -71,6 +71,13 @@ export const policyOperations = [
     "summary": "Start verification of an application domain."
   },
   {
+    "id": "buildActionsCapacityImage",
+    "method": "POST",
+    "path": "/settings/actions-capacity/{name}/build-image",
+    "category": "admin",
+    "summary": "Build a hakopod-minimal image"
+  },
+  {
     "id": "callSandboxSession",
     "method": "POST",
     "path": "/applications/{id}/services/{service}/sessions/{session}/call",

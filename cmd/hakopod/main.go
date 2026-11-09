@@ -1078,6 +1078,7 @@ func help() {
   hakopod actions capacity list [--json]               installation Actions capacity (administrators)
   hakopod actions capacity set capacity.toml           replace it from [[capacity]] tables
   hakopod actions capacity test aws-spot [--launch]    assume the role; --launch also starts and terminates one instance
+  hakopod actions capacity build-image aws-spot        build the capacity's hakopod-minimal image in its account
   hakopod services|networks [APPLICATION]
   hakopod virtual-networks [NAME] [--json]
   hakopod projects|nodes|keys|audit
