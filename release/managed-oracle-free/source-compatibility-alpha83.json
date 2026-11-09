@@ -1,0 +1,104 @@
+{
+  "bootstrap": {
+    "commit": "8cb3f579a6a19a3540c0bb06e9bd59fe66ccc99d",
+    "reviewed_release": "v0.1.0-alpha.83",
+    "tag": "v0.1.0-alpha.82",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "8cb3f579a6a19a3540c0bb06e9bd59fe66ccc99d",
+  "delta": {
+    "baseline_sha256": "47937e06bd5b408f23a089070d5aebe8678100976d3c7dbf38c18cab84de6b74",
+    "changes": [
+      {
+        "after": "d845053978a0e219e1ec1a720a8d3b2ffe8a84adf30eefdb84b0375bb519c504",
+        "before": "f57282cda17b2b098cb79a4b5340a2c0657f4de5632d1649d235136f66672e8a",
+        "path": "api/contracts/workloads.py",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "2ff93487d7b18eb8b17fdf64450f87af517cc0b65a6d64143665c343bac8d177",
+        "before": "4ab6e2a277cbf76d931bb228de6cd1ab8a0ec4e29694c33c3ebaaf4ebc6051bf",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "1abd95e4ea8ffdc7b8724a05ccda61a571d096c0287601266edd9cfd889d58dc",
+        "before": "4426920580d7c74c90566e070d8b8a6fe79a25c03beae7769ab46d5c1b272045",
+        "path": "internal/cluster/cloud_policy.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "b93ee5fa7caa31fef77ed4225d3aa489a04362b41c2e57ffca40cf1016dc4e50",
+        "before": "a2cab3429374ccadde9cc24333f2e7a41d30ad7520438797b4977b00de228db9",
+        "path": "internal/cluster/cloud_policy_test.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "6abba5de8ef318d4dd83cb8d31d06808a24f8cf9bba43a3c63fcd647768aa9c2",
+        "before": "b6d99ebb68fdd4aea7f1fcf30f6a088fb5c49ed436641356653f8952cb9f2eca",
+        "path": "internal/cluster/deploy.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "9f22343b501ca9dc92d16b25308e8408debdf628700cb0ab79f9fdd87f5f9725",
+        "before": "e1ed316a88bc32bf364e251a9ee5637b32decbab90b613028ca0da8b76c4b518",
+        "path": "internal/cluster/resource_quota.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "b30a7f32b90c706bac268873a3b1b268e67a485863aa81648a1a7a1288b23e5b",
+        "before": null,
+        "path": "internal/cluster/temporary_mounts_test.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "6c57df1d767a44c71a8e9b166e9813c0b08939fc5979df54e63625c9f374ef89",
+        "before": "e8e8f10504bf73f8a412995e4c743c4d0c2c5af0dea7c49b6a1fc6b2e2fc6584",
+        "path": "internal/spec/mounts.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d483760c40c33dffa8b4571ac2dc39ddda64b62c048c29e1e66835991d54798f",
+        "before": "94198e5807e00dd33925de6e8cf659bf51dab85521c9c2dd64045240751b59f3",
+        "path": "internal/spec/runtime_controls_test.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "2210fc1ec3407eaeb58ba1c56dcaf55c485a535e596ef2a0bff3602b031b8af3",
+        "before": null,
+        "path": "internal/spec/temporary_mounts_test.go",
+        "reason": "Reviewed control-plane change (temporary mounts sized beyond 128 MiB with matching ephemeral-storage requests, limits and quota, a Cloud cap, and a longer download retry in a development script, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "92a841ac518b08641103eabd950bf43e792c3ecb7126dcdb747f72e274dc80ac",
+        "before": "52a43fea85f2a67ff4e7b2ea6e174f6f29e45276c4473100319d6468d2ee8851",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Opens the alpha.83 chained review on the published alpha.82 records; verifier constants only, no change to what is verified."
+      }
+    ],
+    "current_sha256": "0b36fcc3382d092d1d36a3bb30fcbd4461589f56a798077ad0302b42c11cf7bb"
+  },
+  "predecessor": {
+    "commit": "8cb3f579a6a19a3540c0bb06e9bd59fe66ccc99d",
+    "review_sha256": "32fa98989e44656ed15ad49be7633b1cc3a6cc9ff87cedc269912143d8319746",
+    "tag": "v0.1.0-alpha.82"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "409e415aa330e455066980e3ed4761ed2791d05cfa84b737684372046e4f63c9",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestTemporaryMountSizes",
+      "TestLargeScratchRaisesEphemeralStorage"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42584961508"
+  },
+  "reviewed_release": "v0.1.0-alpha.83",
+  "runtime": "oracle-free",
+  "schema_version": 2
+}
