@@ -95,7 +95,7 @@ func TestRuntimeControlsRejectUnsafeOrUnboundedValues(t *testing.T) {
 		},
 		"unbounded-temporary-memory": func(a *Application) {
 			s := a.Services["api"]
-			s.TemporaryMounts[0].SizeMiB = 129
+			s.TemporaryMounts[0].SizeMiB = 1 << 20
 			a.Services["api"] = s
 		},
 		"invalid-group":   func(a *Application) { s := a.Services["api"]; s.RunAsGroup = -1; a.Services["api"] = s },

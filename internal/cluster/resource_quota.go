@@ -32,6 +32,10 @@ func serviceResourceQuota(q *corev1.ResourceQuota, t Target) {
 				corev1.ResourceRequestsCPU: p.CPURequest, corev1.ResourceLimitsCPU: p.CPULimit,
 				corev1.ResourceRequestsMemory: p.MemoryRequest, corev1.ResourceLimitsMemory: p.MemoryLimit,
 			}
+			if scratch := spec.TemporaryDiskMiB(s); scratch > 128 && s.Actions == nil {
+				values[corev1.ResourceRequestsEphemeralStorage] = fmt.Sprintf("%dMi", 16+scratch)
+				values[corev1.ResourceLimitsEphemeralStorage] = fmt.Sprintf("%dMi", 128+scratch)
+			}
 			if s.Actions != nil {
 				workspace := spec.ActionsWorkspaceGiB(s.Actions)
 				values[corev1.ResourceRequestsEphemeralStorage] = fmt.Sprintf("%dMi", workspace*1024+256)
