@@ -363,6 +363,269 @@ gh workflow run actions-live.yml --repo hakopod/hakopod --ref <branch> \
 
 Mint fresh registrations with a new label for each run.
 
+## Run jobs on AWS VMs
+
+A GitHub pool can run each job on a single-use EC2 instance in your own AWS
+account instead of a runner pod. Concurrency is then bounded by your AWS quota
+rather than by this installation's nodes, and Docker runs natively on the VM,
+without gVisor. Spot capacity is the default.
+
+This is new and has not yet been run against a real AWS account by the Hakopod
+team. Try it with a small `max_instances` first.
+
+How it works:
+
+- Demand, `replicas`, `idle_seconds` and `min_replicas` behave as for pods.
+- For each slot the control plane requests one single-use JIT configuration
+  from GitHub and launches one instance with it in user data. The pool's GitHub
+  credential never leaves the control plane.
+- The instance boots stock Ubuntu 24.04, installs Docker and GitHub runner
+  2.337.0 (checked against its published SHA-256), runs one job as an
+  unprivileged user and powers off. Shutdown terminates the instance.
+- Instances need outbound HTTPS to GitHub and nothing inbound. They never
+  contact Hakopod.
+
+### Prepare the AWS account
+
+Read the installation's external ID and installation ID first:
+
+```sh
+hakopod actions capacity list
+```
+
+Create a role for Hakopod to assume. Its trust policy names the AWS identity
+Hakopod runs as (its pod role, instance role or user; Hakopod uses the AWS SDK's
+default credential chain) and requires the external ID:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {"AWS": "arn:aws:iam::111111111111:role/hakopod-control-plane"},
+    "Action": "sts:AssumeRole",
+    "Condition": {"StringEquals": {"sts:ExternalId": "hakopod-EXTERNAL_ID"}}
+  }]
+}
+```
+
+Its permissions let it launch tagged instances and terminate only instances
+tagged with this installation:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Read",
+      "Effect": "Allow",
+      "Action": "ec2:Describe*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "LaunchTemplates",
+      "Effect": "Allow",
+      "Action": ["ec2:CreateLaunchTemplate", "ec2:DeleteLaunchTemplate"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Launch",
+      "Effect": "Allow",
+      "Action": ["ec2:CreateFleet", "ec2:RunInstances"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TagOnCreate",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"ec2:CreateAction": ["CreateLaunchTemplate", "CreateFleet", "RunInstances"]}}
+    },
+    {
+      "Sid": "TerminateOwnInstances",
+      "Effect": "Allow",
+      "Action": "ec2:TerminateInstances",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"ec2:ResourceTag/hakopod-installation": "INSTALLATION_ID"}}
+    },
+    {
+      "Sid": "UbuntuImage",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameters",
+      "Resource": "arn:aws:ssm:*::parameter/aws/service/canonical/*"
+    },
+    {
+      "Sid": "FleetServiceRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"iam:AWSServiceName": ["ec2fleet.amazonaws.com", "spot.amazonaws.com"]}}
+    }
+  ]
+}
+```
+
+No `iam:PassRole` is needed: runners get no instance profile. Hakopod also
+checks the installation tag itself before every termination.
+
+The same in Terraform, with a security group that allows outbound traffic only:
+
+```hcl
+variable "hakopod_principal_arn" {}
+variable "external_id" {}
+variable "installation_id" {}
+variable "vpc_id" {}
+
+resource "aws_iam_role" "hakopod_actions" {
+  name = "hakopod-actions"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = var.hakopod_principal_arn }
+      Action    = "sts:AssumeRole"
+      Condition = { StringEquals = { "sts:ExternalId" = var.external_id } }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "hakopod_actions" {
+  role = aws_iam_role.hakopod_actions.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      { Effect = "Allow", Action = "ec2:Describe*", Resource = "*" },
+      { Effect = "Allow", Action = ["ec2:CreateLaunchTemplate", "ec2:DeleteLaunchTemplate", "ec2:CreateFleet", "ec2:RunInstances"], Resource = "*" },
+      { Effect = "Allow", Action = "ec2:CreateTags", Resource = "*",
+        Condition = { StringEquals = { "ec2:CreateAction" = ["CreateLaunchTemplate", "CreateFleet", "RunInstances"] } } },
+      { Effect = "Allow", Action = "ec2:TerminateInstances", Resource = "*",
+        Condition = { StringEquals = { "ec2:ResourceTag/hakopod-installation" = var.installation_id } } },
+      { Effect = "Allow", Action = "ssm:GetParameters", Resource = "arn:aws:ssm:*::parameter/aws/service/canonical/*" },
+      { Effect = "Allow", Action = "iam:CreateServiceLinkedRole", Resource = "*",
+        Condition = { StringEquals = { "iam:AWSServiceName" = ["ec2fleet.amazonaws.com", "spot.amazonaws.com"] } } },
+    ]
+  })
+}
+
+resource "aws_security_group" "hakopod_runners" {
+  name   = "hakopod-runners"
+  vpc_id = var.vpc_id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+output "role_arn" { value = aws_iam_role.hakopod_actions.arn }
+output "security_group_id" { value = aws_security_group.hakopod_runners.id }
+```
+
+Use subnets with a route to the internet (a NAT gateway, or a public subnet with
+public IPs assigned on launch).
+
+### Define the capacity
+
+An installation administrator describes each account and region as a named
+capacity. Write `capacity.toml`:
+
+```toml
+[[capacity]]
+name = "aws-spot"
+cloud = "aws"
+region = "eu-central-1"
+role_arn = "arn:aws:iam::123456789012:role/hakopod-actions"
+# external_id = "..."               # optional; defaults to the installation's
+subnet_ids = ["subnet-0abc1234"]
+security_group_ids = ["sg-0abc1234"]
+instance_types = ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"]
+architecture = "amd64"              # or arm64, with Graviton types
+spot = true                         # false: on-demand only
+disk_gib = 100                      # encrypted gp3 root volume
+max_instances = 20                  # hard ceiling across every pool
+environments = ["shop/production"]  # project/environment pairs, or "*"
+```
+
+```sh
+hakopod actions capacity set capacity.toml
+hakopod actions capacity test aws-spot            # assume the role, read subnets and security groups
+hakopod actions capacity test aws-spot --launch   # also start and terminate one t3.micro or t4g.micro
+```
+
+The same is available as `GET`/`PUT /api/v1/settings/actions-capacity` with
+`expected_revision`, and `POST /api/v1/settings/actions-capacity/{name}/test`.
+Every change is audited. A capacity that a pool still uses cannot be removed;
+move the pool off it first. There is no dashboard page yet.
+
+| Setting | Allowed values |
+| --- | --- |
+| `instance_types` | 1–20 types of the capacity's architecture |
+| `subnet_ids` | 1–10 subnets |
+| `security_group_ids` | 1–5 groups; `test` warns about inbound rules |
+| `disk_gib` | 20–2,000; default 100 |
+| `max_instances` | 1–1,000 |
+
+### Use it from a pool
+
+```toml
+[services.ci]
+replicas = 10
+
+[services.ci.actions]
+organization = "acme"
+credential = "github-runner-token"
+labels = ["hakopod-spot"]
+idle_seconds = 120
+capacity = "aws-spot"
+spot_retries = 2   # default; 0 disables automatic reruns
+```
+
+`capacity` is for GitHub pools only. The capacity decides the machine, so
+`size`, `resources`, `architecture`, `node_name`, `workspace_size_gib` and
+`cache` are refused alongside it. A release is refused if the pool's project and
+environment are not listed in the capacity's `environments`.
+
+When every instance of `max_instances` is in use, the pool waits without
+registering more runners and its status says which capacity is full. Pool
+status (`GET /api/v1/applications/{id}/actions`) shows each slot's instance ID,
+type and spot or on-demand lifecycle, and the pool's spot interruptions.
+
+### Spot interruptions
+
+GitHub fails a job whose runner disappears; it does not requeue it. When AWS
+reclaims a spot instance (`Server.SpotInstanceTermination`), Hakopod records the
+interruption. When the `workflow_job` delivery for the failed job arrives,
+Hakopod asks GitHub to rerun the run's failed jobs with the pool's
+`jobs_credential` (or `credential`), once per run attempt and at most
+`spot_retries` times per run. The jobs credential needs Actions write
+permission on the repository; a refusal is shown on the interruption in pool
+status.
+
+- Reruns need the **Workflow jobs** webhook described under
+  [Scale to zero](#scale-to-zero), even for a fixed pool.
+- Each rerun lets the pool's next launches use on-demand capacity, one per lost
+  job. A runner that is already idle may still pick the rerun up on spot.
+- An instance type interrupted three times within 30 minutes is skipped for an
+  hour. If every listed type is skipped, the pool launches on-demand.
+- Reruns repeat every failed job of the run. Put jobs that must not run twice,
+  such as deploys, in a pool with `spot_retries = 0` or on pods.
+
+### Cleanup
+
+The Actions worker sweeps every capacity each minute and terminates instances
+tagged with this installation that belong to no slot or to a removed pool, a
+second instance launched for the same slot, and any that have run longer than
+`timeout_minutes` plus 15 minutes. A slot being drained keeps its VM until its
+job finishes; the pool then terminates it. That includes idle runners: a VM waiting for a job is replaced after
+that time. Each VM also stops its runner after the same limit on its own, so it
+does not outlive an unreachable control plane. GitHub runners of vanished
+instances are removed by the normal slot cleanup.
+
+Not verified yet: launching in a real AWS account, the IAM policy above in
+practice, an actual spot interruption followed by a rerun, and boot time from
+stock Ubuntu. Jobs pay for the Docker and runner install on every boot.
+
 ## Isolation and capacity
 
 Each single-job runner has its own Docker daemon inside gVisor. Docker actions,

@@ -73,6 +73,15 @@ an external secret provider instead of copying it.
 service's [SaaS custom hostnames](custom-hostnames.md); `list` takes
 `--status pending_dns` and `--json`.
 
+## Actions capacity
+
+Installation administrators manage where GitHub pools may run jobs on cloud VMs
+with `hakopod actions capacity list [--json]`, `set FILE` (a TOML file of
+`[[capacity]]` tables, written at the current revision) and `test NAME`, which
+assumes the role and reads the network settings; add `--launch` to also start
+and terminate one small instance. See
+[Run jobs on AWS VMs](managed-actions.md#run-jobs-on-aws-vms).
+
 ## Run a command in a pod
 
 `exec` picks the service when there is only one and the pod when exactly one is
