@@ -42,6 +42,11 @@ type Actions struct {
 	// GitHub jobs wake runners and the pool returns to MinReplicas when idle.
 	IdleSeconds int64 `json:"idle_seconds,omitempty" toml:"idle_seconds,omitempty"`
 	MinReplicas int64 `json:"min_replicas,omitempty" toml:"min_replicas,omitempty"`
+	// Capacity names an installation Actions capacity: each job then runs on a
+	// single-use cloud VM instead of a runner pod. SpotRetries bounds automatic
+	// reruns of jobs lost to spot interruptions; nil means the default of two.
+	Capacity    string `json:"capacity,omitempty" toml:"capacity,omitempty"`
+	SpotRetries *int64 `json:"spot_retries,omitempty" toml:"spot_retries,omitempty"`
 }
 
 // Cache opts into installation-approved storage. Its credential is a local
@@ -66,6 +71,21 @@ func (a Actions) EffectiveJobsCredential() string {
 }
 
 var actionsLabel = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+
+// ActionsCapacityName is shared with the installation capacity setting.
+var ActionsCapacityName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// EffectiveSpotRetries is how many times a run may be rerun after spot
+// interruptions of this pool's VMs.
+func (a Actions) EffectiveSpotRetries() int64 {
+	if a.Capacity == "" {
+		return 0
+	}
+	if a.SpotRetries == nil {
+		return 2
+	}
+	return *a.SpotRetries
+}
 
 // IsActionsRunnerImage retains exact approved references for saved revisions.
 func IsActionsRunnerImage(image string) bool {
@@ -134,6 +154,9 @@ func normalizeActions(s *Service) error {
 			seen[key] = true
 		}
 	}
+	if a.SpotRetries != nil && a.Capacity == "" {
+		return fmt.Errorf("actions.spot_retries: set capacity to run jobs on cloud VMs")
+	}
 	if a.TimeoutMinutes == 0 {
 		a.TimeoutMinutes = 60
 	}
@@ -156,6 +179,11 @@ func normalizeActions(s *Service) error {
 		}
 		if s.Architecture != "amd64" && s.Architecture != "arm64" {
 			return fmt.Errorf("native actions runners require an explicit amd64 or arm64 architecture")
+		}
+	}
+	if a.Capacity != "" {
+		if err := normalizeActionsCapacity(s, target.Provider); err != nil {
+			return err
 		}
 	}
 	if s.Size == "" {
@@ -182,6 +210,10 @@ func normalizeActions(s *Service) error {
 	}
 	if s.Readiness != nil || s.Healthcheck != "" || s.NetworkAccess != nil || s.TerminationGraceSeconds != 0 {
 		return fmt.Errorf("actions pools manage their own probes and network access")
+	}
+	if a.Capacity != "" {
+		// The capacity decides the machine; pod resource floors do not apply.
+		return nil
 	}
 	p := EffectiveResources(*s)
 	if target.Provider != actions.ProviderGitHub {
@@ -213,6 +245,26 @@ func normalizeActions(s *Service) error {
 	memory, err := resource.ParseQuantity(p.MemoryLimit)
 	if err != nil || memory.Cmp(resource.MustParse("4Gi")) < 0 {
 		return fmt.Errorf("actions pools require at least 4Gi memory per job slot, including Docker and temporary storage")
+	}
+	return nil
+}
+
+// VM pools run on a machine chosen by the installation capacity, so pod sizing,
+// workspace storage, caches and node placement are refused rather than ignored.
+// The compute size Normalize records for every pool is the only accepted value.
+func normalizeActionsCapacity(s *Service, provider actions.Provider) error {
+	a := s.Actions
+	if provider != actions.ProviderGitHub {
+		return fmt.Errorf("actions.capacity: cloud VM capacity is available for GitHub pools only")
+	}
+	if !ActionsCapacityName.MatchString(a.Capacity) {
+		return fmt.Errorf("actions.capacity: use the name of an installation Actions capacity")
+	}
+	if (s.Size != "" && s.Size != "compute") || s.Resources != nil || a.WorkspaceSizeGiB != 0 || a.Cache != nil || s.Architecture != "" || s.NodeName != "" {
+		return fmt.Errorf("actions.capacity: the capacity decides the machine; remove size, resources, architecture, node_name, workspace_size_gib and cache")
+	}
+	if a.SpotRetries != nil && (*a.SpotRetries < 0 || *a.SpotRetries > 5) {
+		return fmt.Errorf("actions.spot_retries: choose 0–5 reruns")
 	}
 	return nil
 }

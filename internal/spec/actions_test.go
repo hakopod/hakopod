@@ -191,3 +191,42 @@ func TestActionsScaleToZeroIsGitHubOnly(t *testing.T) {
 		t.Fatal("GitLab pool accepted scale to zero", err)
 	}
 }
+
+func TestActionsCapacityPools(t *testing.T) {
+	app := actionsFixture()
+	runner := app.Services["runner"]
+	runner.Actions.Capacity = "aws-spot"
+	app.Services["runner"] = runner
+	normalized, err := Normalize(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := normalized.Services["runner"].Actions.EffectiveSpotRetries(); got != 2 {
+		t.Fatalf("default spot retries %d", got)
+	}
+	if _, err = Normalize(normalized); err != nil {
+		t.Fatal("renormalize", err)
+	}
+	zero, six := int64(0), int64(6)
+	for name, mutate := range map[string]func(*Service){
+		"size":        func(s *Service) { s.Size = "large" },
+		"resources":   func(s *Service) { s.Resources = &Resources{MemoryLimit: "8Gi"} },
+		"workspace":   func(s *Service) { s.Actions.WorkspaceSizeGiB = 4 },
+		"arch":        func(s *Service) { s.Architecture = "arm64" },
+		"name":        func(s *Service) { s.Actions.Capacity = "AWS spot" },
+		"retries":     func(s *Service) { s.Actions.SpotRetries = &six },
+		"gitlab":      func(s *Service) { s.Actions.Provider = "gitlab"; s.Actions.Repository = "" },
+		"no-capacity": func(s *Service) { s.Actions.Capacity = ""; s.Actions.SpotRetries = &zero },
+	} {
+		app := actionsFixture()
+		runner := app.Services["runner"]
+		copy := *runner.Actions
+		runner.Actions = &copy
+		runner.Actions.Capacity = "aws-spot"
+		mutate(&runner)
+		app.Services["runner"] = runner
+		if _, err := Normalize(app); err == nil {
+			t.Fatal(name, "accepted")
+		}
+	}
+}
