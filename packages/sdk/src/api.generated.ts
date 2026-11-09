@@ -459,6 +459,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/actions-capacity/{name}/build-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build a hakopod-minimal image
+         * @description Installation administrators only. The capacity's image must be hakopod-minimal. The Actions worker launches a stock Ubuntu builder in the capacity's account, installs Docker and the pinned runner, images it and removes older images; launches use the previous image until the new one is available. Audited.
+         */
+        post: operations["buildActionsCapacityImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent-policies": {
         parameters: {
             query?: never;
@@ -6429,6 +6449,11 @@ export interface components {
             instance_type?: string;
             /** @enum {string} */
             instance_lifecycle?: "spot" | "on-demand";
+            /**
+             * @description VM slots: launched for this job, or a stopped standby of the capacity's warm pool started for it.
+             * @enum {string}
+             */
+            instance_source?: "cold" | "standby";
         };
         /** @description Qualified provider behavior, separate from scoped licensing, runtime readiness and node availability. An unavailable provider cannot be deployed. */
         ActionsProviderCapabilities: {
@@ -6614,6 +6639,27 @@ export interface components {
             max_instances: number;
             /** @description project/environment pairs allowed to use this capacity, or "*" for every environment. */
             environments: string[];
+            /** @description runs-on-full (default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal: an image Hakopod builds in this account with build-image. Or an AMI ID or resolve:ssm: parameter of your own Ubuntu image. */
+            image?: string;
+            /** @description Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0. */
+            warm_pool?: number;
+        };
+        /** @description A capacity's hakopod-minimal image build. */
+        ActionsCapacityImage: {
+            capacity: string;
+            /** @enum {string} */
+            state: "building" | "available" | "failed";
+            /** @description The instance installing the image while it builds. */
+            builder_id?: string;
+            /** @description The image being created; launches keep image_id until it is available. */
+            building_image_id?: string;
+            /** @description The image launches use. */
+            image_id?: string;
+            message?: string;
+            /** Format: date-time */
+            requested_at: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         ActionsCapacitySettings: {
             /** @description Generated once per installation. Put it in each role's trust policy as sts:ExternalId. */
@@ -6622,6 +6668,10 @@ export interface components {
             installation_id: string;
             capacities: components["schemas"]["ActionsCapacity"][];
             revision: number;
+            /** @description hakopod-minimal image builds, keyed by capacity. */
+            images: {
+                [key: string]: components["schemas"]["ActionsCapacityImage"];
+            };
         };
         ActionsCapacityInput: {
             capacities: components["schemas"]["ActionsCapacity"][];
@@ -12046,6 +12096,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionsCapacityTest"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    buildActionsCapacityImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionsCapacityImage"];
                 };
             };
             /** @description Error */

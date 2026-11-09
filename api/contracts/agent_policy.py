@@ -2753,7 +2753,7 @@ for operation in ['getCustomHostnameSettings','putCustomHostnameSettings']:
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
 
 # Actions capacity: cloud accounts for VM runner pools are installation administration.
-for operation in ['getActionsCapacity','putActionsCapacity','testActionsCapacity']:
+for operation in ['getActionsCapacity','putActionsCapacity','testActionsCapacity','buildActionsCapacityImage']:
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
 
 for method_map in paths.values():

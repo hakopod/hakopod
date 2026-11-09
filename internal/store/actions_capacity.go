@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hakopod/hakopod/internal/actions/vm"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
 )
@@ -31,6 +32,12 @@ type ActionsCapacity struct {
 	Spot             bool     `json:"spot" toml:"spot"`
 	DiskGiB          int64    `json:"disk_gib" toml:"disk_gib"`
 	MaxInstances     int64    `json:"max_instances" toml:"max_instances"`
+	// Image is runs-on-full (the default), hakopod-minimal, an AMI ID or a
+	// resolve:ssm: parameter holding one.
+	Image string `json:"image" toml:"image"`
+	// WarmPool keeps this many stopped on-demand instances ready to start
+	// for a job. They count toward MaxInstances.
+	WarmPool int64 `json:"warm_pool" toml:"warm_pool"`
 	// Environments lists "project/environment" pairs allowed to use this
 	// capacity; "*" allows every environment.
 	Environments []string `json:"environments" toml:"environments"`
@@ -51,6 +58,7 @@ var (
 	awsSubnetID      = regexp.MustCompile(`^subnet-[0-9a-f]{8,17}$`)
 	awsSecurityGroup = regexp.MustCompile(`^sg-[0-9a-f]{8,17}$`)
 	awsInstanceType  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,15}\.[a-z0-9]{1,16}$`)
+	capacityImage    = regexp.MustCompile(`^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200})$`)
 	capacityScope    = regexp.MustCompile(`^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$`)
 )
 
@@ -109,6 +117,18 @@ func (c *ActionsCapacity) normalize() error {
 	if c.MaxInstances < 1 || c.MaxInstances > 1000 {
 		return bad("max_instances", "choose 1–1000")
 	}
+	if c.Image == "" {
+		c.Image = vm.ImageRunsOnFull
+	}
+	if !capacityImage.MatchString(c.Image) {
+		return bad("image", "use runs-on-full, hakopod-minimal, an AMI ID or resolve:ssm:/parameter")
+	}
+	if c.Image == vm.ImageRunsOnFull && c.DiskGiB < 30 {
+		return bad("disk_gib", "RunsOn's image needs at least 30 GiB")
+	}
+	if c.WarmPool < 0 || c.WarmPool > 50 || c.WarmPool > c.MaxInstances {
+		return bad("warm_pool", "choose 0–50 standbys, at most max_instances")
+	}
 	if len(c.Environments) < 1 || len(c.Environments) > 100 {
 		return bad("environments", "list 1–100 project/environment pairs, or \"*\"")
 	}
@@ -132,6 +152,9 @@ func (v ActionsCapacitySettings) Find(name string) (ActionsCapacity, bool) {
 		if c.Name == name {
 			if c.ExternalID == "" {
 				c.ExternalID = v.ExternalID
+			}
+			if c.Image == "" {
+				c.Image = vm.ImageRunsOnFull
 			}
 			return c, true
 		}
@@ -225,7 +248,7 @@ func (s *Store) PutActionsCapacity(ctx context.Context, p Principal, capacities 
 	}
 	summary := []map[string]any{}
 	for _, c := range capacities {
-		summary = append(summary, map[string]any{"name": c.Name, "cloud": c.Cloud, "region": c.Region, "role_arn": c.RoleARN, "spot": c.Spot, "max_instances": c.MaxInstances, "environments": c.Environments})
+		summary = append(summary, map[string]any{"name": c.Name, "cloud": c.Cloud, "region": c.Region, "role_arn": c.RoleARN, "spot": c.Spot, "max_instances": c.MaxInstances, "image": c.Image, "warm_pool": c.WarmPool, "environments": c.Environments})
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'settings.actions_capacity','installation',$3)", p.ID, p.KeyID, JSON(map[string]any{"revision": rev, "capacities": summary})); err != nil {
 		return ActionsCapacitySettings{}, 0, err

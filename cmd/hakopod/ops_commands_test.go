@@ -218,6 +218,8 @@ architecture = "amd64"
 spot = true
 max_instances = 20
 environments = ["shop/production"]
+image = "hakopod-minimal"
+warm_pool = 2
 `), 0o600)
 	ctx := context.Background()
 	if err := actionsCapacityCommand(ctx, c, []string{"capacity", "set", file}, false, false, io.Discard); err != nil {
@@ -226,8 +228,12 @@ environments = ["shop/production"]
 	if err := actionsCapacityCommand(ctx, c, []string{"capacity", "test", "aws-spot"}, true, false, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 3 || !strings.HasPrefix(calls[1], `PUT /api/v1/settings/actions-capacity {"capacities":[{"name":"aws-spot",`) || !strings.Contains(calls[1], `"expected_revision":4`) ||
-		calls[2] != `POST /api/v1/settings/actions-capacity/aws-spot/test {"launch":true}` {
+	if err := actionsCapacityCommand(ctx, c, []string{"capacity", "build-image", "aws-spot"}, false, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 4 || !strings.HasPrefix(calls[1], `PUT /api/v1/settings/actions-capacity {"capacities":[{"name":"aws-spot",`) || !strings.Contains(calls[1], `"expected_revision":4`) ||
+		!strings.Contains(calls[1], `"image":"hakopod-minimal","warm_pool":2`) ||
+		calls[2] != `POST /api/v1/settings/actions-capacity/aws-spot/test {"launch":true}` || calls[3] != `POST /api/v1/settings/actions-capacity/aws-spot/build-image {}` {
 		t.Fatal(calls)
 	}
 	if actionsCapacityCommand(ctx, c, []string{"capacity", "test"}, false, false, io.Discard) == nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ActionsSlot reads one slot for the VM runtime, which is addressed by slot ID.
@@ -101,9 +102,80 @@ func (s *Store) ReserveActionsInstance(ctx context.Context, slot, capacity strin
 }
 
 // RecordActionsInstance records the launched instance and drops the sealed
-// configuration, which now lives only in the instance's user data.
-func (s *Store) RecordActionsInstance(ctx context.Context, slot, instanceID, instanceType, lifecycle string) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE actions_slots SET instance_id=$2,instance_type=$3,instance_lifecycle=$4,encrypted_registration=NULL WHERE id=$1`, slot, instanceID, instanceType, lifecycle)
+// configuration, which now lives only in the instance's user data. source is
+// cold or standby; an adopted instance keeps the recorded source.
+func (s *Store) RecordActionsInstance(ctx context.Context, slot, instanceID, instanceType, lifecycle, source string) error {
+	_, err := s.Pool.Exec(ctx, `UPDATE actions_slots SET instance_id=$2,instance_type=$3,instance_lifecycle=$4,encrypted_registration=NULL,
+ instance_source=CASE WHEN $5='' THEN instance_source ELSE $5 END WHERE id=$1`, slot, instanceID, instanceType, lifecycle, source)
+	return err
+}
+
+// ClaimActionsStandby records a standby as the slot's instance before it is
+// started. It returns false when another slot claimed that standby first.
+// The reservation time becomes the claim time, which the phase reads.
+func (s *Store) ClaimActionsStandby(ctx context.Context, slot, instanceID, instanceType string) (bool, error) {
+	result, err := s.Pool.Exec(ctx, `UPDATE actions_slots SET instance_id=$2,instance_type=$3,instance_lifecycle='on-demand',encrypted_registration=NULL,instance_source='standby',
+ instance_reserved_at=now() WHERE id=$1 AND instance_id=''`, slot, instanceID, instanceType)
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && pg.Code == "23505" {
+		return false, nil
+	}
+	return err == nil && result.RowsAffected() == 1, err
+}
+
+// ActionsCapacityImage is a capacity's hakopod-minimal image. ImageID is the
+// image launches use; a rebuild keeps it until BuildingImageID is available.
+type ActionsCapacityImage struct {
+	Capacity        string    `json:"capacity"`
+	State           string    `json:"state"`
+	BuilderID       string    `json:"builder_id,omitempty"`
+	BuildingImageID string    `json:"building_image_id,omitempty"`
+	ImageID         string    `json:"image_id,omitempty"`
+	Message         string    `json:"message,omitempty"`
+	RequestedAt     time.Time `json:"requested_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (s *Store) ActionsCapacityImages(ctx context.Context) (map[string]ActionsCapacityImage, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT capacity,state,builder_id,building_image_id,image_id,message,requested_at,updated_at FROM actions_capacity_images`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]ActionsCapacityImage{}
+	for rows.Next() {
+		var v ActionsCapacityImage
+		if err = rows.Scan(&v.Capacity, &v.State, &v.BuilderID, &v.BuildingImageID, &v.ImageID, &v.Message, &v.RequestedAt, &v.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out[v.Capacity] = v
+	}
+	return out, rows.Err()
+}
+
+// RequestActionsImageBuild starts a hakopod-minimal build for a capacity. A
+// build already running is a conflict. The Actions worker does the work.
+func (s *Store) RequestActionsImageBuild(ctx context.Context, p Principal, capacity string) error {
+	result, err := s.Pool.Exec(ctx, `INSERT INTO actions_capacity_images(capacity,state) VALUES($1,'building')
+ ON CONFLICT(capacity) DO UPDATE SET state='building',builder_id='',building_image_id='',message='',requested_at=now(),updated_at=now()
+ WHERE actions_capacity_images.state<>'building'`, capacity)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("%w: an image for capacity %q is already being built", ErrConflict, capacity)
+	}
+	_, err = s.Pool.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'settings.actions_capacity.build_image','installation',$3)", p.ID, p.KeyID, JSON(map[string]string{"capacity": capacity}))
+	return err
+}
+
+// SaveActionsCapacityImage records a build's progress.
+func (s *Store) SaveActionsCapacityImage(ctx context.Context, v ActionsCapacityImage) error {
+	if len(v.Message) > 512 {
+		v.Message = v.Message[:512]
+	}
+	_, err := s.Pool.Exec(ctx, `UPDATE actions_capacity_images SET state=$2,builder_id=$3,building_image_id=$4,image_id=$5,message=$6,updated_at=now() WHERE capacity=$1`,
+		v.Capacity, v.State, v.BuilderID, v.BuildingImageID, v.ImageID, v.Message)
 	return err
 }
 

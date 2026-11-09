@@ -16,6 +16,8 @@ type actionsCapacityView struct {
 	store.ActionsCapacitySettings
 	InstallationID string `json:"installation_id"`
 	Revision       int64  `json:"revision"`
+	// Images are the hakopod-minimal builds, keyed by capacity.
+	Images map[string]store.ActionsCapacityImage `json:"images"`
 }
 
 func (s *Server) writeActionsCapacity(w http.ResponseWriter, r *http.Request, v store.ActionsCapacitySettings, rev int64) {
@@ -24,7 +26,44 @@ func (s *Server) writeActionsCapacity(w http.ResponseWriter, r *http.Request, v 
 		failure(w, err)
 		return
 	}
-	write(w, 200, actionsCapacityView{v, id, rev})
+	images, err := s.Store.ActionsCapacityImages(r.Context())
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 200, actionsCapacityView{v, id, rev, images})
+}
+
+// buildActionsCapacityImage asks the Actions worker to build a fresh
+// hakopod-minimal image in the capacity's account. Launches keep the current
+// image until the new one is available.
+func (s *Server) buildActionsCapacityImage(w http.ResponseWriter, r *http.Request) {
+	if !admin(w, r) {
+		return
+	}
+	c, ok, err := s.Store.ActionsCapacity(r.Context(), r.PathValue("name"))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if !ok {
+		problem(w, 404, "not_found", "No Actions capacity has this name.")
+		return
+	}
+	if c.Image != vm.ImageHakopodMinimal {
+		problem(w, 400, "invalid_request", "Set the capacity's image to hakopod-minimal before building it.")
+		return
+	}
+	if err = s.Store.RequestActionsImageBuild(r.Context(), who(r), c.Name); err != nil {
+		failure(w, err)
+		return
+	}
+	images, err := s.Store.ActionsCapacityImages(r.Context())
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	write(w, 202, images[c.Name])
 }
 
 func (s *Server) getActionsCapacity(w http.ResponseWriter, r *http.Request) {

@@ -44,6 +44,7 @@ type ActionsSlot struct {
 	InstanceType       string     `json:"instance_type,omitempty"`
 	InstanceLifecycle  string     `json:"instance_lifecycle,omitempty"`
 	InstanceReservedAt *time.Time `json:"-"`
+	InstanceSource     string     `json:"instance_source,omitempty"` // cold or standby
 }
 
 func (s *Store) RequireActions(ctx context.Context, project, env string) error {
@@ -115,12 +116,12 @@ func scanActionsPools(rows pgx.Rows) ([]ActionsPool, error) {
 	return out, rows.Err()
 }
 
-const actionsSlotColumns = `id,application_id,service,config,runner_id,phase,created_at,updated_at,provider_runner_id,encrypted_registration,manager_launch_attempted,provider_cleanup_runner_id,provider_cleanup_confirmed,encrypted_provider_intent,instance_id,instance_type,instance_lifecycle,instance_reserved_at`
+const actionsSlotColumns = `id,application_id,service,config,runner_id,phase,created_at,updated_at,provider_runner_id,encrypted_registration,manager_launch_attempted,provider_cleanup_runner_id,provider_cleanup_confirmed,encrypted_provider_intent,instance_id,instance_type,instance_lifecycle,instance_reserved_at,instance_source`
 
 func scanActionsSlot(row scanner, extra ...any) (ActionsSlot, error) {
 	var v ActionsSlot
 	var data []byte
-	err := row.Scan(append([]any{&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt, &v.ProviderRunnerID, &v.EncryptedRegistration, &v.ManagerLaunchAttempted, &v.ProviderCleanupRunnerID, &v.ProviderCleanupConfirmed, &v.EncryptedProviderIntent, &v.InstanceID, &v.InstanceType, &v.InstanceLifecycle, &v.InstanceReservedAt}, extra...)...)
+	err := row.Scan(append([]any{&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt, &v.ProviderRunnerID, &v.EncryptedRegistration, &v.ManagerLaunchAttempted, &v.ProviderCleanupRunnerID, &v.ProviderCleanupConfirmed, &v.EncryptedProviderIntent, &v.InstanceID, &v.InstanceType, &v.InstanceLifecycle, &v.InstanceReservedAt, &v.InstanceSource}, extra...)...)
 	if err != nil {
 		return v, err
 	}
