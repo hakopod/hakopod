@@ -39,6 +39,11 @@ type ActionsSlot struct {
 	Phase                    string       `json:"phase"`
 	CreatedAt                time.Time    `json:"created_at"`
 	UpdatedAt                time.Time    `json:"updated_at"`
+	// VM slots only: the cloud instance running this slot's job.
+	InstanceID         string     `json:"instance_id,omitempty"`
+	InstanceType       string     `json:"instance_type,omitempty"`
+	InstanceLifecycle  string     `json:"instance_lifecycle,omitempty"`
+	InstanceReservedAt *time.Time `json:"-"`
 }
 
 func (s *Store) RequireActions(ctx context.Context, project, env string) error {
@@ -109,20 +114,29 @@ func scanActionsPools(rows pgx.Rows) ([]ActionsPool, error) {
 	}
 	return out, rows.Err()
 }
+
+const actionsSlotColumns = `id,application_id,service,config,runner_id,phase,created_at,updated_at,provider_runner_id,encrypted_registration,manager_launch_attempted,provider_cleanup_runner_id,provider_cleanup_confirmed,encrypted_provider_intent,instance_id,instance_type,instance_lifecycle,instance_reserved_at`
+
+func scanActionsSlot(row scanner, extra ...any) (ActionsSlot, error) {
+	var v ActionsSlot
+	var data []byte
+	err := row.Scan(append([]any{&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt, &v.ProviderRunnerID, &v.EncryptedRegistration, &v.ManagerLaunchAttempted, &v.ProviderCleanupRunnerID, &v.ProviderCleanupConfirmed, &v.EncryptedProviderIntent, &v.InstanceID, &v.InstanceType, &v.InstanceLifecycle, &v.InstanceReservedAt}, extra...)...)
+	if err != nil {
+		return v, err
+	}
+	return v, json.Unmarshal(data, &v.Config)
+}
+
 func (s *Store) ActionsSlots(ctx context.Context, app, service string) ([]ActionsSlot, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id,application_id,service,config,runner_id,phase,created_at,updated_at,provider_runner_id,encrypted_registration,manager_launch_attempted,provider_cleanup_runner_id,provider_cleanup_confirmed,encrypted_provider_intent FROM actions_slots WHERE application_id=$1 AND service=$2 ORDER BY created_at,id LIMIT 21`, app, service)
+	rows, err := s.Pool.Query(ctx, `SELECT `+actionsSlotColumns+` FROM actions_slots WHERE application_id=$1 AND service=$2 ORDER BY created_at,id LIMIT 21`, app, service)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []ActionsSlot{}
 	for rows.Next() {
-		var v ActionsSlot
-		var data []byte
-		if err = rows.Scan(&v.ID, &v.ApplicationID, &v.Service, &data, &v.RunnerID, &v.Phase, &v.CreatedAt, &v.UpdatedAt, &v.ProviderRunnerID, &v.EncryptedRegistration, &v.ManagerLaunchAttempted, &v.ProviderCleanupRunnerID, &v.ProviderCleanupConfirmed, &v.EncryptedProviderIntent); err != nil {
-			return nil, err
-		}
-		if err = json.Unmarshal(data, &v.Config); err != nil {
+		v, err := scanActionsSlot(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -259,9 +273,13 @@ func (s *Store) requireActionsTx(ctx context.Context, tx pgx.Tx, project, env st
 		return nil
 	}
 	if s.ManagedCloud {
-		return s.RequireActions(ctx, project, env)
+		if err := s.RequireActions(ctx, project, env); err != nil {
+			return err
+		}
+	} else if err := s.requireFeaturesTx(ctx, tx, "managed_actions"); err != nil {
+		return err
 	}
-	return s.requireFeaturesTx(ctx, tx, "managed_actions")
+	return requireActionsCapacityTx(ctx, tx, project, env, next)
 }
 
 // Keep credentials while desired pools, active slots or retained job history need
