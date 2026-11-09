@@ -55,19 +55,19 @@
           "reason": "Reviewed control-plane change (Managed Actions runners on single-use AWS VMs with capacity settings, reaper and spot reruns, a shared AWS Query client, and go.mod reviews by runtime binary dependencies, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "5957d19de798f29e337672449463a02ec9a2ff4f9210f179d816025859856f92",
+          "after": "94859528995bc74c23d3c4cdd3bf8539fd2e461e4dd98a44f8bddbc651c98b59",
           "before": null,
           "path": "internal/actions/vm/aws/acceptance_test.go",
           "reason": "Reviewed control-plane change (Managed Actions runners on single-use AWS VMs with capacity settings, reaper and spot reruns, a shared AWS Query client, and go.mod reviews by runtime binary dependencies, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "eefec225161be2cc63cd2ebd48eedd37d7dfdbb66c87d8568e4a675eb9650f28",
+          "after": "6f8f381acf0fec49bca6879e0aa29d343c115911f4fdda70e1ac21f7031ff23d",
           "before": null,
           "path": "internal/actions/vm/aws/aws.go",
           "reason": "Reviewed control-plane change (Managed Actions runners on single-use AWS VMs with capacity settings, reaper and spot reruns, a shared AWS Query client, and go.mod reviews by runtime binary dependencies, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "8d7767b612503da8fd8b00f3cc3e5ca7a3ae9c4b281de94203095764d0455cf8",
+          "after": "a09be8a83ead138cf232da25f7b499bb4e93663705044e461cf4843606c078d1",
           "before": null,
           "path": "internal/actions/vm/aws/aws_test.go",
           "reason": "Reviewed control-plane change (Managed Actions runners on single-use AWS VMs with capacity settings, reaper and spot reruns, a shared AWS Query client, and go.mod reviews by runtime binary dependencies, with tests); not a managed runtime binary, image, dependency or native harness input."
@@ -85,7 +85,7 @@
           "reason": "Reviewed control-plane change (Managed Actions runners on single-use AWS VMs with capacity settings, reaper and spot reruns, a shared AWS Query client, and go.mod reviews by runtime binary dependencies, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "1b98a5ed157ee5f7d6c943399bb6eb1f66487691aab937d746461df3561f3427",
+          "after": "2f951ce145c562b937cefe9b5c8f7328714a5931f845958a294f70c8e172ac72",
           "before": null,
           "path": "internal/actions/vm/vm.go",
           "reason": "Reviewed control-plane change (Managed Actions runners on single-use AWS VMs with capacity settings, reaper and spot reruns, a shared AWS Query client, and go.mod reviews by runtime binary dependencies, with tests); not a managed runtime binary, image, dependency or native harness input."
@@ -235,7 +235,7 @@
           "reason": "Trust-root comment wording for the alpha.84 chained review; no change to what is verified."
         }
       ],
-      "current_sha256": "0457fc96b1a8d2c19d8965bfdac430a9978b331b893412e822663786538af125"
+      "current_sha256": "dc0ace5ac7b95e3ff63f80fb9a09ab7b0dd8b46af0619bb5c3f17163f61cdf0a"
     }
   }
 }
