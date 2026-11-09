@@ -93,6 +93,7 @@ export const allowed = [
   /^settings\/app-logs$/,
   /^settings\/kubernetes-patches$/,
   /^settings\/custom-hostnames$/,
+  /^settings\/actions-capacity(?:\/[a-z][a-z0-9-]{0,62}\/test)?$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/custom-hostnames(?:\/[a-z0-9.-]+)?$/,
   /^applications\/[A-Za-z0-9_-]+\/manifests$/,
   /^applications\/[A-Za-z0-9_-]+\/services\/[A-Za-z0-9_-]+\/terminal(?:\/[A-Za-z0-9_-]+(?:\/(?:output|input|poll))?)?$/,

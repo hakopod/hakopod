@@ -134,6 +134,27 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "getActionsCapacity",
+    "method": "GET",
+    "path": "/settings/actions-capacity",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "putActionsCapacity",
+    "method": "PUT",
+    "path": "/settings/actions-capacity",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
+    "id": "testActionsCapacity",
+    "method": "POST",
+    "path": "/settings/actions-capacity/{name}/test",
+    "category": "admin",
+    "boundary": "installation"
+  },
+  {
     "id": "getDatabaseQueryCapabilities",
     "method": "GET",
     "path": "/databases/{id}/query-capabilities",

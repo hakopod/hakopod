@@ -415,6 +415,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/actions-capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Actions capacity
+         * @description Installation administrators only. The first read generates the installation's external ID.
+         */
+        get: operations["getActionsCapacity"];
+        /**
+         * Replace the Actions capacity
+         * @description Installation administrators only. Optimistic revision; a capacity still used by a pool cannot be removed. Every change is audited.
+         */
+        put: operations["putActionsCapacity"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/actions-capacity/{name}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test an Actions capacity
+         * @description Installation administrators only. Assumes the role and reads the subnets and security groups. With launch, starts and terminates one small on-demand instance.
+         */
+        post: operations["testActionsCapacity"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agent-policies": {
         parameters: {
             query?: never;
@@ -6350,6 +6394,10 @@ export interface components {
             cache?: {
                 credential: string;
             };
+            /** @description GitHub pools only. Runs each job on a single-use VM in this installation Actions capacity instead of a runner pod. The capacity decides the machine, so size, resources, architecture, node_name, workspace_size_gib and cache are refused. The pool's project and environment must be allowed to use it. */
+            capacity?: string;
+            /** @description Requires capacity. Reruns of a workflow run's failed jobs after spot interruptions, per run. Defaults to 2; 0 turns automatic reruns off. Reruns repeat every failed job of the run. */
+            spot_retries?: number;
         };
         ActionsPool: {
             application_id: string;
@@ -6376,6 +6424,11 @@ export interface components {
             updated_at: string;
             /** @description Opaque native provider runner identifier when present; retains UUIDs without numeric conversion. */
             provider_runner_id?: string;
+            /** @description VM slots: the cloud instance running this slot's job. */
+            instance_id?: string;
+            instance_type?: string;
+            /** @enum {string} */
+            instance_lifecycle?: "spot" | "on-demand";
         };
         /** @description Qualified provider behavior, separate from scoped licensing, runtime readiness and node availability. An unavailable provider cannot be deployed. */
         ActionsProviderCapabilities: {
@@ -6516,6 +6569,74 @@ export interface components {
             provider: "gitlab";
             instance_url: string;
             jobs: components["schemas"]["ActionsProviderWorkflowJob"][];
+        };
+        /** @description A spot interruption of one of the pool's VMs, kept for 30 days. */
+        ActionsEviction: {
+            slot_id: string;
+            capacity: string;
+            instance_id: string;
+            instance_type: string;
+            /** Format: date-time */
+            evicted_at: string;
+            repository?: string;
+            run_id?: number;
+            run_attempt?: number;
+            /**
+             * Format: date-time
+             * @description When Hakopod decided about a rerun of this run attempt.
+             */
+            rerun_at?: string;
+            /** @description Why the run was not rerun, for example a jobs credential without Actions write permission. */
+            rerun_error?: string;
+        };
+        ActionsCapacity: {
+            name: string;
+            /** @enum {string} */
+            cloud: "aws";
+            /** @description AWS region, for example eu-central-1. */
+            region: string;
+            /** @description IAM role Hakopod assumes from its own AWS credential chain. */
+            role_arn: string;
+            /** @description External ID for the role's trust policy. Omit to use the installation's generated one. */
+            external_id?: string;
+            /** @description Subnets with outbound access to GitHub. Nothing inbound is needed. */
+            subnet_ids: string[];
+            /** @description Security groups for the runners. They need no inbound rules. */
+            security_group_ids: string[];
+            instance_types: string[];
+            /** @enum {string} */
+            architecture: "amd64" | "arm64";
+            /** @description Launch on spot capacity; false launches on-demand only. */
+            spot: boolean;
+            /** @description Encrypted root volume size. Defaults to 100. */
+            disk_gib?: number;
+            /** @description Hard ceiling on instances across every pool using this capacity. */
+            max_instances: number;
+            /** @description project/environment pairs allowed to use this capacity, or "*" for every environment. */
+            environments: string[];
+        };
+        ActionsCapacitySettings: {
+            /** @description Generated once per installation. Put it in each role's trust policy as sts:ExternalId. */
+            external_id: string;
+            /** @description Value of the hakopod-installation tag on every instance; condition the role's TerminateInstances on it. */
+            installation_id: string;
+            capacities: components["schemas"]["ActionsCapacity"][];
+            revision: number;
+        };
+        ActionsCapacityInput: {
+            capacities: components["schemas"]["ActionsCapacity"][];
+            expected_revision: number;
+        };
+        ActionsCapacityTestInput: {
+            /** @description Also launch the smallest on-demand instance of the capacity's architecture and terminate it. */
+            launch?: boolean;
+        };
+        ActionsCapacityTest: {
+            capacity: string;
+            external_id: string;
+            warnings: string[];
+            instance_id?: string;
+            instance_type?: string;
         };
         AgentPolicyCondition: {
             /** @enum {string} */
@@ -11576,6 +11697,7 @@ export interface operations {
                         items: {
                             pool: components["schemas"]["ActionsPool"];
                             slots: components["schemas"]["ActionsSlot"][];
+                            evictions: components["schemas"]["ActionsEviction"][];
                         }[];
                     };
                 };
@@ -11827,6 +11949,103 @@ export interface operations {
                         /** Format: uuid */
                         hold_id: string;
                     };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getActionsCapacity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionsCapacitySettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putActionsCapacity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionsCapacityInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionsCapacitySettings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    testActionsCapacity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionsCapacityTestInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionsCapacityTest"];
                 };
             };
             /** @description Error */

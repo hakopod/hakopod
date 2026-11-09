@@ -294,3 +294,41 @@ func TestActionsVMSpotRerun(t *testing.T) {
 		t.Fatal("rerun beyond spot_retries", *fake.reruns)
 	}
 }
+
+func TestActionsCapacitySettingsAPI(t *testing.T) {
+	f := newAppLogFixture(t)
+	cloud := &vmFake{instances: map[string]*vm.Instance{}}
+	f.server.Config.Handler = (&Server{Store: f.db, actionsVMClient: func(context.Context, store.ActionsCapacity, string) (vm.Provider, error) { return cloud, nil }}).Handler()
+	if status, _ := f.call(t, "GET", "/settings/actions-capacity", f.reader1, nil); status != 403 {
+		t.Fatalf("non-admin GET: %d", status)
+	}
+	status, out := f.call(t, "GET", "/settings/actions-capacity", f.admin, nil)
+	if status != 200 || !strings.HasPrefix(out["external_id"].(string), "hakopod-") || len(out["installation_id"].(string)) != 32 {
+		t.Fatalf("settings: %d %v", status, out)
+	}
+	capacity := map[string]any{"name": "aws-spot", "cloud": "aws", "region": "eu-central-1", "role_arn": "arn:aws:iam::123456789012:role/runner",
+		"subnet_ids": []string{"subnet-0abc1234"}, "security_group_ids": []string{"sg-0abc1234"}, "instance_types": []string{"c7i.xlarge"},
+		"architecture": "amd64", "spot": true, "max_instances": 5, "environments": []string{"*"}}
+	put := map[string]any{"capacities": []any{capacity}, "expected_revision": out["revision"]}
+	if status, _ = f.call(t, "PUT", "/settings/actions-capacity", f.reader1, put); status != 403 {
+		t.Fatalf("non-admin PUT: %d", status)
+	}
+	if status, out = f.call(t, "PUT", "/settings/actions-capacity", f.admin, put); status != 200 || out["revision"] != float64(2) {
+		t.Fatalf("save: %d %v", status, out)
+	}
+	if status, _ = f.call(t, "PUT", "/settings/actions-capacity", f.admin, put); status != 409 {
+		t.Fatalf("stale revision: %d", status)
+	}
+	if status, _ = f.call(t, "POST", "/settings/actions-capacity/aws-spot/test", f.reader1, map[string]bool{}); status != 403 {
+		t.Fatalf("non-admin test: %d", status)
+	}
+	if status, out = f.call(t, "POST", "/settings/actions-capacity/aws-spot/test", f.admin, map[string]bool{}); status != 200 || len(cloud.launches) != 0 {
+		t.Fatalf("check must not launch: %d %v", status, out)
+	}
+	if status, out = f.call(t, "POST", "/settings/actions-capacity/aws-spot/test", f.admin, map[string]bool{"launch": true}); status != 200 || out["instance_type"] != "t3.micro" || len(cloud.terminated) != 1 || cloud.launches[0].Spot {
+		t.Fatalf("launch test: %d %v", status, out)
+	}
+	if status, _ = f.call(t, "POST", "/settings/actions-capacity/missing/test", f.admin, map[string]bool{}); status != 404 {
+		t.Fatalf("unknown capacity: %d", status)
+	}
+}

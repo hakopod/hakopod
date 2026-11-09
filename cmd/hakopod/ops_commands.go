@@ -325,3 +325,65 @@ func hostnamesCommand(ctx context.Context, c *client, cfg config, args []string,
 	}
 	return printJSON(out)
 }
+
+// actionsCapacityCommand manages the installation's Actions capacity. set
+// replaces the whole list from a TOML file of [[capacity]] tables.
+func actionsCapacityCommand(ctx context.Context, c *client, args []string, launch, jsonOut bool, out io.Writer) error {
+	usage := &exitError{2, "usage: hakopod actions capacity list | set FILE | test NAME [--launch]"}
+	if len(args) < 2 || args[0] != "capacity" {
+		return usage
+	}
+	var current struct {
+		ExternalID     string                  `json:"external_id"`
+		InstallationID string                  `json:"installation_id"`
+		Capacities     []store.ActionsCapacity `json:"capacities"`
+		Revision       int64                   `json:"revision"`
+	}
+	switch {
+	case args[1] == "list" && len(args) == 2:
+		if err := c.request(ctx, "GET", "/settings/actions-capacity", nil, "", &current); err != nil {
+			return err
+		}
+		if jsonOut {
+			return printJSON(current)
+		}
+		fmt.Fprintf(out, "installation %s, external ID %s (revision %d)\n", current.InstallationID, current.ExternalID, current.Revision)
+		for _, v := range current.Capacities {
+			lifecycle := "on-demand"
+			if v.Spot {
+				lifecycle = "spot"
+			}
+			fmt.Fprintf(out, "%s\t%s %s\t%s %s\tmax %d\t%s\n", v.Name, v.Cloud, v.Region, v.Architecture, lifecycle, v.MaxInstances, strings.Join(v.InstanceTypes, ","))
+		}
+		return nil
+	case args[1] == "set" && len(args) == 3:
+		data, err := os.ReadFile(args[2])
+		if err != nil {
+			return err
+		}
+		var file struct {
+			Capacity []store.ActionsCapacity `toml:"capacity"`
+		}
+		if err = toml.Unmarshal(data, &file); err != nil {
+			return fmt.Errorf("%s: %w", args[2], err)
+		}
+		if err = c.request(ctx, "GET", "/settings/actions-capacity", nil, "", &current); err != nil {
+			return err
+		}
+		if file.Capacity == nil {
+			file.Capacity = []store.ActionsCapacity{}
+		}
+		if err = c.request(ctx, "PUT", "/settings/actions-capacity", map[string]any{"capacities": file.Capacity, "expected_revision": current.Revision}, "", &current); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "saved %d capacities (revision %d)\n", len(current.Capacities), current.Revision)
+		return nil
+	case args[1] == "test" && len(args) == 3:
+		var result map[string]any
+		if err := c.request(ctx, "POST", "/settings/actions-capacity/"+url.PathEscape(args[2])+"/test", map[string]bool{"launch": launch}, "", &result); err != nil {
+			return err
+		}
+		return printJSON(result)
+	}
+	return usage
+}

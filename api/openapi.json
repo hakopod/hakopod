@@ -1285,11 +1285,18 @@
                             "items": {
                               "$ref": "#/components/schemas/ActionsSlot"
                             }
+                          },
+                          "evictions": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/ActionsEviction"
+                            }
                           }
                         },
                         "required": [
                           "pool",
-                          "slots"
+                          "slots",
+                          "evictions"
                         ],
                         "additionalProperties": false
                       }
@@ -1897,6 +1904,159 @@
           "sensitive_fields": []
         },
         "summary": "Release the provider hold for the Managed Actions service."
+      }
+    },
+    "/settings/actions-capacity": {
+      "get": {
+        "operationId": "getActionsCapacity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionsCapacitySettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get the Actions capacity",
+        "description": "Installation administrators only. The first read generates the installation's external ID.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "put": {
+        "operationId": "putActionsCapacity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionsCapacitySettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionsCapacityInput"
+              }
+            }
+          }
+        },
+        "summary": "Replace the Actions capacity",
+        "description": "Installation administrators only. Optimistic revision; a capacity still used by a pool cannot be removed. Every change is audited.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/settings/actions-capacity/{name}/test": {
+      "post": {
+        "operationId": "testActionsCapacity",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionsCapacityTest"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionsCapacityTestInput"
+              }
+            }
+          }
+        },
+        "summary": "Test an Actions capacity",
+        "description": "Installation administrators only. Assumes the role and reads the subnets and security groups. With launch, starts and terminates one small on-demand instance.",
+        "x-hakopod-agent": {
+          "boundary": "installation",
+          "category": "admin",
+          "exposure": "installation",
+          "permissions": [
+            "admin",
+            "agent:admin"
+          ],
+          "prerequisite": "",
+          "review": "canonical",
+          "sensitive_fields": []
+        }
       }
     },
     "/agent-policies": {
@@ -28750,6 +28910,17 @@
             ],
             "additionalProperties": false,
             "description": "Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration."
+          },
+          "capacity": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "description": "GitHub pools only. Runs each job on a single-use VM in this installation Actions capacity instead of a runner pod. The capacity decides the machine, so size, resources, architecture, node_name, workspace_size_gib and cache are refused. The pool's project and environment must be allowed to use it."
+          },
+          "spot_retries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Requires capacity. Reruns of a workflow run's failed jobs after spot interruptions, per run. Defaults to 2; 0 turns automatic reruns off. Reruns repeat every failed job of the run."
           }
         },
         "required": [
@@ -28837,6 +29008,20 @@
           "provider_runner_id": {
             "type": "string",
             "description": "Opaque native provider runner identifier when present; retains UUIDs without numeric conversion."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "VM slots: the cloud instance running this slot's job."
+          },
+          "instance_type": {
+            "type": "string"
+          },
+          "instance_lifecycle": {
+            "type": "string",
+            "enum": [
+              "spot",
+              "on-demand"
+            ]
           }
         },
         "required": [
@@ -29400,6 +29585,248 @@
           "provider",
           "instance_url",
           "jobs"
+        ],
+        "additionalProperties": false
+      },
+      "ActionsEviction": {
+        "type": "object",
+        "properties": {
+          "slot_id": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "string"
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "instance_type": {
+            "type": "string"
+          },
+          "evicted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "integer"
+          },
+          "run_attempt": {
+            "type": "integer"
+          },
+          "rerun_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When Hakopod decided about a rerun of this run attempt."
+          },
+          "rerun_error": {
+            "type": "string",
+            "description": "Why the run was not rerun, for example a jobs credential without Actions write permission."
+          }
+        },
+        "required": [
+          "slot_id",
+          "capacity",
+          "instance_id",
+          "instance_type",
+          "evicted_at"
+        ],
+        "additionalProperties": false,
+        "description": "A spot interruption of one of the pool's VMs, kept for 30 days."
+      },
+      "ActionsCapacity": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          },
+          "cloud": {
+            "type": "string",
+            "enum": [
+              "aws"
+            ]
+          },
+          "region": {
+            "type": "string",
+            "description": "AWS region, for example eu-central-1."
+          },
+          "role_arn": {
+            "type": "string",
+            "description": "IAM role Hakopod assumes from its own AWS credential chain."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "External ID for the role's trust policy. Omit to use the installation's generated one."
+          },
+          "subnet_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^subnet-[0-9a-f]{8,17}$"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "description": "Subnets with outbound access to GitHub. Nothing inbound is needed."
+          },
+          "security_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^sg-[0-9a-f]{8,17}$"
+            },
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "description": "Security groups for the runners. They need no inbound rules."
+          },
+          "instance_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,15}\\.[a-z0-9]{1,16}$"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "uniqueItems": true
+          },
+          "architecture": {
+            "type": "string",
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          },
+          "spot": {
+            "type": "boolean",
+            "description": "Launch on spot capacity; false launches on-demand only."
+          },
+          "disk_gib": {
+            "type": "integer",
+            "minimum": 20,
+            "maximum": 2000,
+            "description": "Encrypted root volume size. Defaults to 100."
+          },
+          "max_instances": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Hard ceiling on instances across every pool using this capacity."
+          },
+          "environments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "project/environment pairs allowed to use this capacity, or \"*\" for every environment."
+          }
+        },
+        "required": [
+          "name",
+          "cloud",
+          "region",
+          "role_arn",
+          "subnet_ids",
+          "security_group_ids",
+          "instance_types",
+          "architecture",
+          "spot",
+          "max_instances",
+          "environments"
+        ],
+        "additionalProperties": false
+      },
+      "ActionsCapacitySettings": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "Generated once per installation. Put it in each role's trust policy as sts:ExternalId."
+          },
+          "installation_id": {
+            "type": "string",
+            "description": "Value of the hakopod-installation tag on every instance; condition the role's TerminateInstances on it."
+          },
+          "capacities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionsCapacity"
+            }
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "external_id",
+          "installation_id",
+          "capacities",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "ActionsCapacityInput": {
+        "type": "object",
+        "properties": {
+          "capacities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionsCapacity"
+            },
+            "maxItems": 20
+          },
+          "expected_revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capacities",
+          "expected_revision"
+        ],
+        "additionalProperties": false
+      },
+      "ActionsCapacityTestInput": {
+        "type": "object",
+        "properties": {
+          "launch": {
+            "type": "boolean",
+            "description": "Also launch the smallest on-demand instance of the capacity's architecture and terminate it."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "ActionsCapacityTest": {
+        "type": "object",
+        "properties": {
+          "capacity": {
+            "type": "string"
+          },
+          "external_id": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "instance_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "capacity",
+          "external_id",
+          "warnings"
         ],
         "additionalProperties": false
       },

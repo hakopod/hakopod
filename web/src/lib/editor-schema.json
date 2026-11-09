@@ -172,6 +172,17 @@
         ],
         "additionalProperties": false,
         "description": "Optional GitLab cache using installation-approved S3 storage. credential names an application secret containing access_key, secret_key and optional session_token. Storage credentials remain on the manager. GitHub uses its own workflow cache configuration."
+      },
+      "capacity": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,62}$",
+        "description": "GitHub pools only. Runs each job on a single-use VM in this installation Actions capacity instead of a runner pod. The capacity decides the machine, so size, resources, architecture, node_name, workspace_size_gib and cache are refused. The pool's project and environment must be allowed to use it."
+      },
+      "spot_retries": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 5,
+        "description": "Requires capacity. Reruns of a workflow run's failed jobs after spot interruptions, per run. Defaults to 2; 0 turns automatic reruns off. Reruns repeat every failed job of the run."
       }
     },
     "required": [
