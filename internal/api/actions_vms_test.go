@@ -66,8 +66,20 @@ next:
 }
 func (f *vmFake) Check(context.Context) ([]string, error) { return nil, nil }
 
-// jitFake hands out a JIT configuration shaped like GitHub's.
-type jitFake struct{ *actionsFake }
+// jitFake hands out a JIT configuration shaped like GitHub's and records reruns.
+type jitFake struct {
+	*actionsFake
+	reruns *[]string
+	refuse *bool
+}
+
+func (f jitFake) RerunFailedJobs(_ context.Context, repository string, run int64) error {
+	if *f.refuse {
+		return &actions.StatusError{Status: 403}
+	}
+	*f.reruns = append(*f.reruns, fmt.Sprintf("%s#%d", repository, run))
+	return nil
+}
 
 func (f jitFake) Register(ctx context.Context, target actions.Target, name string, labels []string) (actions.Registration, error) {
 	r, err := f.actionsFake.Register(ctx, target, name, labels)
@@ -102,7 +114,8 @@ func vmHarness(t *testing.T, replicas int32) (*Server, *actionsFake, *vmFake, st
 	}
 	fake := &actionsFake{runners: map[int64]actions.Runner{}, pods: map[string]bool{}, configs: map[string]bool{}}
 	cloud := &vmFake{instances: map[string]*vm.Instance{}}
-	s := &Server{Store: db, actionsTestRuntime: fake, actionsClient: func(string) (runnerProvider, error) { return jitFake{fake}, nil },
+	client := jitFake{fake, &[]string{}, new(bool)}
+	s := &Server{Store: db, actionsTestRuntime: fake, actionsClient: func(string) (runnerProvider, error) { return client, nil },
 		actionsVMClient: func(context.Context, store.ActionsCapacity, string) (vm.Provider, error) { return cloud, nil }}
 	s.Auth.EncryptionKey = base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 	return s, fake, cloud, pools[0]
@@ -224,5 +237,60 @@ func TestActionsVMReaper(t *testing.T) {
 	}
 	if err = s.reapActionsCapacity(ctx, c, time.Now().Add(76*time.Minute)); err != nil || live.State != "terminated" {
 		t.Fatal("reaper kept an instance past its time limit", err)
+	}
+}
+
+func TestActionsVMSpotRerun(t *testing.T) {
+	s, _, cloud, p := vmHarness(t, 1)
+	ctx := context.Background()
+	target := actionsTarget(p)
+	client, _ := s.actionsClient("")
+	fake := client.(jitFake)
+	evict := func(attempt int64) {
+		t.Helper()
+		if err := s.reconcileActionsPool(ctx, target, p); err != nil {
+			t.Fatal(err)
+		}
+		slots, err := s.Store.ActionsSlots(ctx, p.ApplicationID, p.Service)
+		if err != nil || len(slots) != 1 {
+			t.Fatal(slots, err)
+		}
+		cloud.instances[slots[0].InstanceID].State = "terminated"
+		cloud.instances[slots[0].InstanceID].StateReason = "Server.SpotInstanceTermination"
+		_ = s.reconcileActionsPool(ctx, target, p)
+		body := fmt.Sprintf(`{"action":"completed","workflow_job":{"id":%d,"labels":["hakopod"],"run_id":77,"run_attempt":%d,"conclusion":"failure","runner_name":"hakopod-%s"},"repository":{"full_name":"team/repo"}}`, attempt, attempt, slots[0].ID)
+		if err = s.recordActionsJob(ctx, defaultGitConnection("github"), []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+		if err = s.rerunEvictedJobs(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	evict(1)
+	if len(*fake.reruns) != 1 || (*fake.reruns)[0] != "team/repo#77" {
+		t.Fatal("interrupted job not rerun", *fake.reruns)
+	}
+	// The replacement already started on spot; the next launch after the
+	// rerun is on-demand.
+	launches := len(cloud.launches)
+	cloud.instances[fmt.Sprintf("i-%d", launches)].State = "terminated"
+	if err := s.reconcileActionsPool(ctx, target, p); err != nil {
+		t.Fatal(err)
+	}
+	if len(cloud.launches) != launches+1 || cloud.launches[launches].Spot {
+		t.Fatal("rerun did not launch on-demand", len(cloud.launches))
+	}
+	*fake.refuse = true
+	evict(2)
+	evictions, err := s.Store.ActionsEvictions(ctx, p.ApplicationID, p.Service)
+	if err != nil || len(evictions) != 2 || !strings.Contains(evictions[0].RerunError, "Actions write permission") {
+		t.Fatal("refused rerun not recorded on the pool", evictions, err)
+	}
+	// A refused rerun does not count against the default two retries.
+	*fake.refuse = false
+	evict(3)
+	evict(4)
+	if len(*fake.reruns) != 2 {
+		t.Fatal("rerun beyond spot_retries", *fake.reruns)
 	}
 }

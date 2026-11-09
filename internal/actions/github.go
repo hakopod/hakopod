@@ -150,6 +150,15 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	}
 	return nil
 }
+// RerunFailedJobs reruns every failed job of a workflow run's latest attempt.
+// It needs Actions write permission on the repository.
+func (c *Client) RerunFailedJobs(ctx context.Context, repository string, runID int64) error {
+	if !ValidRepository(repository) || runID <= 0 {
+		return errors.New("invalid workflow run")
+	}
+	return c.request(ctx, http.MethodPost, fmt.Sprintf("/repos/%s/actions/runs/%d/rerun-failed-jobs", repository, runID), map[string]any{}, nil)
+}
+
 func runnerBase(target Target) (string, error) {
 	if !target.Valid() {
 		return "", errors.New("select either a GitHub.com organization or owner/repository; runner groups apply only to organizations")

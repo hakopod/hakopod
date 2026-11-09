@@ -221,3 +221,20 @@ func TestNamedRecoveryDoesNotMistakeIgnoredFilterForAbsence(t *testing.T) {
 		t.Fatal("unrelated page incorrectly proved absence", runner, err)
 	}
 }
+
+func TestRerunFailedJobs(t *testing.T) {
+	var got string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Method + " " + r.URL.Path
+		w.WriteHeader(201)
+	}))
+	defer server.Close()
+	c, _ := New("github_fixture_private_credential")
+	c.base = server.URL
+	if err := c.RerunFailedJobs(context.Background(), "team/repo", 42); err != nil || got != "POST /repos/team/repo/actions/runs/42/rerun-failed-jobs" {
+		t.Fatal(got, err)
+	}
+	if c.RerunFailedJobs(context.Background(), "../x", 42) == nil || c.RerunFailedJobs(context.Background(), "team/repo", 0) == nil {
+		t.Fatal("invalid run accepted")
+	}
+}

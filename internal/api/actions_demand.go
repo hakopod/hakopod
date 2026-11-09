@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
+	"strings"
 
 	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/spec"
@@ -11,6 +13,7 @@ import (
 )
 
 var errInvalidJobEvent = errors.New("invalid GitHub workflow_job payload")
+var actionsSlotID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 // recordActionsJob wakes scale-to-zero pools from a verified workflow_job
 // delivery. The connection's scope bounds which pools the delivery can reach.
@@ -18,8 +21,12 @@ func (s *Server) recordActionsJob(ctx context.Context, connectionID string, body
 	var payload struct {
 		Action      string `json:"action"`
 		WorkflowJob struct {
-			ID     int64    `json:"id"`
-			Labels []string `json:"labels"`
+			ID         int64    `json:"id"`
+			Labels     []string `json:"labels"`
+			RunID      int64    `json:"run_id"`
+			RunAttempt int64    `json:"run_attempt"`
+			Conclusion string   `json:"conclusion"`
+			RunnerName string   `json:"runner_name"`
 		} `json:"workflow_job"`
 		Repository struct {
 			FullName string `json:"full_name"`
@@ -35,6 +42,14 @@ func (s *Server) recordActionsJob(ctx context.Context, connectionID string, body
 			return err
 		}
 		event.Project, event.Environment = c.Project, c.Environment
+	}
+	// GitHub fails a job whose runner vanished. If a spot interruption took
+	// that runner's VM, attach the run so the reaper can rerun it.
+	job := payload.WorkflowJob
+	if slot, ok := strings.CutPrefix(job.RunnerName, "hakopod-"); ok && payload.Action == "completed" && job.Conclusion == "failure" && actionsSlotID.MatchString(slot) {
+		if err := s.Store.RecordActionsEvictedJob(ctx, slot, payload.Repository.FullName, job.RunID, job.RunAttempt, event.Project, event.Environment); err != nil {
+			return err
+		}
 	}
 	return s.Store.RecordActionsJobEvent(ctx, event)
 }
