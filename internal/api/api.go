@@ -17,6 +17,7 @@ import (
 	contract "github.com/hakopod/hakopod/api"
 
 	"github.com/hakopod/hakopod/internal/actions"
+	"github.com/hakopod/hakopod/internal/actions/vm"
 	"github.com/hakopod/hakopod/internal/applogs"
 	"github.com/hakopod/hakopod/internal/backup"
 	"github.com/hakopod/hakopod/internal/cluster"
@@ -71,6 +72,8 @@ type Server struct {
 	actionsTestRuntime             actionsRuntime
 	actionsClient                  func(string) (runnerProvider, error)
 	actionsBudget                  actions.RequestBudget
+	actionsVMClient                func(context.Context, store.ActionsCapacity, string) (vm.Provider, error)
+	actionsVMProviders             sync.Map
 	actionsNativeConfigured        bool
 	databaseResizeRetryTestRuntime databaseResizeRetryRuntime
 	// Native provider configuration is trusted in-process input and remains nil

@@ -135,7 +135,8 @@ func (c *Client) validateActionsDelivery(ctx context.Context, t Target) error {
 				return &actions.UnsupportedProviderError{Provider: actions.ProviderBitbucket, Reason: "native execution is not qualified for this installation"}
 			}
 		}
-		if svc.Actions != nil && !svc.Suspended && svc.Replicas > 0 {
+		// VM pools run outside the cluster; the controller checks their capacity.
+		if svc.Actions != nil && svc.Actions.Capacity == "" && !svc.Suspended && svc.Replicas > 0 {
 			if err := c.ActionsPoolAvailable(ctx, t, svc); err != nil {
 				return err
 			}
