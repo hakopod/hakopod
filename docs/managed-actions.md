@@ -370,8 +370,9 @@ account instead of a runner pod. Concurrency is then bounded by your AWS quota
 rather than by this installation's nodes, and Docker runs natively on the VM,
 without gVisor. Spot capacity is the default.
 
-This is new and has not yet been run against a real AWS account by the Hakopod
-team. Try it with a small `max_instances` first.
+This is new. Launches, images, standbys and the IAM policy below have been run
+against a real AWS account (see [Acceptance in a real account](#acceptance-in-a-real-account)),
+but no production pool has used it yet. Try it with a small `max_instances` first.
 
 How it works:
 
@@ -379,9 +380,13 @@ How it works:
 - For each slot the control plane requests one single-use JIT configuration
   from GitHub and launches one instance with it in user data. The pool's GitHub
   credential never leaves the control plane.
-- The instance boots stock Ubuntu 24.04, installs Docker and GitHub runner
-  2.337.0 (checked against its published SHA-256), runs one job as an
-  unprivileged user and powers off. Shutdown terminates the instance.
+- The instance boots the capacity's [image](#runner-images), runs one job as
+  the `runner` user (with passwordless sudo, as on GitHub-hosted runners) and
+  powers off. Shutdown terminates the instance. An image without Docker or the
+  runner gets Docker from Ubuntu and GitHub runner 2.337.0, checked against its
+  published SHA-256, at boot.
+- With a [warm pool](#warm-pool), a job starts a stopped standby instead of
+  launching one.
 - Instances need outbound HTTPS to GitHub and nothing inbound. They never
   contact Hakopod.
 
@@ -413,8 +418,8 @@ credential files, profiles or SSO.
 }
 ```
 
-Its permissions let it launch tagged instances and terminate only instances
-tagged with this installation:
+Its permissions let it launch tagged instances, and start, change, image and
+terminate only instances tagged with this installation:
 
 ```json
 {
@@ -443,12 +448,50 @@ tagged with this installation:
       "Effect": "Allow",
       "Action": "ec2:CreateTags",
       "Resource": "*",
-      "Condition": {"StringEquals": {"ec2:CreateAction": ["CreateLaunchTemplate", "CreateFleet", "RunInstances"]}}
+      "Condition": {"StringEquals": {"ec2:CreateAction": ["CreateLaunchTemplate", "CreateFleet", "RunInstances", "CreateImage"]}}
     },
     {
       "Sid": "TerminateOwnInstances",
       "Effect": "Allow",
       "Action": "ec2:TerminateInstances",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"ec2:ResourceTag/hakopod-installation": "INSTALLATION_ID"}}
+    },
+    {
+      "Sid": "WarmPool",
+      "Effect": "Allow",
+      "Action": ["ec2:StartInstances", "ec2:ModifyInstanceAttribute", "ec2:GetConsoleOutput"],
+      "Resource": "*",
+      "Condition": {"StringEquals": {"ec2:ResourceTag/hakopod-installation": "INSTALLATION_ID"}}
+    },
+    {
+      "Sid": "ClaimTags",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {"ec2:ResourceTag/hakopod-installation": "INSTALLATION_ID"},
+        "ForAllValues:StringEquals": {"aws:TagKeys": ["hakopod-pool", "hakopod-slot", "hakopod-pool-state"]}
+      }
+    },
+    {
+      "Sid": "ImageFromOwnInstance",
+      "Effect": "Allow",
+      "Action": "ec2:CreateImage",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {"StringEquals": {"ec2:ResourceTag/hakopod-installation": "INSTALLATION_ID"}}
+    },
+    {
+      "Sid": "TaggedImage",
+      "Effect": "Allow",
+      "Action": "ec2:CreateImage",
+      "Resource": ["arn:aws:ec2:*::image/*", "arn:aws:ec2:*::snapshot/*"],
+      "Condition": {"StringEquals": {"aws:RequestTag/hakopod-installation": "INSTALLATION_ID"}}
+    },
+    {
+      "Sid": "RemoveOwnImages",
+      "Effect": "Allow",
+      "Action": ["ec2:DeregisterImage", "ec2:DeleteSnapshot"],
       "Resource": "*",
       "Condition": {"StringEquals": {"ec2:ResourceTag/hakopod-installation": "INSTALLATION_ID"}}
     },
@@ -470,7 +513,12 @@ tagged with this installation:
 ```
 
 No `iam:PassRole` is needed: runners get no instance profile. Hakopod also
-checks the installation tag itself before every termination.
+checks the installation tag itself before it terminates, starts, changes or
+images an instance, or deletes an image. `ec2:StopInstances` is not needed:
+standbys and image builders power themselves off. The `WarmPool`, `ClaimTags`,
+image statements and `CreateImage` in `TagOnCreate` are only used by a warm
+pool and by `hakopod-minimal`; leave them out if you use neither. A
+`resolve:ssm:` image also needs `ssm:GetParameters` on that parameter.
 
 The same in Terraform, with a security group that allows outbound traffic only:
 
@@ -501,9 +549,19 @@ resource "aws_iam_role_policy" "hakopod_actions" {
       { Effect = "Allow", Action = "ec2:Describe*", Resource = "*" },
       { Effect = "Allow", Action = ["ec2:CreateLaunchTemplate", "ec2:DeleteLaunchTemplate", "ec2:CreateFleet", "ec2:RunInstances"], Resource = "*" },
       { Effect = "Allow", Action = "ec2:CreateTags", Resource = "*",
-        Condition = { StringEquals = { "ec2:CreateAction" = ["CreateLaunchTemplate", "CreateFleet", "RunInstances"] } } },
-      { Effect = "Allow", Action = "ec2:TerminateInstances", Resource = "*",
+        Condition = { StringEquals = { "ec2:CreateAction" = ["CreateLaunchTemplate", "CreateFleet", "RunInstances", "CreateImage"] } } },
+      { Effect = "Allow", Resource = "*",
+        Action = ["ec2:TerminateInstances", "ec2:StartInstances", "ec2:ModifyInstanceAttribute", "ec2:GetConsoleOutput", "ec2:DeregisterImage", "ec2:DeleteSnapshot"],
         Condition = { StringEquals = { "ec2:ResourceTag/hakopod-installation" = var.installation_id } } },
+      { Effect = "Allow", Action = "ec2:CreateTags", Resource = "arn:aws:ec2:*:*:instance/*",
+        Condition = {
+          StringEquals                = { "ec2:ResourceTag/hakopod-installation" = var.installation_id }
+          "ForAllValues:StringEquals" = { "aws:TagKeys" = ["hakopod-pool", "hakopod-slot", "hakopod-pool-state"] }
+        } },
+      { Effect = "Allow", Action = "ec2:CreateImage", Resource = "arn:aws:ec2:*:*:instance/*",
+        Condition = { StringEquals = { "ec2:ResourceTag/hakopod-installation" = var.installation_id } } },
+      { Effect = "Allow", Action = "ec2:CreateImage", Resource = ["arn:aws:ec2:*::image/*", "arn:aws:ec2:*::snapshot/*"],
+        Condition = { StringEquals = { "aws:RequestTag/hakopod-installation" = var.installation_id } } },
       { Effect = "Allow", Action = "ssm:GetParameters", Resource = "arn:aws:ssm:*::parameter/aws/service/canonical/*" },
       { Effect = "Allow", Action = "iam:CreateServiceLinkedRole", Resource = "*",
         Condition = { StringEquals = { "iam:AWSServiceName" = ["ec2fleet.amazonaws.com", "spot.amazonaws.com"] } } },
@@ -547,7 +605,9 @@ instance_types = ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"]
 architecture = "amd64"              # or arm64, with Graviton types
 spot = true                         # false: on-demand only
 disk_gib = 100                      # encrypted gp3 root volume
-max_instances = 20                  # hard ceiling across every pool
+max_instances = 20                  # hard ceiling across every pool, standbys included
+image = "runs-on-full"              # default; or hakopod-minimal, ami-..., resolve:ssm:/...
+warm_pool = 0                       # stopped standbys kept ready; see Warm pool
 environments = ["shop/production"]  # project/environment pairs, or "*"
 ```
 
@@ -555,6 +615,7 @@ environments = ["shop/production"]  # project/environment pairs, or "*"
 hakopod actions capacity set capacity.toml
 hakopod actions capacity test aws-spot            # assume the role, read subnets and security groups
 hakopod actions capacity test aws-spot --launch   # also start and terminate one t3.micro or t4g.micro
+hakopod actions capacity build-image aws-spot     # hakopod-minimal only; list shows progress
 ```
 
 The same is available as `GET`/`PUT /api/v1/settings/actions-capacity` with
@@ -567,8 +628,10 @@ move the pool off it first. There is no dashboard page yet.
 | `instance_types` | 1–20 types of the capacity's architecture |
 | `subnet_ids` | 1–10 subnets |
 | `security_group_ids` | 1–5 groups; `test` warns about inbound rules |
-| `disk_gib` | 20–2,000; default 100 |
+| `disk_gib` | 20–2,000; default 100; at least 30 for `runs-on-full` |
 | `max_instances` | 1–1,000 |
+| `image` | `runs-on-full` (default), `hakopod-minimal`, `ami-…` or `resolve:ssm:/…` |
+| `warm_pool` | 0–50, at most `max_instances`; default 0 |
 
 ### Use it from a pool
 
@@ -595,6 +658,93 @@ registering more runners and its status says which capacity is full. Pool
 status (`GET /api/v1/applications/{id}/actions`) shows each slot's instance ID,
 type and spot or on-demand lifecycle, and the pool's spot interruptions.
 
+### Runner images
+
+| `image` | What boots | Runner start after launch¹ |
+| --- | --- | --- |
+| stock Ubuntu (before this setting) | Canonical's Ubuntu 24.04; Docker and the runner are installed on every boot | 73 s |
+| `runs-on-full` | RunsOn's public copy of GitHub's Ubuntu 24.04 runner image: Docker, its runner build (2.338.2 in November 2026) and the GitHub-hosted toolchains | 16 s |
+| `hakopod-minimal` | Ubuntu 24.04 with Docker, runner 2.337.0 and a boot unit, built in your account | 52 s² |
+| `ami-…`, `resolve:ssm:/…` | your own Ubuntu-based image | depends on the image |
+
+¹ Measured on `t4g.small` in us-east-2 from the launch call to the boot script
+starting `run.sh`, on the instance's clock. GitHub then needs a few seconds to
+hand the runner its job.
+² The first boots of a freshly built image read every block lazily from its new
+snapshot: Docker took 17 s to start against 3 s on `runs-on-full`. Standbys of
+the same image start in 15 s, so a warm pool hides this.
+
+**`runs-on-full`** resolves at launch to the newest image owned by AWS account
+`135269210855` named `runs-on-v2.2-ubuntu24-full-x64-*` or `…-arm64-*`, cached
+for an hour. RunsOn replaces these images about every 15 days; IDs are never
+pinned. The runner is preinstalled in `/home/runner` (RunsOn's rebuild of the
+upstream release, from github.com/runs-on/runner) and is used as is. The root
+snapshot is 30 GiB, so `disk_gib` must be at least 30.
+
+These images are published by RunsOn, not by Hakopod or GitHub. The image
+repository (github.com/runs-on/runner-images-for-aws, MIT licensed) says they
+are for use with RunsOn "or for your own usage". RunsOn's commercial license for
+its own software also lists AMIs among what paying customers may use and
+forbids offering the software as a hosted or runner service; it does not say
+whether that covers the public images used without RunsOn. If that matters to
+you, ask RunsOn, or use `hakopod-minimal` or your own image.
+
+**`hakopod-minimal`** is built in the capacity's own account:
+
+```sh
+hakopod actions capacity build-image aws-spot
+hakopod actions capacity list    # shows building, available or failed, and the AMI ID
+```
+
+The Actions worker launches stock Ubuntu 24.04 on one of the capacity's
+instance types with an 8 GiB disk, installs Docker, runner 2.337.0 (SHA-256
+checked) and its dependencies, masks snap, apt timers and other units a runner
+does not need, and adds `hakopod-runner.service`, which reads the instance's
+user data over IMDSv2 on every boot and runs it. The builder powers itself off;
+Hakopod images it, tags the image and its snapshot with `hakopod-installation`
+and `hakopod-capacity`, terminates the builder, and deregisters older Hakopod
+images of that capacity with their snapshots. A build takes about
+10 minutes, most of it waiting for the snapshot. A failed install leaves the builder running; the build is
+marked failed after 45 minutes with the end of its console output. Launches
+keep using the previous image until a new one is available, and wait with a
+message if there is none yet. Rebuild to pick up Ubuntu updates.
+
+**Your own image** must be Ubuntu-based with cloud-init. If it has Docker and
+the runner in `/home/runner` or `/home/runner/actions-runner`, they are used;
+anything missing is installed at boot.
+
+### Warm pool
+
+`warm_pool = N` keeps N stopped on-demand instances of the capacity's image.
+A standby is launched with shutdown behaviour `stop`, boots once with user data
+that sets up the runner user, reads the runner and Docker files (so its EBS
+volume no longer fetches them lazily from the snapshot) and powers off. A
+stopped standby costs only its EBS volume: with `disk_gib = 100`, about $8 a
+month each.
+
+When a job needs a runner, Hakopod claims a stopped standby (the database
+decides which slot gets it), tags it with the slot, switches it to terminate on
+shutdown, replaces its user data with the job's single-use JIT configuration
+and starts it. The runner runs on that boot: on `hakopod-minimal` the boot unit
+runs the new user data; on every other image the user data is a MIME multipart
+document whose cloud-config runs `scripts-user` on every boot. The instance
+powers off after its job and is terminated, like any runner. When no standby is
+stopped, the job launches a cold instance (spot if the capacity uses spot).
+
+Every 30 seconds the Actions worker refills the pool. Standbys count toward
+`max_instances`: the pool holds at most `max_instances` minus the running
+slots. Standbys of a superseded image (a new RunsOn release, a rebuilt
+`hakopod-minimal`, a changed `image`) and standbys stuck booting or stopping
+for 15 minutes are terminated and replaced. Set `warm_pool = 0` and wait a
+minute before removing a capacity, so its standbys are terminated.
+
+Measured on `t4g.small` in us-east-2: a standby takes 70 to 100 seconds to
+prepare. From the claim to the runner starting took 14 s on `runs-on-full` and
+15 s on `hakopod-minimal`, against 16 s and 52 s for a cold launch. Starting a
+stopped instance is barely faster than launching one; what a standby saves is
+the first, lazy reads of its EBS volume, which matter most for a freshly built
+image. Pool status shows each slot's `instance_source`, `cold` or `standby`.
+
 ### Spot interruptions
 
 GitHub fails a job whose runner disappears; it does not requeue it. When AWS
@@ -617,10 +767,11 @@ status.
 
 ### Cleanup
 
-The Actions worker sweeps every capacity each minute and terminates instances
+The Actions worker sweeps every capacity every 30 seconds and terminates instances
 tagged with this installation that belong to no slot or to a removed pool, a
 second instance launched for the same slot, and any that have run longer than
-`timeout_minutes` plus 15 minutes. A slot being drained keeps its VM until its
+`timeout_minutes` plus 15 minutes. Standbys and image builders are left to the
+warm pool and the image build, which remove their own. A slot being drained keeps its VM until its
 job finishes; the pool then terminates it. That includes idle runners: a VM waiting for a job is replaced after
 that time. Each VM also stops its runner after the same limit on its own, so it
 does not outlive an unreachable control plane. GitHub runners of vanished
@@ -685,9 +836,20 @@ changed to `StringLike` on `acceptance-*`: each run tags its instance with a
 fresh `acceptance-...` installation ID. Create the role before adding the second
 trust statement if IAM rejects a principal that does not exist yet.
 
-Not verified yet: launching in a real AWS account, the IAM policy above in
-practice, an actual spot interruption followed by a rerun, and boot time from
-stock Ubuntu. Jobs pay for the Docker and runner install on every boot.
+`TestAcceptanceRunnerImages` in `internal/actions/vm/aws/acceptance_test.go`
+(same variables, run by hand with `HAKOPOD_AWS_ACCEPTANCE=1`) measures runner
+start on `t4g.small` on-demand: a cold launch from stock Ubuntu, from
+`runs-on-full` and from a `hakopod-minimal` image it builds, and a standby of
+each image prepared, stopped, claimed with new user data and started. It
+replaces `run.sh` with a check that Docker answers and `config.sh --version`
+runs, so no GitHub runner is registered, and proves with a nonce that the new
+user data ran on the standby's next boot. It needs the policy above with the
+warm pool and image statements. A run takes about 15 minutes, mostly waiting
+for the image, and costs a few cents; it terminates its instances and deletes
+its image and snapshot.
+
+Not verified yet: an actual spot interruption followed by a rerun, and a real
+GitHub job on a VM (the acceptance tests stop where `run.sh` would start).
 
 ## Isolation and capacity
 
