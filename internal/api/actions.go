@@ -89,6 +89,7 @@ func actionsFence(ctx context.Context, t cluster.Target) error {
 }
 
 func (s *Server) RunActions(ctx context.Context) {
+	go s.runActionsVMReaper(ctx)
 	runActionsWorkers(ctx, s.Store, s.reconcileScheduledActions)
 }
 
@@ -98,6 +99,10 @@ func safeActionsError(err error) string {
 	var reuse *actions.RunnerReuseError
 	if errors.As(err, &reuse) {
 		return reuse.Error()
+	}
+	var capacity *actionsCapacityError
+	if errors.As(err, &capacity) {
+		return capacity.Error()
 	}
 	var unsupported *actions.UnsupportedProviderError
 	if errors.As(err, &unsupported) {
@@ -170,8 +175,9 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 	if err := s.Store.UpdateActionsSlot(ctx, v.ID, v.RunnerID, "cleanup"); err != nil {
 		return false, err
 	}
+	runtime := s.slotRuntime(v.Config)
 	if force {
-		if _, err := s.actionRuntime().DeleteActionsPod(ctx, t, v.ID); err != nil {
+		if _, err := runtime.DeleteActionsPod(ctx, t, v.ID); err != nil {
 			return false, err
 		}
 	}
@@ -242,7 +248,7 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 		}
 		release()
 	}
-	gone, err := s.actionRuntime().DeleteActionsPod(ctx, t, v.ID)
+	gone, err := runtime.DeleteActionsPod(ctx, t, v.ID)
 	if err != nil || !gone {
 		// The provider registration is gone and only pod termination remains.
 		// Check again soon so the replacement slot is not held for a full pass.
@@ -251,7 +257,7 @@ func (s *Server) cleanupActionsSlot(ctx context.Context, t cluster.Target, p sto
 		}
 		return false, err
 	}
-	if err = s.actionRuntime().DeleteActionsConfig(ctx, t, v.ID); err != nil {
+	if err = runtime.DeleteActionsConfig(ctx, t, v.ID); err != nil {
 		return false, err
 	}
 	return true, s.Store.DeleteActionsSlot(ctx, v.ID)
@@ -328,19 +334,25 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	// budget polling online runners. Ambiguous registrations must recover first.
 	cleanupPending := len(slots) > 0 && (slots[0].Phase == "intent" || slots[0].Phase == "cleanup")
 	if remaining < start && !cleanupPending {
-		if err = s.startActionsSlot(ctx, t, p); err != nil {
-			return err
+		// A full VM capacity must not stop the pass: its busy slots still need
+		// observing and cleanup, which is what frees the capacity.
+		var wait *actionsCapacityError
+		if err = s.startActionsSlot(ctx, t, p); !errors.As(err, &wait) || !wait.full {
+			if err != nil {
+				return err
+			}
+			requestActionsWarmup(ctx)
+			return s.Store.ActionsMessage(ctx, p, "")
 		}
-		requestActionsWarmup(ctx)
-		return s.Store.ActionsMessage(ctx, p, "")
 	}
 	for _, v := range slots {
 		if err := actionsFence(ctx, t); err != nil {
 			return err
 		}
 		s.observeActionsJob(ctx, t, v)
+		runtime := s.slotRuntime(v.Config)
 		if p.Removed {
-			if _, err := s.actionRuntime().DeleteActionsPod(ctx, t, v.ID); err != nil {
+			if _, err := runtime.DeleteActionsPod(ctx, t, v.ID); err != nil {
 				return err
 			}
 		}
@@ -348,7 +360,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 		if err != nil {
 			return err
 		}
-		phase, err := s.actionRuntime().ActionsPodPhase(ctx, t, v.ID)
+		phase, err := runtime.ActionsPodPhase(ctx, t, v.ID)
 		if err != nil {
 			return err
 		}
@@ -396,7 +408,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 			return err
 		}
 		if phase == "missing" {
-			exists, e := s.actionRuntime().HasActionsConfig(ctx, t, v.ID)
+			exists, e := runtime.HasActionsConfig(ctx, t, v.ID)
 			if e != nil {
 				return e
 			}
@@ -407,7 +419,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 			if retire {
 				continue
 			}
-			if err = s.actionRuntime().StartActionsPod(ctx, t, p.Service, v.ID, v.Config); err != nil {
+			if err = runtime.StartActionsPod(ctx, t, p.Service, v.ID, v.Config); err != nil {
 				return err
 			}
 		}
@@ -440,7 +452,7 @@ func (s *Server) reconcileActionsPool(ctx context.Context, t cluster.Target, p s
 	if p.Config.Suspended {
 		return s.Store.ActionsMessage(ctx, p, "Paused. Busy jobs finish before their runners are removed.")
 	}
-	if err = s.actionRuntime().ActionsPoolAvailable(ctx, t, p.Config); err != nil {
+	if err = s.slotRuntime(p.Config).ActionsPoolAvailable(ctx, t, p.Config); err != nil {
 		return err
 	}
 	// At most one provider registration per pool per pass. Draining and
@@ -458,8 +470,17 @@ func (s *Server) startActionsSlot(ctx context.Context, t cluster.Target, p store
 	if err := s.Store.RequireActions(ctx, p.Project, p.Environment); err != nil {
 		return err
 	}
-	if err := s.actionRuntime().ActionsPoolAvailable(ctx, t, p.Config); err != nil {
+	runtime := s.slotRuntime(p.Config)
+	if err := runtime.ActionsPoolAvailable(ctx, t, p.Config); err != nil {
 		return err
+	}
+	// Runtimes with a launch ceiling refuse before a runner is registered.
+	if room, ok := runtime.(interface {
+		ActionsRoom(context.Context, cluster.Target, spec.Service) error
+	}); ok {
+		if err := room.ActionsRoom(ctx, t, p.Config); err != nil {
+			return err
+		}
 	}
 	client, err := s.runnerClient(ctx, t, p.Config)
 	if err != nil {
@@ -496,10 +517,10 @@ func (s *Server) startActionsSlot(ctx context.Context, t cluster.Target, p store
 	if err = s.Store.UpdateActionsSlot(ctx, v.ID, registered.Runner.ID, "starting"); err != nil {
 		return err
 	}
-	if err = s.actionRuntime().SaveActionsConfig(ctx, t, p.Service, v.ID, registered.EncodedConfig); err != nil {
+	if err = runtime.SaveActionsConfig(ctx, t, p.Service, v.ID, registered.EncodedConfig); err != nil {
 		return err
 	}
-	return s.actionRuntime().StartActionsPod(ctx, t, p.Service, v.ID, p.Config)
+	return runtime.StartActionsPod(ctx, t, p.Service, v.ID, p.Config)
 }
 
 func (s *Server) observeActions(ctx context.Context, t cluster.Target, name string, config spec.Service) (cluster.ServiceStatus, error) {

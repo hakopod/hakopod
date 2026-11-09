@@ -20,7 +20,7 @@ func (s *Server) observeActionsJob(ctx context.Context, t cluster.Target, v stor
 	if actionsConfigProvider(v.Config) != actions.ProviderGitHub {
 		return
 	}
-	runtime, ok := s.actionRuntime().(actionsOutputRuntime)
+	runtime, ok := s.slotRuntime(v.Config).(actionsOutputRuntime)
 	if !ok || v.RunnerID == 0 {
 		return
 	}

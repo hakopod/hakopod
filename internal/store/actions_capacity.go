@@ -88,8 +88,8 @@ func (c *ActionsCapacity) normalize() error {
 	if c.ExternalID != "" && !awsExternalID.MatchString(c.ExternalID) {
 		return bad("external_id", "use 2–1000 letters, digits or +=,.@:/_-")
 	}
-	if !distinct(c.SubnetIDs, 1, 16, awsSubnetID) {
-		return bad("subnet_ids", "list 1–16 distinct subnet IDs")
+	if !distinct(c.SubnetIDs, 1, 10, awsSubnetID) {
+		return bad("subnet_ids", "list 1–10 distinct subnet IDs")
 	}
 	if !distinct(c.SecurityGroupIDs, 1, 5, awsSecurityGroup) {
 		return bad("security_group_ids", "list 1–5 distinct security group IDs")
@@ -254,4 +254,22 @@ func requireActionsCapacityTx(ctx context.Context, tx pgx.Tx, project, env strin
 		}
 	}
 	return nil
+}
+
+// ActionsCapacity reads one capacity for the runtime, without creating the
+// setting the way the administration read does.
+func (s *Store) ActionsCapacity(ctx context.Context, name string) (ActionsCapacity, bool, error) {
+	v, _, err := actionsCapacitySettings(ctx, s.Pool)
+	if err != nil {
+		return ActionsCapacity{}, false, err
+	}
+	c, ok := v.Find(name)
+	return c, ok, nil
+}
+
+// InstallationID tags every cloud resource this installation creates.
+func (s *Store) InstallationID(ctx context.Context) (string, error) {
+	var id string
+	err := s.Pool.QueryRow(ctx, "SELECT installation_id FROM installation_license WHERE singleton").Scan(&id)
+	return id, err
 }
