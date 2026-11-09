@@ -15,8 +15,8 @@ PY
 then
   exit 0
 fi
-curl --fail --silent --show-error --location --retry 3 "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/$asset" -o "$ROOT/.local/downloads/$asset"
-curl --fail --silent --show-error --location --retry 3 "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/checksums.txt" -o "$ROOT/.local/downloads/checksums.txt"
+curl --fail --silent --show-error --location --retry 6 --retry-delay 10 --max-time 120 "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/$asset" -o "$ROOT/.local/downloads/$asset"
+curl --fail --silent --show-error --location --retry 6 --retry-delay 10 --max-time 120 "https://github.com/k3d-io/k3d/releases/download/$K3D_VERSION/checksums.txt" -o "$ROOT/.local/downloads/checksums.txt"
 python3 - "$ROOT" "$asset" <<'PY'
 import hashlib, pathlib, sys
 root, asset = pathlib.Path(sys.argv[1]), sys.argv[2]
