@@ -10,17 +10,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
-	sdk "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go"
 	"github.com/hakopod/hakopod/internal/actions/vm"
+	"github.com/hakopod/hakopod/internal/awsquery"
 )
 
 type Config struct {
@@ -34,57 +31,55 @@ type Config struct {
 	DiskGiB          int64
 }
 
-type ec2API interface {
-	CreateLaunchTemplate(context.Context, *ec2.CreateLaunchTemplateInput, ...func(*ec2.Options)) (*ec2.CreateLaunchTemplateOutput, error)
-	DeleteLaunchTemplate(context.Context, *ec2.DeleteLaunchTemplateInput, ...func(*ec2.Options)) (*ec2.DeleteLaunchTemplateOutput, error)
-	CreateFleet(context.Context, *ec2.CreateFleetInput, ...func(*ec2.Options)) (*ec2.CreateFleetOutput, error)
-	DescribeInstances(context.Context, *ec2.DescribeInstancesInput, ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
-	TerminateInstances(context.Context, *ec2.TerminateInstancesInput, ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
-	DescribeSubnets(context.Context, *ec2.DescribeSubnetsInput, ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
-	DescribeSecurityGroups(context.Context, *ec2.DescribeSecurityGroupsInput, ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error)
-}
-
+// Client speaks the EC2 Query API directly (internal/awsquery), so the EC2
+// and STS SDK modules stay out of go.mod.
 type Client struct {
-	ec2    ec2API
+	ec2    awsquery.Client
 	config Config
 }
 
-// New assumes the capacity's role from Hakopod's default AWS credential chain
-// (environment, web identity, instance or pod role). Credentials are cached
-// and refreshed by the SDK.
-func New(ctx context.Context, c Config) (*Client, error) {
-	if c.Installation == "" || c.ExternalID == "" {
-		return nil, errors.New("an installation and external ID are required")
+// New assumes the capacity's role from Hakopod's own AWS identity:
+// environment keys, a web identity token, or the EC2 instance role. Shared
+// config files and SSO profiles are not read. The role's credentials are
+// cached and refreshed before they expire.
+func New(_ context.Context, c Config) (*Client, error) {
+	if c.Installation == "" || c.ExternalID == "" || c.Region == "" {
+		return nil, errors.New("an installation, region and external ID are required")
 	}
-	base, err := config.LoadDefaultConfig(ctx, config.WithRegion(c.Region))
-	if err != nil {
-		return nil, fmt.Errorf("AWS configuration: %w", err)
+	base := awsquery.Client{Region: c.Region, Credentials: awsquery.Identity{SessionName: "hakopod-actions"}.Provider(c.Region)}
+	role := base
+	role.Credentials = awsquery.AssumeRole(base, c.RoleARN, c.ExternalID, "hakopod-actions")
+	return &Client{ec2: role, config: c}, nil
+}
+
+func (c *Client) call(ctx context.Context, action string, params url.Values, out any) error {
+	return c.ec2.Call(ctx, "ec2", action, "2016-11-15", params, out)
+}
+
+// list sets EC2's flattened list parameters: prefix.1, prefix.2, ...
+func list(p url.Values, prefix string, values []string) {
+	for i, v := range values {
+		p.Set(prefix+"."+strconv.Itoa(i+1), v)
 	}
-	role := stscreds.NewAssumeRoleProvider(sts.NewFromConfig(base), c.RoleARN, func(o *stscreds.AssumeRoleOptions) {
-		o.ExternalID = sdk.String(c.ExternalID)
-		o.RoleSessionName = "hakopod-actions"
-	})
-	base.Credentials = sdk.NewCredentialsCache(role)
-	return &Client{ec2: ec2.NewFromConfig(base), config: c}, nil
+}
+
+func tagSpec(p url.Values, prefix, resource string, tags map[string]string) {
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	p.Set(prefix+".ResourceType", resource)
+	for i, k := range keys {
+		p.Set(fmt.Sprintf("%s.Tag.%d.Key", prefix, i+1), k)
+		p.Set(fmt.Sprintf("%s.Tag.%d.Value", prefix, i+1), tags[k])
+	}
 }
 
 // Canonical publishes the current Ubuntu 24.04 image for each architecture as
 // a public SSM parameter. Instant fleets resolve it at launch.
 func ubuntuImage(architecture string) string {
 	return "resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/" + architecture + "/hvm/ebs-gp3/ami-id"
-}
-
-func tagSpec(resource types.ResourceType, tags map[string]string) types.LaunchTemplateTagSpecificationRequest {
-	keys := make([]string, 0, len(tags))
-	for k := range tags {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	spec := types.LaunchTemplateTagSpecificationRequest{ResourceType: resource}
-	for _, k := range keys {
-		spec.Tags = append(spec.Tags, types.Tag{Key: sdk.String(k), Value: sdk.String(tags[k])})
-	}
-	return spec
 }
 
 // Launch creates a throwaway launch template carrying the boot script, starts
@@ -103,116 +98,130 @@ func (c *Client) Launch(ctx context.Context, in vm.LaunchInput) (vm.Instance, er
 	if _, err := rand.Read(suffix); err != nil {
 		return vm.Instance{}, err
 	}
-	template, err := c.ec2.CreateLaunchTemplate(ctx, &ec2.CreateLaunchTemplateInput{
-		LaunchTemplateName: sdk.String("hakopod-" + in.Name + "-" + hex.EncodeToString(suffix)),
-		TagSpecifications:  []types.TagSpecification{{ResourceType: types.ResourceTypeLaunchTemplate, Tags: tagSpec("", tags).Tags}},
-		LaunchTemplateData: &types.RequestLaunchTemplateData{
-			ImageId:                           sdk.String(ubuntuImage(c.config.Architecture)),
-			UserData:                          sdk.String(base64.StdEncoding.EncodeToString([]byte(in.UserData))),
-			InstanceInitiatedShutdownBehavior: types.ShutdownBehaviorTerminate,
-			SecurityGroupIds:                  c.config.SecurityGroupIDs,
-			MetadataOptions: &types.LaunchTemplateInstanceMetadataOptionsRequest{
-				HttpEndpoint:            types.LaunchTemplateInstanceMetadataEndpointStateEnabled,
-				HttpTokens:              types.LaunchTemplateHttpTokensStateRequired,
-				HttpPutResponseHopLimit: sdk.Int32(1),
-			},
-			BlockDeviceMappings: []types.LaunchTemplateBlockDeviceMappingRequest{{
-				DeviceName: sdk.String("/dev/sda1"),
-				Ebs: &types.LaunchTemplateEbsBlockDeviceRequest{
-					VolumeSize: sdk.Int32(int32(c.config.DiskGiB)), VolumeType: types.VolumeTypeGp3,
-					Encrypted: sdk.Bool(true), DeleteOnTermination: sdk.Bool(true),
-				},
-			}},
-			TagSpecifications: []types.LaunchTemplateTagSpecificationRequest{tagSpec(types.ResourceTypeInstance, tags), tagSpec(types.ResourceTypeVolume, tags)},
-		},
-	})
-	if err != nil {
+	p := url.Values{"LaunchTemplateName": {"hakopod-" + in.Name + "-" + hex.EncodeToString(suffix)}}
+	tagSpec(p, "TagSpecification.1", "launch-template", tags)
+	d := "LaunchTemplateData."
+	p.Set(d+"ImageId", ubuntuImage(c.config.Architecture))
+	p.Set(d+"UserData", base64.StdEncoding.EncodeToString([]byte(in.UserData)))
+	p.Set(d+"InstanceInitiatedShutdownBehavior", "terminate")
+	list(p, d+"SecurityGroupId", c.config.SecurityGroupIDs)
+	p.Set(d+"MetadataOptions.HttpEndpoint", "enabled")
+	p.Set(d+"MetadataOptions.HttpTokens", "required")
+	p.Set(d+"MetadataOptions.HttpPutResponseHopLimit", "1")
+	p.Set(d+"BlockDeviceMapping.1.DeviceName", "/dev/sda1")
+	p.Set(d+"BlockDeviceMapping.1.Ebs.VolumeSize", strconv.FormatInt(c.config.DiskGiB, 10))
+	p.Set(d+"BlockDeviceMapping.1.Ebs.VolumeType", "gp3")
+	p.Set(d+"BlockDeviceMapping.1.Ebs.Encrypted", "true")
+	p.Set(d+"BlockDeviceMapping.1.Ebs.DeleteOnTermination", "true")
+	tagSpec(p, d+"TagSpecification.1", "instance", tags)
+	tagSpec(p, d+"TagSpecification.2", "volume", tags)
+	var template struct {
+		ID string `xml:"launchTemplate>launchTemplateId"`
+	}
+	if err := c.call(ctx, "CreateLaunchTemplate", p, &template); err != nil {
 		return vm.Instance{}, awsError("create the launch template", err)
 	}
-	id := template.LaunchTemplate.LaunchTemplateId
+	if template.ID == "" {
+		return vm.Instance{}, errors.New("AWS created a launch template without an ID")
+	}
 	defer func() {
 		// The instance no longer needs its template, and the template holds
 		// the single-use runner configuration in its user data.
-		_, _ = c.ec2.DeleteLaunchTemplate(context.WithoutCancel(ctx), &ec2.DeleteLaunchTemplateInput{LaunchTemplateId: id})
+		_ = c.call(context.WithoutCancel(ctx), "DeleteLaunchTemplate", url.Values{"LaunchTemplateId": {template.ID}}, &struct{}{})
 	}()
-	overrides := []types.FleetLaunchTemplateOverridesRequest{}
+	f := "LaunchTemplateConfigs.1."
+	p = url.Values{"Type": {"instant"}, f + "LaunchTemplateSpecification.LaunchTemplateId": {template.ID}, f + "LaunchTemplateSpecification.Version": {"$Latest"}}
+	n := 0
 	for _, t := range in.InstanceTypes {
 		for _, subnet := range c.config.SubnetIDs {
-			overrides = append(overrides, types.FleetLaunchTemplateOverridesRequest{InstanceType: types.InstanceType(t), SubnetId: sdk.String(subnet)})
+			n++
+			p.Set(fmt.Sprintf("%sOverrides.%d.InstanceType", f, n), t)
+			p.Set(fmt.Sprintf("%sOverrides.%d.SubnetId", f, n), subnet)
 		}
 	}
-	capacity := types.DefaultTargetCapacityTypeOnDemand
+	capacity := "on-demand"
 	if in.Spot {
-		capacity = types.DefaultTargetCapacityTypeSpot
+		capacity = "spot"
 	}
-	fleet, err := c.ec2.CreateFleet(ctx, &ec2.CreateFleetInput{
-		Type: types.FleetTypeInstant,
-		LaunchTemplateConfigs: []types.FleetLaunchTemplateConfigRequest{{
-			LaunchTemplateSpecification: &types.FleetLaunchTemplateSpecificationRequest{LaunchTemplateId: id, Version: sdk.String("$Latest")},
-			Overrides:                   overrides,
-		}},
-		TargetCapacitySpecification: &types.TargetCapacitySpecificationRequest{TotalTargetCapacity: sdk.Int32(1), DefaultTargetCapacityType: capacity},
-		SpotOptions:                 &types.SpotOptionsRequest{AllocationStrategy: types.SpotAllocationStrategyPriceCapacityOptimized},
-		OnDemandOptions:             &types.OnDemandOptionsRequest{AllocationStrategy: types.FleetOnDemandAllocationStrategyLowestPrice},
-	})
-	if err != nil {
+	p.Set("TargetCapacitySpecification.TotalTargetCapacity", "1")
+	p.Set("TargetCapacitySpecification.DefaultTargetCapacityType", capacity)
+	p.Set("SpotOptions.AllocationStrategy", "price-capacity-optimized")
+	p.Set("OnDemandOptions.AllocationStrategy", "lowest-price")
+	var fleet struct {
+		Instances []struct {
+			IDs       []string `xml:"instanceIds>item"`
+			Type      string   `xml:"instanceType"`
+			Lifecycle string   `xml:"lifecycle"`
+		} `xml:"fleetInstanceSet>item"`
+		Errors []struct {
+			Code string `xml:"errorCode"`
+		} `xml:"errorSet>item"`
+	}
+	if err := c.call(ctx, "CreateFleet", p, &fleet); err != nil {
 		return vm.Instance{}, awsError("create the fleet", err)
 	}
 	for _, launched := range fleet.Instances {
-		if len(launched.InstanceIds) > 0 {
-			return vm.Instance{ID: launched.InstanceIds[0], Type: string(launched.InstanceType), Lifecycle: lifecycle(launched.Lifecycle), State: "pending", Tags: tags}, nil
+		if len(launched.IDs) > 0 {
+			return vm.Instance{ID: launched.IDs[0], Type: launched.Type, Lifecycle: lifecycle(launched.Lifecycle), State: "pending", Tags: tags}, nil
 		}
 	}
 	codes := []string{}
 	for _, e := range fleet.Errors {
-		if e.ErrorCode != nil && !slices.Contains(codes, *e.ErrorCode) {
-			codes = append(codes, *e.ErrorCode)
+		if e.Code != "" && !slices.Contains(codes, e.Code) {
+			codes = append(codes, e.Code)
 		}
 	}
 	return vm.Instance{}, fmt.Errorf("%w (%s)", vm.ErrNoCapacity, strings.Join(codes, ", "))
 }
 
-func lifecycle(l types.InstanceLifecycle) string {
-	if l == types.InstanceLifecycleSpot {
+// lifecycle maps CreateFleet's lifecycle and DescribeInstances'
+// instanceLifecycle, which is absent for on-demand instances.
+func lifecycle(l string) string {
+	if l == "spot" {
 		return "spot"
 	}
 	return "on-demand"
 }
 
-func instance(i types.Instance) vm.Instance {
-	out := vm.Instance{ID: sdk.ToString(i.InstanceId), Type: string(i.InstanceType), Lifecycle: "on-demand", Tags: map[string]string{}}
-	if i.InstanceLifecycle == types.InstanceLifecycleTypeSpot {
-		out.Lifecycle = "spot"
-	}
-	if i.State != nil {
-		out.State = string(i.State.Name)
-	}
-	if i.StateReason != nil {
-		out.StateReason = sdk.ToString(i.StateReason.Code)
-	}
-	if i.LaunchTime != nil {
-		out.LaunchedAt = *i.LaunchTime
-	}
+type ec2Instance struct {
+	ID         string    `xml:"instanceId"`
+	Type       string    `xml:"instanceType"`
+	Lifecycle  string    `xml:"instanceLifecycle"`
+	State      string    `xml:"instanceState>name"`
+	Reason     string    `xml:"stateReason>code"`
+	LaunchTime time.Time `xml:"launchTime"`
+	Tags       []struct {
+		Key   string `xml:"key"`
+		Value string `xml:"value"`
+	} `xml:"tagSet>item"`
+}
+
+type describeInstances struct {
+	Instances []ec2Instance `xml:"reservationSet>item>instancesSet>item"`
+	NextToken string        `xml:"nextToken"`
+}
+
+func instance(i ec2Instance) vm.Instance {
+	out := vm.Instance{ID: i.ID, Type: i.Type, Lifecycle: lifecycle(i.Lifecycle), State: i.State, StateReason: i.Reason, LaunchedAt: i.LaunchTime, Tags: map[string]string{}}
 	for _, t := range i.Tags {
-		out.Tags[sdk.ToString(t.Key)] = sdk.ToString(t.Value)
+		out.Tags[t.Key] = t.Value
 	}
 	return out
 }
 
 func (c *Client) State(ctx context.Context, id string) (vm.Instance, error) {
-	out, err := c.ec2.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{id}})
-	var api smithy.APIError
-	if errors.As(err, &api) && api.ErrorCode() == "InvalidInstanceID.NotFound" {
+	var out describeInstances
+	err := c.call(ctx, "DescribeInstances", url.Values{"InstanceId.1": {id}}, &out)
+	var api *awsquery.Error
+	if errors.As(err, &api) && api.Code == "InvalidInstanceID.NotFound" {
 		return vm.Instance{}, vm.ErrNotFound
 	}
 	if err != nil {
 		return vm.Instance{}, awsError("describe the instance", err)
 	}
-	for _, r := range out.Reservations {
-		for _, i := range r.Instances {
-			if sdk.ToString(i.InstanceId) == id {
-				return instance(i), nil
-			}
+	for _, i := range out.Instances {
+		if i.ID == id {
+			return instance(i), nil
 		}
 	}
 	return vm.Instance{}, vm.ErrNotFound
@@ -221,26 +230,30 @@ func (c *Client) State(ctx context.Context, id string) (vm.Instance, error) {
 // List returns instances carrying every given tag and this installation's.
 // Terminated instances stay listed for about an hour, with their reason.
 func (c *Client) List(ctx context.Context, tags map[string]string) ([]vm.Instance, error) {
-	filters := []types.Filter{{Name: sdk.String("tag:" + vm.TagInstallation), Values: []string{c.config.Installation}}}
+	filters := map[string]string{vm.TagInstallation: c.config.Installation}
 	for k, v := range tags {
-		filters = append(filters, types.Filter{Name: sdk.String("tag:" + k), Values: []string{v}})
+		filters[k] = v
 	}
-	input := &ec2.DescribeInstancesInput{Filters: filters, MaxResults: sdk.Int32(1000)}
+	p := url.Values{"MaxResults": {"1000"}}
+	n := 0
+	for k, v := range filters {
+		n++
+		p.Set(fmt.Sprintf("Filter.%d.Name", n), "tag:"+k)
+		p.Set(fmt.Sprintf("Filter.%d.Value.1", n), v)
+	}
 	out := []vm.Instance{}
 	for page := 0; page < 10; page++ {
-		result, err := c.ec2.DescribeInstances(ctx, input)
-		if err != nil {
+		var result describeInstances
+		if err := c.call(ctx, "DescribeInstances", p, &result); err != nil {
 			return nil, awsError("list instances", err)
 		}
-		for _, r := range result.Reservations {
-			for _, i := range r.Instances {
-				out = append(out, instance(i))
-			}
+		for _, i := range result.Instances {
+			out = append(out, instance(i))
 		}
-		if result.NextToken == nil {
+		if result.NextToken == "" {
 			return out, nil
 		}
-		input.NextToken = result.NextToken
+		p.Set("NextToken", result.NextToken)
 	}
 	return nil, errors.New("more than 10,000 tagged instances; refusing to act on a partial list")
 }
@@ -262,24 +275,32 @@ func (c *Client) Terminate(ctx context.Context, id string) error {
 	if current.State == "terminated" {
 		return nil
 	}
-	_, err = c.ec2.TerminateInstances(ctx, &ec2.TerminateInstancesInput{InstanceIds: []string{id}})
-	return awsError("terminate the instance", err)
+	return awsError("terminate the instance", c.call(ctx, "TerminateInstances", url.Values{"InstanceId.1": {id}}, &struct{}{}))
 }
 
 // Check assumes the role and reads the configured subnets and security
 // groups. Inbound rules are reported: a runner needs none.
 func (c *Client) Check(ctx context.Context) ([]string, error) {
-	if _, err := c.ec2.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{SubnetIds: c.config.SubnetIDs}); err != nil {
+	p := url.Values{}
+	list(p, "SubnetId", c.config.SubnetIDs)
+	if err := c.call(ctx, "DescribeSubnets", p, &struct{}{}); err != nil {
 		return nil, awsError("read the subnets", err)
 	}
-	groups, err := c.ec2.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: c.config.SecurityGroupIDs})
-	if err != nil {
+	p = url.Values{}
+	list(p, "GroupId", c.config.SecurityGroupIDs)
+	var groups struct {
+		Groups []struct {
+			ID      string     `xml:"groupId"`
+			Inbound []struct{} `xml:"ipPermissions>item"`
+		} `xml:"securityGroupInfo>item"`
+	}
+	if err := c.call(ctx, "DescribeSecurityGroups", p, &groups); err != nil {
 		return nil, awsError("read the security groups", err)
 	}
 	warnings := []string{}
-	for _, g := range groups.SecurityGroups {
-		if len(g.IpPermissions) > 0 {
-			warnings = append(warnings, fmt.Sprintf("security group %s allows inbound traffic; runners need none", sdk.ToString(g.GroupId)))
+	for _, g := range groups.Groups {
+		if len(g.Inbound) > 0 {
+			warnings = append(warnings, fmt.Sprintf("security group %s allows inbound traffic; runners need none", g.ID))
 		}
 	}
 	return warnings, nil
@@ -291,9 +312,9 @@ func awsError(action string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var api smithy.APIError
+	var api *awsquery.Error
 	if errors.As(err, &api) {
-		return fmt.Errorf("AWS could not %s: %s", action, api.ErrorCode())
+		return fmt.Errorf("AWS could not %s: %s", action, api.Error())
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
