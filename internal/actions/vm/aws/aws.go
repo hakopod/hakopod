@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hakopod/hakopod/internal/actions/vm"
@@ -101,15 +102,25 @@ func (c *Client) Launch(ctx context.Context, in vm.LaunchInput) (vm.Instance, er
 	p := url.Values{"LaunchTemplateName": {"hakopod-" + in.Name + "-" + hex.EncodeToString(suffix)}}
 	tagSpec(p, "TagSpecification.1", "launch-template", tags)
 	d := "LaunchTemplateData."
-	p.Set(d+"ImageId", ubuntuImage(c.config.Architecture))
+	image, shutdown, disk := in.Image, "terminate", in.DiskGiB
+	if image == "" {
+		image = ubuntuImage(c.config.Architecture)
+	}
+	if in.StopOnShutdown {
+		shutdown = "stop"
+	}
+	if disk == 0 {
+		disk = c.config.DiskGiB
+	}
+	p.Set(d+"ImageId", image)
 	p.Set(d+"UserData", base64.StdEncoding.EncodeToString([]byte(in.UserData)))
-	p.Set(d+"InstanceInitiatedShutdownBehavior", "terminate")
+	p.Set(d+"InstanceInitiatedShutdownBehavior", shutdown)
 	list(p, d+"SecurityGroupId", c.config.SecurityGroupIDs)
 	p.Set(d+"MetadataOptions.HttpEndpoint", "enabled")
 	p.Set(d+"MetadataOptions.HttpTokens", "required")
 	p.Set(d+"MetadataOptions.HttpPutResponseHopLimit", "1")
 	p.Set(d+"BlockDeviceMapping.1.DeviceName", "/dev/sda1")
-	p.Set(d+"BlockDeviceMapping.1.Ebs.VolumeSize", strconv.FormatInt(c.config.DiskGiB, 10))
+	p.Set(d+"BlockDeviceMapping.1.Ebs.VolumeSize", strconv.FormatInt(disk, 10))
 	p.Set(d+"BlockDeviceMapping.1.Ebs.VolumeType", "gp3")
 	p.Set(d+"BlockDeviceMapping.1.Ebs.Encrypted", "true")
 	p.Set(d+"BlockDeviceMapping.1.Ebs.DeleteOnTermination", "true")
@@ -276,6 +287,222 @@ func (c *Client) Terminate(ctx context.Context, id string) error {
 		return nil
 	}
 	return awsError("terminate the instance", c.call(ctx, "TerminateInstances", url.Values{"InstanceId.1": {id}}, &struct{}{}))
+}
+
+// RunsOn publishes its GitHub-compatible runner images from this account and
+// replaces them every couple of weeks, so they are looked up, never pinned.
+const runsOnOwner = "135269210855"
+
+var runsOnImages struct {
+	sync.Mutex
+	found map[string]runsOnImage // region/arch
+}
+
+type runsOnImage struct {
+	id string
+	at time.Time
+}
+
+// Image resolves runs-on-full to RunsOn's newest Ubuntu 24.04 full image for
+// the capacity's architecture, cached for an hour. AMI IDs and resolve:ssm:
+// parameters pass through, and hakopod-minimal is resolved by the caller.
+func (c *Client) Image(ctx context.Context, setting string) (string, error) {
+	if setting != vm.ImageRunsOnFull {
+		return setting, nil
+	}
+	key := c.config.Region + "/" + c.config.Architecture
+	runsOnImages.Lock()
+	cached := runsOnImages.found[key]
+	runsOnImages.Unlock()
+	if cached.id != "" && time.Since(cached.at) < time.Hour {
+		return cached.id, nil
+	}
+	arch := map[string]string{"amd64": "x64", "arm64": "arm64"}[c.config.Architecture]
+	p := url.Values{"Owner.1": {runsOnOwner}, "Filter.1.Name": {"name"}, "Filter.1.Value.1": {"runs-on-v2.2-ubuntu24-full-" + arch + "-*"},
+		"Filter.2.Name": {"state"}, "Filter.2.Value.1": {"available"}}
+	var out describeImages
+	if err := c.call(ctx, "DescribeImages", p, &out); err != nil {
+		return "", awsError("find RunsOn's runner image", err)
+	}
+	newest := ec2Image{}
+	for _, i := range out.Images {
+		if i.Created.After(newest.Created) {
+			newest = i
+		}
+	}
+	if newest.ID == "" {
+		return "", fmt.Errorf("RunsOn publishes no Ubuntu 24.04 %s runner image in %s", arch, c.config.Region)
+	}
+	runsOnImages.Lock()
+	if runsOnImages.found == nil {
+		runsOnImages.found = map[string]runsOnImage{}
+	}
+	runsOnImages.found[key] = runsOnImage{newest.ID, time.Now()}
+	runsOnImages.Unlock()
+	return newest.ID, nil
+}
+
+type ec2Image struct {
+	ID        string    `xml:"imageId"`
+	State     string    `xml:"imageState"`
+	Created   time.Time `xml:"creationDate"`
+	Snapshots []string  `xml:"blockDeviceMapping>item>ebs>snapshotId"`
+	Tags      []struct {
+		Key   string `xml:"key"`
+		Value string `xml:"value"`
+	} `xml:"tagSet>item"`
+}
+
+type describeImages struct {
+	Images []ec2Image `xml:"imagesSet>item"`
+}
+
+// own rechecks the installation tag before any change to an instance, as
+// Terminate does.
+func (c *Client) own(ctx context.Context, id string) (vm.Instance, error) {
+	current, err := c.State(ctx, id)
+	if err != nil {
+		return current, err
+	}
+	if current.Tags[vm.TagInstallation] != c.config.Installation {
+		return current, fmt.Errorf("instance %s is not tagged for this installation", id)
+	}
+	return current, nil
+}
+
+// Claim gives a stopped standby this job: its new tags, the job's user data,
+// termination on shutdown, then a start. A standby that is not stopped is
+// refused; the caller terminates it and falls back to a cold launch.
+func (c *Client) Claim(ctx context.Context, id, userData string, tags map[string]string) error {
+	current, err := c.own(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current.State != "stopped" {
+		return fmt.Errorf("standby %s is %s, not stopped", id, current.State)
+	}
+	keys := make([]string, 0, len(tags))
+	for k := range tags {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	p := url.Values{"ResourceId.1": {id}}
+	for i, k := range keys {
+		p.Set(fmt.Sprintf("Tag.%d.Key", i+1), k)
+		p.Set(fmt.Sprintf("Tag.%d.Value", i+1), tags[k])
+	}
+	if err = c.call(ctx, "CreateTags", p, &struct{}{}); err != nil {
+		return awsError("tag the standby", err)
+	}
+	p = url.Values{"InstanceId": {id}, "InstanceInitiatedShutdownBehavior.Value": {"terminate"}}
+	if err = c.call(ctx, "ModifyInstanceAttribute", p, &struct{}{}); err != nil {
+		return awsError("set the standby to terminate on shutdown", err)
+	}
+	p = url.Values{"InstanceId": {id}, "UserData.Value": {base64.StdEncoding.EncodeToString([]byte(userData))}}
+	if err = c.call(ctx, "ModifyInstanceAttribute", p, &struct{}{}); err != nil {
+		return awsError("give the standby its job", err)
+	}
+	return awsError("start the standby", c.call(ctx, "StartInstances", url.Values{"InstanceId.1": {id}}, &struct{}{}))
+}
+
+func (c *Client) ConsoleOutput(ctx context.Context, id string) (string, error) {
+	var out struct {
+		Output string `xml:"output"`
+	}
+	if err := c.call(ctx, "GetConsoleOutput", url.Values{"InstanceId": {id}, "Latest": {"true"}}, &out); err != nil {
+		return "", awsError("read the console output", err)
+	}
+	text, err := base64.StdEncoding.DecodeString(out.Output)
+	return string(text), err
+}
+
+// CreateImage images a stopped instance of this installation. The image and
+// its snapshots are tagged on creation, which the documented policy requires.
+func (c *Client) CreateImage(ctx context.Context, instance, name string, tags map[string]string) (string, error) {
+	if _, err := c.own(ctx, instance); err != nil {
+		return "", err
+	}
+	all := map[string]string{vm.TagInstallation: c.config.Installation}
+	for k, v := range tags {
+		all[k] = v
+	}
+	p := url.Values{"InstanceId": {instance}, "Name": {name}, "Description": {"Hakopod Actions runner image"}}
+	tagSpec(p, "TagSpecification.1", "image", all)
+	tagSpec(p, "TagSpecification.2", "snapshot", all)
+	var out struct {
+		ID string `xml:"imageId"`
+	}
+	if err := c.call(ctx, "CreateImage", p, &out); err != nil {
+		return "", awsError("create the image", err)
+	}
+	return out.ID, nil
+}
+
+func (c *Client) describeImages(ctx context.Context, p url.Values) ([]ec2Image, error) {
+	p.Set("Owner.1", "self")
+	var out describeImages
+	if err := c.call(ctx, "DescribeImages", p, &out); err != nil {
+		return nil, awsError("list images", err)
+	}
+	return out.Images, nil
+}
+
+func (c *Client) Images(ctx context.Context, tags map[string]string) ([]vm.Image, error) {
+	filters := map[string]string{vm.TagInstallation: c.config.Installation}
+	for k, v := range tags {
+		filters[k] = v
+	}
+	p := url.Values{}
+	n := 0
+	for k, v := range filters {
+		n++
+		p.Set(fmt.Sprintf("Filter.%d.Name", n), "tag:"+k)
+		p.Set(fmt.Sprintf("Filter.%d.Value.1", n), v)
+	}
+	found, err := c.describeImages(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	out := []vm.Image{}
+	for _, i := range found {
+		image := vm.Image{ID: i.ID, State: i.State, CreatedAt: i.Created, Tags: map[string]string{}}
+		for _, t := range i.Tags {
+			image.Tags[t.Key] = t.Value
+		}
+		out = append(out, image)
+	}
+	return out, nil
+}
+
+// DeleteImage deregisters an image tagged for this installation, then deletes
+// its snapshots, which deregistering leaves behind.
+func (c *Client) DeleteImage(ctx context.Context, id string) error {
+	var found describeImages
+	err := c.call(ctx, "DescribeImages", url.Values{"Owner.1": {"self"}, "ImageId.1": {id}}, &found)
+	var api *awsquery.Error
+	if errors.As(err, &api) && api.Code == "InvalidAMIID.NotFound" || err == nil && len(found.Images) == 0 {
+		return nil
+	}
+	if err != nil {
+		return awsError("read the image", err)
+	}
+	image := found.Images[0]
+	ours := false
+	for _, t := range image.Tags {
+		ours = ours || t.Key == vm.TagInstallation && t.Value == c.config.Installation
+	}
+	if !ours {
+		return fmt.Errorf("image %s is not tagged for this installation; not deleting it", id)
+	}
+	if err = c.call(ctx, "DeregisterImage", url.Values{"ImageId": {id}}, &struct{}{}); err != nil {
+		return awsError("deregister the image", err)
+	}
+	for _, snapshot := range image.Snapshots {
+		if err = c.call(ctx, "DeleteSnapshot", url.Values{"SnapshotId": {snapshot}}, &struct{}{}); err != nil {
+			return awsError("delete the image's snapshot", err)
+		}
+	}
+	return nil
 }
 
 // Check assumes the role and reads the configured subnets and security
