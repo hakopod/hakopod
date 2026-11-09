@@ -4,132 +4,238 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	sdk "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/smithy-go"
 	"github.com/hakopod/hakopod/internal/actions/vm"
+	"github.com/hakopod/hakopod/internal/awsquery"
 )
 
+// fakeEC2 answers the EC2 Query API with XML shaped like AWS's documented
+// examples and records each request's form.
 type fakeEC2 struct {
-	template   *ec2.CreateLaunchTemplateInput
-	fleet      *ec2.CreateFleetInput
-	deleted    []string
-	terminated []string
-	instances  map[string]types.Instance
-	fleetOut   *ec2.CreateFleetOutput
+	mu        sync.Mutex
+	calls     map[string][]url.Values
+	fleet     string
+	instances map[string]string // id -> <item> of instancesSet
 }
 
-func (f *fakeEC2) CreateLaunchTemplate(_ context.Context, in *ec2.CreateLaunchTemplateInput, _ ...func(*ec2.Options)) (*ec2.CreateLaunchTemplateOutput, error) {
-	f.template = in
-	return &ec2.CreateLaunchTemplateOutput{LaunchTemplate: &types.LaunchTemplate{LaunchTemplateId: sdk.String("lt-1")}}, nil
+func (f *fakeEC2) form(action string) url.Values {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.calls[action]) == 0 {
+		return nil
+	}
+	return f.calls[action][len(f.calls[action])-1]
 }
-func (f *fakeEC2) DeleteLaunchTemplate(_ context.Context, in *ec2.DeleteLaunchTemplateInput, _ ...func(*ec2.Options)) (*ec2.DeleteLaunchTemplateOutput, error) {
-	f.deleted = append(f.deleted, *in.LaunchTemplateId)
-	return &ec2.DeleteLaunchTemplateOutput{}, nil
-}
-func (f *fakeEC2) CreateFleet(_ context.Context, in *ec2.CreateFleetInput, _ ...func(*ec2.Options)) (*ec2.CreateFleetOutput, error) {
-	f.fleet = in
-	return f.fleetOut, nil
-}
-func (f *fakeEC2) DescribeInstances(_ context.Context, in *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
-	out := &ec2.DescribeInstancesOutput{}
-	for _, id := range in.InstanceIds {
-		i, ok := f.instances[id]
-		if !ok {
-			return nil, &smithy.GenericAPIError{Code: "InvalidInstanceID.NotFound"}
+
+func (f *fakeEC2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	action := r.Form.Get("Action")
+	f.mu.Lock()
+	f.calls[action] = append(f.calls[action], r.Form)
+	f.mu.Unlock()
+	if !strings.Contains(r.Header.Get("Authorization"), "/eu-central-1/ec2/aws4_request") || r.Form.Get("Version") != "2016-11-15" {
+		http.Error(w, "unsigned", 403)
+		return
+	}
+	switch action {
+	case "CreateLaunchTemplate":
+		w.Write([]byte(`<CreateLaunchTemplateResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+  <requestId>39f5ee2d-b41a-4bd2-8b3b-1b9e2e2f6c1c</requestId>
+  <launchTemplate>
+    <createTime>2017-10-31T11:38:52.000Z</createTime>
+    <createdBy>arn:aws:iam::123456789012:root</createdBy>
+    <defaultVersionNumber>1</defaultVersionNumber>
+    <latestVersionNumber>1</latestVersionNumber>
+    <launchTemplateId>lt-1</launchTemplateId>
+    <launchTemplateName>MyLaunchTemplate</launchTemplateName>
+  </launchTemplate>
+</CreateLaunchTemplateResponse>`))
+	case "CreateFleet":
+		w.Write([]byte(f.fleet))
+	case "DescribeInstances":
+		body := `<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><requestId>8f7724cf</requestId><reservationSet>`
+		ids := []string{}
+		for i := 1; r.Form.Get("InstanceId."+strconv.Itoa(i)) != ""; i++ {
+			ids = append(ids, r.Form.Get("InstanceId."+strconv.Itoa(i)))
 		}
-		out.Reservations = append(out.Reservations, types.Reservation{Instances: []types.Instance{i}})
-	}
-	if len(in.InstanceIds) == 0 {
-		for _, i := range f.instances {
-			out.Reservations = append(out.Reservations, types.Reservation{Instances: []types.Instance{i}})
+		if len(ids) == 0 {
+			for id := range f.instances {
+				ids = append(ids, id)
+			}
 		}
+		for _, id := range ids {
+			item, ok := f.instances[id]
+			if !ok {
+				w.WriteHeader(400)
+				w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<Response><Errors><Error><Code>InvalidInstanceID.NotFound</Code><Message>The instance ID '` + id + `' does not exist</Message></Error></Errors><RequestID>ea966190-f9aa-478e-9ede-example</RequestID></Response>`))
+				return
+			}
+			// One reservation per instance, as fleets launch them.
+			body += `<item><reservationId>r-1</reservationId><ownerId>123456789012</ownerId><groupSet/><instancesSet>` + item + `</instancesSet></item>`
+		}
+		w.Write([]byte(body + `</reservationSet></DescribeInstancesResponse>`))
+	case "TerminateInstances", "DeleteLaunchTemplate", "DescribeSubnets":
+		w.Write([]byte(`<` + action + `Response><requestId>1</requestId></` + action + `Response>`))
+	case "DescribeSecurityGroups":
+		w.Write([]byte(`<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+   <securityGroupInfo>
+      <item><ownerId>123456789012</ownerId><groupId>sg-1</groupId><groupName>WebServers</groupName>
+         <ipPermissions><item><ipProtocol>tcp</ipProtocol><fromPort>80</fromPort><toPort>80</toPort><groups/>
+            <ipRanges><item><cidrIp>0.0.0.0/0</cidrIp></item></ipRanges></item></ipPermissions>
+         <ipPermissionsEgress><item><ipProtocol>-1</ipProtocol><ipRanges><item><cidrIp>0.0.0.0/0</cidrIp></item></ipRanges></item></ipPermissionsEgress>
+      </item>
+      <item><ownerId>123456789012</ownerId><groupId>sg-2</groupId><groupName>Runners</groupName><ipPermissions/>
+         <ipPermissionsEgress><item><ipProtocol>-1</ipProtocol><ipRanges><item><cidrIp>0.0.0.0/0</cidrIp></item></ipRanges></item></ipPermissionsEgress>
+      </item>
+   </securityGroupInfo>
+</DescribeSecurityGroupsResponse>`))
+	default:
+		http.Error(w, "unknown action", 400)
 	}
-	return out, nil
-}
-func (f *fakeEC2) TerminateInstances(_ context.Context, in *ec2.TerminateInstancesInput, _ ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error) {
-	f.terminated = append(f.terminated, in.InstanceIds...)
-	return &ec2.TerminateInstancesOutput{}, nil
-}
-func (f *fakeEC2) DescribeSubnets(context.Context, *ec2.DescribeSubnetsInput, ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error) {
-	return &ec2.DescribeSubnetsOutput{}, nil
-}
-func (f *fakeEC2) DescribeSecurityGroups(context.Context, *ec2.DescribeSecurityGroupsInput, ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error) {
-	return &ec2.DescribeSecurityGroupsOutput{SecurityGroups: []types.SecurityGroup{{GroupId: sdk.String("sg-1"), IpPermissions: []types.IpPermission{{}}}, {GroupId: sdk.String("sg-2")}}}, nil
 }
 
-func tagged(id, installation string, state types.InstanceStateName, reason string) types.Instance {
-	i := types.Instance{InstanceId: sdk.String(id), InstanceType: "c7i.xlarge", InstanceLifecycle: types.InstanceLifecycleTypeSpot,
-		State: &types.InstanceState{Name: state}, Tags: []types.Tag{{Key: sdk.String(vm.TagInstallation), Value: sdk.String(installation)}}}
-	if reason != "" {
-		i.StateReason = &types.StateReason{Code: sdk.String(reason)}
+func tagged(id, installation, state, reason string) string {
+	lifecycle := `<instanceLifecycle>spot</instanceLifecycle>`
+	if id == "i-running" {
+		lifecycle = "" // on-demand instances have none
 	}
-	return i
+	return `<item><instanceId>` + id + `</instanceId><imageId>ami-1</imageId>
+<instanceState><code>16</code><name>` + state + `</name></instanceState>
+<stateReason><code>` + reason + `</code><message>` + reason + `</message></stateReason>
+<instanceType>c7i.xlarge</instanceType><launchTime>2026-11-09T10:00:00.000Z</launchTime>
+<blockDeviceMapping><item><deviceName>/dev/sda1</deviceName><ebs><volumeId>vol-1</volumeId></ebs></item></blockDeviceMapping>` + lifecycle + `
+<tagSet><item><key>` + vm.TagInstallation + `</key><value>` + installation + `</value></item><item><key>Name</key><value>runner</value></item></tagSet>
+</item>`
 }
 
-func testClient(f *fakeEC2) *Client {
-	return &Client{ec2: f, config: Config{Installation: "inst", Region: "eu-central-1", SubnetIDs: []string{"subnet-a", "subnet-b"}, SecurityGroupIDs: []string{"sg-1"}, Architecture: "arm64", DiskGiB: 100}}
+func testClient(t *testing.T, f *fakeEC2) *Client {
+	if f.calls == nil {
+		f.calls = map[string][]url.Values{}
+	}
+	server := httptest.NewServer(f)
+	t.Cleanup(server.Close)
+	creds := sdk.CredentialsProviderFunc(func(context.Context) (sdk.Credentials, error) {
+		return sdk.Credentials{AccessKeyID: "AKIDTEST", SecretAccessKey: "secret"}, nil
+	})
+	return &Client{
+		ec2:    awsquery.Client{HTTP: server.Client(), Credentials: creds, Region: "eu-central-1", Endpoint: func(string) string { return server.URL + "/" }},
+		config: Config{Installation: "inst", Region: "eu-central-1", SubnetIDs: []string{"subnet-a", "subnet-b"}, SecurityGroupIDs: []string{"sg-1"}, Architecture: "arm64", DiskGiB: 100},
+	}
 }
+
+// From the CreateFleet API reference, instant fleet example.
+const fleetLaunched = `<CreateFleetResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+    <requestId>b2b0a8d4-ee2f-4ad6-bd7d-EXAMPLE</requestId>
+    <fleetId>fleet-12a34b55-67cd-8ef9-ba9b-9208dEXAMPLE</fleetId>
+    <errorSet/>
+    <fleetInstanceSet>
+        <item>
+            <instanceIds><item>i-1</item></instanceIds>
+            <instanceType>c7g.xlarge</instanceType>
+            <launchTemplateAndOverrides>
+                <launchTemplateSpecification><launchTemplateId>lt-1</launchTemplateId><version>1</version></launchTemplateSpecification>
+                <overrides><instanceType>c7g.xlarge</instanceType><subnetId>subnet-a</subnetId></overrides>
+            </launchTemplateAndOverrides>
+            <lifecycle>spot</lifecycle>
+        </item>
+    </fleetInstanceSet>
+</CreateFleetResponse>`
+
+const fleetFailed = `<CreateFleetResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/">
+    <requestId>b2b0a8d4</requestId>
+    <fleetId>fleet-1</fleetId>
+    <errorSet>
+        <item>
+            <errorCode>InsufficientInstanceCapacity</errorCode>
+            <errorMessage>We currently do not have sufficient c7g.xlarge capacity.</errorMessage>
+            <launchTemplateAndOverrides><overrides><instanceType>c7g.xlarge</instanceType></overrides></launchTemplateAndOverrides>
+            <lifecycle>on-demand</lifecycle>
+        </item>
+        <item><errorCode>InsufficientInstanceCapacity</errorCode><lifecycle>on-demand</lifecycle></item>
+    </errorSet>
+    <fleetInstanceSet/>
+</CreateFleetResponse>`
 
 func TestLaunch(t *testing.T) {
-	f := &fakeEC2{fleetOut: &ec2.CreateFleetOutput{Instances: []types.CreateFleetInstance{{InstanceIds: []string{"i-1"}, InstanceType: "c7g.xlarge", Lifecycle: types.InstanceLifecycleSpot}}}}
-	got, err := testClient(f).Launch(context.Background(), vm.LaunchInput{Name: "slot1", Tags: map[string]string{vm.TagSlot: "slot1"}, InstanceTypes: []string{"c7g.xlarge", "m7g.xlarge"}, Spot: true, UserData: "#!/bin/bash\n"})
+	f := &fakeEC2{fleet: fleetLaunched}
+	got, err := testClient(t, f).Launch(context.Background(), vm.LaunchInput{Name: "slot1", Tags: map[string]string{vm.TagSlot: "slot1"}, InstanceTypes: []string{"c7g.xlarge", "m7g.xlarge"}, Spot: true, UserData: "#!/bin/bash\n"})
 	if err != nil || got.ID != "i-1" || got.Lifecycle != "spot" || got.Type != "c7g.xlarge" {
 		t.Fatal(got, err)
 	}
-	data := f.template.LaunchTemplateData
-	if *data.ImageId != "resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id" {
-		t.Fatal(*data.ImageId)
+	lt := f.form("CreateLaunchTemplate")
+	want := map[string]string{
+		"LaunchTemplateData.ImageId":                                      "resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id",
+		"LaunchTemplateData.InstanceInitiatedShutdownBehavior":            "terminate",
+		"LaunchTemplateData.MetadataOptions.HttpTokens":                   "required",
+		"LaunchTemplateData.MetadataOptions.HttpPutResponseHopLimit":      "1",
+		"LaunchTemplateData.SecurityGroupId.1":                            "sg-1",
+		"LaunchTemplateData.BlockDeviceMapping.1.DeviceName":              "/dev/sda1",
+		"LaunchTemplateData.BlockDeviceMapping.1.Ebs.VolumeSize":          "100",
+		"LaunchTemplateData.BlockDeviceMapping.1.Ebs.Encrypted":           "true",
+		"LaunchTemplateData.BlockDeviceMapping.1.Ebs.DeleteOnTermination": "true",
+		"LaunchTemplateData.TagSpecification.1.ResourceType":              "instance",
+		"LaunchTemplateData.TagSpecification.1.Tag.1.Key":                 vm.TagInstallation,
+		"LaunchTemplateData.TagSpecification.1.Tag.1.Value":               "inst",
+		"LaunchTemplateData.TagSpecification.1.Tag.2.Key":                 vm.TagSlot,
+		"LaunchTemplateData.TagSpecification.1.Tag.2.Value":               "slot1",
+		"LaunchTemplateData.TagSpecification.2.ResourceType":              "volume",
+		"TagSpecification.1.ResourceType":                                 "launch-template",
 	}
-	if data.InstanceInitiatedShutdownBehavior != types.ShutdownBehaviorTerminate || data.MetadataOptions.HttpTokens != types.LaunchTemplateHttpTokensStateRequired || *data.MetadataOptions.HttpPutResponseHopLimit != 1 {
-		t.Fatal("shutdown or IMDSv2 settings", data)
+	for k, v := range want {
+		if lt.Get(k) != v {
+			t.Errorf("%s = %q, want %q", k, lt.Get(k), v)
+		}
 	}
-	ebs := data.BlockDeviceMappings[0].Ebs
-	if !*ebs.Encrypted || *ebs.VolumeSize != 100 || !*ebs.DeleteOnTermination {
-		t.Fatal("root volume", ebs)
-	}
-	if decoded, _ := base64.StdEncoding.DecodeString(*data.UserData); string(decoded) != "#!/bin/bash\n" {
+	if decoded, _ := base64.StdEncoding.DecodeString(lt.Get("LaunchTemplateData.UserData")); string(decoded) != "#!/bin/bash\n" {
 		t.Fatal("user data", string(decoded))
 	}
-	tags := map[string]string{}
-	for _, tag := range data.TagSpecifications[0].Tags {
-		tags[*tag.Key] = *tag.Value
+	if !strings.HasPrefix(lt.Get("LaunchTemplateName"), "hakopod-slot1-") {
+		t.Fatal(lt.Get("LaunchTemplateName"))
 	}
-	if tags[vm.TagInstallation] != "inst" || tags[vm.TagSlot] != "slot1" || data.TagSpecifications[0].ResourceType != types.ResourceTypeInstance {
-		t.Fatal("instance tags", tags)
+	fleet := f.form("CreateFleet")
+	if fleet.Get("Type") != "instant" || fleet.Get("TargetCapacitySpecification.DefaultTargetCapacityType") != "spot" ||
+		fleet.Get("SpotOptions.AllocationStrategy") != "price-capacity-optimized" || fleet.Get("LaunchTemplateConfigs.1.LaunchTemplateSpecification.LaunchTemplateId") != "lt-1" ||
+		fleet.Get("LaunchTemplateConfigs.1.Overrides.4.InstanceType") != "m7g.xlarge" || fleet.Get("LaunchTemplateConfigs.1.Overrides.4.SubnetId") != "subnet-b" ||
+		fleet.Get("LaunchTemplateConfigs.1.Overrides.5.InstanceType") != "" {
+		t.Fatal("fleet request", fleet)
 	}
-	if !strings.HasPrefix(*f.template.LaunchTemplateName, "hakopod-slot1-") {
-		t.Fatal(*f.template.LaunchTemplateName)
-	}
-	if f.fleet.Type != types.FleetTypeInstant || f.fleet.TargetCapacitySpecification.DefaultTargetCapacityType != types.DefaultTargetCapacityTypeSpot ||
-		f.fleet.SpotOptions.AllocationStrategy != types.SpotAllocationStrategyPriceCapacityOptimized || len(f.fleet.LaunchTemplateConfigs[0].Overrides) != 4 {
-		t.Fatal("fleet request", f.fleet)
-	}
-	if len(f.deleted) != 1 {
+	if d := f.form("DeleteLaunchTemplate"); d.Get("LaunchTemplateId") != "lt-1" {
 		t.Fatal("the launch template with the runner configuration was kept")
 	}
 
-	f = &fakeEC2{fleetOut: &ec2.CreateFleetOutput{Errors: []types.CreateFleetError{{ErrorCode: sdk.String("InsufficientInstanceCapacity")}}}}
-	if _, err = testClient(f).Launch(context.Background(), vm.LaunchInput{Name: "slot2", InstanceTypes: []string{"c7g.xlarge"}}); !errors.Is(err, vm.ErrNoCapacity) || f.fleet.TargetCapacitySpecification.DefaultTargetCapacityType != types.DefaultTargetCapacityTypeOnDemand || len(f.deleted) != 1 {
+	f = &fakeEC2{fleet: fleetFailed}
+	_, err = testClient(t, f).Launch(context.Background(), vm.LaunchInput{Name: "slot2", InstanceTypes: []string{"c7g.xlarge"}})
+	if !errors.Is(err, vm.ErrNoCapacity) || !strings.HasSuffix(err.Error(), "(InsufficientInstanceCapacity)") ||
+		f.form("CreateFleet").Get("TargetCapacitySpecification.DefaultTargetCapacityType") != "on-demand" || f.form("DeleteLaunchTemplate") == nil {
 		t.Fatal("failed on-demand launch", err)
 	}
 }
 
 func TestStateTerminateAndCheck(t *testing.T) {
-	f := &fakeEC2{instances: map[string]types.Instance{
-		"i-ours":    tagged("i-ours", "inst", types.InstanceStateNameTerminated, "Server.SpotInstanceTermination"),
-		"i-running": tagged("i-running", "inst", types.InstanceStateNameRunning, ""),
-		"i-other":   tagged("i-other", "someone-else", types.InstanceStateNameRunning, ""),
+	f := &fakeEC2{instances: map[string]string{
+		"i-ours":    tagged("i-ours", "inst", "terminated", "Server.SpotInstanceTermination"),
+		"i-running": tagged("i-running", "inst", "running", ""),
+		"i-other":   tagged("i-other", "someone-else", "running", ""),
 	}}
-	c := testClient(f)
+	c := testClient(t, f)
 	ctx := context.Background()
 	got, err := c.State(ctx, "i-ours")
-	if err != nil || !got.Interrupted() || !got.Gone() || got.Lifecycle != "spot" {
+	if err != nil || !got.Interrupted() || !got.Gone() || got.Lifecycle != "spot" || got.Tags["Name"] != "runner" || !got.LaunchedAt.Equal(time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)) {
 		t.Fatal(got, err)
+	}
+	if got, _ := c.State(ctx, "i-running"); got.Lifecycle != "on-demand" || got.State != "running" {
+		t.Fatal(got)
 	}
 	if _, err = c.State(ctx, "i-missing"); !errors.Is(err, vm.ErrNotFound) {
 		t.Fatal(err)
@@ -140,11 +246,33 @@ func TestStateTerminateAndCheck(t *testing.T) {
 	if err = c.Terminate(ctx, "i-ours"); err != nil {
 		t.Fatal(err)
 	}
-	if err = c.Terminate(ctx, "i-running"); err != nil || len(f.terminated) != 1 || f.terminated[0] != "i-running" {
-		t.Fatal(f.terminated, err)
+	if err = c.Terminate(ctx, "i-running"); err != nil || len(f.calls["TerminateInstances"]) != 1 || f.form("TerminateInstances").Get("InstanceId.1") != "i-running" {
+		t.Fatal(f.calls["TerminateInstances"], err)
+	}
+	listed, err := c.List(ctx, map[string]string{vm.TagSlot: "slot1"})
+	if err != nil || len(listed) != 3 {
+		t.Fatal(listed, err)
+	}
+	filters := map[string]string{}
+	form := f.form("DescribeInstances")
+	for _, n := range []string{"1", "2"} {
+		filters[form.Get("Filter."+n+".Name")] = form.Get("Filter." + n + ".Value.1")
+	}
+	if filters["tag:"+vm.TagInstallation] != "inst" || filters["tag:"+vm.TagSlot] != "slot1" || form.Get("MaxResults") != "1000" {
+		t.Fatal("list filters", form)
 	}
 	warnings, err := c.Check(ctx)
-	if err != nil || len(warnings) != 1 {
+	if err != nil || len(warnings) != 1 || !strings.Contains(warnings[0], "sg-1") || f.form("DescribeSubnets").Get("SubnetId.2") != "subnet-b" || f.form("DescribeSecurityGroups").Get("GroupId.1") != "sg-1" {
 		t.Fatal(warnings, err)
+	}
+}
+
+func TestAWSErrorKeepsTheCode(t *testing.T) {
+	err := awsError("create the fleet", &awsquery.Error{Status: 400, Code: "UnauthorizedOperation", Message: "encoded authorization failure message"})
+	if err.Error() != "AWS could not create the fleet: UnauthorizedOperation" {
+		t.Fatal(err)
+	}
+	if err := awsError("read the subnets", errors.New("dial tcp: no route")); !strings.Contains(err.Error(), "assume the capacity's role") {
+		t.Fatal(err)
 	}
 }
