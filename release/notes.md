@@ -1,23 +1,21 @@
-Hakopod 0.1.0-alpha.82 routes thousands of customer domains to one service, and lets Claude connect to Hakopod's MCP endpoint by signing in.
+Hakopod 0.1.0-alpha.83 lets services give their temporary mounts as much space as they need.
 
-- **SaaS custom hostnames.** A public HTTP service with `[services.NAME.custom_hostnames] enabled = true` can carry up to 1000 customer domains by default, added through the API, CLI or MCP with no deployment per hostname. The customer points a CNAME at the service. Hakopod checks DNS, routes the hostname through shard Ingresses of up to 100 hosts, and issues a certificate per hostname. A hostname that resolves by address instead of CNAME also needs a TXT ownership record. Administrators turn the feature on per installation, and attaching hostnames needs the new `hostnames:manage` permission. See docs/custom-hostnames.md.
-- **Sign in to HTTP MCP from Claude.** Add `https://HOST/api/v1/mcp?project=P&environment=E` as a custom connector, sign in to Hakopod and approve. The connection gets read and log access, and deploy access with `allow_deploy=true`. Exec, SQL and terminal connections still use an API key. See docs/http-mcp.md.
-- The MCP `logs` tool returned no entries; it now returns them. MCP tools accept an application name as well as its ID, the `logs` description gives the query syntax, and `deployment` no longer sends the specification twice.
+- **Temporary mounts beyond 128 MiB.** `temporary_mounts` were capped at 128 MiB per service. A service can now ask for more, for example `temporary_mounts = [{ mount_path = "/tmp", size_mib = 20480 }]`, up to 1 TiB in total. Above 128 MiB of disk-backed scratch, Hakopod raises the container's ephemeral-storage request and limit and the namespace quota by the same amount, so the pod is placed on a node with that much free disk and is not evicted for using it. Memory-backed mounts (`memory = true`) must stay below the service's memory limit. Services at or below 128 MiB keep their current resources and do not restart. Hakopod Cloud keeps the 128 MiB cap. See docs/toml.md.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.82/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.82
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.83/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.83
 ```
 
-Upgrade an alpha.80 or alpha.81 installation:
+Upgrade an alpha.81 or alpha.82 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.82/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.82
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.83/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.83
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
