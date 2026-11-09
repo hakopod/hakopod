@@ -2,8 +2,11 @@
 """Validate exact reviewed source deltas for retained managed-runtime evidence."""
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
+import subprocess
+import tempfile
 
 DIGEST = re.compile(r'[0-9a-f]{64}')
 COMMIT = re.compile(r'[0-9a-f]{40}')
@@ -239,6 +242,68 @@ def chain_links():
         'v0.1.0-alpha.83': (ALPHA83_CHAIN_BASE, ALPHA83_CHAIN_PREDECESSORS, 'source-compatibility-alpha82.json'),
     }
 
+# Go packages each runtime image ships that are compiled against this
+# repository's go.mod. Oracle Free and Vitess images contain only upstream builds.
+GO_BINARY_PACKAGES = {'myduck': ('./cmd/hakopod-myduck-storage',)}
+GO_MODULE_FILES = ('go.mod', 'go.sum')
+GO_LIST_TEMPLATE = ('{{if not .Standard}}{{.ImportPath}}\t{{with .Module}}{{.Path}}\t{{.Version}}\t{{.Main}}'
+                    '{{with .Replace}}\t{{.Path}}\t{{.Version}}{{end}}{{end}}\n{{end}}')
+
+
+def go_build_inputs(root, packages, modfile=None):
+    """Return what go.mod and go.sum contribute to the linux/amd64 build of packages."""
+    env = dict(os.environ, GOWORK='off', GOFLAGS='-mod=readonly', GOOS='linux', GOARCH='amd64', CGO_ENABLED='0')
+    modfile = Path(modfile) if modfile else Path(root) / 'go.mod'
+    def go(*args):
+        return subprocess.run(['go', *args], cwd=root, env=env, capture_output=True, text=True,
+                              check=True, timeout=600).stdout
+    edit = json.loads(go('mod', 'edit', '-json', str(modfile)))
+    main = edit['Module']['Path']
+    own = {main + '/' + package.removeprefix('./') for package in packages}
+    modules = set()
+    for line in go('list', '-modfile=' + str(modfile), '-deps', '-f', GO_LIST_TEMPLATE, *packages).splitlines():
+        fields = line.split('\t')
+        if len(fields) not in (4, 6):
+            raise ValueError('Go package outside module mode: ' + line)
+        if fields[3] == 'true':
+            # Other packages of this repository are not pinned by the native manifest.
+            if fields[0] not in own:
+                raise ValueError('Runtime Go binary imports unpinned repository package ' + fields[0])
+            continue
+        if len(fields) == 6 and not fields[5]:
+            raise ValueError('Runtime Go dependency is replaced by a local directory')
+        modules.add(tuple(fields[1:]))
+    versions = {(item[0], item[1]) for item in modules} | {(item[3], item[4]) for item in modules if len(item) == 5}
+    sums = sorted(line for line in modfile.with_suffix('.sum').read_text().splitlines()
+                  if len(line.split()) == 3 and (line.split()[0], line.split()[1].removesuffix('/go.mod')) in versions)
+    return {'directives': [edit.get('Go'), edit.get('Toolchain'), edit.get('Godebug')],
+            'modules': sorted(modules), 'sums': sums}
+
+
+def go_build_unchanged(root, runtime, commit, qualified, current):
+    """True only when go.mod and go.sum still give the runtime's Go binaries their qualified inputs."""
+    packages = GO_BINARY_PACKAGES.get(runtime)
+    if not packages:
+        return True
+    try:
+        if not isinstance(commit, str) or not COMMIT.fullmatch(commit):
+            return False
+        with tempfile.TemporaryDirectory(prefix='qualified-go-') as temporary:
+            for name, target in (('go.mod', 'qualified.mod'), ('go.sum', 'qualified.sum')):
+                # Git only supplies bytes; the native manifest's hash decides whether they are qualified.
+                blob = subprocess.run(['git', 'cat-file', 'blob', commit + ':' + name], cwd=root,
+                                      capture_output=True, check=True, timeout=60).stdout
+                if hashlib.sha256(blob).hexdigest() != qualified.get(name):
+                    return False
+                if hashlib.sha256((Path(root) / name).read_bytes()).hexdigest() != current.get(name):
+                    return False
+                (Path(temporary) / target).write_bytes(blob)
+            return (go_build_inputs(root, packages, Path(temporary) / 'qualified.mod')
+                    == go_build_inputs(root, packages))
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        return False
+
+
 def chain_header(root, runtime, record):
     release = record.get('reviewed_release') if isinstance(record, dict) else None
     links = chain_links()
@@ -320,6 +385,7 @@ def validate_chain(root, runtime, record, recorded, current, protected, artifact
     if artifact_sha256 is not None and record['qualified_release'][manifest_key] != artifact_sha256:
         raise ValueError('Chained compatibility review belongs to another native manifest')
     prior_delta = predecessor['scopes'][scope] if runtime == 'vitess' else predecessor['delta']
+    qualified = recorded
     # Replay every published review older than the immediate predecessor.
     links = chain_links()
     releases = list(links)
@@ -334,11 +400,19 @@ def validate_chain(root, runtime, record, recorded, current, protected, artifact
     result = apply_chain_delta(previous, delta)
     if result != current:
         raise ValueError('Runtime source changed outside the chained review')
-    changed_trust = set()
+    changed_trust, go_reviewable = set(), None
     for change in delta['changes']:
         name = change['path']
         if name in CHAIN_TRUST_PATHS[runtime]:
             changed_trust.add(name)
+        elif name in GO_MODULE_FILES:
+            # A go.mod or go.sum change is reviewable only while every module, replacement,
+            # checksum and directive compiled into the runtime's own Go binaries is unchanged.
+            if go_reviewable is None:
+                go_reviewable = go_build_unchanged(root, runtime, record['qualified_release'].get('commit'),
+                                                   qualified, current)
+            if not go_reviewable:
+                raise ValueError('Runtime, dependency, image or native harness changes require new qualification')
         elif protected(name) or name in TRUST_ROOTS.get(runtime, set()):
             raise ValueError('Runtime, dependency, image or native harness changes require new qualification')
     if scope == 'runtime' and changed_trust != CHAIN_TRUST_PATHS[runtime]:

@@ -1,12 +1,17 @@
 """Fail-closed regression tests for chained historical runtime evidence."""
 
 import copy
+import hashlib
 import json
+import os
 from pathlib import Path
 import runpy
 import shutil
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
+import zipfile
 
 
 HERE = Path(__file__).resolve().parent
@@ -300,20 +305,21 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "predecessor review changed"):
                     validate(record)
 
-    def synthetic(self, runtime="myduck"):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        root = Path(temporary.name)
+    def synthetic(self, runtime="myduck", root=None, extra=None, commit="1" * 40):
+        if root is None:
+            temporary = tempfile.TemporaryDirectory()
+            self.addCleanup(temporary.cleanup)
+            root = Path(temporary.name)
         directory = root / "release" / ("managed-" + runtime)
         directory.mkdir(parents=True)
         trust = "release/runtime-source-compatibility.py"
-        recorded = {"internal/api/shared.go": A, trust: A}
-        previous = {"internal/api/shared.go": B, trust: A}
-        current = {"internal/api/shared.go": B, trust: C}
+        recorded = {"internal/api/shared.go": A, trust: A, **(extra or {})}
+        previous = {**recorded, "internal/api/shared.go": B}
+        current = {**previous, trust: C}
         predecessor = {
             "qualified_release": {
                 "tag": "v0.1.0-alpha.58",
-                "commit": "1" * 40,
+                "commit": commit,
                 "manifest_sha256": A,
             },
             "delta": self.delta(recorded, previous, "internal/api/shared.go"),
@@ -354,16 +360,16 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
         return root, record, recorded, current
 
     @staticmethod
-    def delta(before, after, changed):
+    def delta(before, after, *changed):
         return {
             "baseline_sha256": CHAIN["canonical_hash"](before),
             "current_sha256": CHAIN["canonical_hash"](after),
             "changes": [{
-                "path": changed,
-                "before": before.get(changed),
-                "after": after.get(changed),
+                "path": path,
+                "before": before.get(path),
+                "after": after.get(path),
                 "reason": "The exact reviewed source change leaves the historical native runtime evidence unchanged.",
-            }],
+            } for path in changed],
         }
 
     def validate(self, root, record, recorded, current, artifact=A):
@@ -412,6 +418,129 @@ class ChainedRuntimeCompatibilityTest(unittest.TestCase):
         changed["bootstrap"]["trust_paths"] = []
         with self.assertRaisesRegex(ValueError, "bootstrap changed"):
             self.validate(root, changed, recorded, current)
+
+    def go_module(self):
+        """A tiny repository whose qualified commit builds cmd/bin against example.com/dep."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name)
+        proxy, cache, repo = base / "proxy", base / "cache", base / "repo"
+        for name, versions in (("dep", ("v1.0.0", "v1.1.0")), ("other", ("v1.0.0", "v1.1.0")), ("extra", ("v1.0.0",))):
+            directory = proxy / "example.com" / name / "@v"
+            directory.mkdir(parents=True)
+            (directory / "list").write_text("\n".join(versions) + "\n")
+            for version in versions:
+                module = "module example.com/" + name + "\n\ngo 1.21\n"
+                (directory / (version + ".info")).write_text(json.dumps({"Version": version, "Time": "2024-01-01T00:00:00Z"}))
+                (directory / (version + ".mod")).write_text(module)
+                with zipfile.ZipFile(directory / (version + ".zip"), "w") as archive:
+                    prefix = "example.com/" + name + "@" + version + "/"
+                    archive.writestr(prefix + "go.mod", module)
+                    archive.writestr(prefix + name + ".go", "package " + name + "\n\nconst Version = \"" + version + "\"\n")
+        environment = {"GOPROXY": proxy.as_uri(), "GOSUMDB": "off", "GOMODCACHE": str(cache),
+                       "GOTOOLCHAIN": "local", "GOFLAGS": "-mod=mod", "GOWORK": "off",
+                       "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        patcher = mock.patch.dict(os.environ, environment)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(subprocess.run, ["go", "clean", "-modcache"], capture_output=True)
+        (repo / "cmd/bin").mkdir(parents=True)
+        (repo / "internal/other").mkdir(parents=True)
+        (repo / "cmd/bin/main.go").write_text('package main\n\nimport "example.com/dep"\n\nfunc main() { println(dep.Version) }\n')
+        (repo / "internal/other/other.go").write_text('package other\n\nimport "example.com/other"\n\nconst Version = other.Version\n')
+        self.go_mod(repo, "require (\n\texample.com/dep v1.0.0\n\texample.com/other v1.0.0\n)\n")
+        def git(*args):
+            return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        git("init", "-q")
+        git("add", "-A")
+        git("-c", "user.name=release", "-c", "user.email=release@example.invalid", "commit", "-qm", "qualified")
+        globals_ = CHAIN["validate_chain"].__globals__
+        old_packages = globals_["GO_BINARY_PACKAGES"]
+        globals_["GO_BINARY_PACKAGES"] = {"myduck": ("./cmd/bin",)}
+        self.addCleanup(lambda: globals_.update(GO_BINARY_PACKAGES=old_packages))
+        return repo, git
+
+    @staticmethod
+    def go_mod(repo, body, go="1.21"):
+        (repo / "go.mod").write_text("module example.com/app\n\ngo " + go + "\n\n" + body)
+        subprocess.run(["go", "mod", "tidy"], cwd=repo, check=True, capture_output=True)
+
+    def go_change(self, repo, commit, named=None, runtime="myduck"):
+        """Review the working tree's go.mod and go.sum against the qualified commit."""
+        names = ("go.mod", "go.sum")
+        qualified = {name: hashlib.sha256(subprocess.run(["git", "show", commit + ":" + name], cwd=repo, check=True,
+                                                         capture_output=True).stdout).hexdigest() for name in names}
+        root, record, recorded, current = self.synthetic(runtime, repo, qualified, named or commit)
+        previous = dict(current, **{"release/runtime-source-compatibility.py": A})
+        current = dict(current, **{name: hashlib.sha256((repo / name).read_bytes()).hexdigest() for name in names})
+        changed = [name for name in names if current[name] != previous[name]]
+        record["delta"] = self.delta(previous, current, "release/runtime-source-compatibility.py", *changed)
+        def validate():
+            return CHAIN["validate_chain"](root, runtime, record, recorded, current,
+                                           lambda path: path in names or path.startswith("internal/runtime/"), A)
+        return validate
+
+    @unittest.skipUnless(shutil.which("go") and shutil.which("git"), "Go and Git are required")
+    def test_go_module_changes_outside_runtime_binaries_are_reviewable(self):
+        repo, git = self.go_module()
+        commit = git("rev-parse", "HEAD")
+        self.go_mod(repo, "require (\n\texample.com/dep v1.0.0\n\texample.com/other v1.1.0\n)\n")
+        self.assertTrue(self.go_change(repo, commit)())
+        shutil.rmtree(repo / "release")
+        (repo / "internal/extra").mkdir()
+        (repo / "internal/extra/extra.go").write_text('package extra\n\nimport "example.com/extra"\n\nconst Version = extra.Version\n')
+        self.go_mod(repo, "require (\n\texample.com/dep v1.0.0\n\texample.com/extra v1.0.0\n\texample.com/other v1.1.0\n)\n")
+        self.assertTrue(self.go_change(repo, commit)())
+
+    @unittest.skipUnless(shutil.which("go") and shutil.which("git"), "Go and Git are required")
+    def test_go_module_changes_inside_runtime_binaries_require_qualification(self):
+        repo, git = self.go_module()
+        commit = git("rev-parse", "HEAD")
+        for name, body, go in (
+                ("bumped dependency", "require (\n\texample.com/dep v1.1.0\n\texample.com/other v1.0.0\n)\n", "1.21"),
+                ("replaced dependency", "require (\n\texample.com/dep v1.0.0\n\texample.com/other v1.0.0\n)\n\n"
+                                        "replace example.com/dep v1.0.0 => example.com/dep v1.1.0\n", "1.21"),
+                ("language version", "require (\n\texample.com/dep v1.0.0\n\texample.com/other v1.0.0\n)\n", "1.22")):
+            self.go_mod(repo, body, go)
+            shutil.rmtree(repo / "release", ignore_errors=True)
+            with self.subTest(change=name), self.assertRaisesRegex(ValueError, "require new qualification"):
+                self.go_change(repo, commit)()
+
+    @unittest.skipUnless(shutil.which("go") and shutil.which("git"), "Go and Git are required")
+    def test_go_module_review_fails_closed_without_go_or_qualified_bytes(self):
+        repo, git = self.go_module()
+        commit = git("rev-parse", "HEAD")
+        self.go_mod(repo, "require (\n\texample.com/dep v1.1.0\n\texample.com/other v1.0.0\n)\n")
+        git("add", "go.mod", "go.sum")
+        git("-c", "user.name=release", "-c", "user.email=release@example.invalid", "commit", "-qm", "rewritten")
+        # The rewritten commit already carries the bump, so it cannot stand in for the qualified bytes.
+        validate = self.go_change(repo, commit, git("rev-parse", "HEAD"))
+        with self.assertRaisesRegex(ValueError, "require new qualification"):
+            validate()
+        shutil.rmtree(repo / "release")
+        self.go_mod(repo, "require (\n\texample.com/dep v1.0.0\n\texample.com/other v1.1.0\n)\n")
+        validate = self.go_change(repo, commit)
+        self.assertTrue(validate())
+        tools = repo / "git-only"
+        tools.mkdir()
+        (tools / "git").symlink_to(shutil.which("git"))
+        with mock.patch.dict(os.environ, {"PATH": str(tools)}), \
+                self.assertRaisesRegex(ValueError, "require new qualification"):
+            validate()
+        # Repository packages are not pinned by the native manifest, so importing one fails closed.
+        (repo / "cmd/bin/main.go").write_text('package main\n\nimport "example.com/app/internal/other"\n\n'
+                                              'func main() { println(other.Version) }\n')
+        with self.assertRaisesRegex(ValueError, "require new qualification"):
+            validate()
+
+    def test_go_module_changes_are_reviewable_for_runtimes_without_repository_binaries(self):
+        root, record, recorded, current = self.synthetic("oracle-free", extra={"go.mod": A})
+        previous = dict(current, **{"release/runtime-source-compatibility.py": A})
+        current = dict(current, **{"go.mod": B})
+        record["delta"] = self.delta(previous, current, "release/runtime-source-compatibility.py", "go.mod")
+        with mock.patch.dict(os.environ, {"PATH": str(root / "no-tools")}):
+            self.assertTrue(CHAIN["validate_chain"](root, "oracle-free", record, recorded, current,
+                                                    lambda path: path in ("go.mod", "go.sum"), A))
 
     def test_vitess_loader_accepts_only_exact_published_predecessor(self):
         temporary = tempfile.TemporaryDirectory()
