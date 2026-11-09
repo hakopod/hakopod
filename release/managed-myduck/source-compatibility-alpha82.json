@@ -1,0 +1,297 @@
+{
+  "bootstrap": {
+    "commit": "94e37145ddf337f3cc1f6ab2383f6331a1101403",
+    "reviewed_release": "v0.1.0-alpha.82",
+    "tag": "v0.1.0-alpha.81",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "94e37145ddf337f3cc1f6ab2383f6331a1101403",
+  "delta": {
+    "baseline_sha256": "d5ac1486e7b5b601a1a2885813fec0bb73bb1e66e7a34e23d04f5910169ba328",
+    "changes": [
+      {
+        "after": "44e097359658fbeff788e32d1c23e5299fbbd5e5045aaeeb3bbf2832e69e8c90",
+        "before": "07cd4f13c88740b99c6b6a05104e5314193ed0f30f85c08da0e63bf2fd85f814",
+        "path": "api/contracts/agent_policy.py",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "0e21cd44b1f6f9bba84b584bb320e2c02e252ada4e1d41a44f68543bac7ccf21",
+        "before": null,
+        "path": "api/contracts/custom_hostnames.py",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4ab6e2a277cbf76d931bb228de6cd1ab8a0ec4e29694c33c3ebaaf4ebc6051bf",
+        "before": "c809244b146a6bb6e4581a72f3075cf8a6e78fb05a740b6181b9405a19816411",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "e7d37c82c104b1d11f093181248925321f0ca9cd4a29a91ec0e9e0e1c3396e53",
+        "before": "bd3e40d2493565ff37944917451a535a644c6ee5ffa67e6fd53a66d1c385ea0f",
+        "path": "api/route_coverage_exclusions.json",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "06045aaa7c276ae95bfbcd4f7746a86cf976060837e677675bbd3ba345200d2e",
+        "before": "22c8961f3f144ff66e2525db08c15a275478da826ea5029649abcc6b9b7e04e0",
+        "path": "cmd/hakopod-server/main.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "04d2ff5d408e14bbcad5829d082ebc585c8635fb7ee2bb67b171f6b8bc135d64",
+        "before": "c4b6a3def353765050c9a0b284508b10fddbf82a4ea3fa2bb0f77baef6d79bb3",
+        "path": "internal/agent/agent.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f10395dcec58b6a2bbc5a40581f8c47cc6b3ca754038f75dbcf9742c0d9c969c",
+        "before": "3950cb5d3666fbd36c7a65df7feec3036e43aa74011b0a7d554e16a2656864e3",
+        "path": "internal/agent/operations.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4d7844566e2c1107b96c5ac49f00b585c2c172acdcc6f7cee4f56a22833dee6e",
+        "before": "da840236324f2e8d39cef18500a47d84f0ea119b88cc0fe7d22de0e898dfac47",
+        "path": "internal/agent/operations_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "74667b34c11d9443386105249385b1cec6b73d8ccaf587777566a89705ab8ee0",
+        "before": "9ccfd6b2b07e8eaac4ffb7a13db80cbdc42b858fc9796a36f6efe3f029270758",
+        "path": "internal/api/api.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "0a3a89fd6a92bf330aea28e3e1a67346ff020f4a144d82f918e6f9c80f5ab79f",
+        "before": "11be1724cef006e187b831d7098529701d703ca3bc04a23f6c809ad2ba5f9a49",
+        "path": "internal/api/cloud_policy.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "52f2266d5573678a012784d6a236361408abd0c93f7229fcd24933b9adb1e812",
+        "before": null,
+        "path": "internal/api/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "367a9957e143e77a73a085e2a90974956ce9c7943f827c7a7e0006c167955469",
+        "before": null,
+        "path": "internal/api/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4a3dad15792f9dbe40b23ab92f535d6ad254ebd9d7b57cc848c43647dfe388a7",
+        "before": "eaf79226cbaa1bd8c95c64d2ff613f0c92a7e39467e8f464db16a3db0071c6d3",
+        "path": "internal/api/mcp.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "02f01cb5cdd637de762fde788497233d6c16b0c19886c0a665741cfbd2eabc7e",
+        "before": null,
+        "path": "internal/api/oauth.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "3f275cfe8352732b53d9b8d90cc4a0bf5ef3bee01dfe8ef9fa8294010ef850e7",
+        "before": null,
+        "path": "internal/api/oauth_flow_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "36e6417a8fc1bf9e03ec3b05b12716d447ba2335631cb6d1c49bc3f539c724da",
+        "before": null,
+        "path": "internal/api/oauth_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "7d9404f1a593482e256966d260f0b10bbc80597d91178dd9a17c0af31d968def",
+        "before": "1a07646214eb6717d2fce521c9e8495a3b40c915d4a6417435baad3fb65fde09",
+        "path": "internal/api/response_guard_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c63f736f0539c0c6959ec39e724805934e8bed2ea3609cebc3fecfa12d6950ea",
+        "before": "311092229badbcc725cff50b12743d3af8d37082bb8b83e5ded22bb888ca58f1",
+        "path": "internal/api/runtime_scope.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4e327d137a3411b540a68bec4e0bdffb95c4d8de234189bcd4a17aac32ab8a60",
+        "before": null,
+        "path": "internal/cluster/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "b65973487758113c73d397e21e672f29b195de0df6cf325b684a40f76fe3e8f8",
+        "before": null,
+        "path": "internal/cluster/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "b6d99ebb68fdd4aea7f1fcf30f6a088fb5c49ed436641356653f8952cb9f2eca",
+        "before": "f1cd509a5ade85b1d6fb1780d38b924b95735fe4dca7b78b0c154e24d7e913ca",
+        "path": "internal/cluster/deploy.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "2a868511a8c4c69357c1fd482a01f562a3674d67a410367dc3b1b9aee73dad94",
+        "before": "3cc2d80d44ecfde1a5410baccd99058522c8b3734c27a407710ab03040d9921e",
+        "path": "internal/cluster/types.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "5a689cf2d255cfecf17d5f1fc1646b09011c3b13ea7d7a470f35ddbb1ff8e6be",
+        "before": null,
+        "path": "internal/spec/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c59f96c44a633dc5e90fb455c5dbe586b411fc5910d1df4cc0b2bf4ff497fdfb",
+        "before": null,
+        "path": "internal/spec/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "ac9ac38d55eeb7c7d11e67a0ed58c98e2630ace698f7ff28712ac64d1e34ee1a",
+        "before": "052cfbb6eab9d3fec3ab2815494ed56ebecda88e049a61ffb83afef59048ce17",
+        "path": "internal/spec/runtime.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "b01477a1dad3e4419cd63afd4f1934a8b4c88d31cccfbacedb8b15da70ea85f2",
+        "before": "29c81a18bca2212f48ddd02ec6449023610a6bd2bfa5d3f1bfd376f81276eca4",
+        "path": "internal/spec/spec.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "268fc7169a240bcb21eac68475fa3f3d8307d33bf6906ab057194ca6b84de7be",
+        "before": null,
+        "path": "internal/store/110_custom_hostnames.sql",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "48ad4085ac1d638e7a9edd45dd257ea3d47ac2b1736af9e3d1ff2a9f96f15fa6",
+        "before": null,
+        "path": "internal/store/111_custom_hostname_tokens.sql",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "e62afdbd2f7deca993050611f2d51bdea8217e8299f807d4450ec5cabe3ee0d4",
+        "before": null,
+        "path": "internal/store/112_oauth_clients.sql",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c776a2cc29324c3c4b02340910327079a223d8569b93e1653ecac443c4313412",
+        "before": null,
+        "path": "internal/store/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "10143be6f218c269885b08567b777d586c6142e1a789260d7a9b37d770103e32",
+        "before": null,
+        "path": "internal/store/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "36c14407faf6dffd35147b4f3d726d715020ba2c20919af8d527cc51be1426d9",
+        "before": "6b6078410c7caa28c8a0383e6e270cb490a72ef4cf9f718679961f9c1c7182da",
+        "path": "internal/store/custom_roles.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "2dfe96051277990c62516f4ca4e4e30c244de32c2e0adc4a9d5d3a071a38fb8a",
+        "before": "7b947ebd6c83bab844d87cbcdcf244e1fbcbb67cf1cb236cbfe91fa5e5a72c4e",
+        "path": "internal/store/device.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a9b3fdcbf581bd082a29d342ecaea480ae74bd4afc58ed4d5dea5ee25ab44807",
+        "before": "29f256473483116495ef61cf84d6dcc9628f7b256e9a0bf497f22e21fb24943d",
+        "path": "internal/store/domains.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a99d60479cdf068e847a8ec1ec96485098f3de0b3849ed1e5b39d1d0b88db434",
+        "before": "a325569768e72cb262d87c6eef6900f4b6f54f23542776ce587913fde6615a1f",
+        "path": "internal/store/humans.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f543fc51981bb6979610c3797e612e605de7bc9ddd7a5bdefaf4a44b2729cff5",
+        "before": null,
+        "path": "internal/store/oauth.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "2633f444b54cdb3f6dce3a06b0a4acbea89d5a34f61bcf299259736ef59b8977",
+        "before": null,
+        "path": "internal/store/oauth_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "aea14ff4aec9a2789a2741bf20756ec7ffb6fa623a93e979eb27d10ff3bfc6b9",
+        "before": "39e0a16cb9bad175487ff3cb1d0a64a3b72bfbef7137a5b1bcd1ec136df47551",
+        "path": "internal/store/operations.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "ed546ea5adc0ae147eb88a541c3326c06db5915a0a9dad6a56fcad4a76f9706e",
+        "before": "423dfb4fcbaebc1a4522bdd333cdb74d68d2d5c8390edf29986a03265ae5a415",
+        "path": "internal/store/store.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a9d1a8bc98e9d7871973c1f2ac7940c81a146c03017f0922adb7c81e06f1e3d7",
+        "before": null,
+        "path": "internal/worker/custom_hostnames.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "fdc212d893662000dc6395b6e8e2d5f57478101b4da7f28a83039b713a585037",
+        "before": null,
+        "path": "internal/worker/custom_hostnames_test.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d64f44277096d39b72355a09e09ee3719d8d5401fd6c2d6802698c6654b8f348",
+        "before": "dc39f573e88ed908f32d153e13042b9f9d109aa3394f56e5686e9d4edf903e0c",
+        "path": "internal/worker/worker.go",
+        "reason": "Reviewed control-plane change (SaaS custom hostnames with sharded ingresses and TXT ownership checks, MCP log writes and name lookup, OAuth sign-in for HTTP MCP, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "52a43fea85f2a67ff4e7b2ea6e174f6f29e45276c4473100319d6468d2ee8851",
+        "before": "219e8b71955b5e2fcb4933709fa6e88a10f353d1fa31191ca6e381c7d555da50",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Opens the alpha.82 chained review on the published alpha.81 records; verifier constants only, no change to what is verified."
+      }
+    ],
+    "current_sha256": "acfe39b8895caac9e92ae7054c3738eb558aa5aa1625bcffde1cff2300a7fdc4"
+  },
+  "predecessor": {
+    "commit": "94e37145ddf337f3cc1f6ab2383f6331a1101403",
+    "review_sha256": "4be43ba5b9434c1cea903bbc684f76ef315d4c77a4f667730823d78ee18b3716",
+    "tag": "v0.1.0-alpha.81"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestOAuthAuthorizationCodeReachesMCP",
+      "TestOAuthCodeRequiresPKCEAndIsSingleUse",
+      "TestMCPResponseAcceptsGuardedWrites"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42379692675"
+  },
+  "reviewed_release": "v0.1.0-alpha.82",
+  "runtime": "myduck",
+  "schema_version": 2
+}
