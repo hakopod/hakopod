@@ -79,7 +79,9 @@ Installation administrators manage where GitHub pools may run jobs on cloud VMs
 with `hakopod actions capacity list [--json]`, `set FILE` (a TOML file of
 `[[capacity]]` tables, written at the current revision) and `test NAME`, which
 assumes the role and reads the network settings; add `--launch` to also start
-and terminate one small instance. See
+and terminate one small instance. `build-image NAME` builds a capacity's
+`hakopod-minimal` image in its account; `list` shows each capacity's image,
+warm pool size and build state. See
 [Run jobs on AWS VMs](managed-actions.md#run-jobs-on-aws-vms).
 
 ## Run a command in a pod
