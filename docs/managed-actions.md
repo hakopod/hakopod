@@ -663,16 +663,24 @@ type and spot or on-demand lifecycle, and the pool's spot interruptions.
 | `image` | What boots | Runner start after launch¹ |
 | --- | --- | --- |
 | stock Ubuntu (before this setting) | Canonical's Ubuntu 24.04; Docker and the runner are installed on every boot | 73 s |
-| `runs-on-full` | RunsOn's public copy of GitHub's Ubuntu 24.04 runner image: Docker, its runner build (2.338.2 in November 2026) and the GitHub-hosted toolchains | 16 s |
-| `hakopod-minimal` | Ubuntu 24.04 with Docker, runner 2.337.0 and a boot unit, built in your account | 52 s² |
+| `runs-on-full` | RunsOn's public copy of GitHub's Ubuntu 24.04 runner image: Docker, its runner build (2.338.2 in November 2026) and the GitHub-hosted toolchains | 16 s (x86: 18 s) |
+| `hakopod-minimal` | Ubuntu 24.04 with Docker, runner 2.337.0 and a boot unit, built in your account | 24 s (x86: 51 s)² |
 | `ami-…`, `resolve:ssm:/…` | your own Ubuntu-based image | depends on the image |
 
-¹ Measured on `t4g.small` in us-east-2 from the launch call to the boot script
-starting `run.sh`, on the instance's clock. GitHub then needs a few seconds to
-hand the runner its job.
-² The first boots of a freshly built image read every block lazily from its new
-snapshot: Docker took 17 s to start against 3 s on `runs-on-full`. Standbys of
-the same image start in 15 s, so a warm pool hides this.
+¹ Median of three on-demand launches of `t4g.small` (x86: two of `t3a.small`)
+in us-east-2, from the launch call to the boot script starting `run.sh`, on the
+instance's clock. GitHub then needs a few seconds to hand the runner its job.
+² Every new volume reads its blocks lazily from the image's snapshot, so
+`hakopod-minimal` pays for its first reads on every cold launch, and most on
+the first launch after a build (31 to 42 s). A small first job (an image pull,
+a shallow clone and reading the runner's files) finished 54 s after launch
+against 43 s on `runs-on-full`; on x86 it took 3 to 4.5 minutes. Standbys of
+either image start the runner in about 15 s, so use `hakopod-minimal` with a
+warm pool, and not cold on x86.
+
+`runs-on-full` is the default because it is as fast or faster than
+`hakopod-minimal` on every cold launch, on both architectures, and needs no
+image build.
 
 **`runs-on-full`** resolves at launch to the newest image owned by AWS account
 `135269210855` named `runs-on-v2.2-ubuntu24-full-x64-*` or `…-arm64-*`, cached
@@ -739,8 +747,9 @@ for 15 minutes are terminated and replaced. Set `warm_pool = 0` and wait a
 minute before removing a capacity, so its standbys are terminated.
 
 Measured on `t4g.small` in us-east-2: a standby takes 70 to 100 seconds to
-prepare. From the claim to the runner starting took 14 s on `runs-on-full` and
-15 s on `hakopod-minimal`, against 16 s and 52 s for a cold launch. Starting a
+prepare. From the claim to the runner starting took 15 s on both images
+(median of three), against 16 s and 24 s for a cold launch, and Docker answered
+about 19 s after the claim on both. Starting a
 stopped instance is barely faster than launching one; what a standby saves is
 the first, lazy reads of its EBS volume, which matter most for a freshly built
 image. Pool status shows each slot's `instance_source`, `cold` or `standby`.

@@ -163,28 +163,36 @@ Hakopod, so it works the same for an installation behind NAT.
 
 ## Images and warm pool
 
-Measured on `t4g.small` in us-east-2, launch (or claim) call to the boot script
-starting `run.sh`, on the instance's clock:
+Measured in us-east-2 on on-demand `t4g.small` (x86: `t3a.small`), from the
+launch (or claim) call, on the instance's clock; median [min–max] of three runs
+(two on x86). "First job" is an image pull, a shallow `git clone` and reading
+the runner's files (about 460 MB on arm64).
 
-| Start | Runner starting | Docker answers and `config.sh --version` runs |
-|---|---|---|
-| cold, stock Ubuntu (Docker and runner installed at boot) | 73 s | 74 s |
-| cold, `runs-on-full` | 16 s | 25 s |
-| cold, `hakopod-minimal` | 52 s | 92 s |
-| standby, `runs-on-full` | 14 s | 21 s |
-| standby, `hakopod-minimal` | 15 s | 21 s |
+| Start | Runner starting | Docker answers | First job done |
+|---|---|---|---|
+| cold, stock Ubuntu (Docker and runner installed at boot, one run) | 73 s | 74 s | |
+| cold, `runs-on-full` | 15.6 [14.7–16.6] s | 25.9 s | 42.8 s |
+| cold, `hakopod-minimal` | 24.2 [22.1–42.3] s | 30.5 s | 53.7 s |
+| cold, `hakopod-minimal`, 300 MiB/s volume initialization | 21.9 [20.9–36.3] s | 27.6 s | 38.8 s |
+| standby, `runs-on-full` | 15.0 [14.9–15.4] s | 19.4 s | 31.9 s |
+| standby, `hakopod-minimal` | 15.2 [15.1–19.3] s | 19.8 s | 32.0 s |
+| x86 cold, `runs-on-full` | 18.4 s | 30.0 s | 54.1 s |
+| x86 cold, `hakopod-minimal` | 50.8 s | 89.0 s | 227.5 s |
 
-The earlier hand measurement of stock Ubuntu was about 21 s from launch to
-`running` plus about 65 s of cloud-init installs. The claim itself (tags, two
-attribute changes, start) took about 3 s of API calls, included above.
+The claim itself (tags, two attribute changes, start) takes about 3 s of API
+calls, included above. A `hakopod-minimal` build takes about 11 minutes, most
+of it waiting for the snapshot.
 
-What the numbers say: most of the gain is the image. Starting a stopped
-instance is barely faster than launching one (14 s against 16 s to the runner
-on `runs-on-full`); a standby mainly saves the lazy EBS reads of a cold volume
-(Docker and the runner answer 4 s sooner) and hides a freshly built image's
-slow first boots (`hakopod-minimal`: 15 s warm against 52 s cold, where Docker
-alone took 17 s to start reading blocks from the new snapshot). These are
-single runs on `t4g.small`, timed on the instance clock.
+What the numbers say: most of the gain is the image, and `runs-on-full` wins
+or ties every cold launch, so it is the default. A freshly built image is slow
+cold because every new volume lazily reads its blocks from the snapshot; the
+first launch after a build is the slowest (31 to 42 s to the runner), and x86
+is much worse (Docker and containerd took 15 to 18 s each). Provisioned volume
+initialization (`VolumeInitializationRate`, about $0.03 a launch at 300 MiB/s
+for an 8 GiB snapshot) makes the first job faster but not the runner start. A
+standby removes the difference: both images start the runner in about 15 s. So
+`hakopod-minimal` is for those who will not boot a third-party image, paired
+with a warm pool.
 
 Stage 1, images. A capacity names `image`:
 
