@@ -66,6 +66,10 @@ type LaunchInput struct {
 	// image builders. Runners terminate on shutdown.
 	StopOnShutdown bool
 	DiskGiB        int64 // zero uses the capacity's
+	// VolumeInitRate fetches the image's snapshot onto the root volume at
+	// this many MiB/s (100-300), a charge per GiB of snapshot; zero leaves
+	// EBS's lazy, best-effort loading.
+	VolumeInitRate int64
 }
 
 // Image is a machine image Hakopod created; State is pending, available or

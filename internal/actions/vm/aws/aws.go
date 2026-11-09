@@ -124,6 +124,9 @@ func (c *Client) Launch(ctx context.Context, in vm.LaunchInput) (vm.Instance, er
 	p.Set(d+"BlockDeviceMapping.1.Ebs.VolumeType", "gp3")
 	p.Set(d+"BlockDeviceMapping.1.Ebs.Encrypted", "true")
 	p.Set(d+"BlockDeviceMapping.1.Ebs.DeleteOnTermination", "true")
+	if in.VolumeInitRate > 0 {
+		p.Set(d+"BlockDeviceMapping.1.Ebs.VolumeInitializationRate", strconv.FormatInt(in.VolumeInitRate, 10))
+	}
 	tagSpec(p, d+"TagSpecification.1", "instance", tags)
 	tagSpec(p, d+"TagSpecification.2", "volume", tags)
 	var template struct {

@@ -313,11 +313,12 @@ func TestImagesAndClaim(t *testing.T) {
 		t.Fatal(got)
 	}
 
-	if _, err = c.Launch(ctx, vm.LaunchInput{Name: "standby", InstanceTypes: []string{"t4g.small"}, Image: "ami-new", StopOnShutdown: true, DiskGiB: 8}); err != nil {
+	if _, err = c.Launch(ctx, vm.LaunchInput{Name: "standby", InstanceTypes: []string{"t4g.small"}, Image: "ami-new", StopOnShutdown: true, DiskGiB: 8, VolumeInitRate: 300}); err != nil {
 		t.Fatal(err)
 	}
 	lt := f.form("CreateLaunchTemplate")
-	if lt.Get("LaunchTemplateData.ImageId") != "ami-new" || lt.Get("LaunchTemplateData.InstanceInitiatedShutdownBehavior") != "stop" || lt.Get("LaunchTemplateData.BlockDeviceMapping.1.Ebs.VolumeSize") != "8" {
+	if lt.Get("LaunchTemplateData.ImageId") != "ami-new" || lt.Get("LaunchTemplateData.InstanceInitiatedShutdownBehavior") != "stop" || lt.Get("LaunchTemplateData.BlockDeviceMapping.1.Ebs.VolumeSize") != "8" ||
+		lt.Get("LaunchTemplateData.BlockDeviceMapping.1.Ebs.VolumeInitializationRate") != "300" {
 		t.Fatal("standby launch", lt)
 	}
 
