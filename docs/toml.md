@@ -337,9 +337,14 @@ ReadWriteOnce class is sufficient for same-node sharing.
 
 Each application can declare 16 named volumes, with 20 total persistent claims
 and 200 GiB across named and legacy volumes. Each service can declare 16 named
-and temporary mounts. Temporary mounts total at most 128 MiB; memory-backed
-mounts count against the container memory limit and disappear when the pod is
-replaced. Disk-backed temporary mounts count against ephemeral storage limits.
+and temporary mounts. Temporary mounts are sized with `size_mib` and disappear
+when the pod is replaced. Memory-backed mounts (`memory = true`) count against
+the container memory limit, so together they must stay below it. Disk-backed
+mounts use the node's disk: above 128 MiB in total, Hakopod raises the
+container's ephemeral-storage request and limit by the same amount, so the
+scheduler places the pod on a node with that much free disk and the kubelet does
+not evict it for using it. The combined size is capped at 1 TiB per service to
+catch typos. Hakopod Cloud keeps temporary mounts at 128 MiB per service.
 
 Persistent services use one replica without autoscaling and Recreate updates.
 Removing a mount or service retains its persistent claim. Rollback changes the

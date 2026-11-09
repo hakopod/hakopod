@@ -6,8 +6,25 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
+
+// MaxTemporaryMiB bounds a service's combined scratch space. It only catches
+// typos; the node's disk and memory are the real limit.
+const MaxTemporaryMiB = 1 << 20
+
+// TemporaryDiskMiB is the disk-backed scratch space of s. Memory-backed mounts
+// count against the memory limit instead.
+func TemporaryDiskMiB(s Service) int64 {
+	var total int64
+	for _, m := range s.TemporaryMounts {
+		if !m.Memory {
+			total += m.SizeMiB
+		}
+	}
+	return total
+}
 
 type NamedVolume struct {
 	SizeGiB      int64  `json:"size_gib" toml:"size_gib"`
@@ -91,16 +108,27 @@ func validateMountControls(s Service) error {
 	for _, m := range s.CertificateMounts {
 		paths = append(paths, m.MountPath)
 	}
-	var temporarySize int64
+	var temporarySize, memorySize int64
 	for _, m := range s.TemporaryMounts {
-		if !allowedMount(m.MountPath) || m.SizeMiB < 1 || m.SizeMiB > 128 {
-			return fmt.Errorf("temporary_mounts: use a data directory and size_mib between 1 and 128")
+		if !allowedMount(m.MountPath) || m.SizeMiB < 1 || m.SizeMiB > MaxTemporaryMiB {
+			return fmt.Errorf("temporary_mounts: use a data directory and size_mib between 1 and %d", MaxTemporaryMiB)
 		}
 		temporarySize += m.SizeMiB
+		if m.Memory {
+			memorySize += m.SizeMiB
+		}
 		paths = append(paths, m.MountPath)
 	}
-	if temporarySize > 128 {
-		return fmt.Errorf("temporary_mounts: combined capacity must not exceed 128 MiB")
+	if temporarySize > MaxTemporaryMiB {
+		return fmt.Errorf("temporary_mounts: combined capacity must not exceed %d MiB", MaxTemporaryMiB)
+	}
+	// A tmpfs is charged to the container's memory, so it must leave room for
+	// the process itself.
+	if memorySize > 0 {
+		limit, err := resource.ParseQuantity(EffectiveResources(s).MemoryLimit)
+		if err == nil && memorySize<<20 >= limit.Value() {
+			return fmt.Errorf("temporary_mounts: memory-backed mounts (%d MiB) must be smaller than the memory limit %s", memorySize, EffectiveResources(s).MemoryLimit)
+		}
 	}
 	for i, a := range paths {
 		for _, b := range paths[i+1:] {

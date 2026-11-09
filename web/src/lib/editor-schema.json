@@ -1218,7 +1218,7 @@
       "size_mib": {
         "type": "integer",
         "minimum": 1,
-        "maximum": 128
+        "maximum": 1048576
       },
       "memory": {
         "type": "boolean"

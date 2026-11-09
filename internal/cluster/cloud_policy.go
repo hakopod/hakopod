@@ -95,6 +95,13 @@ func (c *Client) ValidateCloudSpec(app spec.Application) error {
 		if service.ContainerDaemon != "" && c.options.DedicatedPublicTCPNode == "" {
 			return fmt.Errorf("%w: %s.container_daemon requires a self-hosted installation or a dedicated BYO node", ErrCloudLimit, name)
 		}
+		var scratch int64
+		for _, m := range service.TemporaryMounts {
+			scratch += m.SizeMiB
+		}
+		if scratch > 128 {
+			return fmt.Errorf("%w: %s.temporary_mounts may total at most 128 MiB on Cloud", ErrCloudLimit, name)
+		}
 		if service.GPU != nil || service.AWSIdentity != "" {
 			return fmt.Errorf("%w: %s cannot use GPU or AWS workload identity on Cloud", ErrCloudLimit, name)
 		}

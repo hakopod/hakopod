@@ -42,7 +42,7 @@ func TestCloudLimitsAndSingleNodeCapability(t *testing.T) {
 	if err := c.ValidateCloudSpec(app); err != nil {
 		t.Fatal(err)
 	}
-	for _, service := range []spec.Service{{Size: "compute"}, {Size: "gpu"}, {Size: "small", Replicas: 4}, {Size: "small", AWSIdentity: "host"}, {Size: "small", Autoscaling: &spec.Autoscaling{MaxReplicas: 4}}} {
+	for _, service := range []spec.Service{{Size: "compute"}, {Size: "gpu"}, {Size: "small", Replicas: 4}, {Size: "small", AWSIdentity: "host"}, {Size: "small", Autoscaling: &spec.Autoscaling{MaxReplicas: 4}}, {Size: "small", TemporaryMounts: []spec.TemporaryMount{{MountPath: "/tmp", SizeMiB: 129}}}} {
 		app.Services["web"] = service
 		if err := c.ValidateCloudSpec(app); !errors.Is(err, ErrCloudLimit) {
 			t.Fatalf("accepted %#v: %v", service, err)

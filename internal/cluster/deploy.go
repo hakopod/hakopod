@@ -557,6 +557,14 @@ func deployment(t Target, name string, svc spec.Service, deadline time.Duration,
 		Resources:       corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPURequest), corev1.ResourceMemory: resource.MustParse(profile.MemoryRequest), corev1.ResourceEphemeralStorage: resource.MustParse("16Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(profile.CPULimit), corev1.ResourceMemory: resource.MustParse(profile.MemoryLimit), corev1.ResourceEphemeralStorage: resource.MustParse("128Mi")}},
 		SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr(false), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 	}
+	// The kubelet evicts a pod whose emptyDirs and writable layers outgrow the
+	// containers' ephemeral-storage limits, so large scratch space is added to
+	// the app container and reserved for scheduling. Up to the former 128 MiB
+	// ceiling the resources stay as they were, so existing pods do not roll.
+	if scratch := spec.TemporaryDiskMiB(svc); scratch > 128 {
+		container.Resources.Requests[corev1.ResourceEphemeralStorage] = resource.MustParse(strconv.FormatInt(16+scratch, 10) + "Mi")
+		container.Resources.Limits[corev1.ResourceEphemeralStorage] = resource.MustParse(strconv.FormatInt(128+scratch, 10) + "Mi")
+	}
 	keys := make([]string, 0, len(svc.Env))
 	for key := range svc.Env {
 		keys = append(keys, key)
