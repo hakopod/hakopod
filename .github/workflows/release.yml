@@ -113,9 +113,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
+      # The MyDuck review reads its qualified go.mod and go.sum from history
+      # and compares the Go modules compiled into its storage helper.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - name: Restore the pinned template source
         run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
       - name: Retain MyDuck qualification or its compiled release hold
         run: PYTHONDONTWRITEBYTECODE=1 python3 -B release/managed-runtime-availability.py prepare myduck --output .local/managed-myduck-release-evidence
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -320,9 +328,17 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # The MyDuck review reads its qualified go.mod and go.sum from history
+      # and compares the Go modules compiled into its storage helper.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - name: Restore the pinned template source
         run: git submodule update --init templates
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-assets
