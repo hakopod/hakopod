@@ -680,6 +680,13 @@ export const policyOperations = [
     "summary": "Request removal of the service from its source after the destination is ready."
   },
   {
+    "id": "getActionsCapacity",
+    "method": "GET",
+    "path": "/settings/actions-capacity",
+    "category": "admin",
+    "summary": "Get the Actions capacity"
+  },
+  {
     "id": "getActionsJobLogs",
     "method": "GET",
     "path": "/applications/{id}/actions/{service}/jobs/{slot}/logs",
@@ -1793,6 +1800,13 @@ export const policyOperations = [
     "summary": "Request publication of a reviewed database endpoint."
   },
   {
+    "id": "putActionsCapacity",
+    "method": "PUT",
+    "path": "/settings/actions-capacity",
+    "category": "admin",
+    "summary": "Replace the Actions capacity"
+  },
+  {
     "id": "putAlarmSettings",
     "method": "PUT",
     "path": "/alarm-settings",
@@ -2351,6 +2365,13 @@ export const policyOperations = [
     "path": "/applications/{id}/services/{service}/terminal/{session}/output",
     "category": "terminal",
     "summary": "Stream output from the specified application terminal session."
+  },
+  {
+    "id": "testActionsCapacity",
+    "method": "POST",
+    "path": "/settings/actions-capacity/{name}/test",
+    "category": "admin",
+    "summary": "Test an Actions capacity"
   },
   {
     "id": "testBackupDestination",

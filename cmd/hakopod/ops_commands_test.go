@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -188,5 +189,48 @@ func TestHostnamesRequestPaths(t *testing.T) {
 	}
 	if err := hostnamesCommand(ctx, c, cfg, []string{"add", "shop"}, "", "", "", false); err == nil {
 		t.Fatal("add without a hostname accepted")
+	}
+}
+
+func TestActionsCapacityCommand(t *testing.T) {
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		calls = append(calls, r.Method+" "+r.URL.Path+" "+string(body))
+		if r.URL.Path == "/api/v1/settings/actions-capacity" {
+			io.WriteString(w, `{"external_id":"hakopod-x","capacities":[],"revision":4}`)
+			return
+		}
+		io.WriteString(w, `{"capacity":"aws-spot","warnings":[]}`)
+	}))
+	defer server.Close()
+	c := &client{url: server.URL, key: "k", http: server.Client()}
+	file := t.TempDir() + "/capacity.toml"
+	os.WriteFile(file, []byte(`[[capacity]]
+name = "aws-spot"
+cloud = "aws"
+region = "eu-central-1"
+role_arn = "arn:aws:iam::123456789012:role/hakopod-actions"
+subnet_ids = ["subnet-0abc1234"]
+security_group_ids = ["sg-0abc1234"]
+instance_types = ["c7i.xlarge"]
+architecture = "amd64"
+spot = true
+max_instances = 20
+environments = ["shop/production"]
+`), 0o600)
+	ctx := context.Background()
+	if err := actionsCapacityCommand(ctx, c, []string{"capacity", "set", file}, false, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := actionsCapacityCommand(ctx, c, []string{"capacity", "test", "aws-spot"}, true, false, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 3 || !strings.HasPrefix(calls[1], `PUT /api/v1/settings/actions-capacity {"capacities":[{"name":"aws-spot",`) || !strings.Contains(calls[1], `"expected_revision":4`) ||
+		calls[2] != `POST /api/v1/settings/actions-capacity/aws-spot/test {"launch":true}` {
+		t.Fatal(calls)
+	}
+	if actionsCapacityCommand(ctx, c, []string{"capacity", "test"}, false, false, io.Discard) == nil {
+		t.Fatal("usage accepted")
 	}
 }

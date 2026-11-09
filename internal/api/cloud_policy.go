@@ -25,7 +25,7 @@ func cloudInstallationRequest(method, path string) bool {
 
 func cloudInstallationPath(path string) bool {
 	path = strings.TrimPrefix(path, "/api/v1/")
-	for _, prefix := range []string{"host-access", "installation", "users", "tls/issuers", "settings/haproxy", "settings/app-logs", "settings/custom-hostnames"} {
+	for _, prefix := range []string{"host-access", "installation", "users", "tls/issuers", "settings/haproxy", "settings/app-logs", "settings/custom-hostnames", "settings/actions-capacity"} {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
 		}

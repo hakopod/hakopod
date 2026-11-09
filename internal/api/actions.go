@@ -588,8 +588,9 @@ func (s *Server) actionsStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type item struct {
-		Pool  store.ActionsPool   `json:"pool"`
-		Slots []store.ActionsSlot `json:"slots"`
+		Pool      store.ActionsPool       `json:"pool"`
+		Slots     []store.ActionsSlot     `json:"slots"`
+		Evictions []store.ActionsEviction `json:"evictions"`
 	}
 	out := []item{}
 	for _, p := range pools {
@@ -598,7 +599,12 @@ func (s *Server) actionsStatus(w http.ResponseWriter, r *http.Request) {
 			authFailure(w, e)
 			return
 		}
-		out = append(out, item{p, slots})
+		evictions, e := s.Store.ActionsEvictions(r.Context(), a.ID, p.Service)
+		if e != nil {
+			authFailure(w, e)
+			return
+		}
+		out = append(out, item{p, slots, evictions})
 	}
 	write(w, 200, map[string]any{"items": out})
 }
