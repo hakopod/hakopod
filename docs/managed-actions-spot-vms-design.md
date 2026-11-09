@@ -53,7 +53,8 @@ max_instances = 20                      # hard ceiling across all pools
 environments = ["shop/production"]      # project/environment pairs, or "*"
 ```
 
-Hakopod's own AWS identity (the SDK's default credential chain) assumes
+Hakopod's own AWS identity (environment keys, a web identity token or the
+EC2 instance role; no shared config files) assumes
 `role_arn`. The installation's external ID is generated on the first read of
 the setting; a capacity may name its own instead. The API also returns the
 installation ID, the value of the `hakopod-installation` tag. A capacity that a
@@ -119,8 +120,10 @@ nothing (no capacity for any listed type) retires the slot so a fresh one
 retries; the instance and its ID are recorded on the slot.
 
 Each cloud is a small package (`internal/actions/vm/aws`, `gcp`, `azure`) with
-`Launch`, `State`, `Terminate`, `List(tags)` and `Check`. AWS uses the SDK
-already in `go.mod`, plus its `config`, `ec2` and `sts` modules. For GCP and Azure, plain REST over `net/http` with their token
+`Launch`, `State`, `Terminate`, `List(tags)` and `Check`. AWS speaks the EC2
+and STS Query APIs over `net/http` (`internal/awsquery`), signed with the core
+SDK module already in `go.mod`; adding the `config`, `ec2` and `sts` modules
+would change `go.mod`, which requalifies every managed database runtime. For GCP and Azure, plain REST over `net/http` with their token
 endpoints is a few hundred lines and avoids two large SDK trees; revisit if it
 grows.
 

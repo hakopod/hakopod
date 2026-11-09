@@ -394,8 +394,12 @@ hakopod actions capacity list
 ```
 
 Create a role for Hakopod to assume. Its trust policy names the AWS identity
-Hakopod runs as (its pod role, instance role or user; Hakopod uses the AWS SDK's
-default credential chain) and requires the external ID:
+Hakopod runs as and requires the external ID. Hakopod finds its own identity in
+this order: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+`AWS_SESSION_TOKEN` in its environment; a web identity token
+(`AWS_WEB_IDENTITY_TOKEN_FILE` and `AWS_ROLE_ARN`, as EKS sets for a pod role);
+then the EC2 instance role over IMDSv2. It does not read `~/.aws/config`,
+credential files, profiles or SSO.
 
 ```json
 {
@@ -621,6 +625,65 @@ job finishes; the pool then terminates it. That includes idle runners: a VM wait
 that time. Each VM also stops its runner after the same limit on its own, so it
 does not outlive an unreachable control plane. GitHub runners of vanished
 instances are removed by the normal slot cleanup.
+
+### Acceptance in a real account
+
+`.github/workflows/actions-vm-acceptance.yml` runs by hand only. It exchanges
+the workflow's GitHub OIDC token for the role through Hakopod's own web
+identity code, assumes the same role again with the external ID as a capacity
+would, checks the subnet and security group, launches one `t4g.nano` spot
+instance whose user data powers it off, finds it by its tags, makes sure a
+client for another installation refuses to terminate it, then terminates it.
+A run takes a few minutes and costs a fraction of a cent.
+
+The role trusts the repository's `main` branch through GitHub OIDC and itself
+with the external ID, and carries the policy above. Store its ARN as the
+repository secret `HAKOPOD_ACTIONS_VM_ROLE_ARN`, and pass a subnet with
+outbound internet access and an egress-only security group when starting the
+workflow.
+
+```hcl
+variable "repository" { default = "hakopod/hakopod" }
+
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+resource "aws_iam_role" "hakopod_acceptance" {
+  name = "hakopod-actions-acceptance"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+        Action    = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+            "token.actions.githubusercontent.com:sub" = "repo:${var.repository}:ref:refs/heads/main"
+          }
+        }
+      },
+      {
+        # The workflow then assumes the role again, as a capacity would.
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/hakopod-actions-acceptance" }
+        Action    = "sts:AssumeRole"
+        Condition = { StringEquals = { "sts:ExternalId" = "hakopod-acceptance" } }
+      },
+    ]
+  })
+}
+```
+
+Give it the permissions policy above, with the `TerminateInstances` condition
+changed to `StringLike` on `acceptance-*`: each run tags its instance with a
+fresh `acceptance-...` installation ID. Create the role before adding the second
+trust statement if IAM rejects a principal that does not exist yet.
 
 Not verified yet: launching in a real AWS account, the IAM policy above in
 practice, an actual spot interruption followed by a rerun, and boot time from
