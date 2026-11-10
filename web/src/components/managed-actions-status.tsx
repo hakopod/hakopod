@@ -240,7 +240,16 @@ export function ManagedActionsStatus({
                     const outdated = Date.now() - Date.parse(slot.updated_at) > 120000
                     return (
                       <li key={slot.id} className="runner-row">
-                        <code className="break-all">hakopod-{slot.id}</code>
+                        <code className="break-all">
+                          hakopod-{slot.id}
+                          {slot.instance_id && (
+                            <span className="muted-text">
+                              {' · '}
+                              {slot.instance_id} {slot.instance_type} {slot.instance_lifecycle}
+                              {slot.instance_source === 'standby' ? ' · warm standby' : ''}
+                            </span>
+                          )}
+                        </code>
                         <span className={outdated ? 'text-[var(--warning)]' : undefined}>
                           {outdated
                             ? 'Observation out of date'
@@ -261,6 +270,39 @@ export function ManagedActionsStatus({
                 </ul>
               )}
             </details>
+            {item.evictions?.length > 0 && (
+              <details className="group/evictions min-w-0">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-xs muted-text [&::-webkit-details-marker]:hidden">
+                  <Icon
+                    name="chevron"
+                    size={14}
+                    className="shrink-0 group-open/evictions:rotate-90"
+                  />
+                  {item.evictions.length} spot{' '}
+                  {item.evictions.length === 1 ? 'interruption' : 'interruptions'} in 30 days
+                </summary>
+                <ul className="grid min-w-0" aria-label="Spot interruptions">
+                  {item.evictions.map((eviction) => (
+                    <li key={`${eviction.slot_id}/${eviction.instance_id}`} className="runner-row">
+                      <code className="break-all">
+                        {eviction.instance_id} {eviction.instance_type}
+                      </code>
+                      <span
+                        className={eviction.rerun_error ? 'text-[var(--warning)]' : undefined}
+                        title={eviction.rerun_error}
+                      >
+                        {eviction.repository && eviction.run_id
+                          ? `${eviction.repository} run ${eviction.run_id}${eviction.run_attempt ? ` attempt ${eviction.run_attempt}` : ''} · ${eviction.rerun_error ? 'not rerun' : eviction.rerun_at ? 'rerun' : 'rerun pending'}`
+                          : 'Idle runner'}
+                      </span>
+                      <time className="muted-text" dateTime={eviction.evicted_at}>
+                        {new Date(eviction.evicted_at).toLocaleString()}
+                      </time>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             {removing && (
               <p className="text-sm muted-text">
                 Keep this application's credential until {providerName} registration cleanup

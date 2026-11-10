@@ -67,6 +67,7 @@ const VPNSettings = lazy(() =>
 )
 const AppLogSettings = lazy(() => import('../components/app-log-settings'))
 const KubernetesPatchSettings = lazy(() => import('../components/kubernetes-patch-settings'))
+const ActionsCapacitySettings = lazy(() => import('../components/actions-capacity-settings'))
 const ProxySettings = lazy(() => import('../components/proxy-settings'))
 const SecretProviders = lazy(() =>
   import('../components/secret-providers').then((module) => ({
@@ -126,6 +127,7 @@ export const Route = createFileRoute('/settings')({
         'vpn',
         'logs',
         'kubernetes',
+        'actions-capacity',
         'integrations',
         'private-destinations',
       ].includes(search.tab)
@@ -199,6 +201,7 @@ function Administration() {
                 { id: 'edge', label: 'Hakopod Edge', group: 'Installation' },
                 { id: 'access', label: 'Network access', group: 'Installation' },
                 { id: 'vpn', label: 'VPN', group: 'Installation' },
+                { id: 'actions-capacity', label: 'Actions VM capacity', group: 'Installation' },
               ]
             : []),
         ]
@@ -263,6 +266,9 @@ function Administration() {
                   {installation.allowed && tab === 'edge' && <ProxySettings />}
                   {installation.allowed && tab === 'access' && <AccessPolicySettings />}
                   {installation.allowed && tab === 'vpn' && <VPNSettings />}
+                  {installation.allowed && tab === 'actions-capacity' && (
+                    <ActionsCapacitySettings />
+                  )}
                 </>
               )}
             </Suspense>

@@ -151,6 +151,9 @@ function RunnerPoolForm({
         ? { cpu_request: '500m', cpu_limit: '2500m', memory_request: '1Gi', memory_limit: '4Gi' }
         : {}),
   )
+  // A GitHub pool can run each job on a single-use VM of a named installation capacity.
+  const [vmCapacity, setVmCapacity] = useState(original?.actions?.capacity || '')
+  const [spotRetries, setSpotRetries] = useState(String(original?.actions?.spot_retries ?? 2))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -170,6 +173,15 @@ function RunnerPoolForm({
   const providerCapability = capabilities.data?.providers?.find(
     (item) => item.provider === provider,
   )
+  const onVM = provider === 'github' && !!vmCapacity
+  // Only installation administrators can list capacities; others type the name.
+  const vmCapacities = useQuery({
+    queryKey: ['actions-capacity'],
+    queryFn: ({ signal }) => unwrap(client.GET('/settings/actions-capacity', { signal })),
+    enabled: provider === 'github',
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
   const minimum = providerCapability?.minimum_resources
   const size = original?.size || (dashboardEdition.cloud ? 'large' : 'compute')
   const effective = serviceResources(
@@ -304,8 +316,7 @@ function RunnerPoolForm({
     !!effective &&
     providerAvailable &&
     !!runnerImage &&
-    resourcesValid &&
-    Number(workspaceSize) >= workspaceMinimum &&
+    (onVM || (resourcesValid && Number(workspaceSize) >= workspaceMinimum)) &&
     (!cacheEnabled || provider !== 'gitlab' || cacheAvailable)
   const canDraft = canWrite && !!capabilities.data?.licensed
   const targetLabel =
@@ -399,7 +410,14 @@ function RunnerPoolForm({
       setError(runnerLabelError(workflowLabels, provider))
       return
     }
-    if (step === 2 && invalidNode) {
+    if (step === 2 && onVM) {
+      const retries = Number(spotRetries)
+      if (!Number.isInteger(retries) || retries < 0 || retries > 5) {
+        setError('Choose 0 to 5 automatic reruns after spot interruptions.')
+        return
+      }
+    }
+    if (step === 2 && !onVM && invalidNode) {
       setError('Choose an eligible node for this architecture, or use Automatic placement.')
       return
     }
@@ -415,7 +433,7 @@ function RunnerPoolForm({
         return
       }
     }
-    if (step === 2 && !resourcesValid) {
+    if (step === 2 && !onVM && !resourcesValid) {
       setError('Choose a pool preset or increase the values to meet this provider’s minimums.')
       return
     }
@@ -438,16 +456,18 @@ function RunnerPoolForm({
         ...original,
         image: runnerImage!,
         public: false,
-        size,
-        resources:
-          !original && resourcePreset === 'defaults'
+        // The capacity decides the machine, so pod sizing and placement are left out.
+        size: onVM ? undefined : size,
+        resources: onVM
+          ? undefined
+          : !original && resourcePreset === 'defaults'
             ? effectiveResources
             : Object.keys(resources).length
               ? resources
               : undefined,
         replicas: Number(replicas),
-        architecture: architecture ? (architecture as 'amd64' | 'arm64') : undefined,
-        node_name: nodeName || undefined,
+        architecture: !onVM && architecture ? (architecture as 'amd64' | 'arm64') : undefined,
+        node_name: (!onVM && nodeName) || undefined,
         actions: {
           ...original?.actions,
           provider: provider as 'github' | 'gitlab' | 'bitbucket',
@@ -476,10 +496,12 @@ function RunnerPoolForm({
           jobs_credential: jobsCredential || undefined,
           cache:
             provider === 'gitlab' && cacheEnabled ? { credential: cacheCredential } : undefined,
+          capacity: onVM ? vmCapacity : undefined,
+          spot_retries: onVM ? Number(spotRetries) : undefined,
           labels: runnerWorkflowLabels(workflowLabels, provider, architecture),
           timeout_minutes:
             lifecycle === 'dedicated' ? original?.actions?.timeout_minutes : Number(timeout),
-          workspace_size_gib: Number(workspaceSize),
+          workspace_size_gib: onVM ? undefined : Number(workspaceSize),
           idle_seconds: scaling ? idleSeconds : undefined,
           min_replicas: scaling && Number(warmRunners) > 0 ? Number(warmRunners) : undefined,
         },
@@ -1381,66 +1403,142 @@ function RunnerPoolForm({
                         )}
                         {step === 2 && (
                           <RunnerSection title="Capacity and placement">
-                            <RunnerChoices
-                              label="Pool preset"
-                              value={resourcePreset}
-                              onChange={resourceChoice}
-                              disabled={busy}
-                              options={[
-                                ...(original
-                                  ? [
-                                      {
-                                        value: 'saved',
-                                        label: 'Current settings',
-                                        facts: resourceFacts(savedResources),
-                                      },
-                                    ]
-                                  : []),
-                                {
-                                  value: 'defaults',
-                                  label: 'Installation defaults',
-                                  facts: presetFacts(installationResources),
-                                },
-                                {
-                                  value: 'balanced',
-                                  label: 'Balanced',
-                                  facts: presetFacts(runnerResourcePresets.balanced),
-                                },
-                                {
-                                  value: 'builds',
-                                  label: 'Larger builds',
-                                  facts: presetFacts(runnerResourcePresets.builds),
-                                },
-                                {
-                                  value: 'custom',
-                                  label: 'Custom',
-                                  detail: 'Set reservations and limits',
-                                },
-                              ]}
-                            />
-                            {minimum && (
-                              <p className="text-xs muted-text">
-                                {providerName} requires at least {minimum.cpu_request} CPU and{' '}
-                                {minimum.memory_request} memory reserved per runner, with limits of{' '}
-                                {minimum.cpu_limit} CPU and {minimum.memory_limit} memory or more.
-                              </p>
+                            {provider === 'github' &&
+                              (vmCapacities.data ? (
+                                <RunnerChoices
+                                  label="Where jobs run"
+                                  value={vmCapacity}
+                                  onChange={setVmCapacity}
+                                  disabled={busy}
+                                  options={[
+                                    {
+                                      value: '',
+                                      label: 'Runner pods',
+                                      detail: "On this installation's nodes",
+                                    },
+                                    ...vmCapacities.data.capacities.map((c) => ({
+                                      value: c.name,
+                                      label: c.name,
+                                      detail: `${c.cloud === 'aws' ? 'AWS' : 'Google Cloud'} ${c.region} · ${c.spot ? 'Spot' : 'On-demand'} VMs · up to ${c.max_instances}`,
+                                    })),
+                                    ...(vmCapacity &&
+                                    !vmCapacities.data.capacities.some((c) => c.name === vmCapacity)
+                                      ? [
+                                          {
+                                            value: vmCapacity,
+                                            label: vmCapacity,
+                                            detail: 'Not defined',
+                                          },
+                                        ]
+                                      : []),
+                                  ]}
+                                />
+                              ) : (
+                                vmCapacities.error && (
+                                  <label className="grid gap-1 text-sm">
+                                    VM capacity (optional)
+                                    <Input
+                                      value={vmCapacity}
+                                      placeholder="aws-spot"
+                                      disabled={busy}
+                                      autoComplete="off"
+                                      pattern="[a-z][a-z0-9-]{0,62}"
+                                      onChange={(e) => setVmCapacity(e.target.value.trim())}
+                                    />
+                                    <span className="text-xs muted-text">
+                                      Leave empty to run pods on this installation. An installation
+                                      administrator defines VM capacity in Settings.
+                                    </span>
+                                  </label>
+                                )
+                              ))}
+                            {onVM && (
+                              <>
+                                <p className="text-xs muted-text">
+                                  Each job runs on its own single-use VM in {vmCapacity}. The
+                                  capacity decides machine type, disk and architecture.
+                                </p>
+                                <label className="grid max-w-xs gap-1 text-sm">
+                                  Reruns after spot interruptions
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={5}
+                                    value={spotRetries}
+                                    disabled={busy}
+                                    onChange={(e) => setSpotRetries(e.target.value)}
+                                  />
+                                  <span className="text-xs muted-text">
+                                    Per workflow run; 0 turns automatic reruns off.
+                                  </span>
+                                </label>
+                              </>
                             )}
-                            {!resourcesValid && (
-                              <Note>
-                                Current values are preserved. Choose a preset or increase custom
-                                resources to meet these minimums.
-                              </Note>
-                            )}
-                            {resourcePreset === 'custom' && (
-                              <RunnerResourceFields
-                                effective={effectiveResources}
-                                minimum={minimum}
-                                expanded
-                                disabled={busy || !effective}
-                                onChange={(key, value) =>
-                                  setResources((current) => ({ ...current, [key]: value }))
-                                }
-                              />
+                            {!onVM && (
+                              <>
+                                <RunnerChoices
+                                  label="Pool preset"
+                                  value={resourcePreset}
+                                  onChange={resourceChoice}
+                                  disabled={busy}
+                                  options={[
+                                    ...(original
+                                      ? [
+                                          {
+                                            value: 'saved',
+                                            label: 'Current settings',
+                                            facts: resourceFacts(savedResources),
+                                          },
+                                        ]
+                                      : []),
+                                    {
+                                      value: 'defaults',
+                                      label: 'Installation defaults',
+                                      facts: presetFacts(installationResources),
+                                    },
+                                    {
+                                      value: 'balanced',
+                                      label: 'Balanced',
+                                      facts: presetFacts(runnerResourcePresets.balanced),
+                                    },
+                                    {
+                                      value: 'builds',
+                                      label: 'Larger builds',
+                                      facts: presetFacts(runnerResourcePresets.builds),
+                                    },
+                                    {
+                                      value: 'custom',
+                                      label: 'Custom',
+                                      detail: 'Set reservations and limits',
+                                    },
+                                  ]}
+                                />
+                                {minimum && (
+                                  <p className="text-xs muted-text">
+                                    {providerName} requires at least {minimum.cpu_request} CPU and{' '}
+                                    {minimum.memory_request} memory reserved per runner, with limits
+                                    of {minimum.cpu_limit} CPU and {minimum.memory_limit} memory or
+                                    more.
+                                  </p>
+                                )}
+                                {!resourcesValid && (
+                                  <Note>
+                                    Current values are preserved. Choose a preset or increase custom
+                                    resources to meet these minimums.
+                                  </Note>
+                                )}
+                                {resourcePreset === 'custom' && (
+                                  <RunnerResourceFields
+                                    effective={effectiveResources}
+                                    minimum={minimum}
+                                    expanded
+                                    disabled={busy || !effective}
+                                    onChange={(key, value) =>
+                                      setResources((current) => ({ ...current, [key]: value }))
+                                    }
+                                  />
+                                )}
+                              </>
                             )}
                             <div className="grid min-w-0 gap-x-4 gap-y-3 lg:grid-cols-2">
                               <RunnerCapacity
@@ -1455,17 +1553,19 @@ function RunnerPoolForm({
                                 onChange={setReplicas}
                                 scaled={scaling}
                               />
-                              <RunnerPlacement
-                                value={nodeName}
-                                architecture={architecture}
-                                nodes={nodes.data?.items}
-                                loading={nodes.isPending}
-                                failed={!!nodes.error}
-                                refreshing={nodes.isFetching}
-                                disabled={busy}
-                                onChange={setNodeName}
-                                onRetry={() => void nodes.refetch()}
-                              />
+                              {!onVM && (
+                                <RunnerPlacement
+                                  value={nodeName}
+                                  architecture={architecture}
+                                  nodes={nodes.data?.items}
+                                  loading={nodes.isPending}
+                                  failed={!!nodes.error}
+                                  refreshing={nodes.isFetching}
+                                  disabled={busy}
+                                  onChange={setNodeName}
+                                  onRetry={() => void nodes.refetch()}
+                                />
+                              )}
                               {provider === 'github' && lifecycle !== 'dedicated' && (
                                 <div className="min-w-0 pt-3 lg:col-span-2">
                                   <RunnerScaling
@@ -1491,38 +1591,47 @@ function RunnerPoolForm({
                                 {providerCapability.cache.reason}
                               </p>
                             )}
-                            <RunnerChoices
-                              compact
-                              label={
-                                lifecycle === 'dedicated'
-                                  ? 'Runner workspace quota'
-                                  : 'Workspace quota per job'
-                              }
-                              value={workspaceSize}
-                              onChange={setWorkspaceSize}
-                              disabled={busy}
-                              options={[
-                                ...new Set([
-                                  workspaceSize,
-                                  String(workspaceMinimum),
-                                  '2',
-                                  '8',
-                                  '16',
-                                ]),
-                              ]
-                                .sort((a, b) => Number(a) - Number(b))
-                                .map((value) => ({
-                                  value,
-                                  label: `${value} GiB`,
-                                  disabled: Number(value) < workspaceMinimum,
-                                }))}
-                            />
-                            <span className="text-xs muted-text">
-                              Minimum {workspaceMinimum} GiB.{' '}
-                              {lifecycle === 'dedicated'
-                                ? 'Source, tools and Docker images share the runner disk. The sandbox is reused for this repository; local files are not a durable cache.'
-                                : 'Source, tools and Docker images share this disk. It is deleted after each job.'}
-                            </span>
+                            {onVM ? (
+                              <p className="text-xs muted-text">
+                                The VM's root disk, set by {vmCapacity}, holds source, tools and
+                                Docker images. It is deleted with the VM after each job.
+                              </p>
+                            ) : (
+                              <>
+                                <RunnerChoices
+                                  compact
+                                  label={
+                                    lifecycle === 'dedicated'
+                                      ? 'Runner workspace quota'
+                                      : 'Workspace quota per job'
+                                  }
+                                  value={workspaceSize}
+                                  onChange={setWorkspaceSize}
+                                  disabled={busy}
+                                  options={[
+                                    ...new Set([
+                                      workspaceSize,
+                                      String(workspaceMinimum),
+                                      '2',
+                                      '8',
+                                      '16',
+                                    ]),
+                                  ]
+                                    .sort((a, b) => Number(a) - Number(b))
+                                    .map((value) => ({
+                                      value,
+                                      label: `${value} GiB`,
+                                      disabled: Number(value) < workspaceMinimum,
+                                    }))}
+                                />
+                                <span className="text-xs muted-text">
+                                  Minimum {workspaceMinimum} GiB.{' '}
+                                  {lifecycle === 'dedicated'
+                                    ? 'Source, tools and Docker images share the runner disk. The sandbox is reused for this repository; local files are not a durable cache.'
+                                    : 'Source, tools and Docker images share this disk. It is deleted after each job.'}
+                                </span>
+                              </>
+                            )}
                             {lifecycle !== 'dedicated' && (
                               <div className="grid gap-2">
                                 <RunnerChoices
