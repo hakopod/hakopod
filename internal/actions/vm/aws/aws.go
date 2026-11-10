@@ -384,9 +384,14 @@ func (c *Client) Claim(ctx context.Context, id, userData string, tags map[string
 	if current.State != "stopped" {
 		return fmt.Errorf("standby %s is %s, not stopped", id, current.State)
 	}
+	// Only tags that change are written: the documented policy lets a claim
+	// set the pool, slot and pool state, not the capacity the standby
+	// already carries.
 	keys := make([]string, 0, len(tags))
-	for k := range tags {
-		keys = append(keys, k)
+	for k, v := range tags {
+		if current.Tags[k] != v {
+			keys = append(keys, k)
+		}
 	}
 	slices.Sort(keys)
 	p := url.Values{"ResourceId.1": {id}}
@@ -394,8 +399,10 @@ func (c *Client) Claim(ctx context.Context, id, userData string, tags map[string
 		p.Set(fmt.Sprintf("Tag.%d.Key", i+1), k)
 		p.Set(fmt.Sprintf("Tag.%d.Value", i+1), tags[k])
 	}
-	if err = c.call(ctx, "CreateTags", p, &struct{}{}); err != nil {
-		return awsError("tag the standby", err)
+	if len(keys) > 0 {
+		if err = c.call(ctx, "CreateTags", p, &struct{}{}); err != nil {
+			return awsError("tag the standby", err)
+		}
 	}
 	p = url.Values{"InstanceId": {id}, "InstanceInitiatedShutdownBehavior.Value": {"terminate"}}
 	if err = c.call(ctx, "ModifyInstanceAttribute", p, &struct{}{}); err != nil {
