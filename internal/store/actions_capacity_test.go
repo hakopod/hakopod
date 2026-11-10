@@ -97,6 +97,66 @@ func TestActionsCapacityValidationGCP(t *testing.T) {
 	}
 }
 
+const testAzureSubnet = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/net/providers/Microsoft.Network/virtualNetworks/vnet/subnets/runners"
+
+func testAzureCapacity() ActionsCapacity {
+	return ActionsCapacity{Name: "azure-spot", Cloud: "azure", Region: "eastus", SubscriptionID: "00000000-0000-0000-0000-000000000001",
+		ResourceGroup: "hakopod-runners", Zones: []string{"1", "2"}, SubnetIDs: []string{testAzureSubnet},
+		InstanceTypes: []string{"Standard_D4as_v5", "Standard_D4s_v5"}, Architecture: "amd64", Spot: true, MaxInstances: 2, Environments: []string{"*"}}
+}
+
+func TestActionsCapacityValidationAzure(t *testing.T) {
+	for name, mutate := range map[string]func(*ActionsCapacity){
+		"subscription": func(c *ActionsCapacity) { c.SubscriptionID = "" },
+		"bad-sub":      func(c *ActionsCapacity) { c.SubscriptionID = "my-subscription" },
+		"group":        func(c *ActionsCapacity) { c.ResourceGroup = "" },
+		"group-period": func(c *ActionsCapacity) { c.ResourceGroup = "runners." },
+		"region":       func(c *ActionsCapacity) { c.Region = "East US" },
+		"zones":        func(c *ActionsCapacity) { c.Zones = []string{"us-east-1a"} },
+		"subnets":      func(c *ActionsCapacity) { c.SubnetIDs = []string{testAzureSubnet, testAzureSubnet + "2"} },
+		"subnet-name":  func(c *ActionsCapacity) { c.SubnetIDs = []string{"runners"} },
+		"types":        func(c *ActionsCapacity) { c.InstanceTypes = []string{"c7i.xlarge"} },
+		"role":         func(c *ActionsCapacity) { c.RoleARN = "arn:aws:iam::123456789012:role/x" },
+		"external":     func(c *ActionsCapacity) { c.ExternalID = "hakopod-x" },
+		"groups":       func(c *ActionsCapacity) { c.SecurityGroupIDs = []string{"sg-0abc1234"} },
+		"project":      func(c *ActionsCapacity) { c.Project = "my-project" },
+		"account":      func(c *ActionsCapacity) { c.ServiceAccount = "a@my-project.iam.gserviceaccount.com" },
+		"warm":         func(c *ActionsCapacity) { c.WarmPool = 1 },
+		"minimal":      func(c *ActionsCapacity) { c.Image = "hakopod-minimal" },
+		"runs-on":      func(c *ActionsCapacity) { c.Image = "runs-on-full" },
+		"image":        func(c *ActionsCapacity) { c.Image = "ami-0123456789abcdef0" },
+	} {
+		c := testAzureCapacity()
+		mutate(&c)
+		if err := c.normalize(); !errors.Is(err, ErrInput) {
+			t.Fatal(name, err)
+		}
+	}
+	c := testAzureCapacity()
+	if err := c.normalize(); err != nil || c.Image != "ubuntu-24.04" || c.DiskGiB != 100 {
+		t.Fatal(c, err)
+	}
+	for _, image := range []string{"Canonical:ubuntu-24_04-lts:server-arm64:latest",
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/img/providers/Microsoft.Compute/galleries/g/images/runner/versions/1.0.0"} {
+		c := testAzureCapacity()
+		c.Image, c.Zones = image, nil
+		if err := c.normalize(); err != nil {
+			t.Fatal(image, err)
+		}
+	}
+	// Azure fields are refused on the other clouds.
+	for _, other := range []ActionsCapacity{testCapacity("aws-spot"), testGCPCapacity()} {
+		other.ResourceGroup = "hakopod-runners"
+		if err := other.normalize(); !errors.Is(err, ErrInput) {
+			t.Fatal(other.Cloud, err)
+		}
+	}
+	found, ok := ActionsCapacitySettings{ExternalID: "hakopod-x", Capacities: []ActionsCapacity{{Name: "azure-spot", Cloud: "azure"}}}.Find("azure-spot")
+	if !ok || found.ExternalID != "" || found.Image != "ubuntu-24.04" {
+		t.Fatal(found)
+	}
+}
+
 func TestActionsCapacitySettingsAndVMSlots(t *testing.T) {
 	db := isolatedDatabase(t)
 	principal := bootstrapPrincipal(t, db)

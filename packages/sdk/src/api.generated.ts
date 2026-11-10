@@ -450,7 +450,7 @@ export interface paths {
         put?: never;
         /**
          * Test an Actions capacity
-         * @description Installation administrators only. Assumes the role and reads the subnets and security groups on AWS; impersonates the service account, reads the subnetwork and reports firewall rules open to the internet on Google Cloud. With launch, starts and terminates one small on-demand instance.
+         * @description Installation administrators only. Assumes the role and reads the subnets and security groups on AWS; impersonates the service account, reads the subnetwork and reports firewall rules open to the internet on Google Cloud; reads the resource group, the subnet's region and network security group rules open to the internet on Azure. With launch, starts and terminates one small on-demand instance.
          */
         post: operations["testActionsCapacity"];
         delete?: never;
@@ -6617,11 +6617,11 @@ export interface components {
         ActionsCapacity: {
             name: string;
             /**
-             * @description aws runs jobs on EC2; gcp on Compute Engine.
+             * @description aws runs jobs on EC2; gcp on Compute Engine; azure on Azure virtual machines.
              * @enum {string}
              */
-            cloud: "aws" | "gcp";
-            /** @description AWS region, for example eu-central-1, or Google Cloud region, for example us-central1. */
+            cloud: "aws" | "gcp" | "azure";
+            /** @description AWS region, for example eu-central-1, Google Cloud region, for example us-central1, or Azure location, for example eastus. */
             region: string;
             /** @description AWS only, required there. IAM role Hakopod assumes from its own AWS credential chain. */
             role_arn?: string;
@@ -6629,15 +6629,19 @@ export interface components {
             external_id?: string;
             /** @description Google Cloud only, required there. The project runners are launched in. */
             project?: string;
-            /** @description Google Cloud only, required there. Zones of the region to try, in order. */
+            /** @description Google Cloud: required, zones of the region to try, in order. Azure: optional, up to 3 availability zones such as "1"; omit to launch without a zone. */
             zones?: string[];
+            /** @description Azure only, required there. The subscription runners are launched in. */
+            subscription_id?: string;
+            /** @description Azure only, required there. The resource group runners are launched in; grant Hakopod's own Azure identity the documented role on it. Runner VMs get no identity. */
+            resource_group?: string;
             /** @description Google Cloud only, required there. Service account Hakopod impersonates from its own Google identity; grant that identity Service Account Token Creator on it. Runner VMs get no service account. */
             service_account?: string;
-            /** @description AWS: subnets with outbound access to GitHub. Google Cloud: one subnetwork name in the region. Nothing inbound is needed. */
+            /** @description AWS: subnets with outbound access to GitHub. Google Cloud: one subnetwork name in the region. Azure: one subnet resource ID in the region. Nothing inbound is needed. */
             subnet_ids: string[];
             /** @description AWS only, required there. Security groups for the runners. They need no inbound rules. */
             security_group_ids?: string[];
-            /** @description EC2 instance types or Compute Engine machine types, tried in order. */
+            /** @description EC2 instance types, Compute Engine machine types or Azure VM sizes, tried in order (on Google Cloud and Azure, each in every zone). */
             instance_types: string[];
             /** @enum {string} */
             architecture: "amd64" | "arm64";
@@ -6649,9 +6653,9 @@ export interface components {
             max_instances: number;
             /** @description project/environment pairs allowed to use this capacity, or "*" for every environment. */
             environments: string[];
-            /** @description runs-on-full (AWS default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal (Google Cloud default): an image Hakopod builds in this account with build-image. Or your own Ubuntu image: an AMI ID or resolve:ssm: parameter on AWS, a projects/PROJECT/global/images/[family/]NAME path on Google Cloud. */
+            /** @description runs-on-full (AWS default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal (Google Cloud default): an image Hakopod builds in this account with build-image. ubuntu-24.04 (Azure default): Canonical's marketplace image, with Docker and the runner installed at boot. Or your own Ubuntu image: an AMI ID or resolve:ssm: parameter on AWS, a projects/PROJECT/global/images/[family/]NAME path on Google Cloud, a publisher:offer:sku:version URN or an image resource ID on Azure. Azure does not take runs-on-full or hakopod-minimal yet. */
             image?: string;
-            /** @description Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0. */
+            /** @description Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0. Must be 0 on Azure for now. */
             warm_pool?: number;
         };
         /** @description A capacity's hakopod-minimal image build. */

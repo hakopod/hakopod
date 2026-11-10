@@ -2044,7 +2044,7 @@
           }
         },
         "summary": "Test an Actions capacity",
-        "description": "Installation administrators only. Assumes the role and reads the subnets and security groups on AWS; impersonates the service account, reads the subnetwork and reports firewall rules open to the internet on Google Cloud. With launch, starts and terminates one small on-demand instance.",
+        "description": "Installation administrators only. Assumes the role and reads the subnets and security groups on AWS; impersonates the service account, reads the subnetwork and reports firewall rules open to the internet on Google Cloud; reads the resource group, the subnet's region and network security group rules open to the internet on Azure. With launch, starts and terminates one small on-demand instance.",
         "x-hakopod-agent": {
           "boundary": "installation",
           "category": "admin",
@@ -29706,13 +29706,14 @@
             "type": "string",
             "enum": [
               "aws",
-              "gcp"
+              "gcp",
+              "azure"
             ],
-            "description": "aws runs jobs on EC2; gcp on Compute Engine."
+            "description": "aws runs jobs on EC2; gcp on Compute Engine; azure on Azure virtual machines."
           },
           "region": {
             "type": "string",
-            "description": "AWS region, for example eu-central-1, or Google Cloud region, for example us-central1."
+            "description": "AWS region, for example eu-central-1, Google Cloud region, for example us-central1, or Azure location, for example eastus."
           },
           "role_arn": {
             "type": "string",
@@ -29731,12 +29732,22 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$"
+              "pattern": "^([a-z]([-a-z0-9]{0,61}[a-z0-9])?|[1-9])$"
             },
             "minItems": 1,
             "maxItems": 10,
             "uniqueItems": true,
-            "description": "Google Cloud only, required there. Zones of the region to try, in order."
+            "description": "Google Cloud: required, zones of the region to try, in order. Azure: optional, up to 3 availability zones such as \"1\"; omit to launch without a zone."
+          },
+          "subscription_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Azure only, required there. The subscription runners are launched in."
+          },
+          "resource_group": {
+            "type": "string",
+            "pattern": "^[-\\w._()]{0,89}[-\\w_()]$",
+            "description": "Azure only, required there. The resource group runners are launched in; grant Hakopod's own Azure identity the documented role on it. Runner VMs get no identity."
           },
           "service_account": {
             "type": "string",
@@ -29746,12 +29757,12 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^(subnet-[0-9a-f]{8,17}|[a-z]([-a-z0-9]{0,61}[a-z0-9])?)$"
+              "pattern": "^(subnet-[0-9a-f]{8,17}|[a-z]([-a-z0-9]{0,61}[a-z0-9])?|/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[-\\w._()]{1,90}/providers/Microsoft\\.Network/virtualNetworks/[-\\w.]{2,64}/subnets/[-\\w.]{1,80})$"
             },
             "minItems": 1,
             "maxItems": 10,
             "uniqueItems": true,
-            "description": "AWS: subnets with outbound access to GitHub. Google Cloud: one subnetwork name in the region. Nothing inbound is needed."
+            "description": "AWS: subnets with outbound access to GitHub. Google Cloud: one subnetwork name in the region. Azure: one subnet resource ID in the region. Nothing inbound is needed."
           },
           "security_group_ids": {
             "type": "array",
@@ -29768,12 +29779,12 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^([a-z][a-z0-9-]{0,15}\\.[a-z0-9]{1,16}|[a-z][a-z0-9]{1,5}-[a-z0-9-]{1,40})$"
+              "pattern": "^([a-z][a-z0-9-]{0,15}\\.[a-z0-9]{1,16}|[a-z][a-z0-9]{1,5}-[a-z0-9-]{1,40}|Standard_[A-Za-z0-9_]{1,40})$"
             },
             "minItems": 1,
             "maxItems": 20,
             "uniqueItems": true,
-            "description": "EC2 instance types or Compute Engine machine types, tried in order."
+            "description": "EC2 instance types, Compute Engine machine types or Azure VM sizes, tried in order (on Google Cloud and Azure, each in every zone)."
           },
           "architecture": {
             "type": "string",
@@ -29809,14 +29820,14 @@
           },
           "image": {
             "type": "string",
-            "pattern": "^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200}|projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/images/(family/)?[a-z]([-a-z0-9]{0,61}[a-z0-9])?)$",
-            "description": "runs-on-full (AWS default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal (Google Cloud default): an image Hakopod builds in this account with build-image. Or your own Ubuntu image: an AMI ID or resolve:ssm: parameter on AWS, a projects/PROJECT/global/images/[family/]NAME path on Google Cloud."
+            "pattern": "^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200}|projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/images/(family/)?[a-z]([-a-z0-9]{0,61}[a-z0-9])?|ubuntu-24\\.04|[A-Za-z0-9][-A-Za-z0-9_.]{0,63}(:[-A-Za-z0-9_.]{1,64}){3}|/subscriptions/[-\\w.()/]{1,400})$",
+            "description": "runs-on-full (AWS default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal (Google Cloud default): an image Hakopod builds in this account with build-image. ubuntu-24.04 (Azure default): Canonical's marketplace image, with Docker and the runner installed at boot. Or your own Ubuntu image: an AMI ID or resolve:ssm: parameter on AWS, a projects/PROJECT/global/images/[family/]NAME path on Google Cloud, a publisher:offer:sku:version URN or an image resource ID on Azure. Azure does not take runs-on-full or hakopod-minimal yet."
           },
           "warm_pool": {
             "type": "integer",
             "minimum": 0,
             "maximum": 50,
-            "description": "Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0."
+            "description": "Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0. Must be 0 on Azure for now."
           }
         },
         "required": [

@@ -14,6 +14,7 @@ import (
 	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/actions/vm"
 	vmaws "github.com/hakopod/hakopod/internal/actions/vm/aws"
+	vmazure "github.com/hakopod/hakopod/internal/actions/vm/azure"
 	vmgcp "github.com/hakopod/hakopod/internal/actions/vm/gcp"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/spec"
@@ -70,6 +71,9 @@ func (s *Server) actionsVMProvider(ctx context.Context, c store.ActionsCapacity)
 	} else if c.Cloud == "gcp" {
 		p, err = vmgcp.New(ctx, vmgcp.Config{Installation: installation, Project: c.Project, Region: c.Region, Zones: c.Zones,
 			Subnetwork: c.SubnetIDs[0], ServiceAccount: c.ServiceAccount, Architecture: c.Architecture, DiskGiB: c.DiskGiB})
+	} else if c.Cloud == "azure" {
+		p, err = vmazure.New(ctx, vmazure.Config{Installation: installation, SubscriptionID: c.SubscriptionID, ResourceGroup: c.ResourceGroup,
+			Region: c.Region, Zones: c.Zones, Subnet: c.SubnetIDs[0], Architecture: c.Architecture, DiskGiB: c.DiskGiB})
 	} else {
 		p, err = vmaws.New(ctx, vmaws.Config{Installation: installation, Region: c.Region, RoleARN: c.RoleARN, ExternalID: c.ExternalID,
 			SubnetIDs: c.SubnetIDs, SecurityGroupIDs: c.SecurityGroupIDs, Architecture: c.Architecture, DiskGiB: c.DiskGiB})
@@ -459,7 +463,9 @@ func (s *Server) reapActionsVMs(ctx context.Context) {
 		if err := s.reapActionsCapacity(ctx, c, now); err != nil {
 			slog.Warn("Actions VM reaper could not sweep a capacity", "capacity", c.Name, "error", err.Error())
 		}
-		if b, ok := builds[c.Name]; ok || c.Image == vm.ImageHakopodMinimal {
+		// Azure builds no images yet; a build left from an earlier cloud of
+		// the same name is not advanced there.
+		if b, ok := builds[c.Name]; c.Cloud != "azure" && (ok || c.Image == vm.ImageHakopodMinimal) {
 			if err := s.buildActionsImage(ctx, c, b, now); err != nil {
 				slog.Warn("Actions image build could not advance", "capacity", c.Name, "error", err.Error())
 			}

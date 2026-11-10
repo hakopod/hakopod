@@ -39,6 +39,25 @@ func TestRunnerUserData(t *testing.T) {
 		}
 	}
 	bashSyntax(t, script)
+	// Azure is recognised before EC2's IMDS is asked; EC2 keeps its notice.
+	azure := strings.Index(script, "Microsoft Corporation")
+	if azure < 0 || azure > strings.Index(script, "instance-life-cycle") || !strings.Contains(script, "chassis_asset_tag") ||
+		!strings.Contains(script, "scheduledevents?api-version=2020-07-01") || strings.Count(script, "pkill -INT -f Runner.Listener") != 2 {
+		t.Fatal("spot watch")
+	}
+	preempted := script[strings.Index(script, "python3 -c '")+len("python3 -c '"):]
+	preempted = preempted[:strings.Index(preempted, "' \"$name\"")]
+	for events, want := range map[string]bool{
+		`{"Events":[{"EventType":"Preempt","Resources":["hakopod-a"]}]}`:                                              true,
+		`{"Events":[{"EventType":"Preempt","Resources":["other"]},{"EventType":"Reboot","Resources":["hakopod-a"]}]}`: false,
+		`{"DocumentIncarnation":0,"Events":[]}`:                                                                       false,
+	} {
+		cmd := exec.Command("python3", "-c", preempted, "hakopod-a")
+		cmd.Stdin = strings.NewReader(events)
+		if err := cmd.Run(); (err == nil) != want {
+			t.Fatal(events, err)
+		}
+	}
 	if strings.Contains(script, "multipart") || strings.Contains(script, "standby ready") {
 		t.Fatal("hakopod-minimal user data is the plain job script")
 	}
