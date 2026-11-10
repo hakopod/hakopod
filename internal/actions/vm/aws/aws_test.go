@@ -268,6 +268,10 @@ func TestStateTerminateAndCheck(t *testing.T) {
 	// A running instance under its two-minute notice is already interrupted.
 	f.instances["i-notice"] = strings.Replace(tagged("i-notice", "inst", "running", ""), "<instanceType>", "<spotInstanceRequestId>sir-notice</spotInstanceRequestId><instanceType>", 1)
 	f.instances["i-fine"] = strings.Replace(tagged("i-fine", "inst", "running", ""), "<instanceType>", "<spotInstanceRequestId>sir-fine</spotInstanceRequestId><instanceType>", 1)
+	// The watcher stops the runner before the reclaim, so the instance
+	// powers itself off; its request still says it was taken.
+	f.instances["i-self"] = strings.Replace(tagged("i-self", "inst", "terminated", "Client.InstanceInitiatedShutdown"), "<instanceType>", "<spotInstanceRequestId>sir-fis</spotInstanceRequestId><instanceType>", 1)
+	f.instances["i-done"] = strings.Replace(tagged("i-done", "inst", "terminated", "Client.InstanceInitiatedShutdown"), "<instanceType>", "<spotInstanceRequestId>sir-user</spotInstanceRequestId><instanceType>", 1)
 	if got, err := c.State(ctx, "i-fis"); err != nil || !got.Interrupted() {
 		t.Fatal("FIS interruption not seen", got, err)
 	}
@@ -276,11 +280,11 @@ func TestStateTerminateAndCheck(t *testing.T) {
 	}
 	all, err := c.List(ctx, nil)
 	for _, i := range all {
-		if i.Interrupted() != (i.ID == "i-ours" || i.ID == "i-fis" || i.ID == "i-notice") {
+		if i.Interrupted() != (i.ID == "i-ours" || i.ID == "i-fis" || i.ID == "i-notice" || i.ID == "i-self") {
 			t.Fatal("listed interruption", i, err)
 		}
 	}
-	for _, id := range []string{"i-fis", "i-ended", "i-notice", "i-fine"} {
+	for _, id := range []string{"i-fis", "i-ended", "i-notice", "i-fine", "i-self", "i-done"} {
 		delete(f.instances, id)
 	}
 	if _, err = c.State(ctx, "i-missing"); !errors.Is(err, vm.ErrNotFound) {

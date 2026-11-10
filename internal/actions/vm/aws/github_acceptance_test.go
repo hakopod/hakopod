@@ -267,6 +267,7 @@ func awaitGone(t *testing.T, c *Client, id string, limit time.Duration) time.Tim
 }
 
 type ghJob struct {
+	ID          int64  `json:"id"`
 	Status      string `json:"status"`
 	Conclusion  string `json:"conclusion"`
 	RunnerName  string `json:"runner_name"`

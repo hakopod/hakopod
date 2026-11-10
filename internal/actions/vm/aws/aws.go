@@ -250,13 +250,13 @@ func (c *Client) State(ctx context.Context, id string) (vm.Instance, error) {
 // the reclaim reason. An instance interrupted by AWS FIS reads as
 // Client.UserInitiatedShutdown, like one Hakopod terminated; only its spot
 // request tells them apart. A running instance under its two-minute notice
-// is marked too, so the eviction is on record before its job fails.
-// Instances that powered themselves off are not looked up.
+// is marked too, so the eviction is on record before its job fails, and so
+// is one that powered itself off after its runner stopped for the notice.
 func (c *Client) reclaimed(ctx context.Context, found []ec2Instance) error {
 	p := url.Values{"Filter.1.Name": {"spot-instance-request-id"}}
 	n := 0
 	for _, i := range found {
-		if i.Lifecycle == "spot" && i.SpotRequest != "" && (i.State == "running" || i.Reason == "Client.UserInitiatedShutdown") {
+		if i.Lifecycle == "spot" && i.SpotRequest != "" && i.Reason != "Server.SpotInstanceTermination" {
 			n++
 			p.Set(fmt.Sprintf("Filter.1.Value.%d", n), i.SpotRequest)
 		}
