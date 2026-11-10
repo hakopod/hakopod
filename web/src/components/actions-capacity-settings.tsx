@@ -420,6 +420,15 @@ const controlPlanePolicy = (account: string) =>
 const imdsRole = `TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
 curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/`
 
+// Finds the default VPC's public subnets and creates an outbound-only group.
+const networkSetup = (region: string) => `REGION=${region || 'us-east-1'}
+VPC=$(aws ec2 describe-vpcs --region "$REGION" --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
+# No default VPC (prints None)? Create one: aws ec2 create-default-vpc --region "$REGION"
+aws ec2 describe-subnets --region "$REGION" --filters Name=vpc-id,Values="$VPC" Name=map-public-ip-on-launch,Values=true \\
+  --query 'Subnets[].SubnetId' --output text | tr '\\t' ','
+aws ec2 create-security-group --region "$REGION" --vpc-id "$VPC" --group-name hakopod-runners \\
+  --description "Hakopod Actions runners: no inbound, outbound only" --query GroupId --output text`
+
 const trustPolicy = (externalID: string, account: string) =>
   JSON.stringify(
     {
@@ -646,6 +655,12 @@ function SetupGuide({ draft, settings }: { draft: Draft; settings: Settings }) {
               public subnets that assign public IPs. Create a security group with no inbound rules
               and outbound allowed; runners only call GitHub over HTTPS.
             </p>
+            <p className="muted-text">
+              Without such subnets, the region's default VPC works: its subnets are public. These
+              commands find or create it, list its subnets and create the security group. Paste
+              their output into Subnets and Security groups below.
+            </p>
+            <Snippet label="Network commands" value={networkSetup(draft.region)} />
           </Step>
           <Step n={5} title="Fill in the form below, save, then Test">
             <p className="muted-text">
