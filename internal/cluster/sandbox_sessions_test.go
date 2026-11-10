@@ -28,9 +28,17 @@ import (
 
 func sandboxFixture(t *testing.T) (*Client, sandbox.Record) {
 	t.Helper()
+	return sandboxFixtureWith(t, nil)
+}
+func sandboxFixtureWith(t *testing.T, change func(*spec.Application)) (*Client, sandbox.Record) {
+	t.Helper()
 	identity := strings.Repeat("a", 32)
 	image := "example/worker@sha256:" + strings.Repeat("b", 64)
-	app, err := spec.Normalize(spec.Application{Name: "sandbox-app", Services: map[string]spec.Service{"worker": {Image: image, Command: []string{"python", "worker.py"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{identity}, HelperCommand: []string{"python", "helper.py"}, ReadyCommand: []string{"python", "ready.py"}}}}})
+	source := spec.Application{Name: "sandbox-app", Services: map[string]spec.Service{"worker": {Image: image, Command: []string{"python", "worker.py"}, RunAsUser: 1000, RunAsGroup: 1000, FSGroup: 1000, ReadOnlyRootFilesystem: true, RuntimeProfile: "sandbox", Session: &spec.SandboxSession{AllowedIdentities: []string{identity}, HelperCommand: []string{"python", "helper.py"}, ReadyCommand: []string{"python", "ready.py"}}}}}
+	if change != nil {
+		change(&source)
+	}
+	app, err := spec.Normalize(source)
 	if err != nil {
 		t.Fatal(err)
 	}

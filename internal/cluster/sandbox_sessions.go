@@ -20,6 +20,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 )
@@ -172,7 +173,7 @@ func (c *Client) StartSession(ctx context.Context, r sandbox.Record, before func
 func (c *Client) ensureSandboxBoundaries(ctx context.Context, t Target, r sandbox.Record, s spec.Service) error {
 	ns := SandboxNamespace(r.ID)
 	labels := sandboxLabels(t, r)
-	wanted := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: ns, Labels: labels}, Spec: networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}}}
+	wanted := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: "deny-all", Namespace: ns, Labels: labels}, Spec: sandboxPolicySpec(t, s)}
 	policies := c.kube.NetworkingV1().NetworkPolicies(ns)
 	policy, err := policies.Get(ctx, wanted.Name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
@@ -214,9 +215,25 @@ func (c *Client) ensureSandboxBoundaries(ctx context.Context, t Target, r sandbo
 	if !reflect.DeepEqual(quota.Spec, quotaWanted.Spec) {
 		return fmt.Errorf("session Pod quota changed")
 	}
-	return c.checkSandboxPolicies(ctx, t, r)
+	return c.checkSandboxPolicies(ctx, t, r, s)
 }
-func (c *Client) checkSandboxPolicies(ctx context.Context, t Target, r sandbox.Record) error {
+
+// sandboxPolicySpec denies everything. A session with egress_proxy also gets
+// one egress rule: TCP to its proxy service's pods on the proxy port.
+func sandboxPolicySpec(t Target, s spec.Service) networkingv1.NetworkPolicySpec {
+	p := networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}}
+	if s.Session == nil || s.Session.EgressProxy == "" {
+		return p
+	}
+	tcp := corev1.ProtocolTCP
+	port := intstr.FromInt32(t.Spec.Services[s.Session.EgressProxy].Port)
+	p.Egress = []networkingv1.NetworkPolicyEgressRule{{
+		To:    []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": Namespace(t.ApplicationID)}}, PodSelector: ptr(selectorFor(t, s.Session.EgressProxy))}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
+	}}
+	return p
+}
+func (c *Client) checkSandboxPolicies(ctx context.Context, t Target, r sandbox.Record, s spec.Service) error {
 	list, err := c.kube.NetworkingV1().NetworkPolicies(SandboxNamespace(r.ID)).List(ctx, metav1.ListOptions{Limit: 2})
 	if err != nil {
 		return err
@@ -228,7 +245,7 @@ func (c *Client) checkSandboxPolicies(ctx context.Context, t Target, r sandbox.R
 	if err = sandboxOwned(p, t, r); err != nil {
 		return err
 	}
-	want := networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}}
+	want := sandboxPolicySpec(t, s)
 	if p.Name != "deny-all" || !reflect.DeepEqual(p.Spec, want) {
 		return fmt.Errorf("session network isolation changed")
 	}
@@ -248,7 +265,7 @@ func (c *Client) ObserveSession(ctx context.Context, r sandbox.Record) (sandbox.
 		return state, err
 	}
 	state.NamespaceUID = string(ns.UID)
-	if err = c.checkSandboxPolicies(ctx, t, r); err != nil {
+	if err = c.checkSandboxPolicies(ctx, t, r, s); err != nil {
 		return state, err
 	}
 	if err = c.sandboxRegistry(ctx, t, r, s, false); err != nil {

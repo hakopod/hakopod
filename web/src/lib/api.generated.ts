@@ -11010,6 +11010,7 @@ export interface components {
             lifetime_seconds: number;
             /** @default 150 */
             call_timeout_seconds: number;
+            egress_proxy?: string;
         };
         SandboxSessionReceipt: {
             id: string;

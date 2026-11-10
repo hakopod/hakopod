@@ -17,6 +17,9 @@ type SandboxSession struct {
 	LifetimeSeconds   int64    `json:"lifetime_seconds,omitempty" toml:"lifetime_seconds"`
 	// CallTimeoutSeconds bounds one helper call. A call cannot outlive the idle deadline it is checked against.
 	CallTimeoutSeconds int64 `json:"call_timeout_seconds,omitempty" toml:"call_timeout_seconds"`
+	// EgressProxy names a private non-session service of the same application.
+	// The worker (not the helper or readiness probe) may then open TCP to it.
+	EgressProxy string `json:"egress_proxy,omitempty" toml:"egress_proxy,omitempty"`
 }
 
 func normalizeSandboxSession(app Application, svc *Service) error {
@@ -75,14 +78,29 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 			return fmt.Errorf("session environment must not override %s", key)
 		}
 	}
+	if cfg.EgressProxy != "" {
+		proxy, ok := app.Services[cfg.EgressProxy]
+		if !ok || proxy.Session != nil || proxy.Port == 0 || proxy.Public {
+			return fmt.Errorf("session egress_proxy must name a private non-session service with a port in the same application")
+		}
+	}
+	var memoryMiB, diskMiB int64
 	for _, mount := range svc.TemporaryMounts {
-		if !mount.Memory {
-			return fmt.Errorf("session temporary mounts require memory=true for an enforced capacity limit")
+		if mount.SizeMiB < 1 {
+			return fmt.Errorf("session temporary mounts require size_mib of at least 1")
+		}
+		if mount.Memory {
+			memoryMiB += mount.SizeMiB
+		} else {
+			diskMiB += mount.SizeMiB
 		}
 		const guardPath = "/run/hakopod-session"
 		if mount.MountPath == guardPath || strings.HasPrefix(mount.MountPath, guardPath+"/") || strings.HasPrefix(guardPath, mount.MountPath+"/") {
 			return fmt.Errorf("session temporary mounts must not overlap /run/hakopod-session")
 		}
+	}
+	if memoryMiB > 128 || diskMiB > 16384 {
+		return fmt.Errorf("session temporary mounts allow at most 128 MiB combined memory and 16384 MiB combined disk")
 	}
 	if svc.Replicas > 1 || svc.Healthcheck != "" || svc.Readiness != nil || svc.UpdateStrategy != "" {
 		return fmt.Errorf("session cannot configure replicas, readiness, healthcheck or update strategy")

@@ -34,7 +34,23 @@ func (c *Client) sandboxPod(t Target, r sandbox.Record, s spec.Service, b Runtim
 		p.ImagePullSecrets = []corev1.LocalObjectReference{{Name: sandboxRegistrySecret}}
 	}
 	app := &p.Containers[0]
-	app.Command = append(append([]string{sessionguard.Path, "run", "--"}, s.Command...), s.Args...)
+	guard := []string{sessionguard.Path, "run", "--"}
+	if s.Session.EgressProxy != "" {
+		guard = []string{sessionguard.Path, "run", "--allow-ip-sockets", "--"}
+		url := sandboxEgressProxyURL(t, s.Session.EgressProxy)
+		proxyEnv := map[string]string{"HAKOPOD_EGRESS_PROXY": url, "HTTP_PROXY": url, "HTTPS_PROXY": url, "http_proxy": url, "https_proxy": url, "NO_PROXY": "", "no_proxy": ""}
+		env := app.Env[:0:0]
+		for _, e := range app.Env {
+			if _, replaced := proxyEnv[e.Name]; !replaced {
+				env = append(env, e)
+			}
+		}
+		for _, name := range []string{"HAKOPOD_EGRESS_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"} {
+			env = append(env, corev1.EnvVar{Name: name, Value: proxyEnv[name]})
+		}
+		app.Env = env
+	}
+	app.Command = append(append(guard, s.Command...), s.Args...)
 	app.Args = nil
 	app.Env = append(app.Env, corev1.EnvVar{Name: "HAKOPOD_POD_UID", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.uid"}}}, corev1.EnvVar{Name: "HAKOPOD_SESSION_GENERATION", Value: r.Generation})
 	app.StartupProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: append([]string{sessionguard.Path, "run", "--"}, s.Session.ReadyCommand...)}}, PeriodSeconds: 5, TimeoutSeconds: 2, FailureThreshold: 24, SuccessThreshold: 1}
@@ -123,4 +139,9 @@ func (c *Client) validateSandboxPod(t Target, r sandbox.Record, s spec.Service, 
 		return fmt.Errorf("session Pod deadline exceeds its receipt expiry")
 	}
 	return nil
+}
+
+// sandboxEgressProxyURL is the in-cluster address of the session's proxy service.
+func sandboxEgressProxyURL(t Target, proxy string) string {
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", proxy, Namespace(t.ApplicationID), t.Spec.Services[proxy].Port)
 }

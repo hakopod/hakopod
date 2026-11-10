@@ -103,7 +103,8 @@ DNS routing and certificate coverage are separate checks.
 | `secrets` | Up to32 environment-variable bindings such as `DATABASE_URL = { ref = "database-url" }` |
 | `volume` | One persistent data directory: `mount_path`, `size_gib` (1–200), optional `storage_class`; one replica, no HPA |
 | `mounts` | References application-level named volumes; each sets volume, mount_path, optional read_only and sub_path |
-| `temporary_mounts` | Bounded scratch directories; mount_path, size_mib and optional memory=true for tmpfs |
+| `temporary_mounts` | Bounded scratch directories; mount_path, size_mib and optional memory=true for tmpfs. Sessions: memory mounts at most 128 MiB combined, disk mounts at most 16384 MiB combined |
+| `session` | Sandbox session table. Optional `egress_proxy` names a private non-session service with a `port` in the same application; the worker may reach only that service. See [Sandbox sessions](sandbox-sessions.md) |
 | `sidecars` | Up to 4 extra containers that run beside the service; see [sidecar containers](sidecars.md) |
 | `gpu` | `count` from1–8; requires advertised NVIDIA GPU capacity; no GPU HPA |
 | `tls` | Exactly one managed `certificate` or cert-manager `issuer`; public services only |
