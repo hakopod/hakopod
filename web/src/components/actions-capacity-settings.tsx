@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { client, unwrap } from '../lib/client'
 import { APIError, message } from '../lib/api'
@@ -8,6 +8,7 @@ import { Input } from './ui/input'
 import { Dialog } from './ui/dialog'
 import { SelectField } from './ui/select'
 import { Icon } from './icons'
+import { InspectorSheet } from './inspector-sheet'
 import { Copy, ErrorState, Loading, Note, RequestError } from './shared'
 import {
   SettingsEmpty,
@@ -173,21 +174,6 @@ export default function ActionsCapacitySettings() {
       setBusy(false)
     }
   }
-  const field = (key: keyof Draft, label: string, hint?: string, required = true) => (
-    <label key={key}>
-      {label}
-      <Input
-        required={required}
-        value={String(draft?.[key] ?? '')}
-        disabled={key === 'name' && Boolean(draft?.editing)}
-        placeholder={hint}
-        inputMode={['disk_gib', 'max_instances', 'warm_pool'].includes(key) ? 'numeric' : undefined}
-        onChange={(event) => draft && setDraft({ ...draft, [key]: event.target.value })}
-        autoComplete="off"
-      />
-    </label>
-  )
-
   return (
     <SettingsSection
       title="Actions VM capacity"
@@ -212,12 +198,6 @@ export default function ActionsCapacitySettings() {
       }
     >
       <div className="field-stack">
-        <Note>
-          AWS roles trust this installation with external ID <code>{settings.external_id}</code>
-          <Copy value={settings.external_id} label="Copy external ID" iconOnly /> and condition
-          TerminateInstances on the hakopod-installation tag <code>{settings.installation_id}</code>
-          <Copy value={settings.installation_id} label="Copy installation ID" iconOnly />.
-        </Note>
         {conflict && (
           <Note>
             Someone else changed VM capacity. The list is reloaded; review and save again.
@@ -305,139 +285,24 @@ export default function ActionsCapacitySettings() {
         )}
       </div>
 
-      <Dialog
-        open={Boolean(draft)}
-        wide
-        onOpenChange={(open) => !busy && !open && setDraft(null)}
-        title={draft?.editing ? `Edit ${draft.editing}` : 'Add VM capacity'}
-        description="Runners need outbound HTTPS to GitHub and nothing inbound. max_instances is a hard ceiling across every pool, standbys included."
-      >
-        {draft && (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (busy) return
-              const next = capacityOf(draft)
-              const capacities = draft.editing
-                ? settings.capacities.map((c) => (c.name === draft.editing ? next : c))
-                : [...settings.capacities, next]
-              void save(capacities, () => setDraft(null))
-            }}
-          >
-            <div className="dialog-body field-stack">
-              <div className="form-grid-two">
-                {field('name', 'Name', 'aws-spot')}
-                <label>
-                  Cloud
-                  <SelectField
-                    label="Cloud"
-                    value={draft.cloud}
-                    disabled={Boolean(draft.editing)}
-                    onValueChange={(value) =>
-                      setDraft({ ...blank(value as Capacity['cloud']), name: draft.name })
-                    }
-                    options={[
-                      { value: 'aws', label: 'AWS EC2' },
-                      { value: 'gcp', label: 'Google Compute Engine' },
-                    ]}
-                  />
-                </label>
-              </div>
-              {draft.cloud === 'aws' ? (
-                <>
-                  <div className="form-grid-two">
-                    {field('region', 'Region', 'eu-central-1')}
-                    {field('external_id', 'External ID (optional)', settings.external_id, false)}
-                  </div>
-                  {field(
-                    'role_arn',
-                    'IAM role ARN',
-                    'arn:aws:iam::123456789012:role/hakopod-actions',
-                  )}
-                  <div className="form-grid-two">
-                    {field('subnet_ids', 'Subnets', 'subnet-0abc1234')}
-                    {field('security_group_ids', 'Security groups', 'sg-0abc1234')}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="form-grid-two">
-                    {field('project', 'Project', 'my-project')}
-                    {field('region', 'Region', 'us-central1')}
-                  </div>
-                  {field(
-                    'service_account',
-                    'Service account',
-                    'hakopod-actions@my-project.iam.gserviceaccount.com',
-                  )}
-                  <div className="form-grid-two">
-                    {field('zones', 'Zones', 'us-central1-a, us-central1-b')}
-                    {field('subnet_ids', 'Subnetwork', 'default')}
-                  </div>
-                </>
-              )}
-              {field(
-                'instance_types',
-                draft.cloud === 'aws' ? 'Instance types, in order' : 'Machine types, in order',
-              )}
-              <div className="form-grid-two">
-                <label>
-                  Architecture
-                  <SelectField
-                    label="Architecture"
-                    value={draft.architecture}
-                    onValueChange={(value) =>
-                      setDraft({ ...draft, architecture: value as Capacity['architecture'] })
-                    }
-                    options={[
-                      { value: 'amd64', label: 'amd64' },
-                      {
-                        value: 'arm64',
-                        label:
-                          draft.cloud === 'aws' ? 'arm64 (Graviton)' : 'arm64 (Tau T2A, Axion)',
-                      },
-                    ]}
-                  />
-                </label>
-                {field(
-                  'image',
-                  'Image',
-                  draft.cloud === 'aws'
-                    ? 'runs-on-full, hakopod-minimal, ami-…'
-                    : 'hakopod-minimal or projects/…/global/images/…',
-                  false,
-                )}
-              </div>
-              <div className="form-grid-two">
-                {field('max_instances', 'Max instances')}
-                {field('warm_pool', 'Warm standbys')}
-              </div>
-              <div className="form-grid-two">
-                {field('disk_gib', 'Disk (GiB)')}
-                {field('environments', 'Environments', 'shop/production or *')}
-              </div>
-              <label className="checkbox-row">
-                <Input
-                  type="checkbox"
-                  checked={draft.spot}
-                  onChange={(e) => setDraft({ ...draft, spot: e.target.checked })}
-                />
-                Launch on spot capacity (on-demand when off)
-              </label>
-              {conflict && <Note>Someone else changed VM capacity. Review and save again.</Note>}
-              {error && <RequestError error={error} />}
-            </div>
-            <div className="dialog-footer">
-              <Button type="button" disabled={busy} onClick={() => setDraft(null)}>
-                Cancel
-              </Button>
-              <Button type="submit" variant="primary" disabled={busy}>
-                {busy ? 'Saving…' : 'Save capacity'}
-              </Button>
-            </div>
-          </form>
-        )}
-      </Dialog>
+      {draft && (
+        <CapacitySheet
+          draft={draft}
+          settings={settings}
+          busy={busy}
+          error={error}
+          conflict={conflict}
+          onChange={setDraft}
+          onClose={() => !busy && setDraft(null)}
+          onSave={() => {
+            const next = capacityOf(draft)
+            const capacities = draft.editing
+              ? settings.capacities.map((c) => (c.name === draft.editing ? next : c))
+              : [...settings.capacities, next]
+            void save(capacities, () => setDraft(null))
+          }}
+        />
+      )}
 
       <Dialog
         open={Boolean(removing)}
@@ -532,5 +397,490 @@ export default function ActionsCapacitySettings() {
         )}
       </Dialog>
     </SettingsSection>
+  )
+}
+
+const trustPolicy = (externalID: string) =>
+  JSON.stringify(
+    {
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: { AWS: 'arn:aws:iam::ACCOUNT_ID:role/HAKOPOD_IDENTITY' },
+          Action: 'sts:AssumeRole',
+          Condition: { StringEquals: { 'sts:ExternalId': externalID } },
+        },
+      ],
+    },
+    null,
+    2,
+  )
+
+// Mirrors the policy in docs/managed-actions.md, with this installation's tag value filled in.
+const permissionsPolicy = (installation: string) => {
+  const own = { StringEquals: { 'ec2:ResourceTag/hakopod-installation': installation } }
+  return JSON.stringify(
+    {
+      Version: '2012-10-17',
+      Statement: [
+        { Sid: 'Read', Effect: 'Allow', Action: 'ec2:Describe*', Resource: '*' },
+        {
+          Sid: 'Launch',
+          Effect: 'Allow',
+          Action: [
+            'ec2:CreateLaunchTemplate',
+            'ec2:DeleteLaunchTemplate',
+            'ec2:CreateFleet',
+            'ec2:RunInstances',
+          ],
+          Resource: '*',
+        },
+        {
+          Sid: 'TagOnCreate',
+          Effect: 'Allow',
+          Action: 'ec2:CreateTags',
+          Resource: '*',
+          Condition: {
+            StringEquals: {
+              'ec2:CreateAction': [
+                'CreateLaunchTemplate',
+                'CreateFleet',
+                'RunInstances',
+                'CreateImage',
+              ],
+            },
+          },
+        },
+        {
+          Sid: 'OwnInstances',
+          Effect: 'Allow',
+          Action: [
+            'ec2:TerminateInstances',
+            'ec2:StartInstances',
+            'ec2:ModifyInstanceAttribute',
+            'ec2:GetConsoleOutput',
+            'ec2:DeregisterImage',
+            'ec2:DeleteSnapshot',
+          ],
+          Resource: '*',
+          Condition: own,
+        },
+        {
+          Sid: 'ClaimTags',
+          Effect: 'Allow',
+          Action: 'ec2:CreateTags',
+          Resource: 'arn:aws:ec2:*:*:instance/*',
+          Condition: {
+            ...own,
+            'ForAllValues:StringEquals': {
+              'aws:TagKeys': ['hakopod-pool', 'hakopod-slot', 'hakopod-pool-state'],
+            },
+          },
+        },
+        {
+          Sid: 'ImageFromOwnInstance',
+          Effect: 'Allow',
+          Action: 'ec2:CreateImage',
+          Resource: 'arn:aws:ec2:*:*:instance/*',
+          Condition: own,
+        },
+        {
+          Sid: 'TaggedImage',
+          Effect: 'Allow',
+          Action: 'ec2:CreateImage',
+          Resource: ['arn:aws:ec2:*::image/*', 'arn:aws:ec2:*::snapshot/*'],
+          Condition: { StringEquals: { 'aws:RequestTag/hakopod-installation': installation } },
+        },
+        {
+          Sid: 'UbuntuImage',
+          Effect: 'Allow',
+          Action: 'ssm:GetParameters',
+          Resource: 'arn:aws:ssm:*::parameter/aws/service/canonical/*',
+        },
+        {
+          Sid: 'FleetServiceRoles',
+          Effect: 'Allow',
+          Action: 'iam:CreateServiceLinkedRole',
+          Resource: '*',
+          Condition: {
+            StringEquals: {
+              'iam:AWSServiceName': ['ec2fleet.amazonaws.com', 'spot.amazonaws.com'],
+            },
+          },
+        },
+      ],
+    },
+    null,
+    2,
+  )
+}
+
+const gcloudSetup = (project: string) => `PROJECT=${project || 'my-project'}
+HAKOPOD_IDENTITY=hakopod@my-project.iam.gserviceaccount.com   # the identity Hakopod runs as
+gcloud services enable compute.googleapis.com iamcredentials.googleapis.com --project "$PROJECT"
+gcloud iam service-accounts create hakopod-actions --project "$PROJECT"
+gcloud iam roles create hakopodActions --project "$PROJECT" --title "Hakopod Actions runners" --permissions \\
+compute.instances.create,compute.instances.get,compute.instances.list,compute.instances.delete,\\
+compute.instances.start,compute.instances.setLabels,compute.instances.setMetadata,\\
+compute.instances.getSerialPortOutput,compute.disks.create,compute.disks.setLabels,compute.disks.useReadOnly,\\
+compute.subnetworks.get,compute.subnetworks.use,compute.subnetworks.useExternalIp,\\
+compute.zoneOperations.get,compute.zoneOperations.list,compute.globalOperations.get,\\
+compute.images.create,compute.images.get,compute.images.list,compute.images.delete,\\
+compute.images.useReadOnly,compute.images.getFromFamily,compute.firewalls.list
+gcloud projects add-iam-policy-binding "$PROJECT" \\
+  --member "serviceAccount:hakopod-actions@$PROJECT.iam.gserviceaccount.com" \\
+  --role "projects/$PROJECT/roles/hakopodActions"
+gcloud iam service-accounts add-iam-policy-binding "hakopod-actions@$PROJECT.iam.gserviceaccount.com" \\
+  --project "$PROJECT" --member "serviceAccount:$HAKOPOD_IDENTITY" \\
+  --role roles/iam.serviceAccountTokenCreator`
+
+function Snippet({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <div className="flex items-center justify-between gap-2 text-xs muted-text">
+        <span>{label}</span>
+        <Copy value={value} label={`Copy ${label.toLowerCase()}`} />
+      </div>
+      <pre
+        className="max-h-56 min-w-0 overflow-auto rounded-[var(--radius-control)] border border-[var(--hairline)] p-3 text-xs"
+        aria-label={label}
+      >
+        <code>{value}</code>
+      </pre>
+    </div>
+  )
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+  return (
+    <li className="grid min-w-0 gap-2">
+      <strong className="text-sm">
+        {n}. {title}
+      </strong>
+      <div className="grid min-w-0 gap-2 text-sm">{children}</div>
+    </li>
+  )
+}
+
+function SetupGuide({ draft, settings }: { draft: Draft; settings: Settings }) {
+  const externalID = draft.external_id || settings.external_id
+  return (
+    <details className="capacity-guide grid gap-3" open={!draft.editing}>
+      <summary className="cursor-pointer text-sm font-medium">
+        Set up {draft.cloud === 'aws' ? 'your AWS account' : 'your Google Cloud project'} first
+      </summary>
+      {draft.cloud === 'aws' ? (
+        <ol className="mt-3 grid gap-4">
+          <Step n={1} title="Create an IAM role for Hakopod">
+            <p className="muted-text">
+              Hakopod assumes this role; no access keys are stored. Replace the principal with the
+              AWS identity Hakopod runs as: its environment credentials, its EKS pod role, or its
+              EC2 instance role. The external ID is this installation's.
+            </p>
+            <Snippet label="Trust policy" value={trustPolicy(externalID)} />
+          </Step>
+          <Step n={2} title="Attach this permissions policy to the role">
+            <p className="muted-text">
+              Hakopod can launch tagged instances, and start, change, image or terminate only
+              instances tagged <code>hakopod-installation={settings.installation_id}</code>. Runners
+              get no instance profile, so no <code>iam:PassRole</code>.
+            </p>
+            <Snippet
+              label="Permissions policy"
+              value={permissionsPolicy(settings.installation_id)}
+            />
+          </Step>
+          <Step n={3} title="Pick the network">
+            <p className="muted-text">
+              Use subnets with a route to the internet: private subnets behind a NAT gateway, or
+              public subnets that assign public IPs. Create a security group with no inbound rules
+              and outbound allowed; runners only call GitHub over HTTPS.
+            </p>
+          </Step>
+          <Step n={4} title="Fill in the form below, save, then Test">
+            <p className="muted-text">
+              Test assumes the role and reads the subnets and security groups. Test with launch also
+              starts and terminates one t3.micro or t4g.micro.
+            </p>
+          </Step>
+        </ol>
+      ) : (
+        <ol className="mt-3 grid gap-4">
+          <Step n={1} title="Create a service account and a custom role">
+            <p className="muted-text">
+              Hakopod impersonates this service account from its own Google identity, so no key is
+              stored. Set <code>HAKOPOD_IDENTITY</code> to the identity Hakopod runs as: the GCE
+              VM's or GKE workload's service account, or the account of the key file in{' '}
+              <code>GOOGLE_APPLICATION_CREDENTIALS</code>.
+            </p>
+            <Snippet label="gcloud commands" value={gcloudSetup(draft.project || '')} />
+          </Step>
+          <Step n={2} title="Pick the network">
+            <p className="muted-text">
+              One subnetwork in the region. Runners get an ephemeral external IP and need nothing
+              inbound; Test warns about firewall rules that open every VM to the internet, such as
+              the default network's <code>default-allow-ssh</code>.
+            </p>
+          </Step>
+          <Step n={3} title="Fill in the form below, save, then Test">
+            <p className="muted-text">
+              Test impersonates the service account, reads the subnetwork and lists firewall rules.
+              Test with launch also starts and deletes one e2-micro or t2a-standard-1. The
+              hakopod-minimal image builds itself in your project on first use, in about ten
+              minutes.
+            </p>
+          </Step>
+        </ol>
+      )}
+    </details>
+  )
+}
+
+function CapacitySheet({
+  draft,
+  settings,
+  busy,
+  error,
+  conflict,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  draft: Draft
+  settings: Settings
+  busy: boolean
+  error: string
+  conflict: boolean
+  onChange: (draft: Draft) => void
+  onClose: () => void
+  onSave: () => void
+}) {
+  const formId = useId()
+  const aws = draft.cloud === 'aws'
+  const field = (
+    key: keyof Draft,
+    label: string,
+    example: string,
+    hint: ReactNode,
+    required = true,
+  ) => (
+    <label key={key} className="grid min-w-0 gap-1">
+      {label}
+      <Input
+        required={required}
+        value={String(draft[key] ?? '')}
+        disabled={key === 'name' && Boolean(draft.editing)}
+        placeholder={example && `e.g. ${example}`}
+        inputMode={['disk_gib', 'max_instances', 'warm_pool'].includes(key) ? 'numeric' : undefined}
+        onChange={(event) => onChange({ ...draft, [key]: event.target.value })}
+        autoComplete="off"
+      />
+      <small className="text-xs muted-text">{hint}</small>
+    </label>
+  )
+  return (
+    <InspectorSheet
+      open
+      wide
+      kind="capacity"
+      onOpenChange={(open) => !open && onClose()}
+      title={draft.editing ? `Edit ${draft.editing}` : 'Add VM capacity'}
+      description="Runner pools that use this capacity launch one single-use VM per job in your cloud account."
+      footer={
+        <>
+          <Button type="button" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} variant="primary" disabled={busy}>
+            {busy ? 'Saving…' : 'Save capacity'}
+          </Button>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        className="grid min-w-0 gap-6"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!busy) onSave()
+        }}
+      >
+        <div className="form-grid-two">
+          {field(
+            'name',
+            'Name',
+            aws ? 'aws-spot' : 'gcp-spot',
+            'Pools refer to it as capacity = "name". Lowercase letters, digits and hyphens.',
+          )}
+          <label className="grid min-w-0 gap-1">
+            Cloud
+            <SelectField
+              label="Cloud"
+              value={draft.cloud}
+              disabled={Boolean(draft.editing)}
+              onValueChange={(value) =>
+                onChange({ ...blank(value as Capacity['cloud']), name: draft.name })
+              }
+              options={[
+                { value: 'aws', label: 'AWS EC2' },
+                { value: 'gcp', label: 'Google Compute Engine' },
+              ]}
+            />
+            <small className="text-xs muted-text">Cannot be changed after saving.</small>
+          </label>
+        </div>
+
+        <SetupGuide draft={draft} settings={settings} />
+
+        <fieldset className="grid min-w-0 gap-4">
+          <legend className="mb-2 text-sm font-medium">Account and network</legend>
+          {aws ? (
+            <>
+              {field(
+                'role_arn',
+                'IAM role ARN',
+                'arn:aws:iam::123456789012:role/hakopod-actions',
+                'The role from step 1. Hakopod assumes it for every call.',
+              )}
+              <div className="form-grid-two">
+                {field('region', 'Region', 'eu-central-1', 'Where runners launch.')}
+                {field(
+                  'external_id',
+                  'External ID',
+                  settings.external_id,
+                  "Optional. Leave empty to use this installation's.",
+                  false,
+                )}
+              </div>
+              <div className="form-grid-two">
+                {field(
+                  'subnet_ids',
+                  'Subnets',
+                  'subnet-0abc1234, subnet-0def5678',
+                  'Comma-separated, 1–10. Spread across zones for more spot capacity.',
+                )}
+                {field(
+                  'security_group_ids',
+                  'Security groups',
+                  'sg-0abc1234',
+                  'Comma-separated, 1–5. Outbound only.',
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-grid-two">
+                {field('project', 'Project ID', 'my-project', 'Runners launch in this project.')}
+                {field('region', 'Region', 'us-central1', 'Where runners launch.')}
+              </div>
+              {field(
+                'service_account',
+                'Service account',
+                'hakopod-actions@my-project.iam.gserviceaccount.com',
+                'The account from step 1. Runner VMs themselves get no service account.',
+              )}
+              <div className="form-grid-two">
+                {field(
+                  'zones',
+                  'Zones',
+                  'us-central1-a, us-central1-b',
+                  'Comma-separated zones of the region, tried in order.',
+                )}
+                {field('subnet_ids', 'Subnetwork', 'default', 'One subnetwork name in the region.')}
+              </div>
+            </>
+          )}
+        </fieldset>
+
+        <fieldset className="grid min-w-0 gap-4">
+          <legend className="mb-2 text-sm font-medium">Machines</legend>
+          {field(
+            'instance_types',
+            aws ? 'Instance types' : 'Machine types',
+            aws ? 'c7i.xlarge, c6i.xlarge, m7i.xlarge' : 'n2d-standard-4, e2-standard-4',
+            'Comma-separated, tried in order. List several so a launch finds spot capacity. All must match the architecture.',
+          )}
+          <div className="form-grid-two">
+            <label className="grid min-w-0 gap-1">
+              Architecture
+              <SelectField
+                label="Architecture"
+                value={draft.architecture}
+                onValueChange={(value) =>
+                  onChange({ ...draft, architecture: value as Capacity['architecture'] })
+                }
+                options={[
+                  { value: 'amd64', label: 'amd64 (x86)' },
+                  { value: 'arm64', label: aws ? 'arm64 (Graviton)' : 'arm64 (Tau T2A, Axion)' },
+                ]}
+              />
+              <small className="text-xs muted-text">
+                Workflows target it with the runner labels of their pool.
+              </small>
+            </label>
+            {field(
+              'image',
+              'Image',
+              aws ? 'runs-on-full' : 'hakopod-minimal',
+              aws
+                ? 'runs-on-full: GitHub-compatible Ubuntu 24.04 image from RunsOn. hakopod-minimal: built in your account. Or an AMI ID.'
+                : 'hakopod-minimal is built in your project. Or projects/…/global/images/[family/]NAME.',
+              false,
+            )}
+          </div>
+          <div className="form-grid-two">
+            {field(
+              'disk_gib',
+              'Disk (GiB)',
+              '100',
+              'Encrypted root volume. runs-on-full needs 30 or more.',
+            )}
+            <label className="grid min-w-0 gap-1">
+              Pricing
+              <span className="checkbox-row">
+                <Input
+                  type="checkbox"
+                  checked={draft.spot}
+                  onChange={(event) => onChange({ ...draft, spot: event.target.checked })}
+                />
+                Spot
+              </span>
+              <small className="text-xs muted-text">
+                Spot is up to 90% cheaper but can be reclaimed; interrupted runs are rerun
+                automatically. Off launches on-demand.
+              </small>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="grid min-w-0 gap-4">
+          <legend className="mb-2 text-sm font-medium">Limits and access</legend>
+          <div className="form-grid-two">
+            {field(
+              'max_instances',
+              'Max instances',
+              '10',
+              'Hard ceiling across every pool on this capacity, standbys included. Pools wait at the limit.',
+            )}
+            {field(
+              'warm_pool',
+              'Warm standbys',
+              '0',
+              'Stopped on-demand VMs kept ready so jobs start faster. You pay for their disks.',
+            )}
+          </div>
+          {field(
+            'environments',
+            'Allowed environments',
+            'shop/production, shop/staging',
+            'project/environment pairs that may use it, comma-separated, or * for all.',
+          )}
+        </fieldset>
+
+        {conflict && <Note>Someone else changed VM capacity. Review and save again.</Note>}
+        {error && <RequestError error={error} />}
+      </form>
+    </InspectorSheet>
   )
 }
