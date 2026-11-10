@@ -158,9 +158,14 @@ set -euxo pipefail
 ` + installRunner + `cat > /usr/local/sbin/hakopod-boot <<'HAKOPOD'
 #!/bin/bash
 # Runs this boot's user data: one runner job, or a standby's warm-up.
-t=$(curl -fsS --retry 10 --retry-connrefused -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token) &&
-  curl -fsS --retry 5 -H "X-aws-ec2-metadata-token: $t" -o /run/hakopod-user-data http://169.254.169.254/latest/user-data ||
-  exec shutdown -h now
+if grep -q 'Google Compute Engine' /sys/class/dmi/id/product_name 2>/dev/null; then
+  curl -fsS --retry 10 --retry-connrefused -H 'Metadata-Flavor: Google' -o /run/hakopod-user-data \
+    http://169.254.169.254/computeMetadata/v1/instance/attributes/user-data || exec shutdown -h now
+else
+  t=$(curl -fsS --retry 10 --retry-connrefused -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 300' http://169.254.169.254/latest/api/token) &&
+    curl -fsS --retry 5 -H "X-aws-ec2-metadata-token: $t" -o /run/hakopod-user-data http://169.254.169.254/latest/user-data ||
+    exec shutdown -h now
+fi
 chmod 0700 /run/hakopod-user-data
 exec /run/hakopod-user-data
 HAKOPOD

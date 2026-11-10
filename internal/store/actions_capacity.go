@@ -17,23 +17,31 @@ import (
 )
 
 // ActionsCapacity is one cloud account where GitHub pools can run each job on a
-// single-use VM. It holds no credential: Hakopod's own AWS identity assumes
-// RoleARN with the external ID, so only identifiers are stored.
+// single-use VM. It holds no credential: on AWS, Hakopod's own identity
+// assumes RoleARN with the external ID; on Google Cloud it impersonates
+// ServiceAccount. Only identifiers are stored.
 type ActionsCapacity struct {
 	Name             string   `json:"name" toml:"name"`
 	Cloud            string   `json:"cloud" toml:"cloud"`
 	Region           string   `json:"region" toml:"region"`
-	RoleARN          string   `json:"role_arn" toml:"role_arn"`
+	RoleARN          string   `json:"role_arn,omitempty" toml:"role_arn,omitempty"`
 	ExternalID       string   `json:"external_id,omitempty" toml:"external_id,omitempty"`
 	SubnetIDs        []string `json:"subnet_ids" toml:"subnet_ids"`
-	SecurityGroupIDs []string `json:"security_group_ids" toml:"security_group_ids"`
-	InstanceTypes    []string `json:"instance_types" toml:"instance_types"`
-	Architecture     string   `json:"architecture" toml:"architecture"`
-	Spot             bool     `json:"spot" toml:"spot"`
-	DiskGiB          int64    `json:"disk_gib" toml:"disk_gib"`
-	MaxInstances     int64    `json:"max_instances" toml:"max_instances"`
-	// Image is runs-on-full (the default), hakopod-minimal, an AMI ID or a
-	// resolve:ssm: parameter holding one.
+	SecurityGroupIDs []string `json:"security_group_ids,omitempty" toml:"security_group_ids,omitempty"`
+	// Google Cloud: the project, the zones of Region to launch in, in order,
+	// and the service account Hakopod impersonates. SubnetIDs holds one
+	// subnetwork name in Region.
+	Project        string   `json:"project,omitempty" toml:"project,omitempty"`
+	Zones          []string `json:"zones,omitempty" toml:"zones,omitempty"`
+	ServiceAccount string   `json:"service_account,omitempty" toml:"service_account,omitempty"`
+	InstanceTypes  []string `json:"instance_types" toml:"instance_types"`
+	Architecture   string   `json:"architecture" toml:"architecture"`
+	Spot           bool     `json:"spot" toml:"spot"`
+	DiskGiB        int64    `json:"disk_gib" toml:"disk_gib"`
+	MaxInstances   int64    `json:"max_instances" toml:"max_instances"`
+	// Image is runs-on-full (the AWS default), hakopod-minimal (the Google
+	// Cloud default), an AMI ID or a resolve:ssm: parameter holding one, or a
+	// Compute Engine image or image family path.
 	Image string `json:"image" toml:"image"`
 	// WarmPool keeps this many stopped on-demand instances ready to start
 	// for a job. They count toward MaxInstances.
@@ -60,6 +68,12 @@ var (
 	awsInstanceType  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,15}\.[a-z0-9]{1,16}$`)
 	capacityImage    = regexp.MustCompile(`^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200})$`)
 	capacityScope    = regexp.MustCompile(`^[a-z][a-z0-9-]{0,38}[a-z0-9]$|^[a-z]$`)
+	gcpRegion        = regexp.MustCompile(`^[a-z]+-[a-z]+[0-9]{1,2}$`)
+	gcpProject       = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+	gcpAccount       = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`)
+	gcpName          = regexp.MustCompile(`^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`)
+	gcpMachineType   = regexp.MustCompile(`^[a-z][a-z0-9]{1,5}-[a-z0-9-]{1,40}$`)
+	gcpImage         = regexp.MustCompile(`^(hakopod-minimal|projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/images/(family/)?[a-z]([-a-z0-9]{0,61}[a-z0-9])?)$`)
 )
 
 func distinct(values []string, min, max int, valid *regexp.Regexp) bool {
@@ -84,26 +98,17 @@ func (c *ActionsCapacity) normalize() error {
 	if !spec.ActionsCapacityName.MatchString(c.Name) {
 		return fmt.Errorf("%w: capacity names use lowercase letters, digits and hyphens", ErrInput)
 	}
-	if c.Cloud != "aws" {
-		return bad("cloud", "only aws is available")
-	}
-	if !awsRegion.MatchString(c.Region) {
-		return bad("region", "use an AWS region such as eu-central-1")
-	}
-	if !awsRoleARN.MatchString(c.RoleARN) {
-		return bad("role_arn", "use an IAM role ARN")
-	}
-	if c.ExternalID != "" && !awsExternalID.MatchString(c.ExternalID) {
-		return bad("external_id", "use 2–1000 letters, digits or +=,.@:/_-")
-	}
-	if !distinct(c.SubnetIDs, 1, 10, awsSubnetID) {
-		return bad("subnet_ids", "list 1–10 distinct subnet IDs")
-	}
-	if !distinct(c.SecurityGroupIDs, 1, 5, awsSecurityGroup) {
-		return bad("security_group_ids", "list 1–5 distinct security group IDs")
-	}
-	if !distinct(c.InstanceTypes, 1, 20, awsInstanceType) {
-		return bad("instance_types", "list 1–20 distinct instance types")
+	switch c.Cloud {
+	case "gcp":
+		if err := c.normalizeGCP(bad); err != nil {
+			return err
+		}
+	case "aws":
+		if err := c.normalizeAWS(bad); err != nil {
+			return err
+		}
+	default:
+		return bad("cloud", "choose aws or gcp")
 	}
 	if c.Architecture != "amd64" && c.Architecture != "arm64" {
 		return bad("architecture", "choose amd64 or arm64")
@@ -116,12 +121,6 @@ func (c *ActionsCapacity) normalize() error {
 	}
 	if c.MaxInstances < 1 || c.MaxInstances > 1000 {
 		return bad("max_instances", "choose 1–1000")
-	}
-	if c.Image == "" {
-		c.Image = vm.ImageRunsOnFull
-	}
-	if !capacityImage.MatchString(c.Image) {
-		return bad("image", "use runs-on-full, hakopod-minimal, an AMI ID or resolve:ssm:/parameter")
 	}
 	if c.Image == vm.ImageRunsOnFull && c.DiskGiB < 30 {
 		return bad("disk_gib", "RunsOn's image needs at least 30 GiB")
@@ -141,6 +140,75 @@ func (c *ActionsCapacity) normalize() error {
 	return nil
 }
 
+func (c *ActionsCapacity) normalizeAWS(bad func(field, text string) error) error {
+	if c.Project != "" || len(c.Zones) > 0 || c.ServiceAccount != "" {
+		return bad("cloud", "project, zones and service_account are Google Cloud settings")
+	}
+	if !awsRegion.MatchString(c.Region) {
+		return bad("region", "use an AWS region such as eu-central-1")
+	}
+	if !awsRoleARN.MatchString(c.RoleARN) {
+		return bad("role_arn", "use an IAM role ARN")
+	}
+	if c.ExternalID != "" && !awsExternalID.MatchString(c.ExternalID) {
+		return bad("external_id", "use 2–1000 letters, digits or +=,.@:/_-")
+	}
+	if !distinct(c.SubnetIDs, 1, 10, awsSubnetID) {
+		return bad("subnet_ids", "list 1–10 distinct subnet IDs")
+	}
+	if !distinct(c.SecurityGroupIDs, 1, 5, awsSecurityGroup) {
+		return bad("security_group_ids", "list 1–5 distinct security group IDs")
+	}
+	if !distinct(c.InstanceTypes, 1, 20, awsInstanceType) {
+		return bad("instance_types", "list 1–20 distinct instance types")
+	}
+	if c.Image == "" {
+		c.Image = vm.ImageRunsOnFull
+	}
+	if !capacityImage.MatchString(c.Image) {
+		return bad("image", "use runs-on-full, hakopod-minimal, an AMI ID or resolve:ssm:/parameter")
+	}
+	return nil
+}
+
+// normalizeGCP checks a Compute Engine capacity. Runners get no inbound
+// firewall rule of their own, so security_group_ids has no meaning here.
+func (c *ActionsCapacity) normalizeGCP(bad func(field, text string) error) error {
+	if c.RoleARN != "" || c.ExternalID != "" || len(c.SecurityGroupIDs) > 0 {
+		return bad("cloud", "role_arn, external_id and security_group_ids are AWS settings")
+	}
+	if !gcpRegion.MatchString(c.Region) {
+		return bad("region", "use a Google Cloud region such as us-central1")
+	}
+	if !gcpProject.MatchString(c.Project) {
+		return bad("project", "use a Google Cloud project ID")
+	}
+	if !gcpAccount.MatchString(c.ServiceAccount) {
+		return bad("service_account", "use a service account email such as hakopod-actions@my-project.iam.gserviceaccount.com")
+	}
+	if !distinct(c.Zones, 1, 10, gcpName) {
+		return bad("zones", "list 1–10 distinct zones")
+	}
+	for _, zone := range c.Zones {
+		if !strings.HasPrefix(zone, c.Region+"-") {
+			return bad("zones", "list zones of "+c.Region+", such as "+c.Region+"-a")
+		}
+	}
+	if !distinct(c.SubnetIDs, 1, 1, gcpName) {
+		return bad("subnet_ids", "name one subnetwork in the region")
+	}
+	if !distinct(c.InstanceTypes, 1, 20, gcpMachineType) {
+		return bad("instance_types", "list 1–20 distinct machine types such as t2a-standard-2")
+	}
+	if c.Image == "" {
+		c.Image = vm.ImageHakopodMinimal
+	}
+	if !gcpImage.MatchString(c.Image) {
+		return bad("image", "use hakopod-minimal or projects/PROJECT/global/images/[family/]NAME")
+	}
+	return nil
+}
+
 // Allows reports whether a pool in project/environment may use this capacity.
 func (c ActionsCapacity) Allows(project, environment string) bool {
 	return slices.Contains(c.Environments, "*") || slices.Contains(c.Environments, project+"/"+environment)
@@ -153,8 +221,13 @@ func (v ActionsCapacitySettings) Find(name string) (ActionsCapacity, bool) {
 			if c.ExternalID == "" {
 				c.ExternalID = v.ExternalID
 			}
-			if c.Image == "" {
+			if c.Image == "" && c.Cloud == "gcp" {
+				c.Image = vm.ImageHakopodMinimal
+			} else if c.Image == "" {
 				c.Image = vm.ImageRunsOnFull
+			}
+			if c.Cloud == "gcp" {
+				c.ExternalID = ""
 			}
 			return c, true
 		}

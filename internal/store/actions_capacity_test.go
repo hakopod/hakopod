@@ -17,7 +17,8 @@ func testCapacity(name string) ActionsCapacity {
 
 func TestActionsCapacityValidation(t *testing.T) {
 	for name, mutate := range map[string]func(*ActionsCapacity){
-		"cloud":    func(c *ActionsCapacity) { c.Cloud = "gcp" },
+		"cloud":    func(c *ActionsCapacity) { c.Cloud = "azure" },
+		"gcp-only": func(c *ActionsCapacity) { c.Project = "my-project" },
 		"region":   func(c *ActionsCapacity) { c.Region = "EU" },
 		"role":     func(c *ActionsCapacity) { c.RoleARN = "arn:aws:iam::1:user/x" },
 		"subnets":  func(c *ActionsCapacity) { c.SubnetIDs = nil },
@@ -51,6 +52,48 @@ func TestActionsCapacityValidation(t *testing.T) {
 	}
 	if !c.Allows("demo", "development") || c.Allows("demo", "production") {
 		t.Fatal("environment scope")
+	}
+}
+
+func testGCPCapacity() ActionsCapacity {
+	return ActionsCapacity{Name: "gcp-spot", Cloud: "gcp", Region: "us-central1", Project: "my-project", Zones: []string{"us-central1-a", "us-central1-f"},
+		ServiceAccount: "hakopod-actions@my-project.iam.gserviceaccount.com", SubnetIDs: []string{"runners"},
+		InstanceTypes: []string{"t2a-standard-2", "c4a-standard-2"}, Architecture: "arm64", Spot: true, MaxInstances: 2, Environments: []string{"*"}}
+}
+
+func TestActionsCapacityValidationGCP(t *testing.T) {
+	for name, mutate := range map[string]func(*ActionsCapacity){
+		"region":  func(c *ActionsCapacity) { c.Region = "eu-central-1" },
+		"project": func(c *ActionsCapacity) { c.Project = "P" },
+		"account": func(c *ActionsCapacity) { c.ServiceAccount = "someone@gmail.com" },
+		"zones":   func(c *ActionsCapacity) { c.Zones = []string{"europe-west4-a"} },
+		"subnets": func(c *ActionsCapacity) { c.SubnetIDs = []string{"a", "b"} },
+		"types":   func(c *ActionsCapacity) { c.InstanceTypes = []string{"t4g.small"} },
+		"role":    func(c *ActionsCapacity) { c.RoleARN = "arn:aws:iam::123456789012:role/x" },
+		"groups":  func(c *ActionsCapacity) { c.SecurityGroupIDs = []string{"sg-0abc1234"} },
+		"runs-on": func(c *ActionsCapacity) { c.Image = "runs-on-full" },
+		"image":   func(c *ActionsCapacity) { c.Image = "ami-0123456789abcdef0" },
+	} {
+		c := testGCPCapacity()
+		mutate(&c)
+		if err := c.normalize(); !errors.Is(err, ErrInput) {
+			t.Fatal(name, err)
+		}
+	}
+	c := testGCPCapacity()
+	if err := c.normalize(); err != nil || c.Image != "hakopod-minimal" || c.DiskGiB != 100 {
+		t.Fatal(c, err)
+	}
+	for _, image := range []string{"projects/my-project/global/images/runner", "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-arm64"} {
+		c := testGCPCapacity()
+		c.Image = image
+		if err := c.normalize(); err != nil {
+			t.Fatal(image, err)
+		}
+	}
+	found, ok := ActionsCapacitySettings{ExternalID: "hakopod-x", Capacities: []ActionsCapacity{{Name: "gcp-spot", Cloud: "gcp"}}}.Find("gcp-spot")
+	if !ok || found.ExternalID != "" || found.Image != "hakopod-minimal" {
+		t.Fatal(found)
 	}
 }
 

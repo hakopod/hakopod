@@ -2044,7 +2044,7 @@
           }
         },
         "summary": "Test an Actions capacity",
-        "description": "Installation administrators only. Assumes the role and reads the subnets and security groups. With launch, starts and terminates one small on-demand instance.",
+        "description": "Installation administrators only. Assumes the role and reads the subnets and security groups on AWS; impersonates the service account, reads the subnetwork and reports firewall rules open to the internet on Google Cloud. With launch, starts and terminates one small on-demand instance.",
         "x-hakopod-agent": {
           "boundary": "installation",
           "category": "admin",
@@ -29705,31 +29705,53 @@
           "cloud": {
             "type": "string",
             "enum": [
-              "aws"
-            ]
+              "aws",
+              "gcp"
+            ],
+            "description": "aws runs jobs on EC2; gcp on Compute Engine."
           },
           "region": {
             "type": "string",
-            "description": "AWS region, for example eu-central-1."
+            "description": "AWS region, for example eu-central-1, or Google Cloud region, for example us-central1."
           },
           "role_arn": {
             "type": "string",
-            "description": "IAM role Hakopod assumes from its own AWS credential chain."
+            "description": "AWS only, required there. IAM role Hakopod assumes from its own AWS credential chain."
           },
           "external_id": {
             "type": "string",
-            "description": "External ID for the role's trust policy. Omit to use the installation's generated one."
+            "description": "AWS only. External ID for the role's trust policy. Omit to use the installation's generated one."
+          },
+          "project": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$",
+            "description": "Google Cloud only, required there. The project runners are launched in."
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "description": "Google Cloud only, required there. Zones of the region to try, in order."
+          },
+          "service_account": {
+            "type": "string",
+            "description": "Google Cloud only, required there. Service account Hakopod impersonates from its own Google identity; grant that identity Service Account Token Creator on it. Runner VMs get no service account."
           },
           "subnet_ids": {
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^subnet-[0-9a-f]{8,17}$"
+              "pattern": "^(subnet-[0-9a-f]{8,17}|[a-z]([-a-z0-9]{0,61}[a-z0-9])?)$"
             },
             "minItems": 1,
             "maxItems": 10,
             "uniqueItems": true,
-            "description": "Subnets with outbound access to GitHub. Nothing inbound is needed."
+            "description": "AWS: subnets with outbound access to GitHub. Google Cloud: one subnetwork name in the region. Nothing inbound is needed."
           },
           "security_group_ids": {
             "type": "array",
@@ -29740,17 +29762,18 @@
             "minItems": 1,
             "maxItems": 5,
             "uniqueItems": true,
-            "description": "Security groups for the runners. They need no inbound rules."
+            "description": "AWS only, required there. Security groups for the runners. They need no inbound rules."
           },
           "instance_types": {
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9-]{0,15}\\.[a-z0-9]{1,16}$"
+              "pattern": "^([a-z][a-z0-9-]{0,15}\\.[a-z0-9]{1,16}|[a-z][a-z0-9]{1,5}-[a-z0-9-]{1,40})$"
             },
             "minItems": 1,
             "maxItems": 20,
-            "uniqueItems": true
+            "uniqueItems": true,
+            "description": "EC2 instance types or Compute Engine machine types, tried in order."
           },
           "architecture": {
             "type": "string",
@@ -29767,7 +29790,7 @@
             "type": "integer",
             "minimum": 20,
             "maximum": 2000,
-            "description": "Encrypted root volume size. Defaults to 100."
+            "description": "Root volume size. Defaults to 100."
           },
           "max_instances": {
             "type": "integer",
@@ -29786,8 +29809,8 @@
           },
           "image": {
             "type": "string",
-            "pattern": "^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200})$",
-            "description": "runs-on-full (default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal: an image Hakopod builds in this account with build-image. Or an AMI ID or resolve:ssm: parameter of your own Ubuntu image."
+            "pattern": "^(runs-on-full|hakopod-minimal|ami-[0-9a-f]{8,17}|resolve:ssm:/[A-Za-z0-9_./-]{1,200}|projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/images/(family/)?[a-z]([-a-z0-9]{0,61}[a-z0-9])?)$",
+            "description": "runs-on-full (AWS default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal (Google Cloud default): an image Hakopod builds in this account with build-image. Or your own Ubuntu image: an AMI ID or resolve:ssm: parameter on AWS, a projects/PROJECT/global/images/[family/]NAME path on Google Cloud."
           },
           "warm_pool": {
             "type": "integer",
@@ -29800,9 +29823,7 @@
           "name",
           "cloud",
           "region",
-          "role_arn",
           "subnet_ids",
-          "security_group_ids",
           "instance_types",
           "architecture",
           "spot",

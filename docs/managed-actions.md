@@ -860,6 +860,117 @@ its image and snapshot.
 Not verified yet: an actual spot interruption followed by a rerun, and a real
 GitHub job on a VM (the acceptance tests stop where `run.sh` would start).
 
+## Run jobs on Google Cloud VMs
+
+A capacity with `cloud = "gcp"` runs each job on a single-use Compute Engine
+VM in your own project, Spot by default. Everything under
+[Run jobs on AWS VMs](#run-jobs-on-aws-vms) applies (the pool settings, the
+single-use JIT configuration, the warm pool, reruns and cleanup), with these
+differences:
+
+- **Credentials.** Hakopod impersonates a service account in your project from
+  its own Google identity. That identity is the metadata server's service
+  account when Hakopod runs on a GCE VM or GKE, or the service account key file
+  named by `GOOGLE_APPLICATION_CREDENTIALS`. Workload identity federation files
+  and gcloud user credentials are not read yet. Runner VMs get no service
+  account, so a job holds no Google credential.
+- **Images.** RunsOn publishes no Compute Engine image, so the default is
+  `hakopod-minimal`: the Actions worker builds it in your project on its own the
+  first time, from Ubuntu 24.04, in about ten minutes. Until it is available,
+  launches are refused with a message. You can also name your own Ubuntu image
+  as `projects/PROJECT/global/images/NAME`, or an image family as
+  `projects/PROJECT/global/images/family/FAMILY`; a family is resolved to its
+  current image at launch.
+- **Shutdown.** Compute Engine stops a VM that powers itself off; it does not
+  delete it. Hakopod deletes a runner once its slot is done, and the sweep
+  deletes stopped runners that no longer belong to a slot.
+- **Spot preemption.** Compute Engine gives a Spot VM 30 seconds and then stops
+  it. Hakopod reads the zone's `compute.instances.preempted` operations to tell
+  a preemption from a normal shutdown, and checks the VM again when the job's
+  failure arrives, so the rerun does not depend on a sweep seeing the
+  preemption first.
+- **Network.** Runners get an ephemeral external IP for outbound traffic.
+  Nothing inbound is needed. `test` warns about firewall rules that let the
+  internet reach every VM on the network, such as the default network's
+  `default-allow-ssh`. Project-wide SSH keys are blocked on runner VMs.
+
+This has been tested against a fake Compute Engine API only, not yet against a
+real project. Try it with a small `max_instances` first.
+
+### Prepare the Google Cloud project
+
+Create a service account for Hakopod to impersonate, a custom role with only
+what the capacity uses, and let Hakopod's own identity impersonate it.
+`HAKOPOD_IDENTITY` is that identity's email, for example the GKE workload's
+service account.
+
+```sh
+PROJECT=my-project
+gcloud services enable compute.googleapis.com iamcredentials.googleapis.com --project "$PROJECT"
+gcloud iam service-accounts create hakopod-actions --project "$PROJECT"
+gcloud iam roles create hakopodActions --project "$PROJECT" --title "Hakopod Actions runners" --permissions \
+compute.instances.create,compute.instances.get,compute.instances.list,compute.instances.delete,\
+compute.instances.start,compute.instances.setLabels,compute.instances.setMetadata,\
+compute.instances.getSerialPortOutput,compute.disks.create,compute.disks.setLabels,compute.disks.useReadOnly,\
+compute.subnetworks.get,compute.subnetworks.use,compute.subnetworks.useExternalIp,\
+compute.zoneOperations.get,compute.zoneOperations.list,compute.globalOperations.get,\
+compute.images.create,compute.images.get,compute.images.list,compute.images.delete,\
+compute.images.useReadOnly,compute.images.getFromFamily,compute.firewalls.list
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member "serviceAccount:hakopod-actions@$PROJECT.iam.gserviceaccount.com" \
+  --role "projects/$PROJECT/roles/hakopodActions"
+gcloud iam service-accounts add-iam-policy-binding "hakopod-actions@$PROJECT.iam.gserviceaccount.com" \
+  --project "$PROJECT" --member "serviceAccount:$HAKOPOD_IDENTITY" \
+  --role roles/iam.serviceAccountTokenCreator
+```
+
+Hakopod checks the `hakopod-installation` label and the matching tags in
+instance metadata before it changes or deletes anything, as it checks tags on
+AWS. Compute Engine IAM cannot require a label on delete. To confine the role
+to Hakopod's VMs as well, add an IAM condition to the project binding:
+`resource.type != "compute.googleapis.com/Instance" || resource.name.extract("/instances/{name}").startsWith("hakopod-")`
+(not yet tried against a real project).
+Every runner, standby and image builder is named `hakopod-…`.
+
+### Define a Google Cloud capacity
+
+```toml
+[[capacity]]
+name = "gcp-spot"
+cloud = "gcp"
+project = "my-project"
+region = "us-central1"
+zones = ["us-central1-a", "us-central1-b", "us-central1-f"]   # tried in order
+service_account = "hakopod-actions@my-project.iam.gserviceaccount.com"
+subnet_ids = ["default"]                     # one subnetwork in the region
+instance_types = ["t2a-standard-2", "c4a-standard-2"]         # machine types, tried in order
+architecture = "arm64"                       # or amd64, with e2, n2d, c3 and similar types
+spot = true
+disk_gib = 100                               # pd-balanced, or hyperdisk-balanced on c4, c4a, n4 and similar series
+max_instances = 20
+image = "hakopod-minimal"                    # default; or projects/PROJECT/global/images/[family/]NAME
+warm_pool = 0
+environments = ["shop/production"]
+```
+
+`hakopod actions capacity test gcp-spot` impersonates the service account,
+reads the subnetwork and lists firewall rules. With `--launch`, it also starts
+and deletes one `e2-micro` (amd64) or `t2a-standard-1` (arm64). Each machine
+type is tried in each zone until Compute Engine has capacity, so list more
+than one of both where you can.
+
+| Setting | Allowed values |
+| --- | --- |
+| `project` | a project ID |
+| `zones` | 1–10 zones of `region` |
+| `service_account` | a service account email |
+| `subnet_ids` | exactly one subnetwork name in `region` |
+| `instance_types` | 1–20 machine types of the capacity's architecture |
+| `image` | `hakopod-minimal` (default) or `projects/…/global/images/[family/]…` |
+
+`role_arn`, `external_id` and `security_group_ids` are AWS settings and are
+refused on a Google Cloud capacity.
+
 ## Isolation and capacity
 
 Each single-job runner has its own Docker daemon inside gVisor. Docker actions,

@@ -450,7 +450,7 @@ export interface paths {
         put?: never;
         /**
          * Test an Actions capacity
-         * @description Installation administrators only. Assumes the role and reads the subnets and security groups. With launch, starts and terminates one small on-demand instance.
+         * @description Installation administrators only. Assumes the role and reads the subnets and security groups on AWS; impersonates the service account, reads the subnetwork and reports firewall rules open to the internet on Google Cloud. With launch, starts and terminates one small on-demand instance.
          */
         post: operations["testActionsCapacity"];
         delete?: never;
@@ -6616,30 +6616,40 @@ export interface components {
         };
         ActionsCapacity: {
             name: string;
-            /** @enum {string} */
-            cloud: "aws";
-            /** @description AWS region, for example eu-central-1. */
+            /**
+             * @description aws runs jobs on EC2; gcp on Compute Engine.
+             * @enum {string}
+             */
+            cloud: "aws" | "gcp";
+            /** @description AWS region, for example eu-central-1, or Google Cloud region, for example us-central1. */
             region: string;
-            /** @description IAM role Hakopod assumes from its own AWS credential chain. */
-            role_arn: string;
-            /** @description External ID for the role's trust policy. Omit to use the installation's generated one. */
+            /** @description AWS only, required there. IAM role Hakopod assumes from its own AWS credential chain. */
+            role_arn?: string;
+            /** @description AWS only. External ID for the role's trust policy. Omit to use the installation's generated one. */
             external_id?: string;
-            /** @description Subnets with outbound access to GitHub. Nothing inbound is needed. */
+            /** @description Google Cloud only, required there. The project runners are launched in. */
+            project?: string;
+            /** @description Google Cloud only, required there. Zones of the region to try, in order. */
+            zones?: string[];
+            /** @description Google Cloud only, required there. Service account Hakopod impersonates from its own Google identity; grant that identity Service Account Token Creator on it. Runner VMs get no service account. */
+            service_account?: string;
+            /** @description AWS: subnets with outbound access to GitHub. Google Cloud: one subnetwork name in the region. Nothing inbound is needed. */
             subnet_ids: string[];
-            /** @description Security groups for the runners. They need no inbound rules. */
-            security_group_ids: string[];
+            /** @description AWS only, required there. Security groups for the runners. They need no inbound rules. */
+            security_group_ids?: string[];
+            /** @description EC2 instance types or Compute Engine machine types, tried in order. */
             instance_types: string[];
             /** @enum {string} */
             architecture: "amd64" | "arm64";
             /** @description Launch on spot capacity; false launches on-demand only. */
             spot: boolean;
-            /** @description Encrypted root volume size. Defaults to 100. */
+            /** @description Root volume size. Defaults to 100. */
             disk_gib?: number;
             /** @description Hard ceiling on instances across every pool using this capacity. */
             max_instances: number;
             /** @description project/environment pairs allowed to use this capacity, or "*" for every environment. */
             environments: string[];
-            /** @description runs-on-full (default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal: an image Hakopod builds in this account with build-image. Or an AMI ID or resolve:ssm: parameter of your own Ubuntu image. */
+            /** @description runs-on-full (AWS default): RunsOn's public GitHub-compatible Ubuntu 24.04 image, newest at launch; needs disk_gib of at least 30. hakopod-minimal (Google Cloud default): an image Hakopod builds in this account with build-image. Or your own Ubuntu image: an AMI ID or resolve:ssm: parameter on AWS, a projects/PROJECT/global/images/[family/]NAME path on Google Cloud. */
             image?: string;
             /** @description Stopped on-demand standbys kept ready to start for a job; they count toward max_instances. Defaults to 0. */
             warm_pool?: number;

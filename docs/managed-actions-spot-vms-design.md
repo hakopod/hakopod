@@ -303,7 +303,9 @@ as deploys, belong in a pool with `spot_retries = 0` or on pods.
    GitHub. Still open: acceptance in CI against a real account with a small
    budget (one job on spot, one forced interruption, one orphan reaped), and
    the dashboard pages.
-2. GCP.
+2. GCP: implemented in `internal/actions/vm/gcp` and unit-tested against a
+   fake Compute Engine API. Still open: a run against a real project. See
+   "Compute Engine" below.
 3. Azure.
 4. Prebuilt images and a stopped warm pool: done for AWS (see "Images and warm
    pool"). Still open: a schedule for the pool size, and switching demand to
@@ -311,6 +313,42 @@ as deploys, belong in a pool with `spot_retries = 0` or on pods.
    stop mattering.
 
 Rough effort: two to three weeks for step 1, about a week each for 2 and 3.
+
+## Compute Engine
+
+The GCP provider implements the same `vm.Provider` over the Compute Engine
+REST API with the standard library, so no Google SDK module enters go.mod.
+
+- Identity: Hakopod's own token (metadata server, or a service account key
+  file) is exchanged with `generateAccessToken` for one of the capacity's
+  service account. This mirrors AssumeRole; no key is stored per capacity.
+  Workload identity federation (for a control plane on AWS) is left until
+  someone needs it.
+- Tags become labels for filtering. Label values allow only `[a-z0-9_-]`, so
+  values such as `application/service` or an image path are labelled by hash,
+  and the exact tags are kept in instance metadata (`hakopod-tags`) and in an
+  image's description. Listings filter by label and then compare exact tags.
+- Instance IDs are `zone/name`; names are `hakopod-<slot>-<random>`, which also
+  lets an IAM condition confine the role to Hakopod's VMs.
+- Launch tries every machine type in every zone in order. Insert operations
+  report `ZONE_RESOURCE_POOL_EXHAUSTED` or quota errors only once done, so each
+  attempt waits for its operation.
+- Spot VMs use `instanceTerminationAction = STOP`, so a preempted VM stays
+  readable. The zone's `compute.instances.preempted` operations mark it
+  interrupted. Compute Engine never deletes a VM on guest shutdown, so the
+  slot and the sweep delete stopped runners; the sweep now reaps stopped
+  instances that are not standbys or builders.
+- The notice is 30 seconds, an ACPI shutdown. The runner receives the shutdown
+  signal and GitHub fails the job at once, as measured on AWS, so there is no
+  IMDS watcher on GCP. Because the failure can now arrive before any sweep, the
+  `workflow_job` handler looks the slot's VM up before attaching the run.
+- Runners boot cloud-init user data from the `user-data` metadata key, which
+  Ubuntu's Compute Engine images read. The `hakopod-minimal` boot unit reads it
+  from the Compute Engine metadata server when the DMI product name says it is
+  on Compute Engine, and from IMDSv2 otherwise.
+- Cloud Run jobs were considered and rejected: no Docker daemon (Docker actions
+  and service containers fail), and a vCPU-hour costs several times a Spot
+  VM's.
 
 ## Open questions
 
