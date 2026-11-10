@@ -50,6 +50,23 @@ const settings = {
           environments: ['shop/production'],
           image: 'hakopod-minimal',
         },
+        {
+          name: 'azure-spot',
+          cloud: 'azure',
+          region: 'eastus',
+          subscription_id: '00000000-0000-0000-0000-000000000001',
+          resource_group: 'hakopod-runners',
+          zones: ['1', '2', '3'],
+          subnet_ids: [
+            '/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/hakopod-runners/providers/Microsoft.Network/virtualNetworks/hakopod-runners/subnets/runners',
+          ],
+          instance_types: ['Standard_D4as_v5', 'Standard_D4s_v5'],
+          architecture: 'amd64',
+          spot: true,
+          max_instances: 10,
+          environments: ['*'],
+          image: 'ubuntu-24.04',
+        },
       ],
 }
 const fixture = { requests: [] as { method: string; path: string; body?: unknown }[] }
