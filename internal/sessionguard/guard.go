@@ -60,7 +60,13 @@ func Install() error {
 }
 
 // runCommand checks the immutable exec target before the helper reads caller bytes.
+// allowIPSocketsFlag lets the worker open IP sockets; NetworkPolicy limits reachability.
+const allowIPSocketsFlag = "--allow-ip-sockets"
+
 func runCommand(args []string) ([]string, error) {
+	if len(args) >= 4 && args[0] == "run" && args[1] == allowIPSocketsFlag && args[2] == "--" {
+		return args[3:], nil
+	}
 	if len(args) >= 3 && args[0] == "run" && args[1] == "--" {
 		return args[2:], nil
 	}
@@ -73,7 +79,7 @@ func runCommand(args []string) ([]string, error) {
 		}
 		return args[8:], nil
 	}
-	return nil, fmt.Errorf("use run -- with the fixed command, or provide expected pod UID, generation and ready token before --")
+	return nil, fmt.Errorf("use run [--allow-ip-sockets] -- with the fixed command, or provide expected pod UID, generation and ready token before --")
 }
 func Run(args []string) error {
 	if len(args) == 1 && args[0] == "install" {
@@ -87,5 +93,5 @@ func Run(args []string) error {
 	if len(args) >= 9 && args[1] == "--expected-pod-uid" {
 		readyToken = args[6]
 	}
-	return execute(command, readyToken)
+	return execute(command, readyToken, args[1] == allowIPSocketsFlag)
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"syscall"
 	"testing"
@@ -22,7 +23,7 @@ func TestSessionGuardSocketIsolation(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
-		if err := restrictSockets(); err != nil {
+		if err := restrictSockets(false); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(3)
 		}
@@ -94,14 +95,11 @@ func TestSessionGuardSocketIsolation(t *testing.T) {
 
 // Evaluate every filter branch without executing a forbidden compatibility call.
 func TestSessionGuardSocketFilterBranches(t *testing.T) {
-	filter, err := networkFilter()
-	if err != nil {
-		t.Fatal(err)
-	}
 	arch := uint32(unix.AUDIT_ARCH_X86_64)
 	if runtime.GOARCH == "arm64" {
 		arch = unix.AUDIT_ARCH_AARCH64
 	}
+	var filter []unix.SockFilter
 	evaluate := func(a, n, f uint32) uint32 {
 		var accumulator uint32
 		for pc := 0; pc < len(filter); pc++ {
@@ -139,6 +137,11 @@ func TestSessionGuardSocketFilterBranches(t *testing.T) {
 		t.Fatal("filter fell through")
 		return 0
 	}
+	eperm := unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)
+	var err error
+	if filter, err = networkFilter(false); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct{ arch, number, family, want uint32 }{
 		{0, uint32(unix.SYS_SOCKET), unix.AF_UNIX, unix.SECCOMP_RET_KILL_PROCESS},
 		{arch, 0x40000000 | uint32(unix.SYS_SOCKET), unix.AF_UNIX, unix.SECCOMP_RET_KILL_PROCESS},
@@ -154,5 +157,56 @@ func TestSessionGuardSocketFilterBranches(t *testing.T) {
 		if got := evaluate(tc.arch, tc.number, tc.family); got != tc.want {
 			t.Fatalf("filter result %x; expected %x", got, tc.want)
 		}
+	}
+	if filter, err = networkFilter(true); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ arch, number, family, want uint32 }{
+		{0, uint32(unix.SYS_SOCKET), unix.AF_INET, unix.SECCOMP_RET_KILL_PROCESS},
+		{arch, 0x40000000 | uint32(unix.SYS_SOCKET), unix.AF_INET, unix.SECCOMP_RET_KILL_PROCESS},
+		{arch, uint32(unix.SYS_SOCKET), unix.AF_UNIX, unix.SECCOMP_RET_ALLOW},
+		{arch, uint32(unix.SYS_SOCKET), unix.AF_INET, unix.SECCOMP_RET_ALLOW},
+		{arch, uint32(unix.SYS_SOCKET), unix.AF_INET6, unix.SECCOMP_RET_ALLOW},
+		{arch, uint32(unix.SYS_SOCKETPAIR), unix.AF_UNIX, unix.SECCOMP_RET_ALLOW},
+		{arch, uint32(unix.SYS_SOCKET), unix.AF_NETLINK, eperm},
+		{arch, uint32(unix.SYS_SOCKET), unix.AF_PACKET, eperm},
+		{arch, uint32(unix.SYS_SOCKET), unix.AF_VSOCK, eperm},
+		{arch, uint32(unix.SYS_SOCKETPAIR), unix.AF_NETLINK, eperm},
+		{arch, uint32(unix.SYS_IO_URING_SETUP), 0, eperm},
+		{arch, uint32(unix.SYS_IO_URING_ENTER), 0, eperm},
+		{arch, uint32(unix.SYS_IO_URING_REGISTER), 0, eperm},
+		{arch, uint32(unix.SYS_READ), 0, unix.SECCOMP_RET_ALLOW},
+	} {
+		if got := evaluate(tc.arch, tc.number, tc.family); got != tc.want {
+			t.Fatalf("allow-ip filter result %x for family %d; expected %x", got, tc.family, tc.want)
+		}
+	}
+}
+
+// The default filter must stay byte-identical to the pre-flag program.
+func TestSessionGuardDefaultFilterUnchanged(t *testing.T) {
+	arch := uint32(unix.AUDIT_ARCH_X86_64)
+	if runtime.GOARCH == "arm64" {
+		arch = unix.AUDIT_ARCH_AARCH64
+	}
+	ld := func(k uint32) unix.SockFilter {
+		return unix.SockFilter{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: k}
+	}
+	eq := func(k uint32, jt, jf uint8) unix.SockFilter {
+		return unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: k, Jt: jt, Jf: jf}
+	}
+	ret := func(k uint32) unix.SockFilter { return unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: k} }
+	want := []unix.SockFilter{
+		ld(4), eq(arch, 1, 0), ret(unix.SECCOMP_RET_KILL_PROCESS), ld(0),
+		{Code: unix.BPF_JMP | unix.BPF_JSET | unix.BPF_K, K: 0x40000000, Jt: 0, Jf: 1},
+		ret(unix.SECCOMP_RET_KILL_PROCESS),
+		eq(uint32(unix.SYS_IO_URING_SETUP), 8, 0), eq(uint32(unix.SYS_IO_URING_ENTER), 7, 0),
+		eq(uint32(unix.SYS_IO_URING_REGISTER), 6, 0), eq(uint32(unix.SYS_SOCKET), 2, 0),
+		eq(uint32(unix.SYS_SOCKETPAIR), 1, 0), ret(unix.SECCOMP_RET_ALLOW),
+		ld(16), eq(unix.AF_UNIX, 0, 1), ret(unix.SECCOMP_RET_ALLOW), ret(unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)),
+	}
+	got, err := networkFilter(false)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatal("default filter changed", err, got)
 	}
 }

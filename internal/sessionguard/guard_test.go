@@ -29,3 +29,24 @@ func TestSessionGuardChecksExecIdentityBeforeCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionGuardAllowIPSocketsFlag(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"run", "--", "x"}, []string{"x"}},
+		{[]string{"run", "--allow-ip-sockets", "--", "x"}, []string{"x"}},
+		{[]string{"run", "--", "x", "--allow-ip-sockets"}, []string{"x", "--allow-ip-sockets"}},
+		{[]string{"run", "--", "--allow-ip-sockets"}, []string{"--allow-ip-sockets"}},
+	} {
+		if got, err := runCommand(tc.args); err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Fatal("valid run rejected", tc.args, got, err)
+		}
+	}
+	for _, bad := range [][]string{{"run", "--allow-ip-sockets"}, {"run", "--allow-ip-sockets", "--"}, {"run", "--allow-ip-sockets", "x"}, {"run", "--allow-ip", "--", "x"}, {"run", "--allow-ip-sockets", "--allow-ip-sockets", "--", "x"}, {"run", "--other", "--", "x"}} {
+		if _, err := runCommand(bad); err == nil {
+			t.Fatal("invalid run accepted", bad)
+		}
+	}
+}
