@@ -148,6 +148,9 @@ func (s *Server) testActionsCapacity(w http.ResponseWriter, r *http.Request) {
 	out["warnings"] = warnings
 	if in.Launch {
 		tiny := map[string]string{"amd64": "t3.micro", "arm64": "t4g.micro"}[c.Architecture]
+		if c.Cloud == "gcp" {
+			tiny = map[string]string{"amd64": "e2-micro", "arm64": "t2a-standard-1"}[c.Architecture]
+		}
 		i, err := p.Launch(ctx, vm.LaunchInput{Name: "test-" + store.NewID()[:12], InstanceTypes: []string{tiny}, UserData: "#!/bin/bash\nshutdown -h now\n",
 			Tags: map[string]string{vm.TagCapacity: c.Name, vm.TagSlot: "test"}})
 		if err != nil {

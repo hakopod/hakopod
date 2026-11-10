@@ -14,6 +14,7 @@ import (
 	"github.com/hakopod/hakopod/internal/actions"
 	"github.com/hakopod/hakopod/internal/actions/vm"
 	vmaws "github.com/hakopod/hakopod/internal/actions/vm/aws"
+	vmgcp "github.com/hakopod/hakopod/internal/actions/vm/gcp"
 	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -66,6 +67,9 @@ func (s *Server) actionsVMProvider(ctx context.Context, c store.ActionsCapacity)
 	var p vm.Provider
 	if s.actionsVMClient != nil {
 		p, err = s.actionsVMClient(ctx, c, installation)
+	} else if c.Cloud == "gcp" {
+		p, err = vmgcp.New(ctx, vmgcp.Config{Installation: installation, Project: c.Project, Region: c.Region, Zones: c.Zones,
+			Subnetwork: c.SubnetIDs[0], ServiceAccount: c.ServiceAccount, Architecture: c.Architecture, DiskGiB: c.DiskGiB})
 	} else {
 		p, err = vmaws.New(ctx, vmaws.Config{Installation: installation, Region: c.Region, RoleARN: c.RoleARN, ExternalID: c.ExternalID,
 			SubnetIDs: c.SubnetIDs, SecurityGroupIDs: c.SecurityGroupIDs, Architecture: c.Architecture, DiskGiB: c.DiskGiB})
@@ -540,7 +544,9 @@ func (s *Server) reapActionsCapacity(ctx context.Context, c store.ActionsCapacit
 		return err
 	}
 	for _, i := range list {
-		if i.Gone() {
+		// A stopped instance is reaped too: Compute Engine keeps a runner
+		// that powered itself off until it is deleted.
+		if i.State == "terminated" || i.State == "shutting-down" || i.State == "stopping" {
 			continue
 		}
 		if reason := reapReason(i, slots, now); reason != "" {
