@@ -1,22 +1,23 @@
-Hakopod 0.1.0-alpha.84 can run Managed Actions jobs on single-use AWS VMs, and stops unrelated Go module changes from holding managed database runtimes.
+Hakopod 0.1.0-alpha.85 fixes Managed Actions warm pools and spot reruns found by running real GitHub jobs on AWS VMs.
 
-- **Managed Actions on AWS VMs (preview).** An administrator adds an Actions capacity (a role in your AWS account, subnets, security groups, instance types and a hard instance limit) with `hakopod actions capacity set`, and a GitHub pool opts in with `actions.capacity`. Each job then runs on its own EC2 instance, spot by default, and the instance is terminated after the job. Jobs lost to a spot interruption are rerun up to `actions.spot_retries` times on on-demand capacity. Hakopod only terminates instances tagged with its installation ID, and the VM receives only the job's single-use runner configuration. Instances boot from RunsOn's public build of GitHub's Ubuntu 24.04 runner image by default, or from your own AMI, or from `hakopod-minimal`, a small image Hakopod builds in your account with `hakopod actions capacity build-image`. A capacity can keep a `warm_pool` of stopped on-demand instances that are started for one job each. In us-east-2 on t4g.small, the runner started 16 s after a cold launch from the default image and 14 s after starting a standby, against 73 s on stock Ubuntu. Launch, standby claims and image builds have run against a real AWS account; a full GitHub job on a VM has not yet: try it with a small `max_instances` first. See docs/managed-actions.md.
-- **Go module changes no longer hold managed runtimes.** A go.mod or go.sum change now requires a new native qualification only when it changes what a managed runtime's own Go binaries compile. Today that is only MyDuck's storage helper.
+- **Warm pool claims work.** Claiming a stopped standby re-sent its capacity tag, which the documented IAM policy does not allow. Every claim was refused, so the standby was terminated and the job launched cold. Claims now write only the tags that change. When the pool holds one standby too many, Hakopod now terminates one that is still booting and keeps the ready ones.
+- **Spot interruptions are caught at the two-minute notice.** The runner VM watches for EC2's interruption notice and stops the runner 30 s before the reclaim, so GitHub fails the job while the VM is still up. Hakopod reads the instance's spot request, so the interruption is recorded before the job's failure arrives; before, that failure could arrive first and the job was then never rerun. Interruptions sent by AWS FIS are now recognised too.
+- **Measured on a real AWS account and real GitHub jobs** (us-east-2, t4g.small, default image): a job finished 37 s after dispatch on a cold VM and 35 s on a warm standby or spot instance. After an FIS interruption, the job was rerun on on-demand capacity within 2m32s.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.84/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.84
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.85/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.85
 ```
 
-Upgrade an alpha.82 or alpha.83 installation:
+Upgrade an alpha.83 or alpha.84 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.84/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.84
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.85/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.85
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
