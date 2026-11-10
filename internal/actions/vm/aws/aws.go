@@ -246,16 +246,17 @@ func (c *Client) State(ctx context.Context, id string) (vm.Instance, error) {
 	return vm.Instance{}, vm.ErrNotFound
 }
 
-// reclaimed gives spot instances the spot service took back the reclaim
-// reason. An instance interrupted by AWS FIS reads as
+// reclaimed gives spot instances the spot service took back, or is about to,
+// the reclaim reason. An instance interrupted by AWS FIS reads as
 // Client.UserInitiatedShutdown, like one Hakopod terminated; only its spot
-// request tells them apart. Instances that powered themselves off are not
-// looked up.
+// request tells them apart. A running instance under its two-minute notice
+// is marked too, so the eviction is on record before its job fails.
+// Instances that powered themselves off are not looked up.
 func (c *Client) reclaimed(ctx context.Context, found []ec2Instance) error {
 	p := url.Values{"Filter.1.Name": {"spot-instance-request-id"}}
 	n := 0
 	for _, i := range found {
-		if i.Lifecycle == "spot" && i.SpotRequest != "" && i.Reason == "Client.UserInitiatedShutdown" {
+		if i.Lifecycle == "spot" && i.SpotRequest != "" && (i.State == "running" || i.Reason == "Client.UserInitiatedShutdown") {
 			n++
 			p.Set(fmt.Sprintf("Filter.1.Value.%d", n), i.SpotRequest)
 		}
@@ -276,7 +277,7 @@ func (c *Client) reclaimed(ctx context.Context, found []ec2Instance) error {
 	taken := map[string]bool{}
 	for _, r := range out.Requests {
 		switch r.Status {
-		case "instance-terminated-by-price", "instance-terminated-no-capacity", "instance-terminated-capacity-oversubscribed", "instance-terminated-by-experiment":
+		case "marked-for-termination", "instance-terminated-by-price", "instance-terminated-no-capacity", "instance-terminated-capacity-oversubscribed", "instance-terminated-by-experiment":
 			taken[r.ID] = true
 		}
 	}
