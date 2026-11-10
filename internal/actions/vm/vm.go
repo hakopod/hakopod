@@ -31,6 +31,9 @@ const (
 	// ImageHakopodMinimal is an image Hakopod builds in the customer's
 	// account: stock Ubuntu with Docker, the pinned runner and a boot unit.
 	ImageHakopodMinimal = "hakopod-minimal"
+	// ImageUbuntu is the Azure default: Canonical's Ubuntu 24.04 LTS from
+	// the marketplace, with Docker and the runner installed at boot.
+	ImageUbuntu = "ubuntu-24.04"
 )
 
 // Instance states use EC2's names: pending, running, shutting-down,

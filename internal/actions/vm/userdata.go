@@ -67,13 +67,32 @@ install -m 0600 -o runner -g runner /dev/null .jitconfig
 cat > .jitconfig <<'HAKOPOD_JIT'
 {{.Config}}
 HAKOPOD_JIT
-# A spot VM gets two minutes' notice. The runner is stopped half a minute
+# Azure gives a Spot VM at least 30 seconds' notice, as a Preempt scheduled
+# event naming the VM, so the runner is stopped at once.
+azure_spot_watch() {
+  local md=http://169.254.169.254/metadata name
+  [ "$(curl -fsS -H Metadata:true "$md/instance/compute/priority?api-version=2021-02-01&format=text")" = Spot ] || return
+  name=$(curl -fsS -H Metadata:true "$md/instance/compute/name?api-version=2021-02-01&format=text") || return
+  until curl -fsS -H Metadata:true "$md/scheduledevents?api-version=2020-07-01" | python3 -c '
+import json, sys
+events = json.load(sys.stdin).get("Events", [])
+sys.exit(not any(e.get("EventType") == "Preempt" and sys.argv[1] in e.get("Resources", []) for e in events))' "$name"; do
+    sleep 5
+  done
+  say spot eviction notice, stopping the runner
+  pkill -INT -f Runner.Listener
+}
+# An EC2 spot VM gets two minutes' notice. The runner is stopped half a minute
 # before the end, so GitHub fails the job then instead of waiting to miss the
 # runner, and the rerun starts sooner.
 spot_watch() {
   trap - EXIT
   set +e
   local a at
+  if grep -qs 'Microsoft Corporation' /sys/class/dmi/id/sys_vendor || grep -qs 7783-7084-3265-9085-8269-3286-77 /sys/class/dmi/id/chassis_asset_tag; then
+    azure_spot_watch
+    return
+  fi
   imds() {
     local t
     t=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token) &&

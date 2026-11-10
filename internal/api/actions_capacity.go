@@ -50,6 +50,10 @@ func (s *Server) buildActionsCapacityImage(w http.ResponseWriter, r *http.Reques
 		problem(w, 404, "not_found", "No Actions capacity has this name.")
 		return
 	}
+	if c.Cloud == "azure" {
+		problem(w, 400, "invalid_request", "hakopod-minimal images are not supported on Azure yet.")
+		return
+	}
 	if c.Image != vm.ImageHakopodMinimal {
 		problem(w, 400, "invalid_request", "Set the capacity's image to hakopod-minimal before building it.")
 		return
@@ -122,7 +126,13 @@ func (s *Server) testActionsCapacity(w http.ResponseWriter, r *http.Request) {
 		problem(w, 404, "not_found", "No Actions capacity has this name.")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	// Azure reports a VM created only once it has booted far enough to
+	// report in, which takes a minute or more.
+	timeout := 45 * time.Second
+	if c.Cloud == "azure" {
+		timeout = 4 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	out := map[string]any{"capacity": c.Name, "external_id": c.ExternalID, "warnings": []string{}}
 	refuse := func(err error) {
@@ -150,6 +160,8 @@ func (s *Server) testActionsCapacity(w http.ResponseWriter, r *http.Request) {
 		tiny := map[string]string{"amd64": "t3.micro", "arm64": "t4g.micro"}[c.Architecture]
 		if c.Cloud == "gcp" {
 			tiny = map[string]string{"amd64": "e2-micro", "arm64": "t2a-standard-1"}[c.Architecture]
+		} else if c.Cloud == "azure" {
+			tiny = map[string]string{"amd64": "Standard_B1s", "arm64": "Standard_B2pts_v2"}[c.Architecture]
 		}
 		i, err := p.Launch(ctx, vm.LaunchInput{Name: "test-" + store.NewID()[:12], InstanceTypes: []string{tiny}, UserData: "#!/bin/bash\nshutdown -h now\n",
 			Tags: map[string]string{vm.TagCapacity: c.Name, vm.TagSlot: "test"}})

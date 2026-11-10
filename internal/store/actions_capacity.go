@@ -19,7 +19,8 @@ import (
 // ActionsCapacity is one cloud account where GitHub pools can run each job on a
 // single-use VM. It holds no credential: on AWS, Hakopod's own identity
 // assumes RoleARN with the external ID; on Google Cloud it impersonates
-// ServiceAccount. Only identifiers are stored.
+// ServiceAccount; on Azure it holds a role on ResourceGroup. Only identifiers
+// are stored.
 type ActionsCapacity struct {
 	Name             string   `json:"name" toml:"name"`
 	Cloud            string   `json:"cloud" toml:"cloud"`
@@ -34,14 +35,20 @@ type ActionsCapacity struct {
 	Project        string   `json:"project,omitempty" toml:"project,omitempty"`
 	Zones          []string `json:"zones,omitempty" toml:"zones,omitempty"`
 	ServiceAccount string   `json:"service_account,omitempty" toml:"service_account,omitempty"`
+	// Azure: the subscription and resource group runners are launched in.
+	// Region is an Azure location, Zones optional availability zones such as
+	// "1", and SubnetIDs one subnet resource ID.
+	SubscriptionID string   `json:"subscription_id,omitempty" toml:"subscription_id,omitempty"`
+	ResourceGroup  string   `json:"resource_group,omitempty" toml:"resource_group,omitempty"`
 	InstanceTypes  []string `json:"instance_types" toml:"instance_types"`
 	Architecture   string   `json:"architecture" toml:"architecture"`
 	Spot           bool     `json:"spot" toml:"spot"`
 	DiskGiB        int64    `json:"disk_gib" toml:"disk_gib"`
 	MaxInstances   int64    `json:"max_instances" toml:"max_instances"`
 	// Image is runs-on-full (the AWS default), hakopod-minimal (the Google
-	// Cloud default), an AMI ID or a resolve:ssm: parameter holding one, or a
-	// Compute Engine image or image family path.
+	// Cloud default), an AMI ID or a resolve:ssm: parameter holding one, a
+	// Compute Engine image or image family path, or on Azure ubuntu-24.04 (the
+	// default), a marketplace URN or an image resource ID.
 	Image string `json:"image" toml:"image"`
 	// WarmPool keeps this many stopped on-demand instances ready to start
 	// for a job. They count toward MaxInstances.
@@ -74,6 +81,13 @@ var (
 	gcpName          = regexp.MustCompile(`^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`)
 	gcpMachineType   = regexp.MustCompile(`^[a-z][a-z0-9]{1,5}-[a-z0-9-]{1,40}$`)
 	gcpImage         = regexp.MustCompile(`^(hakopod-minimal|projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/global/images/(family/)?[a-z]([-a-z0-9]{0,61}[a-z0-9])?)$`)
+	azureGUID        = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	azureGroup       = regexp.MustCompile(`^[-\w._()]{0,89}[-\w_()]$`)
+	azureRegion      = regexp.MustCompile(`^[a-z][a-z0-9]{2,30}$`)
+	azureZone        = regexp.MustCompile(`^[1-9]$`)
+	azureSubnet      = regexp.MustCompile(`^/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[-\w._()]{1,90}/providers/Microsoft\.Network/virtualNetworks/[-\w.]{2,64}/subnets/[-\w.]{1,80}$`)
+	azureVMSize      = regexp.MustCompile(`^Standard_[A-Za-z0-9_]{1,40}$`)
+	azureImage       = regexp.MustCompile(`^(ubuntu-24\.04|[A-Za-z0-9][-A-Za-z0-9_.]{0,63}(:[-A-Za-z0-9_.]{1,64}){3}|/subscriptions/[-\w.()/]{1,400})$`)
 )
 
 func distinct(values []string, min, max int, valid *regexp.Regexp) bool {
@@ -107,8 +121,12 @@ func (c *ActionsCapacity) normalize() error {
 		if err := c.normalizeAWS(bad); err != nil {
 			return err
 		}
+	case "azure":
+		if err := c.normalizeAzure(bad); err != nil {
+			return err
+		}
 	default:
-		return bad("cloud", "choose aws or gcp")
+		return bad("cloud", "choose aws, gcp or azure")
 	}
 	if c.Architecture != "amd64" && c.Architecture != "arm64" {
 		return bad("architecture", "choose amd64 or arm64")
@@ -141,8 +159,8 @@ func (c *ActionsCapacity) normalize() error {
 }
 
 func (c *ActionsCapacity) normalizeAWS(bad func(field, text string) error) error {
-	if c.Project != "" || len(c.Zones) > 0 || c.ServiceAccount != "" {
-		return bad("cloud", "project, zones and service_account are Google Cloud settings")
+	if c.Project != "" || len(c.Zones) > 0 || c.ServiceAccount != "" || c.SubscriptionID != "" || c.ResourceGroup != "" {
+		return bad("cloud", "project, zones, service_account, subscription_id and resource_group are Google Cloud and Azure settings")
 	}
 	if !awsRegion.MatchString(c.Region) {
 		return bad("region", "use an AWS region such as eu-central-1")
@@ -174,8 +192,8 @@ func (c *ActionsCapacity) normalizeAWS(bad func(field, text string) error) error
 // normalizeGCP checks a Compute Engine capacity. Runners get no inbound
 // firewall rule of their own, so security_group_ids has no meaning here.
 func (c *ActionsCapacity) normalizeGCP(bad func(field, text string) error) error {
-	if c.RoleARN != "" || c.ExternalID != "" || len(c.SecurityGroupIDs) > 0 {
-		return bad("cloud", "role_arn, external_id and security_group_ids are AWS settings")
+	if c.RoleARN != "" || c.ExternalID != "" || len(c.SecurityGroupIDs) > 0 || c.SubscriptionID != "" || c.ResourceGroup != "" {
+		return bad("cloud", "role_arn, external_id, security_group_ids, subscription_id and resource_group are AWS and Azure settings")
 	}
 	if !gcpRegion.MatchString(c.Region) {
 		return bad("region", "use a Google Cloud region such as us-central1")
@@ -209,6 +227,46 @@ func (c *ActionsCapacity) normalizeGCP(bad func(field, text string) error) error
 	return nil
 }
 
+// normalizeAzure checks an Azure capacity. Runners get a Standard public IP,
+// which admits nothing inbound, so there are no security groups to name.
+// Warm pools and hakopod-minimal images are not built for Azure yet.
+func (c *ActionsCapacity) normalizeAzure(bad func(field, text string) error) error {
+	if c.RoleARN != "" || c.ExternalID != "" || len(c.SecurityGroupIDs) > 0 || c.Project != "" || c.ServiceAccount != "" {
+		return bad("cloud", "role_arn, external_id, security_group_ids, project and service_account are AWS and Google Cloud settings")
+	}
+	if !azureGUID.MatchString(c.SubscriptionID) {
+		return bad("subscription_id", "use a subscription ID, a GUID")
+	}
+	if !azureGroup.MatchString(c.ResourceGroup) {
+		return bad("resource_group", "use a resource group name: 1–90 letters, digits, - _ . ( ), not ending in a period")
+	}
+	if !azureRegion.MatchString(c.Region) {
+		return bad("region", "use an Azure location such as eastus")
+	}
+	if len(c.Zones) > 0 && !distinct(c.Zones, 1, 3, azureZone) {
+		return bad("zones", "list up to 3 distinct availability zones such as \"1\", or none")
+	}
+	if !distinct(c.SubnetIDs, 1, 1, azureSubnet) {
+		return bad("subnet_ids", "give one subnet resource ID: /subscriptions/…/resourceGroups/…/providers/Microsoft.Network/virtualNetworks/…/subnets/…")
+	}
+	if !distinct(c.InstanceTypes, 1, 20, azureVMSize) {
+		return bad("instance_types", "list 1–20 distinct VM sizes such as Standard_D4as_v5")
+	}
+	if c.WarmPool != 0 {
+		return bad("warm_pool", "warm pools are not supported on Azure yet; use 0")
+	}
+	if c.Image == "" {
+		c.Image = vm.ImageUbuntu
+	}
+	if c.Image == vm.ImageHakopodMinimal || c.Image == vm.ImageRunsOnFull {
+		return bad("image", c.Image+" is not supported on Azure yet; use ubuntu-24.04, a marketplace URN or an image resource ID")
+	}
+	if !azureImage.MatchString(c.Image) {
+		return bad("image", "use ubuntu-24.04, a publisher:offer:sku:version URN or an image resource ID")
+	}
+	return nil
+}
+
 // Allows reports whether a pool in project/environment may use this capacity.
 func (c ActionsCapacity) Allows(project, environment string) bool {
 	return slices.Contains(c.Environments, "*") || slices.Contains(c.Environments, project+"/"+environment)
@@ -221,12 +279,13 @@ func (v ActionsCapacitySettings) Find(name string) (ActionsCapacity, bool) {
 			if c.ExternalID == "" {
 				c.ExternalID = v.ExternalID
 			}
-			if c.Image == "" && c.Cloud == "gcp" {
-				c.Image = vm.ImageHakopodMinimal
-			} else if c.Image == "" {
+			if c.Image == "" {
+				c.Image = map[string]string{"gcp": vm.ImageHakopodMinimal, "azure": vm.ImageUbuntu}[c.Cloud]
+			}
+			if c.Image == "" {
 				c.Image = vm.ImageRunsOnFull
 			}
-			if c.Cloud == "gcp" {
+			if c.Cloud != "aws" {
 				c.ExternalID = ""
 			}
 			return c, true
@@ -321,7 +380,7 @@ func (s *Store) PutActionsCapacity(ctx context.Context, p Principal, capacities 
 	}
 	summary := []map[string]any{}
 	for _, c := range capacities {
-		summary = append(summary, map[string]any{"name": c.Name, "cloud": c.Cloud, "region": c.Region, "role_arn": c.RoleARN, "spot": c.Spot, "max_instances": c.MaxInstances, "image": c.Image, "warm_pool": c.WarmPool, "environments": c.Environments})
+		summary = append(summary, map[string]any{"name": c.Name, "cloud": c.Cloud, "region": c.Region, "role_arn": c.RoleARN, "subscription_id": c.SubscriptionID, "resource_group": c.ResourceGroup, "spot": c.Spot, "max_instances": c.MaxInstances, "image": c.Image, "warm_pool": c.WarmPool, "environments": c.Environments})
 	}
 	if _, err = tx.Exec(ctx, "INSERT INTO audit_events(identity_id,key_id,action,resource,metadata) VALUES($1,$2,'settings.actions_capacity','installation',$3)", p.ID, p.KeyID, JSON(map[string]any{"revision": rev, "capacities": summary})); err != nil {
 		return ActionsCapacitySettings{}, 0, err
