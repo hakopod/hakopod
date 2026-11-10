@@ -67,6 +67,27 @@ install -m 0600 -o runner -g runner /dev/null .jitconfig
 cat > .jitconfig <<'HAKOPOD_JIT'
 {{.Config}}
 HAKOPOD_JIT
+# A spot VM gets two minutes' notice. The runner is stopped half a minute
+# before the end, so GitHub fails the job then instead of waiting to miss the
+# runner, and the rerun starts sooner.
+spot_watch() {
+  trap - EXIT
+  set +e
+  local a at
+  imds() {
+    local t
+    t=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token) &&
+      curl -fsS -H "X-aws-ec2-metadata-token: $t" "http://169.254.169.254/latest/meta-data/$1"
+  }
+  [ "$(imds instance-life-cycle)" = spot ] || return
+  until a=$(imds spot/instance-action 2>/dev/null); do sleep 5; done
+  at=$(date -d "$(sed -n 's/.*"time" *: *"\([^"]*\)".*/\1/p' <<<"$a")" +%s) || at=$(($(date +%s) + 120))
+  say "spot interruption notice for $(date -u -d "@$at" +%TZ)"
+  sleep $((at - 30 - $(date +%s) > 0 ? at - 30 - $(date +%s) : 0))
+  say stopping the runner before the spot interruption
+  pkill -INT -f Runner.Listener
+}
+spot_watch &
 say starting the runner
 timeout --kill-after=1m {{.Minutes}}m sudo -u runner -H ./run.sh --jitconfig "$(cat .jitconfig)"
 {{- else -}}
