@@ -219,6 +219,8 @@ ALPHA85_CHAIN_BASE = {'tag': 'v0.1.0-alpha.84', 'commit': '55fc9dd255fdd1e32d0a0
 ALPHA85_CHAIN_PREDECESSORS = {'myduck': '3ca0d9b240ec1ad6251869349d117e926c826fcf29e4cfdc27232782d4193c86', 'oracle-free': 'b47bd1de5843009223ff6a204f8d14b5951a88a8598c21405489acdb6b57dbc2', 'vitess': '981ca19c2e59dd47cda6dea05d029ec66c9ca4d5b433603b1e186576cc6bba94'}
 ALPHA86_CHAIN_BASE = {'tag': 'v0.1.0-alpha.85', 'commit': 'd948e9b360eb2202df5228a565c987fd95dc3a02'}
 ALPHA86_CHAIN_PREDECESSORS = {'myduck': '150b19e47f30daf0dcaf4b9075ffb4f55940e9e66fa3cfc92dfb918669d034ee', 'oracle-free': 'a768e75f0aa7cd837f2c113c5f50079cb5460e715219fea24a25e287475f635f', 'vitess': 'ba93896305a73e54d6d0b2fce810e5acfc6f7fa1e1b0b3c6a9ff817cb76bc97e'}
+ALPHA89_CHAIN_BASE = {'tag': 'v0.1.0-alpha.88', 'commit': '7b5a789792179cee6e35270627a6ce88bac242e6'}
+ALPHA89_CHAIN_PREDECESSORS = {'myduck': '5a28a735561367a353ea91be045ae15e416de8d948bfc6412e68c34c76da904b', 'oracle-free': '1cd19937ceebe820959800bf59ff78c353709ae051dffcedf07cc5c2e4a67dfa', 'vitess': '2f1a5fee4a8e007178f33bd4b8a0d4c8b5cf5803c654f11b198402825424151b'}
 # Each reviewed release names its published predecessor review, oldest first.
 # Built on each call so the constants stay the single source of truth.
 def chain_links():
@@ -249,6 +251,7 @@ def chain_links():
         'v0.1.0-alpha.84': (ALPHA84_CHAIN_BASE, ALPHA84_CHAIN_PREDECESSORS, 'source-compatibility-alpha83.json'),
         'v0.1.0-alpha.85': (ALPHA85_CHAIN_BASE, ALPHA85_CHAIN_PREDECESSORS, 'source-compatibility-alpha84.json'),
         'v0.1.0-alpha.86': (ALPHA86_CHAIN_BASE, ALPHA86_CHAIN_PREDECESSORS, 'source-compatibility-alpha85.json'),
+        'v0.1.0-alpha.89': (ALPHA89_CHAIN_BASE, ALPHA89_CHAIN_PREDECESSORS, 'source-compatibility-alpha86.json'),
     }
 
 # Go packages each runtime image ships that are compiled against this
