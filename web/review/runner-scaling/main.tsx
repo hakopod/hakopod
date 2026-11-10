@@ -119,6 +119,16 @@ const answers: Record<string, unknown> = {
   '/api/placement/nodes': {
     items: [{ name: 'runner-node-1', architecture: 'amd64', available: true, reason: '' }],
   },
+  '/api/settings/actions-capacity': {
+    external_id: 'hakopod-0123456789abcdef0123456789abcdef',
+    installation_id: 'fedcba9876543210fedcba9876543210',
+    revision: 1,
+    images: {},
+    capacities: [
+      { name: 'aws-spot', cloud: 'aws', region: 'us-east-1', role_arn: 'arn:aws:iam::123456789012:role/hakopod-actions', subnet_ids: ['subnet-0abc1234'], security_group_ids: ['sg-0abc1234'], instance_types: ['c7i.xlarge', 'c6i.xlarge', 'm7i.xlarge'], architecture: 'amd64', spot: true, disk_gib: 100, max_instances: 20, environments: ['*'] },
+      { name: 'gcp-spot', cloud: 'gcp', region: 'us-central1', project: 'review-project', zones: ['us-central1-a'], service_account: 'hakopod-actions@review-project.iam.gserviceaccount.com', subnet_ids: ['default'], instance_types: ['t2a-standard-2'], architecture: 'arm64', spot: true, max_instances: 5, environments: ['*'] },
+    ],
+  },
   '/api/applications/synthetic-runners/actions': {
     items: [
       {
