@@ -84,6 +84,14 @@ func (f *fakeEC2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body += `<item><reservationId>r-1</reservationId><ownerId>123456789012</ownerId><groupSet/><instancesSet>` + item + `</instancesSet></item>`
 		}
 		w.Write([]byte(body + `</reservationSet></DescribeInstancesResponse>`))
+	case "DescribeSpotInstanceRequests":
+		body := `<DescribeSpotInstanceRequestsResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><requestId>1</requestId><spotInstanceRequestSet>`
+		for i := 1; r.Form.Get("Filter.1.Value."+strconv.Itoa(i)) != ""; i++ {
+			id := r.Form.Get("Filter.1.Value." + strconv.Itoa(i))
+			status := map[string]string{"sir-fis": "instance-terminated-by-experiment", "sir-user": "instance-terminated-by-user"}[id]
+			body += `<item><spotInstanceRequestId>` + id + `</spotInstanceRequestId><state>closed</state><status><code>` + status + `</code></status></item>`
+		}
+		w.Write([]byte(body + `</spotInstanceRequestSet></DescribeSpotInstanceRequestsResponse>`))
 	case "DescribeImages":
 		body := `<DescribeImagesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><requestId>1</requestId><imagesSet>`
 		if r.Form.Get("ImageId.1") != "ami-other" {
@@ -253,6 +261,21 @@ func TestStateTerminateAndCheck(t *testing.T) {
 	if got, _ := c.State(ctx, "i-running"); got.Lifecycle != "on-demand" || got.State != "running" {
 		t.Fatal(got)
 	}
+	// FIS leaves an interrupted instance reading as user initiated; its spot
+	// request says the experiment took it.
+	f.instances["i-fis"] = strings.Replace(tagged("i-fis", "inst", "terminated", "Client.UserInitiatedShutdown"), "<instanceType>", "<spotInstanceRequestId>sir-fis</spotInstanceRequestId><instanceType>", 1)
+	f.instances["i-ended"] = strings.Replace(tagged("i-ended", "inst", "terminated", "Client.UserInitiatedShutdown"), "<instanceType>", "<spotInstanceRequestId>sir-user</spotInstanceRequestId><instanceType>", 1)
+	if got, err := c.State(ctx, "i-fis"); err != nil || !got.Interrupted() {
+		t.Fatal("FIS interruption not seen", got, err)
+	}
+	all, err := c.List(ctx, nil)
+	for _, i := range all {
+		if i.Interrupted() != (i.ID == "i-ours" || i.ID == "i-fis") {
+			t.Fatal("listed interruption", i, err)
+		}
+	}
+	delete(f.instances, "i-fis")
+	delete(f.instances, "i-ended")
 	if _, err = c.State(ctx, "i-missing"); !errors.Is(err, vm.ErrNotFound) {
 		t.Fatal(err)
 	}
