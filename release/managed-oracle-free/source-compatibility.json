@@ -1,198 +1,138 @@
 {
   "bootstrap": {
-    "commit": "d948e9b360eb2202df5228a565c987fd95dc3a02",
-    "reviewed_release": "v0.1.0-alpha.86",
-    "tag": "v0.1.0-alpha.85",
+    "commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
+    "reviewed_release": "v0.1.0-alpha.89",
+    "tag": "v0.1.0-alpha.88",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py"
     ]
   },
-  "control_plane_commit": "d948e9b360eb2202df5228a565c987fd95dc3a02",
+  "control_plane_commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
   "delta": {
-    "baseline_sha256": "849bc20c6866de0d77fa027529c1c7036a1f5d480dfb549a1d44208a490545db",
+    "baseline_sha256": "39cccbda458188cc331813e33db73e9ad894cd504a7cf9c60ee433d3efdeb352",
     "changes": [
       {
-        "after": "c4022e07cb0f9693a721677eb176ab63f746ce5bc2c2202fb36285d12da7bc11",
-        "before": "01bb73dba4347d8db0b949243ca1d795315af451b8e1f133b35566c56f5f1a09",
+        "after": "5d83822d7d8ae7575f69e99e03583f3b67e9b73aae4daea1bc7dc43685bec880",
+        "before": "c4022e07cb0f9693a721677eb176ab63f746ce5bc2c2202fb36285d12da7bc11",
         "path": "api/contracts/actions_capacity.py",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane API schema change (azure Actions capacity fields for Azure Spot VMs, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "b38267a38093da379f1c21e39caf45405ecf1a0fe3f5d9a0fb3d9ff9247a1faf",
-        "before": "3ed33f2a5944c6a9d335e75815a824f8808dde9798a61af8c87771f1ad12f80b",
-        "path": "api/contracts/zz_sandbox_sessions.py",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "014807b7b842f522332fdac042ce67c00fa0be632238a12143b159d892b5dc98",
-        "before": "460ec2ff4a66933943517ccbf6dd39b52c0d95c626e86ce0d410cc0ec7ff3853",
+        "after": "d9aad7df0a94ce1fae6f98c46925ae6bc48832c708c2045fbfb9c52930d89497",
+        "before": "014807b7b842f522332fdac042ce67c00fa0be632238a12143b159d892b5dc98",
         "path": "api/openapi.json",
-        "reason": "Reviewed control-plane API schema change (session egress_proxy setting, and gcp Actions capacity fields for Compute Engine Spot VMs tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane API schema change (azure Actions capacity fields for Azure Spot VMs, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "e9bef6346275d8da99fbced27f0e8730e16b47c9303555a83fcee3cbd0e9da15",
+        "after": "56bcb154c34f506c5d3df49a466e24d016d8309ff7da0e144e782736983723a0",
         "before": null,
-        "path": "internal/actions/vm/gcp/acceptance_test.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/actions/vm/azure/acceptance_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "4ec4c158c9ae9edf4b9d55e4ec66d13f6d2812dca26b1d2ef22d17a13336ee2a",
+        "after": "ccb44c748951b13980cc60fcfaace45018adabe1617a2958a742b62ce055bf62",
         "before": null,
-        "path": "internal/actions/vm/gcp/auth.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/actions/vm/azure/auth.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "646ecab1838af250a8a06e94b0641aac75d2417058b5a419f6969cae90d44f76",
+        "after": "a46dd66d29ac8c2aadaba7cb4a4848d3e44066428f89a4173a50b2829a940ac9",
         "before": null,
-        "path": "internal/actions/vm/gcp/gcp.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/actions/vm/azure/azure.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "f34eb8a5850f163c65163e27f105f7bca922bb02b8b68e8535fbae52109667d2",
+        "after": "65572cf43d85eadd3a3928f87ba2f06f0849f1673e622d065734d92c3d9e90e6",
         "before": null,
-        "path": "internal/actions/vm/gcp/gcp_test.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "path": "internal/actions/vm/azure/azure_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "69670b501785c67bf36d39b6490dff5116438f743f4392b61d30b6c3f10a8660",
-        "before": "aa6ecca96f946cc8f4629769a16ac329c489c248982d49550591abde71c1e699",
+        "after": "6b2b04972cd03d2022d1d5766014e4eb2d09cfaa0c5bdcced7e71d109efb763d",
+        "before": "69670b501785c67bf36d39b6490dff5116438f743f4392b61d30b6c3f10a8660",
         "path": "internal/actions/vm/userdata.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "5f83e397c9ac4288992a44ef732ee4c1c4d269d9d1c9282c06a13bf4383f405f",
-        "before": "7a00916cd39c5f291f17d38ed740b9d467b0b94beeaa30ec605af0456d74355d",
+        "after": "3f4b07ee298451e6c59b1f3772d7be2384fb891044c814e801b05a9aebe925b9",
+        "before": "8f7b19dc57f019afc549f838ec78df02541ec0ddf8b6b8bd90acf70a0d515f4d",
+        "path": "internal/actions/vm/userdata_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f29e6969343b22c5ffb333ed628e66e3ec35c880775f897969be63870b046d36",
+        "before": "2f951ce145c562b937cefe9b5c8f7328714a5931f845958a294f70c8e172ac72",
+        "path": "internal/actions/vm/vm.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "27532fb7d0e1b57c3cca6cb99a81c3bb5be134eb0b3c2555ba2e43b74bfd4952",
+        "before": "5f83e397c9ac4288992a44ef732ee4c1c4d269d9d1c9282c06a13bf4383f405f",
         "path": "internal/api/actions_capacity.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "916a4bbfb0b7bd1ab4f99bd58cafa28dd576b3f99427b4dbec6f3eeeff4b3498",
-        "before": "b281271d7d18e25a907cb8b23cdde545ace2aef47f308122c0cc1782c886c608",
-        "path": "internal/api/actions_demand.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "8ef741ead7065e91cf83901b98bdb2ec0235ae594decdd53703e2f3f1661a650",
-        "before": "fdcf32a8a8df2132a1c7997adcbb813744c6d695accbc8d76e4abcc6aaca86fa",
+        "after": "159f672572acd068b78acfac8004445bb7e98218a688cbb969788bbecdadc893",
+        "before": "8ef741ead7065e91cf83901b98bdb2ec0235ae594decdd53703e2f3f1661a650",
         "path": "internal/api/actions_vms.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "559c7c2bba7cc477749364a1f37fe7911fcfc52f266c6853a5d9a2b814415c4c",
-        "before": "daddd92ac5a201fae7620b9fa4257a9eb863d20f29bb50bd970e159c99019a2f",
-        "path": "internal/api/actions_vms_test.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "c71783feabd3f2b11033c14db41e23443d657d29fd8aaceae4c4a1c19c0487d2",
+        "before": "0b7c76e07f01ab3c66dc4c82e4b37401e18d9ee5d6c15ea27eac54c8f27b877f",
+        "path": "internal/cluster/preflight_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "818d13e2f78f9de108a235daf6ef5dafc77792fb98e74fddfb563d60a1193b19",
-        "before": "4b7ca3e17ae3e985b653cae3b6f0735630d591feb0dc49930121ddb278f92c5f",
-        "path": "internal/cluster/policies.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "5cf76265f571f304b49c969e81dea32a55bbd0e5bfd0795cd130795f65cfc59a",
+        "before": "5f0e9f01b52b478a6c507fd1618de72b0501114dc90346f1d4f4db11a149c7b8",
+        "path": "internal/cluster/resource_quota.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "67ff71cfed3a841491916b98d79a6e7ab200b61f50e20c3924d8444341ba385e",
-        "before": null,
-        "path": "internal/cluster/sandbox_session_egress_test.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "a940b3f46727e39e2af90cc54d319a408bb5511c0ce70b3580f64f6d5b834063",
+        "before": "a81701ac36c2b7578b0e388eeab91038815664175ad1dc7b05a6cfebafd503ef",
+        "path": "internal/cluster/session_resources.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "fd4730f7b373fcecb38d05ae63c8902fcda1914ed12e8602b8f30a082b260515",
-        "before": "43b20f1a5cfc4b9e04c3e0e11a44fead93a6c52b99513c5c24c2ba17ac6db6e3",
-        "path": "internal/cluster/sandbox_session_pods.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        "after": "6e91506c29dadf21d46884b4b0d9d064bc493deac1ca4b63ef68f17519d66900",
+        "before": "54bf156adfcb5912f74d6816a600b65e35e0bd6cda1e08743852e83bda7ee714",
+        "path": "internal/spec/actions.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "f5b5855e1328efaaa29c20dd117d2dd658228cefdde28d8115b27c076f07fefb",
-        "before": "46820922d49ee99451406b4acbb003a6095d449742cf7e4d7ac66ac836eb083b",
-        "path": "internal/cluster/sandbox_sessions.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "cfd70bef7b9e209f44c26de6d7639ead286007d786622eb283dcb036d760d2cf",
-        "before": "2b7c766af37bbc6efa9716432fe8d744dedf3bc753a0e27c7c0da0746bbcfdcf",
-        "path": "internal/cluster/sandbox_sessions_test.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "ca799135f7d109b5ab566b007e90ca400169fc059a4c0b6a6f0e750758e48cc9",
-        "before": "2a868511a8c4c69357c1fd482a01f562a3674d67a410367dc3b1b9aee73dad94",
-        "path": "internal/cluster/types.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "9afb150ab642c8629dca8fa5bf957f1661841ed5b1b395bce81865d8723426f8",
-        "before": "3039d5836259aff593119072b6d4e6c429610560e66246f04db102fe412e2c76",
-        "path": "internal/sessionguard/guard.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "df47843de73affcf0b40be3eb50e89c943b62ddefff760896b60f6804bf520fc",
-        "before": "904140968b761840e0ea25fcfb9ef32e12f1c36be8291d4b74717dc832d5ef3c",
-        "path": "internal/sessionguard/guard_linux.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "d60f53c77a89db06bd0e8805f61da72b9f30422e5e2e6cb36f8269bcd64bb787",
-        "before": "ac42cb27b9adf6c8464ef26d4d7b7d6c949071b46be98cce3c74b4c1b7a24fd6",
-        "path": "internal/sessionguard/guard_other.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "2b188ba6d537b6d10e22fdb844b014387fe67c362b78b3472d6dfdfa11992d8a",
-        "before": "30da496227b126584b8bc4e28a0f9104e738ff2fa33fe5d8c10a82cfcb3a75da",
-        "path": "internal/sessionguard/guard_test.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "f18a5e24f918e247fbcfa74284b64511f46eeea9f334e385b71421a892b6c79e",
-        "before": "c2a08f2a258e80c5a05081f58bf82988014c87c25eb04807ac514f2d9d28aa31",
-        "path": "internal/sessionguard/network_linux.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "caba67a937d4b62d173cee745bf519c4e6966144ef22305b3be3aab4ffeff18e",
-        "before": "6f9f1b512e329ba522a09f974fa7d2f6f9ace61aafbfb7232b63d0e069766741",
-        "path": "internal/sessionguard/network_linux_test.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "6c35b1560c18945d961e90dd86b51a52ce44658e639e8a5deb0dcb4c84fb3660",
-        "before": "50b2c073902ad2bdfff0e4a47f1e3f993951eae928ee726bf913a7823f7504d3",
-        "path": "internal/spec/sandbox_sessions.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "2c7ad4ca728e7c7d1ca7a8ea962b0853fe94948d44f2db5ccf9fba397afdc957",
-        "before": "38d976066469670baf35fac8814f43595d56388b26d464e04114bf3800cd8ef6",
-        "path": "internal/spec/sandbox_sessions_test.go",
-        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
-      },
-      {
-        "after": "f116e90ddde7bfea68123864af74826eb8e7d535e9b8a82ca167ea5768492171",
-        "before": "3eda836675499c1add82f07cf09772947dc0807205749493cc5b8ff2e41f13db",
+        "after": "7a567e6bed541c08ad17313fb350c1cd410522d1df5a43b741951562c05301c1",
+        "before": "f116e90ddde7bfea68123864af74826eb8e7d535e9b8a82ca167ea5768492171",
         "path": "internal/store/actions_capacity.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "6d365f4562d7f62f94aafaafcab96145af44512d5cae6b8f55a7df91524ddcd8",
-        "before": "ce17491f1f48b0cd70e2572e6109248209da8477cc682e13b881114c4c3568ab",
+        "after": "aaf41d224729d36432994e915c58355f067da447719e491941deab8bfbf31c32",
+        "before": "6d365f4562d7f62f94aafaafcab96145af44512d5cae6b8f55a7df91524ddcd8",
         "path": "internal/store/actions_capacity_test.go",
-        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "edc3b7c73c77edf75187b77068210000a574a7ef621b0412d29ff7cc1aabe621",
-        "before": "f11e0dee70f54953dcc6afae57d223394430af87b994f830b34b0812af78c1d3",
+        "after": "467c7ee412a7573cc2709e6a8255014b110448d025741aeed440e8a083cd7621",
+        "before": "0a88a99f84094bd2e8d722e93db7c4a54995c06a87b68e3b4dc7213606608ba5",
+        "path": "internal/store/database_allocations.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "399734afa962e7fbc42437b073b227c8cb1dda23a7ed2354c0b00b950f19a755",
+        "before": "edc3b7c73c77edf75187b77068210000a574a7ef621b0412d29ff7cc1aabe621",
         "path": "release/runtime-source-compatibility.py",
-        "reason": "Opens the alpha.86 chained review on the published alpha.85 records; verifier constants only, no change to what is verified."
+        "reason": "Chained review trust root for the alpha.89 runtime source review (alpha.86 review frozen as source-compatibility-alpha86.json); not a managed runtime binary, image, dependency or native harness input."
       }
     ],
-    "current_sha256": "39cccbda458188cc331813e33db73e9ad894cd504a7cf9c60ee433d3efdeb352"
+    "current_sha256": "c8ad35abdb8d717fedf53d6d130335ee265c465e0a9a783d8fde5637d2625d05"
   },
   "predecessor": {
-    "commit": "d948e9b360eb2202df5228a565c987fd95dc3a02",
-    "review_sha256": "a768e75f0aa7cd837f2c113c5f50079cb5460e715219fea24a25e287475f635f",
-    "tag": "v0.1.0-alpha.85"
+    "commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
+    "review_sha256": "1cd19937ceebe820959800bf59ff78c353709ae051dffcedf07cc5c2e4a67dfa",
+    "tag": "v0.1.0-alpha.88"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -201,21 +141,18 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestSandboxEgressProxy",
-      "TestSandboxEgressProxyRequiresReadyService",
-      "TestSandboxEgressProxyServiceShape",
-      "TestSandboxEgressProxyReplacementFailsClosed",
-      "TestSandboxEgressProxyRefusesTrustedPrivateReach",
-      "TestSandboxWithoutEgressProxyIsUnchanged",
-      "TestSessionEgressProxyAndDiskScratch",
-      "TestSessionEgressProxyMustBePlain",
-      "TestSessionGuardAllowIPSocketsFlag",
-      "TestSessionGuardDefaultFilterUnchanged",
-      "TestSessionGuardFilterJumpsTargetSharedResults"
+      "TestLaunchFallsThroughAndBuildsSpotVM",
+      "TestStateListTerminateAndCheck",
+      "TestImageSettings",
+      "TestIdentitySources",
+      "TestActionsCapacityValidationAzure",
+      "TestRunnerUserData",
+      "TestImageUserData",
+      "TestPreflightReservesNothingForVMCapacityPools"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/42805141478"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42894693548"
   },
-  "reviewed_release": "v0.1.0-alpha.86",
+  "reviewed_release": "v0.1.0-alpha.89",
   "runtime": "oracle-free",
   "schema_version": 2
 }
