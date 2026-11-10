@@ -621,7 +621,9 @@ hakopod actions capacity build-image aws-spot     # hakopod-minimal only; list s
 The same is available as `GET`/`PUT /api/v1/settings/actions-capacity` with
 `expected_revision`, and `POST /api/v1/settings/actions-capacity/{name}/test`.
 Every change is audited. A capacity that a pool still uses cannot be removed;
-move the pool off it first. There is no dashboard page yet.
+move the pool off it first. In the dashboard, installation administrators
+manage capacities under Settings → Actions VM capacity, and the runner pool
+form's Capacity step picks between runner pods and a capacity.
 
 | Setting | Allowed values |
 | --- | --- |
