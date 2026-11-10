@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/hakopod/hakopod/internal/sandbox"
 	"github.com/hakopod/hakopod/internal/spec"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -23,6 +24,35 @@ func withEgressProxy(app *spec.Application) {
 	app.Services["worker"] = worker
 }
 
+func createProxyService(t *testing.T, c *Client, r sandbox.Record, clusterIP string) {
+	t.Helper()
+	target, _, err := sandboxTarget(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := serviceObject(target, "proxy", target.Spec.Services["proxy"])
+	service.Spec.ClusterIP = clusterIP
+	if _, err = c.kube.CoreV1().Services(service.Namespace).Create(context.Background(), service, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSandboxEgressProxyRequiresReadyService(t *testing.T) {
+	for name, ip := range map[string]string{"missing": "", "headless": corev1.ClusterIPNone} {
+		c, r := sandboxFixtureWith(t, withEgressProxy)
+		if ip != "" {
+			createProxyService(t, c, r, ip)
+		}
+		_, err := c.StartSession(context.Background(), r, func(context.Context) error { return nil })
+		if err == nil || err.Error() != "session egress proxy service is not ready" {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if pods, _ := c.kube.CoreV1().Pods(SandboxNamespace(r.ID)).List(context.Background(), metav1.ListOptions{}); len(pods.Items) != 0 {
+			t.Fatalf("%s: pod created", name)
+		}
+	}
+}
+
 func TestSandboxWithoutEgressProxyIsUnchanged(t *testing.T) {
 	c, r := sandboxFixture(t)
 	r = startSandbox(t, c, r)
@@ -32,6 +62,9 @@ func TestSandboxWithoutEgressProxyIsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := p.Spec.Containers[0]
+	if p.Spec.HostAliases != nil {
+		t.Fatal("hostAliases without egress_proxy")
+	}
 	if !reflect.DeepEqual(app.Command, []string{"/run/hakopod-session/guard", "run", "--", "python", "worker.py"}) {
 		t.Fatalf("command changed: %v", app.Command)
 	}
@@ -54,6 +87,7 @@ func TestSandboxWithoutEgressProxyIsUnchanged(t *testing.T) {
 
 func TestSandboxEgressProxy(t *testing.T) {
 	c, r := sandboxFixtureWith(t, withEgressProxy)
+	createProxyService(t, c, r, "10.43.7.9")
 	r = startSandbox(t, c, r)
 	ctx := context.Background()
 	p, err := c.kube.CoreV1().Pods(SandboxNamespace(r.ID)).Get(ctx, sandboxPodName, metav1.GetOptions{})
@@ -80,6 +114,9 @@ func TestSandboxEgressProxy(t *testing.T) {
 	if !reflect.DeepEqual(env["NO_PROXY"], []string{""}) || !reflect.DeepEqual(env["no_proxy"], []string{""}) || !reflect.DeepEqual(env["KEEP"], []string{"1"}) {
 		t.Fatalf("env: %v", env)
 	}
+	if !reflect.DeepEqual(p.Spec.HostAliases, []corev1.HostAlias{{IP: "10.43.7.9", Hostnames: []string{"proxy." + Namespace("sandbox-app") + ".svc.cluster.local"}}}) || p.Spec.DNSPolicy != corev1.DNSNone || p.Spec.DNSConfig.Nameservers[0] != "127.0.0.1" {
+		t.Fatalf("hostAliases/DNS: %+v %v", p.Spec.HostAliases, p.Spec.DNSConfig)
+	}
 	var disk *corev1.Volume
 	for i := range p.Spec.Volumes {
 		if p.Spec.Volumes[i].Name == "temporary-0" {
@@ -95,6 +132,9 @@ func TestSandboxEgressProxy(t *testing.T) {
 	}
 	if peer := policy.Spec.Egress[0].To[0]; peer.PodSelector.MatchLabels[serviceKey] != "proxy" || peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != Namespace("sandbox-app") {
 		t.Fatalf("session egress peer: %+v", peer)
+	}
+	if to := policy.Spec.Egress[0].To; len(to) != 2 || to[1].IPBlock == nil || to[1].IPBlock.CIDR != "10.43.7.9/32" || len(to[1].IPBlock.Except) != 0 {
+		t.Fatalf("session egress ipBlock: %+v", to)
 	}
 	if _, err = c.ObserveSession(ctx, r); err != nil {
 		t.Fatal("observe rejected the egress policy", err)
@@ -117,7 +157,7 @@ func TestSandboxEgressProxy(t *testing.T) {
 			nsSel, _ := metav1.LabelSelectorAsSelector(peer.NamespaceSelector)
 			podSel, _ := metav1.LabelSelectorAsSelector(peer.PodSelector)
 			found = nsSel.Matches(labels.Set(ns.Labels)) && podSel.Matches(labels.Set(p.Labels)) && rule.Ports[0].Port.IntValue() == 3128
-			out, _ := json.MarshalIndent(map[string]any{"command": app.Command, "env": app.Env[len(app.Env)-9:], "session_policy": policy.Spec, "proxy_ingress": rule}, "", "  ")
+			out, _ := json.MarshalIndent(map[string]any{"command": app.Command, "hostAliases": p.Spec.HostAliases, "env": app.Env[len(app.Env)-9:], "session_policy": policy.Spec, "proxy_ingress": rule}, "", "  ")
 			t.Logf("%s", out)
 		}
 	}

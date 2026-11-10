@@ -62,7 +62,7 @@ The proxy service must have a `port`, must not be `public` and must not be a ses
 
 - The worker process runs under the guard with IP sockets allowed. The helper command and the readiness probe stay offline.
 - The session network policy allows TCP to the proxy service's Pods on its `port` and nothing else. The proxy service admits this application's session Pods on that port.
-- Hakopod sets `HAKOPOD_EGRESS_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy` to `http://<proxy>.<application namespace>.svc.cluster.local:<port>`, and `NO_PROXY` and `no_proxy` to an empty value. These replace any `env` values of the same names.
+- Hakopod sets `HAKOPOD_EGRESS_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy` to `http://<proxy>.<application namespace>.svc.cluster.local:<port>`, and `NO_PROXY` and `no_proxy` to an empty value. These replace any `env` values of the same names. Session DNS stays local: the worker resolves that name through a Pod host alias to the proxy Service's cluster IP, and the session policy also allows that IP on the proxy port. Session creation fails with `session egress proxy service is not ready` until the proxy Service exists with a cluster IP.
 
 What the proxy forwards, and to where, is the proxy service's own configuration. Without `egress_proxy`, sessions are unchanged.
 
