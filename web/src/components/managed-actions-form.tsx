@@ -212,7 +212,10 @@ function RunnerPoolForm({
     memory_request: original?.resources?.memory_request ?? savedProfile?.MemoryRequest,
     memory_limit: original?.resources?.memory_limit ?? savedProfile?.MemoryLimit,
   }
-  const reservationLabel = runnerReservationLabel(effectiveResources, Number(replicas))
+  // A VM capacity pool reserves nothing on this installation's nodes.
+  const reservationLabel = onVM
+    ? "Nothing is reserved on this installation's nodes."
+    : runnerReservationLabel(effectiveResources, Number(replicas))
   const canWrite = canAccess(scope.identity, project, 'deployments:write')
   const nodes = useQuery({
     queryKey: ['placement-nodes', project, environment, name, 'actions'],
@@ -710,11 +713,13 @@ function RunnerPoolForm({
     provider: providerName,
     target: targetLabel,
     pool: [name, runnerName].filter(Boolean).join(' / '),
-    architecture,
+    architecture: onVM ? 'Set by capacity' : architecture,
     replicas,
-    placement: nodeName,
+    placement: onVM ? `Single-use VMs in ${vmCapacity}` : nodeName,
     resources: reservationLabel,
-    workspace: `${workspaceSize} GiB${lifecycle !== 'dedicated' ? ` · ${timeout} minute lifetime` : ' · Retained for this repository'} · ${persistentCache ? 'Shared cache' : 'No shared cache'}`,
+    workspace: onVM
+      ? `VM root disk · ${timeout} minute lifetime · No shared cache`
+      : `${workspaceSize} GiB${lifecycle !== 'dedicated' ? ` · ${timeout} minute lifetime` : ' · Retained for this repository'} · ${persistentCache ? 'Shared cache' : 'No shared cache'}`,
     labels: runnerWorkflowLabels(workflowLabels, provider, architecture),
     scaling: scalingValid ? scalingLabel : undefined,
   }
@@ -859,11 +864,15 @@ function RunnerPoolForm({
                             },
                             {
                               label: 'Placement',
-                              value: `${nodeName || 'Automatic'} · ${reservationLabel}`,
+                              value: onVM
+                                ? `Single-use VMs in ${vmCapacity} · ${reservationLabel}`
+                                : `${nodeName || 'Automatic'} · ${reservationLabel}`,
                             },
                             {
                               label: 'Cache',
-                              value: `${workspaceSize} GiB workspace · ${persistentCache ? 'shared cache' : 'no shared cache'}`,
+                              value: onVM
+                                ? 'VM root disk set by the capacity · no shared cache'
+                                : `${workspaceSize} GiB workspace · ${persistentCache ? 'shared cache' : 'no shared cache'}`,
                             },
                           ]}
                         />

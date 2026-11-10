@@ -15,6 +15,9 @@ const (
 )
 
 func scheduledPodRequests(s spec.Service, policy *WorkloadPolicy) (resource.Quantity, resource.Quantity) {
+	if spec.OnVMCapacity(s) {
+		return resource.Quantity{}, resource.Quantity{} // jobs run on cloud VMs
+	}
 	p := spec.PodResources(s)
 	if policy != nil && policy.MemoryRequest != "" {
 		p.MemoryRequest = policy.MemoryRequest
