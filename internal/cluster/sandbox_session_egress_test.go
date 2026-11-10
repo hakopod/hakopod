@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hakopod/hakopod/internal/sandbox"
@@ -24,7 +25,7 @@ func withEgressProxy(app *spec.Application) {
 	app.Services["worker"] = worker
 }
 
-func createProxyService(t *testing.T, c *Client, r sandbox.Record, clusterIP string) {
+func createProxyService(t *testing.T, c *Client, r sandbox.Record, clusterIP string, change ...func(*corev1.Service)) {
 	t.Helper()
 	target, _, err := sandboxTarget(r)
 	if err != nil {
@@ -32,6 +33,10 @@ func createProxyService(t *testing.T, c *Client, r sandbox.Record, clusterIP str
 	}
 	service := serviceObject(target, "proxy", target.Spec.Services["proxy"])
 	service.Spec.ClusterIP = clusterIP
+	service.UID = "proxy-uid-1"
+	for _, f := range change {
+		f(service)
+	}
 	if _, err = c.kube.CoreV1().Services(service.Namespace).Create(context.Background(), service, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,5 +168,74 @@ func TestSandboxEgressProxy(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("proxy does not admit the session pod")
+	}
+}
+
+func TestSandboxEgressProxyServiceShape(t *testing.T) {
+	for name, change := range map[string]func(*corev1.Service){
+		"node-port":     func(s *corev1.Service) { s.Spec.Type = corev1.ServiceTypeNodePort },
+		"external-ip":   func(s *corev1.Service) { s.Spec.ExternalIPs = []string{"203.0.113.1"} },
+		"selector":      func(s *corev1.Service) { s.Spec.Selector = map[string]string{"app": "other"} },
+		"port":          func(s *corev1.Service) { s.Spec.Ports[0].Port = 8080 },
+		"udp":           func(s *corev1.Service) { s.Spec.Ports[0].Protocol = corev1.ProtocolUDP },
+		"service-label": func(s *corev1.Service) { s.Labels[serviceKey] = "worker" },
+		"unowned":       func(s *corev1.Service) { delete(s.Labels, managedBy) },
+		"external-name": func(s *corev1.Service) {
+			s.Spec.Type = corev1.ServiceTypeExternalName
+			s.Spec.ExternalName = "proxy.example.com"
+		},
+	} {
+		c, r := sandboxFixtureWith(t, withEgressProxy)
+		createProxyService(t, c, r, "10.43.7.9", change)
+		if _, err := c.StartSession(context.Background(), r, func(context.Context) error { return nil }); err == nil || err.Error() != "session egress proxy service is not ready" {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestSandboxEgressProxyReplacementFailsClosed(t *testing.T) {
+	for name, change := range map[string]func(*corev1.Service){
+		"uid": func(s *corev1.Service) { s.UID = "proxy-uid-2" },
+		"ip":  func(s *corev1.Service) { s.Spec.ClusterIP = "10.43.7.10" },
+	} {
+		c, r := sandboxFixtureWith(t, withEgressProxy)
+		createProxyService(t, c, r, "10.43.7.9")
+		r = startSandbox(t, c, r)
+		ctx := context.Background()
+		pod, _ := c.kube.CoreV1().Pods(SandboxNamespace(r.ID)).Get(ctx, sandboxPodName, metav1.GetOptions{})
+		if pod.Annotations[sandboxProxyServiceUID] != "proxy-uid-1" {
+			t.Fatal("proxy UID not recorded", pod.Annotations)
+		}
+		services := c.kube.CoreV1().Services(Namespace(r.ApplicationID))
+		service, _ := services.Get(ctx, "proxy", metav1.GetOptions{})
+		change(service)
+		if _, err := services.Update(ctx, service, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.ObserveSession(ctx, r); err == nil {
+			t.Fatalf("%s: replaced proxy accepted", name)
+		}
+		if _, err := c.StartSession(ctx, r, func(context.Context) error { return nil }); err == nil {
+			t.Fatalf("%s: replaced proxy accepted on ensure", name)
+		}
+	}
+}
+
+func TestSandboxEgressProxyRefusesTrustedPrivateReach(t *testing.T) {
+	for name, change := range map[string]func(*spec.Service){
+		"private-egress":   func(s *spec.Service) { s.PrivateEgress = []string{"corp"} },
+		"container-daemon": func(s *spec.Service) { s.ContainerDaemon = "daemon" },
+	} {
+		c, r := sandboxFixtureWith(t, withEgressProxy)
+		target, _, err := sandboxTarget(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		proxy := target.Spec.Services["proxy"]
+		change(&proxy)
+		target.Spec.Services["proxy"] = proxy
+		if err := c.sandboxEgressProxy(context.Background(), &target, "proxy"); err == nil || !strings.Contains(err.Error(), "private egress") {
+			t.Fatalf("%s: %v", name, err)
+		}
 	}
 }

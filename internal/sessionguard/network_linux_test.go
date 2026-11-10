@@ -210,3 +210,32 @@ func TestSessionGuardDefaultFilterUnchanged(t *testing.T) {
 		t.Fatal("default filter changed", err, got)
 	}
 }
+
+// io_uring and failed family checks must jump straight to the shared ERRNO.
+func TestSessionGuardFilterJumpsTargetSharedResults(t *testing.T) {
+	for _, allowIP := range []bool{false, true} {
+		filter, err := networkFilter(allowIP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		deny, allow := len(filter)-1, len(filter)-2
+		if filter[deny] != (unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)}) || filter[allow] != (unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ALLOW}) {
+			t.Fatal("filter does not end with ALLOW, ERRNO")
+		}
+		for pc, in := range filter {
+			if in.Code != unix.BPF_JMP|unix.BPF_JEQ|unix.BPF_K {
+				continue
+			}
+			switch in.K {
+			case uint32(unix.SYS_IO_URING_SETUP), uint32(unix.SYS_IO_URING_ENTER), uint32(unix.SYS_IO_URING_REGISTER):
+				if pc+1+int(in.Jt) != deny {
+					t.Fatalf("allowIP=%v io_uring check %d jumps to %d", allowIP, pc, pc+1+int(in.Jt))
+				}
+			}
+		}
+		last := filter[allow-1]
+		if pc := allow - 1; pc+1+int(last.Jt) != allow || pc+1+int(last.Jf) != deny {
+			t.Fatalf("allowIP=%v final family check misrouted", allowIP)
+		}
+	}
+}

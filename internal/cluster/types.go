@@ -131,6 +131,7 @@ type Client struct {
 type Target struct {
 	// sessionProxyIP is the ClusterIP of a sandbox session's egress_proxy Service.
 	sessionProxyIP       string
+	sessionProxyUID      string
 	databaseConnections  map[string]map[string]DatabaseConnection
 	serverlessGatewayIPs []string
 	sharedVolumeNodes    map[string][]string

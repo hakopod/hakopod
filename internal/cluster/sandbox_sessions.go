@@ -90,14 +90,44 @@ func (c *Client) sandboxTemplate(ctx context.Context, r sandbox.Record) (Target,
 		return t, s, RuntimeProfileBinding{}, fmt.Errorf("session template revision is not active")
 	}
 	if s.Session.EgressProxy != "" {
-		proxy, err := c.kube.CoreV1().Services(Namespace(t.ApplicationID)).Get(ctx, s.Session.EgressProxy, metav1.GetOptions{})
-		if err != nil || owned(proxy, t) != nil || net.ParseIP(proxy.Spec.ClusterIP).To4() == nil {
-			return t, s, RuntimeProfileBinding{}, fmt.Errorf("session egress proxy service is not ready")
+		if err = c.sandboxEgressProxy(ctx, &t, s.Session.EgressProxy); err != nil {
+			return t, s, RuntimeProfileBinding{}, err
 		}
-		t.sessionProxyIP = proxy.Spec.ClusterIP
 	}
 	binding, err := c.resolveRuntimeProfile(ctx, r.Project, r.Environment, t.Spec.Name, r.Service, s)
 	return t, s, binding, err
+}
+
+// sandboxEgressProxy records the proxy Service's ClusterIP and UID after
+// checking it is exactly the plain ClusterIP Service Hakopod generates and
+// that trusted configuration grants the proxy no private egress or daemon.
+func (c *Client) sandboxEgressProxy(ctx context.Context, t *Target, name string) error {
+	notReady := fmt.Errorf("session egress proxy service is not ready")
+	proxySpec := t.Spec.Services[name]
+	privateEgress, err := c.resolvePrivateEgress(ctx, *t, false)
+	if err != nil || len(privateEgress[name]) != 0 || proxySpec.ContainerDaemon != "" {
+		return fmt.Errorf("session egress proxy must not have private egress or a container daemon")
+	}
+	if daemons, err := c.resolveContainerDaemons(*t); err != nil || daemons[name] != (ContainerDaemonBinding{}) {
+		return fmt.Errorf("session egress proxy must not have private egress or a container daemon")
+	}
+	service, err := c.kube.CoreV1().Services(Namespace(t.ApplicationID)).Get(ctx, name, metav1.GetOptions{})
+	if err != nil || !sandboxProxyServiceOwned(service, serviceObject(*t, name, proxySpec), proxySpec.Port) || owned(service, *t) != nil {
+		return notReady
+	}
+	t.sessionProxyIP, t.sessionProxyUID = service.Spec.ClusterIP, string(service.UID)
+	return nil
+}
+func sandboxProxyServiceOwned(service, desired *corev1.Service, port int32) bool {
+	if service == nil || service.UID == "" || service.DeletionTimestamp != nil || service.Name != desired.Name || service.Namespace != desired.Namespace || service.Spec.Type != corev1.ServiceTypeClusterIP || service.Spec.ExternalName != "" || len(service.Spec.ExternalIPs) != 0 || net.ParseIP(service.Spec.ClusterIP).To4() == nil || service.Labels[serviceKey] != desired.Labels[serviceKey] || !reflect.DeepEqual(service.Spec.Selector, desired.Spec.Selector) {
+		return false
+	}
+	for _, p := range service.Spec.Ports {
+		if p.Port == port && p.Protocol == corev1.ProtocolTCP && p.TargetPort.IntValue() == int(port) {
+			return true
+		}
+	}
+	return false
 }
 func (c *Client) sandboxNamespace(ctx context.Context, t Target, r sandbox.Record) (*corev1.Namespace, error) {
 	ns, err := c.kube.CoreV1().Namespaces().Get(ctx, SandboxNamespace(r.ID), metav1.GetOptions{})

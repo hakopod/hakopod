@@ -65,7 +65,12 @@ func (c *Client) sandboxPod(t Target, r sandbox.Record, s spec.Service, b Runtim
 	if s.RegistryCredential != "" {
 		labels[registryScopeLabel] = RegistryScope(t.Project, t.Environment, s.RegistryCredential)
 	}
-	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: sandboxPodName, Namespace: SandboxNamespace(r.ID), Labels: labels, Annotations: sandboxAnnotations(r, s)}, Spec: p}
+	annotations := sandboxAnnotations(r, s)
+	if s.Session.EgressProxy != "" {
+		// A replaced proxy Service changes this UID; validation then fails closed.
+		annotations[sandboxProxyServiceUID] = t.sessionProxyUID
+	}
+	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: sandboxPodName, Namespace: SandboxNamespace(r.ID), Labels: labels, Annotations: annotations}, Spec: p}
 }
 
 func (c *Client) sandboxState(t Target, r sandbox.Record, s spec.Service, b RuntimeProfileBinding, pod *corev1.Pod, state sandbox.RuntimeState) (sandbox.RuntimeState, error) {
@@ -142,6 +147,8 @@ func (c *Client) validateSandboxPod(t Target, r sandbox.Record, s spec.Service, 
 	}
 	return nil
 }
+
+const sandboxProxyServiceUID = "hakopod.io/egress-proxy-service-uid"
 
 // sandboxEgressProxyURL is the in-cluster address of the session's proxy service.
 func sandboxEgressProxyURL(t Target, proxy string) string {
