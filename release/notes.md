@@ -1,23 +1,21 @@
-Hakopod 0.1.0-alpha.87 brings Managed Actions VM capacity to the dashboard.
+Hakopod 0.1.0-alpha.88 makes Actions VM capacity easier to set up from the dashboard.
 
-- **Actions VM capacity in Settings.** Installation administrators can add, edit, test and remove AWS and Google Cloud capacities under Settings → Actions VM capacity, run the launch test, and build or rebuild `hakopod-minimal` images and follow their progress. The page shows the installation's external ID and installation ID for the IAM trust policy. The API and `hakopod actions capacity` commands are unchanged.
-- **Pools on VM capacity from the runner pool form.** The Capacity step of a GitHub runner pool can choose runner pods or a named capacity, and sets `spot_retries`. With a capacity, the form leaves out size, resources, placement and workspace quota, which the capacity decides. People who cannot list capacities can type the name.
-- **VM slots in pool status.** Each runner registration shows its instance ID, machine type, spot or on-demand lifecycle and whether it started from a warm standby, and the pool lists its spot interruptions from the last 30 days with their rerun outcome.
+- **Capacity editor in a side sheet with setup steps.** Adding or editing a capacity under Settings → Actions VM capacity now opens a side sheet that starts with what to prepare in the cloud account. On AWS, it shows the trust policy with this installation's external ID and the permissions policy with its `hakopod-installation` tag. On Google Cloud, it shows the `gcloud` commands for the service account, custom role and token creator binding. Each snippet has a copy button and is followed by network notes and what Test checks. Every field now says what it is for and what it accepts, and the fields are grouped into account and network, machines, and limits.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.87/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.87
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.88/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.88
 ```
 
-Upgrade an alpha.85 or alpha.86 installation:
+Upgrade an alpha.86 or alpha.87 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.87/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.87
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.88/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.88
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
