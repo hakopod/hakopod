@@ -433,6 +433,18 @@ func TestActionsVMWarmPool(t *testing.T) {
 	if err := s.keepActionsStandbys(ctx, c, now); err != nil || len(cloud.launches) != 2 || len(cloud.terminated) != 0 {
 		t.Fatal("stable pool changed", err, cloud.terminated)
 	}
+	// An extra standby still booting is trimmed, not a ready one.
+	extra := &vm.Instance{ID: "i-extra", State: "pending", LaunchedAt: now, Tags: maps.Clone(cloud.instances["i-1"].Tags)}
+	cloud.instances["i-extra"] = extra
+	for range 5 { // the fake lists in map order
+		extra.State = "pending"
+		cloud.terminated = nil
+		if err := s.keepActionsStandbys(ctx, c, now); err != nil || len(cloud.terminated) != 1 || cloud.terminated[0] != "i-extra" {
+			t.Fatal("trimmed a ready standby", err, cloud.terminated)
+		}
+	}
+	delete(cloud.instances, "i-extra")
+	cloud.terminated = nil
 	// The reaper leaves standbys to the warm pool.
 	if err := s.reapActionsCapacity(ctx, c, now); err != nil || len(cloud.terminated) != 0 {
 		t.Fatal("reaper terminated a standby", err, cloud.terminated)

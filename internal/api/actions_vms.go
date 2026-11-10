@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -590,6 +591,11 @@ func (s *Server) keepActionsStandbys(ctx context.Context, c store.ActionsCapacit
 		}
 		want = max(0, min(c.WarmPool, c.MaxInstances-used))
 	}
+	// Ready standbys are kept before ones still booting, so trimming an
+	// extra never throws away a warmed-up instance for a cold one.
+	slices.SortStableFunc(list, func(a, b vm.Instance) int {
+		return cmp.Compare(standbyRank(a), standbyRank(b))
+	})
 	kept := int64(0)
 	for _, i := range list {
 		if i.State == "terminated" || i.State == "shutting-down" {
@@ -628,6 +634,13 @@ func (s *Server) keepActionsStandbys(ctx context.Context, c store.ActionsCapacit
 		}
 	}
 	return nil
+}
+
+func standbyRank(i vm.Instance) int {
+	if i.State == "stopped" {
+		return 0
+	}
+	return 1
 }
 
 // buildActionsImage advances a capacity's hakopod-minimal build by one step
