@@ -1,19 +1,19 @@
 {
   "bootstrap": {
-    "commit": "55fc9dd255fdd1e32d0a01cfcc39b94d058b53de",
-    "reviewed_release": "v0.1.0-alpha.85",
-    "tag": "v0.1.0-alpha.84",
+    "commit": "d948e9b360eb2202df5228a565c987fd95dc3a02",
+    "reviewed_release": "v0.1.0-alpha.86",
+    "tag": "v0.1.0-alpha.85",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py",
       "release/verify-vitess-runtime.py"
     ]
   },
-  "control_plane_commit": "55fc9dd255fdd1e32d0a01cfcc39b94d058b53de",
+  "control_plane_commit": "d948e9b360eb2202df5228a565c987fd95dc3a02",
   "predecessor": {
-    "commit": "55fc9dd255fdd1e32d0a01cfcc39b94d058b53de",
-    "review_sha256": "981ca19c2e59dd47cda6dea05d029ec66c9ca4d5b433603b1e186576cc6bba94",
-    "tag": "v0.1.0-alpha.84"
+    "commit": "d948e9b360eb2202df5228a565c987fd95dc3a02",
+    "review_sha256": "ba93896305a73e54d6d0b2fce810e5acfc6f7fa1e1b0b3c6a9ff817cb76bc97e",
+    "tag": "v0.1.0-alpha.85"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -24,14 +24,21 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestImagesAndClaim",
-      "TestStateTerminateAndCheck",
-      "TestActionsVMWarmPool",
-      "TestActionsVMSpotRerun"
+      "TestSandboxEgressProxy",
+      "TestSandboxEgressProxyRequiresReadyService",
+      "TestSandboxEgressProxyServiceShape",
+      "TestSandboxEgressProxyReplacementFailsClosed",
+      "TestSandboxEgressProxyRefusesTrustedPrivateReach",
+      "TestSandboxWithoutEgressProxyIsUnchanged",
+      "TestSessionEgressProxyAndDiskScratch",
+      "TestSessionEgressProxyMustBePlain",
+      "TestSessionGuardAllowIPSocketsFlag",
+      "TestSessionGuardDefaultFilterUnchanged",
+      "TestSessionGuardFilterJumpsTargetSharedResults"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/42768315665"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42805141478"
   },
-  "reviewed_release": "v0.1.0-alpha.85",
+  "reviewed_release": "v0.1.0-alpha.86",
   "runtime": "vitess",
   "schema_version": 3,
   "scopes": {
@@ -41,70 +48,106 @@
       "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
     },
     "runtime": {
-      "baseline_sha256": "dc0ace5ac7b95e3ff63f80fb9a09ab7b0dd8b46af0619bb5c3f17163f61cdf0a",
+      "baseline_sha256": "0da1025a91cd3020c95cd23cd31583be25bf563895b8ff59c6a91aecc05a6fe3",
       "changes": [
         {
-          "after": "d826ca0f303fa7d826a1c811a47caf250f24d46608178f4433bc4bad48f7a6aa",
-          "before": "6f8f381acf0fec49bca6879e0aa29d343c115911f4fdda70e1ac21f7031ff23d",
-          "path": "internal/actions/vm/aws/aws.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
+          "after": "818d13e2f78f9de108a235daf6ef5dafc77792fb98e74fddfb563d60a1193b19",
+          "before": "4b7ca3e17ae3e985b653cae3b6f0735630d591feb0dc49930121ddb278f92c5f",
+          "path": "internal/cluster/policies.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "e5b9f28ff53e0a6aada209a411a81258a0775356f40e8a6726f94f07ad372f24",
-          "before": "a09be8a83ead138cf232da25f7b499bb4e93663705044e461cf4843606c078d1",
-          "path": "internal/actions/vm/aws/aws_test.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
-        },
-        {
-          "after": "b867c4d4a7f970168a16f6c495f6f1a5e49eb57243c86f722389e73da05c4f1a",
+          "after": "67ff71cfed3a841491916b98d79a6e7ab200b61f50e20c3924d8444341ba385e",
           "before": null,
-          "path": "internal/actions/vm/aws/github_acceptance_test.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
+          "path": "internal/cluster/sandbox_session_egress_test.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "1167faeb87dde01b855c4e29130153d27c7cb56104c26b55dd1419f416aef57a",
-          "before": null,
-          "path": "internal/actions/vm/aws/spot_acceptance_test.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
+          "after": "fd4730f7b373fcecb38d05ae63c8902fcda1914ed12e8602b8f30a082b260515",
+          "before": "43b20f1a5cfc4b9e04c3e0e11a44fead93a6c52b99513c5c24c2ba17ac6db6e3",
+          "path": "internal/cluster/sandbox_session_pods.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "aa6ecca96f946cc8f4629769a16ac329c489c248982d49550591abde71c1e699",
-          "before": "d2950a52a63b57ea46f472f11528e0a4779331530bd80e024807b1d4dccbcd7a",
-          "path": "internal/actions/vm/userdata.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
+          "after": "f5b5855e1328efaaa29c20dd117d2dd658228cefdde28d8115b27c076f07fefb",
+          "before": "46820922d49ee99451406b4acbb003a6095d449742cf7e4d7ac66ac836eb083b",
+          "path": "internal/cluster/sandbox_sessions.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "fdcf32a8a8df2132a1c7997adcbb813744c6d695accbc8d76e4abcc6aaca86fa",
-          "before": "b48b2532d189598fd2cf0fd4c66dead2029ca80e4ed56775682be86cc104865e",
-          "path": "internal/api/actions_vms.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
+          "after": "cfd70bef7b9e209f44c26de6d7639ead286007d786622eb283dcb036d760d2cf",
+          "before": "2b7c766af37bbc6efa9716432fe8d744dedf3bc753a0e27c7c0da0746bbcfdcf",
+          "path": "internal/cluster/sandbox_sessions_test.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "6a4b2fa92c1e940da00025ca0477309acfb831855e1a226f2a5e19bb2a351617",
-          "before": null,
-          "path": "internal/api/actions_vms_aws_acceptance_test.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
+          "after": "ca799135f7d109b5ab566b007e90ca400169fc059a4c0b6a6f0e750758e48cc9",
+          "before": "2a868511a8c4c69357c1fd482a01f562a3674d67a410367dc3b1b9aee73dad94",
+          "path": "internal/cluster/types.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "daddd92ac5a201fae7620b9fa4257a9eb863d20f29bb50bd970e159c99019a2f",
-          "before": "e460c2962ea51660ed63e7391adfd340795c05a5f8ce421f96c8ea3c74c42221",
-          "path": "internal/api/actions_vms_test.go",
-          "reason": "Reviewed control-plane change (Managed Actions VM warm pool claims, standby trimming and spot interruption handling, with unit and gated acceptance tests); not a managed runtime binary, image, dependency or native harness input."
+          "after": "9afb150ab642c8629dca8fa5bf957f1661841ed5b1b395bce81865d8723426f8",
+          "before": "3039d5836259aff593119072b6d4e6c429610560e66246f04db102fe412e2c76",
+          "path": "internal/sessionguard/guard.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "f11e0dee70f54953dcc6afae57d223394430af87b994f830b34b0812af78c1d3",
-          "before": "0f7fd3c58c52d42024ba45e62ee6959d7850c7a5f1eb5636020f7a64cd399f3e",
+          "after": "df47843de73affcf0b40be3eb50e89c943b62ddefff760896b60f6804bf520fc",
+          "before": "904140968b761840e0ea25fcfb9ef32e12f1c36be8291d4b74717dc832d5ef3c",
+          "path": "internal/sessionguard/guard_linux.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "d60f53c77a89db06bd0e8805f61da72b9f30422e5e2e6cb36f8269bcd64bb787",
+          "before": "ac42cb27b9adf6c8464ef26d4d7b7d6c949071b46be98cce3c74b4c1b7a24fd6",
+          "path": "internal/sessionguard/guard_other.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "2b188ba6d537b6d10e22fdb844b014387fe67c362b78b3472d6dfdfa11992d8a",
+          "before": "30da496227b126584b8bc4e28a0f9104e738ff2fa33fe5d8c10a82cfcb3a75da",
+          "path": "internal/sessionguard/guard_test.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "f18a5e24f918e247fbcfa74284b64511f46eeea9f334e385b71421a892b6c79e",
+          "before": "c2a08f2a258e80c5a05081f58bf82988014c87c25eb04807ac514f2d9d28aa31",
+          "path": "internal/sessionguard/network_linux.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "caba67a937d4b62d173cee745bf519c4e6966144ef22305b3be3aab4ffeff18e",
+          "before": "6f9f1b512e329ba522a09f974fa7d2f6f9ace61aafbfb7232b63d0e069766741",
+          "path": "internal/sessionguard/network_linux_test.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "6c35b1560c18945d961e90dd86b51a52ce44658e639e8a5deb0dcb4c84fb3660",
+          "before": "50b2c073902ad2bdfff0e4a47f1e3f993951eae928ee726bf913a7823f7504d3",
+          "path": "internal/spec/sandbox_sessions.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "2c7ad4ca728e7c7d1ca7a8ea962b0853fe94948d44f2db5ccf9fba397afdc957",
+          "before": "38d976066469670baf35fac8814f43595d56388b26d464e04114bf3800cd8ef6",
+          "path": "internal/spec/sandbox_sessions_test.go",
+          "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "edc3b7c73c77edf75187b77068210000a574a7ef621b0412d29ff7cc1aabe621",
+          "before": "f11e0dee70f54953dcc6afae57d223394430af87b994f830b34b0812af78c1d3",
           "path": "release/runtime-source-compatibility.py",
-          "reason": "Opens the alpha.85 chained review on the published alpha.84 records; verifier constants only, no change to what is verified."
+          "reason": "Opens the alpha.86 chained review on the published alpha.85 records; verifier constants only, no change to what is verified."
         },
         {
-          "after": "19b6f754cc095f0d092d1a14375cfd1f5f2e72eddcf5d09884b4894173ba636a",
-          "before": "dca565d2cfbc5df49b5bb721edd674a985c29c8437dc43c9926ddf93e9647bad",
+          "after": "dca565d2cfbc5df49b5bb721edd674a985c29c8437dc43c9926ddf93e9647bad",
+          "before": "19b6f754cc095f0d092d1a14375cfd1f5f2e72eddcf5d09884b4894173ba636a",
           "path": "release/verify-vitess-runtime.py",
-          "reason": "Trust-root comment wording for the alpha.85 chained review; no change to what is verified."
+          "reason": "Trust-root comment wording for the alpha.86 chained review; no change to what is verified."
         }
       ],
-      "current_sha256": "0da1025a91cd3020c95cd23cd31583be25bf563895b8ff59c6a91aecc05a6fe3"
+      "current_sha256": "bb962a8a4d4a3c08ef766492711022fc628ef11ee176e91d1733b5e1f163045c"
     }
   }
 }
