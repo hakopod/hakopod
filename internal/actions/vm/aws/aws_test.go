@@ -328,11 +328,13 @@ func TestImagesAndClaim(t *testing.T) {
 	if err = c.Claim(ctx, "i-running", "#!/bin/bash\n", nil); err == nil {
 		t.Fatal("claimed a standby that is not stopped")
 	}
-	if err = c.Claim(ctx, "i-standby", "#!/bin/bash\n", map[string]string{vm.TagSlot: "slot1", vm.TagPoolState: "claimed"}); err != nil {
+	// The standby already carries the installation tag; the documented
+	// policy refuses a claim that writes any tag but pool, slot and state.
+	if err = c.Claim(ctx, "i-standby", "#!/bin/bash\n", map[string]string{vm.TagInstallation: "inst", vm.TagSlot: "slot1", vm.TagPoolState: "claimed"}); err != nil {
 		t.Fatal(err)
 	}
 	tags, modify := f.form("CreateTags"), f.calls["ModifyInstanceAttribute"]
-	if tags.Get("ResourceId.1") != "i-standby" || tags.Get("Tag.1.Key") != vm.TagPoolState || tags.Get("Tag.2.Value") != "slot1" || len(modify) != 2 ||
+	if tags.Get("ResourceId.1") != "i-standby" || tags.Get("Tag.1.Key") != vm.TagPoolState || tags.Get("Tag.2.Value") != "slot1" || tags.Has("Tag.3.Key") || len(modify) != 2 ||
 		modify[0].Get("InstanceInitiatedShutdownBehavior.Value") != "terminate" || modify[1].Get("UserData.Value") != base64.StdEncoding.EncodeToString([]byte("#!/bin/bash\n")) ||
 		f.form("StartInstances").Get("InstanceId.1") != "i-standby" {
 		t.Fatal("claim requests", tags, modify)
