@@ -350,6 +350,42 @@ REST API with the standard library, so no Google SDK module enters go.mod.
   and service containers fail), and a vCPU-hour costs several times a Spot
   VM's.
 
+## Azure
+
+The Azure provider implements the same `vm.Provider` over the Azure Resource
+Manager REST API (compute `2024-07-01`, network `2024-05-01`) with the
+standard library, so no Azure SDK module enters go.mod.
+
+- Identity: Hakopod's own token, from AKS workload identity (a federated
+  client assertion), an app registration's client secret, or the IMDS managed
+  identity, in that order. The customer assigns that identity a custom role on
+  the runners' resource group and on the VNet; nothing is stored per
+  capacity. There is no impersonation step as on Google Cloud: the role
+  assignment plays the part of the trust policy.
+- Tags hold the exact Hakopod tags; Azure tag values take 256 characters, so
+  nothing is hashed. Listings read the resource group's VMs, compare tags
+  client side and read each match's instance view for its power state.
+- Instance IDs are `resourceGroup/name`; names are `hakopod-<slot>-<random>`.
+- Launch is one PUT of the VM with an inline NIC and Standard public IP,
+  `deleteOption: Delete` on NIC, IP and OS disk, boot diagnostics on managed
+  storage, a throwaway SSH key and the boot script as `customData`. Each size
+  is tried in each zone; allocation errors (`SkuNotAvailable`,
+  `AllocationFailed`, `ZonalAllocationFailed`, `Overconstrained…`, quota and
+  `SpotVM…` codes) arrive in the async operation, so each attempt waits for
+  it and deletes the failed VM before the next, which gets a new name.
+- Spot VMs use `evictionPolicy: Deallocate` and `maxPrice: -1`. Hakopod never
+  deallocates a runner, so a deallocated Spot VM is reported interrupted. A
+  runner that powers off is `stopped`, still allocated and billed, and is
+  deleted by the slot or the sweep as on Compute Engine.
+- The notice is a `Preempt` scheduled event, at least 30 seconds ahead. The
+  boot script recognises Azure by DMI (`Microsoft Corporation`, or Azure's
+  chassis asset tag), polls `metadata/scheduledevents` and stops the runner
+  as soon as an event names its VM.
+- Not yet: warm pools (stopping and restarting a VM with new `customData` is
+  not possible; `userData` would be) and `hakopod-minimal` images (a managed
+  image or gallery version from a generalised VM). Validation refuses both,
+  and every Claim and image call returns an error.
+
 ## Open questions
 
 - Should capacity be shareable across projects, or bound to one project and

@@ -973,6 +973,175 @@ than one of both where you can.
 `role_arn`, `external_id` and `security_group_ids` are AWS settings and are
 refused on a Google Cloud capacity.
 
+## Run jobs on Azure VMs
+
+A capacity with `cloud = "azure"` runs each job on a single-use Azure VM in a
+resource group of your own subscription, Spot by default. Everything under
+[Run jobs on AWS VMs](#run-jobs-on-aws-vms) applies (the pool settings, the
+single-use JIT configuration, reruns and cleanup), with these differences:
+
+- **Credentials.** Hakopod calls Azure as its own identity, which you grant a
+  custom role on the runners' resource group. Hakopod looks for it in this
+  order: AKS workload identity (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and
+  `AZURE_FEDERATED_TOKEN_FILE`), an app registration's client secret
+  (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`), then the
+  managed identity of the Azure VM it runs on (a user-assigned one when
+  `AZURE_CLIENT_ID` is set). A Hakopod outside Azure, for example on EC2, uses
+  the client secret. Nothing is stored per capacity, and runner VMs get no
+  identity, so a job holds no Azure credential.
+- **Images.** The default, `ubuntu-24.04`, is Canonical's Ubuntu 24.04 LTS
+  marketplace image (`Canonical:ubuntu-24_04-lts:server:latest`, or
+  `server-arm64`); the boot script installs Docker and the pinned runner on
+  every job, which adds a minute or two to its start. You can name another
+  Ubuntu image as a marketplace URN `publisher:offer:sku:version` or as an
+  image or gallery image version resource ID. `runs-on-full` and
+  `hakopod-minimal` are not available on Azure yet, and neither is the warm
+  pool: `warm_pool` must be 0.
+- **Shutdown.** A VM that powers itself off is stopped but still allocated,
+  and Azure keeps billing it. Hakopod deletes a runner once its slot is done,
+  and the sweep deletes stopped runners that no longer belong to a slot. The
+  NIC, public IP and OS disk are created with the VM and deleted with it.
+- **Spot eviction.** Spot VMs use the `Deallocate` eviction policy and a
+  maximum price of -1 (never evicted for price), so an evicted VM stays
+  readable as deallocated; Hakopod never deallocates a runner, so a
+  deallocated Spot VM counts as interrupted. Azure gives at least 30 seconds'
+  notice as a `Preempt` scheduled event; the runner watches the instance
+  metadata service for one naming its VM and stops the runner at once.
+- **Network.** Each runner gets a Standard public IP, which admits nothing
+  inbound unless an NSG rule allows it and gives the runner its way out to
+  GitHub, so no NAT gateway is needed. `test` refuses a subnet outside the
+  capacity's region and warns about NSG rules on the subnet that allow inbound
+  traffic from the internet. Password login is off, and the VM's only SSH key
+  is a throwaway whose private half Hakopod never keeps.
+- **Launch time.** Azure reports a VM created once it has booted far enough
+  to report in, so a launch takes a minute or more; `test --launch` waits up
+  to four minutes.
+
+This has been tested against a fake Azure Resource Manager API only, not yet
+against a real subscription. Try it with a small `max_instances` first.
+
+### Prepare the Azure subscription
+
+First find Hakopod's own identity and its principal ID:
+
+```sh
+# Hakopod on an Azure VM: its system-assigned managed identity
+az vm identity assign --resource-group HAKOPOD_RG --name HAKOPOD_VM --query systemAssignedIdentity -o tsv
+# Hakopod on AKS with workload identity: the user-assigned identity
+az identity show --resource-group HAKOPOD_RG --name HAKOPOD_IDENTITY --query principalId -o tsv
+# Hakopod outside Azure: an app registration. Set its appId, password and
+# tenant as AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and AZURE_TENANT_ID in
+# Hakopod's environment and restart it.
+az ad sp create-for-rbac --name hakopod-control-plane
+az ad sp show --id APP_ID --query id -o tsv
+```
+
+Save this custom role as `hakopod-role.json`, with your subscription ID. It
+lets Hakopod create, read and delete VMs with their NICs, public IPs and
+disks, join the subnet, and read what `test` checks.
+
+```json
+{
+  "Name": "Hakopod Actions runners",
+  "Description": "Launch and delete single-use GitHub Actions runner VMs.",
+  "Actions": [
+    "Microsoft.Resources/subscriptions/resourceGroups/read",
+    "Microsoft.Compute/virtualMachines/read",
+    "Microsoft.Compute/virtualMachines/write",
+    "Microsoft.Compute/virtualMachines/delete",
+    "Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action",
+    "Microsoft.Compute/disks/read",
+    "Microsoft.Compute/disks/write",
+    "Microsoft.Compute/disks/delete",
+    "Microsoft.Compute/locations/operations/read",
+    "Microsoft.Network/networkInterfaces/read",
+    "Microsoft.Network/networkInterfaces/write",
+    "Microsoft.Network/networkInterfaces/delete",
+    "Microsoft.Network/networkInterfaces/join/action",
+    "Microsoft.Network/publicIPAddresses/read",
+    "Microsoft.Network/publicIPAddresses/write",
+    "Microsoft.Network/publicIPAddresses/delete",
+    "Microsoft.Network/publicIPAddresses/join/action",
+    "Microsoft.Network/virtualNetworks/read",
+    "Microsoft.Network/virtualNetworks/subnets/read",
+    "Microsoft.Network/virtualNetworks/subnets/join/action",
+    "Microsoft.Network/networkSecurityGroups/read"
+  ],
+  "AssignableScopes": ["/subscriptions/SUBSCRIPTION_ID"]
+}
+```
+
+Then create the resource group, a network if you have none in the region,
+the role, and its assignments: on the resource group, and on the VNet for
+the subnet join (skip the second when the VNet is in the same resource
+group). Give runners a resource group of their own: Hakopod only changes VMs
+tagged with its `hakopod-installation`, but the role covers the whole group.
+
+```sh
+SUBSCRIPTION=00000000-0000-0000-0000-000000000000
+RG=hakopod-runners
+LOCATION=eastus
+HAKOPOD_PRINCIPAL=00000000-0000-0000-0000-000000000000   # from above
+az account set --subscription "$SUBSCRIPTION"
+az group create --name "$RG" --location "$LOCATION"
+az network vnet create --resource-group "$RG" --location "$LOCATION" --name hakopod-runners \
+  --address-prefixes 10.42.0.0/16 --subnet-name runners --subnet-prefixes 10.42.0.0/20
+SUBNET=$(az network vnet subnet show --resource-group "$RG" --vnet-name hakopod-runners --name runners --query id -o tsv)
+az role definition create --role-definition @hakopod-role.json
+az role assignment create --assignee-object-id "$HAKOPOD_PRINCIPAL" --assignee-principal-type ServicePrincipal \
+  --role "Hakopod Actions runners" --scope "/subscriptions/$SUBSCRIPTION/resourceGroups/$RG"
+az role assignment create --assignee-object-id "$HAKOPOD_PRINCIPAL" --assignee-principal-type ServicePrincipal \
+  --role "Hakopod Actions runners" --scope "${SUBNET%/subnets/*}"
+```
+
+To use your own gallery image, also grant the identity
+`Microsoft.Compute/galleries/images/versions/read` on it. Spot VMs draw on
+the subscription's separate Spot vCPU quota for the region; raise it under
+**Quotas** if launches report `QuotaExceeded`.
+
+### Define an Azure capacity
+
+```toml
+[[capacity]]
+name = "azure-spot"
+cloud = "azure"
+subscription_id = "00000000-0000-0000-0000-000000000000"
+resource_group = "hakopod-runners"
+region = "eastus"                            # an Azure location
+zones = ["1", "2", "3"]                      # optional; tried in order
+subnet_ids = ["/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/hakopod-runners/providers/Microsoft.Network/virtualNetworks/hakopod-runners/subnets/runners"]
+instance_types = ["Standard_D4as_v5", "Standard_D4s_v5", "Standard_D4ads_v5"]   # VM sizes, tried in order
+architecture = "amd64"                       # or arm64, with Dpsv5, Dpsv6 and similar sizes
+spot = true
+disk_gib = 100                               # Standard SSD OS disk
+max_instances = 20
+image = "ubuntu-24.04"                       # default; or a URN or image resource ID
+environments = ["shop/production"]
+```
+
+`hakopod actions capacity test azure-spot` reads the resource group, the
+subnet's virtual network and the subnet's network security group. With
+`--launch`, it also starts and deletes one `Standard_B1s` (amd64) or
+`Standard_B2pts_v2` (arm64), on-demand. Each VM size is tried in each zone
+until Azure has capacity; a create that fails for capacity, such as
+`SkuNotAvailable`, `AllocationFailed`, `ZonalAllocationFailed` or a quota
+error, is deleted and the next size or zone is tried.
+
+| Setting | Allowed values |
+| --- | --- |
+| `subscription_id` | a subscription ID (GUID) |
+| `resource_group` | a resource group name: 1–90 letters, digits, `-_.()`, not ending in `.` |
+| `region` | an Azure location such as `eastus` |
+| `zones` | optional, up to 3 availability zones such as `"1"`; empty launches without a zone |
+| `subnet_ids` | exactly one subnet resource ID in `region` |
+| `instance_types` | 1–20 VM sizes `Standard_…` of the capacity's architecture |
+| `image` | `ubuntu-24.04` (default), a `publisher:offer:sku:version` URN, or an image resource ID |
+| `warm_pool` | 0 |
+
+`role_arn`, `external_id`, `security_group_ids`, `project` and
+`service_account` are AWS and Google Cloud settings and are refused on an
+Azure capacity.
+
 ## Isolation and capacity
 
 Each single-job runner has its own Docker daemon inside gVisor. Docker actions,

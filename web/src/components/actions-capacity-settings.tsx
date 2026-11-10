@@ -27,9 +27,16 @@ type Draft = Omit<Capacity, ListKey | 'disk_gib' | 'max_instances' | 'warm_pool'
   Record<ListKey | 'disk_gib' | 'max_instances' | 'warm_pool', string> & { editing: string }
 
 const help =
-  'Named AWS or Google Cloud accounts where GitHub runner pools launch one single-use VM per job instead of a runner pod. Point a pool at one with capacity = "name". Hakopod reaches AWS by assuming role_arn and Google Cloud by impersonating service_account; no keys are stored.'
+  'Named AWS, Google Cloud or Azure accounts where GitHub runner pools launch one single-use VM per job instead of a runner pod. Point a pool at one with capacity = "name". Hakopod reaches AWS by assuming role_arn, Google Cloud by impersonating service_account and Azure with its own identity\'s role on resource_group; no keys are stored.'
 
 const list = (value: string) => value.split(/[\s,]+/).filter(Boolean)
+const cloudName = { aws: 'AWS', gcp: 'Google Cloud', azure: 'Azure' }
+const defaultTypes = {
+  aws: 'c7i.xlarge, c6i.xlarge, m7i.xlarge',
+  gcp: 'n2d-standard-4, e2-standard-4',
+  azure: 'Standard_D4as_v5, Standard_D4s_v5, Standard_D4ads_v5',
+}
+const defaultImage = { aws: 'runs-on-full', gcp: 'hakopod-minimal', azure: 'ubuntu-24.04' }
 const blank = (cloud: Capacity['cloud']): Draft => ({
   editing: '',
   name: '',
@@ -40,16 +47,17 @@ const blank = (cloud: Capacity['cloud']): Draft => ({
   project: '',
   zones: '',
   service_account: '',
+  subscription_id: '',
+  resource_group: '',
   subnet_ids: '',
   security_group_ids: '',
-  instance_types:
-    cloud === 'aws' ? 'c7i.xlarge, c6i.xlarge, m7i.xlarge' : 'n2d-standard-4, e2-standard-4',
+  instance_types: defaultTypes[cloud],
   architecture: 'amd64',
   spot: true,
   disk_gib: '100',
   max_instances: '10',
   environments: '*',
-  image: cloud === 'aws' ? 'runs-on-full' : 'hakopod-minimal',
+  image: defaultImage[cloud],
   warm_pool: '0',
 })
 const draftOf = (c: Capacity): Draft => ({
@@ -60,6 +68,8 @@ const draftOf = (c: Capacity): Draft => ({
   external_id: c.external_id || '',
   project: c.project || '',
   service_account: c.service_account || '',
+  subscription_id: c.subscription_id || '',
+  resource_group: c.resource_group || '',
   image: c.image || '',
   zones: (c.zones || []).join(', '),
   subnet_ids: c.subnet_ids.join(', '),
@@ -86,19 +96,27 @@ const capacityOf = (d: Draft): Capacity => {
     warm_pool: Number(d.warm_pool),
     ...(d.image?.trim() ? { image: d.image.trim() } : {}),
   }
-  return d.cloud === 'aws'
-    ? {
-        ...common,
-        role_arn: d.role_arn?.trim(),
-        security_group_ids: list(d.security_group_ids),
-        ...(d.external_id?.trim() ? { external_id: d.external_id.trim() } : {}),
-      }
-    : {
-        ...common,
-        project: d.project?.trim(),
-        zones: list(d.zones),
-        service_account: d.service_account?.trim(),
-      }
+  if (d.cloud === 'aws')
+    return {
+      ...common,
+      role_arn: d.role_arn?.trim(),
+      security_group_ids: list(d.security_group_ids),
+      ...(d.external_id?.trim() ? { external_id: d.external_id.trim() } : {}),
+    }
+  if (d.cloud === 'azure')
+    return {
+      ...common,
+      warm_pool: 0,
+      subscription_id: d.subscription_id?.trim(),
+      resource_group: d.resource_group?.trim(),
+      ...(list(d.zones).length ? { zones: list(d.zones) } : {}),
+    }
+  return {
+    ...common,
+    project: d.project?.trim(),
+    zones: list(d.zones),
+    service_account: d.service_account?.trim(),
+  }
 }
 
 function imageState(image?: Image) {
@@ -211,7 +229,7 @@ export default function ActionsCapacitySettings() {
                 key={c.name}
                 mark={<Icon name="server" size={16} />}
                 name={c.name}
-                detail={`${c.cloud === 'aws' ? 'AWS' : 'Google Cloud'} ${c.cloud === 'gcp' ? `${c.project} · ` : ''}${c.region} · ${c.instance_types.join(', ')}`}
+                detail={`${cloudName[c.cloud]} ${c.cloud === 'gcp' ? `${c.project} · ` : ''}${c.cloud === 'azure' ? `${c.resource_group} · ` : ''}${c.region} · ${c.instance_types.join(', ')}`}
                 status={
                   imageState(settings.images[c.name]) || (
                     <SettingsState tone={c.spot ? 'ok' : 'muted'}>
@@ -564,6 +582,76 @@ gcloud iam service-accounts add-iam-policy-binding "hakopod-actions@$PROJECT.iam
   --project "$PROJECT" --member "serviceAccount:$HAKOPOD_IDENTITY" \\
   --role roles/iam.serviceAccountTokenCreator`
 
+// Mirrors the role in docs/managed-actions.md: launch, read and delete VMs with
+// their NICs, public IPs and disks, join the subnet and read what Check reads.
+const azureRole = (subscription: string) =>
+  JSON.stringify(
+    {
+      Name: 'Hakopod Actions runners',
+      Description: 'Launch and delete single-use GitHub Actions runner VMs.',
+      Actions: [
+        'Microsoft.Resources/subscriptions/resourceGroups/read',
+        'Microsoft.Compute/virtualMachines/read',
+        'Microsoft.Compute/virtualMachines/write',
+        'Microsoft.Compute/virtualMachines/delete',
+        'Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action',
+        'Microsoft.Compute/disks/read',
+        'Microsoft.Compute/disks/write',
+        'Microsoft.Compute/disks/delete',
+        'Microsoft.Compute/locations/operations/read',
+        'Microsoft.Network/networkInterfaces/read',
+        'Microsoft.Network/networkInterfaces/write',
+        'Microsoft.Network/networkInterfaces/delete',
+        'Microsoft.Network/networkInterfaces/join/action',
+        'Microsoft.Network/publicIPAddresses/read',
+        'Microsoft.Network/publicIPAddresses/write',
+        'Microsoft.Network/publicIPAddresses/delete',
+        'Microsoft.Network/publicIPAddresses/join/action',
+        'Microsoft.Network/virtualNetworks/read',
+        'Microsoft.Network/virtualNetworks/subnets/read',
+        'Microsoft.Network/virtualNetworks/subnets/join/action',
+        'Microsoft.Network/networkSecurityGroups/read',
+      ],
+      AssignableScopes: [`/subscriptions/${subscription}`],
+    },
+    null,
+    2,
+  )
+
+const azureIdentity = `# Hakopod on an Azure VM: the VM's managed identity
+az vm identity assign --resource-group HAKOPOD_RG --name HAKOPOD_VM --query systemAssignedIdentity -o tsv
+# Hakopod on AKS with workload identity: the user-assigned identity's principal
+az identity show --resource-group HAKOPOD_RG --name HAKOPOD_IDENTITY --query principalId -o tsv
+# Hakopod outside Azure, for example on EC2: an app registration with a secret.
+# Put appId, password and tenant in Hakopod's environment as
+# AZURE_CLIENT_ID, AZURE_CLIENT_SECRET and AZURE_TENANT_ID, then restart it.
+az ad sp create-for-rbac --name hakopod-control-plane
+az ad sp show --id APP_ID --query id -o tsv   # the principal ID`
+
+const azureSetup = (
+  subscription: string,
+  group: string,
+  region: string,
+) => `SUBSCRIPTION=${subscription || '00000000-0000-0000-0000-000000000000'}
+RG=${group || 'hakopod-runners'}
+LOCATION=${region || 'eastus'}
+HAKOPOD_PRINCIPAL=00000000-0000-0000-0000-000000000000   # principal ID from step 1
+az account set --subscription "$SUBSCRIPTION"
+az group create --name "$RG" --location "$LOCATION"
+# Only without a subnet of your own: a VNet with one subnet. No NAT gateway is
+# needed; each runner gets its own Standard public IP for outbound traffic.
+az network vnet create --resource-group "$RG" --location "$LOCATION" --name hakopod-runners \
+  --address-prefixes 10.42.0.0/16 --subnet-name runners --subnet-prefixes 10.42.0.0/20
+SUBNET=$(az network vnet subnet show --resource-group "$RG" --vnet-name hakopod-runners --name runners --query id -o tsv)
+echo "$SUBNET"   # Subnet resource ID below
+# Save the role above as hakopod-role.json first.
+az role definition create --role-definition @hakopod-role.json
+az role assignment create --assignee-object-id "$HAKOPOD_PRINCIPAL" --assignee-principal-type ServicePrincipal \
+  --role "Hakopod Actions runners" --scope "/subscriptions/$SUBSCRIPTION/resourceGroups/$RG"
+# Subnet join and the network reads, on the VNet (skip if it is in $RG).
+az role assignment create --assignee-object-id "$HAKOPOD_PRINCIPAL" --assignee-principal-type ServicePrincipal \
+  --role "Hakopod Actions runners" --scope "\${SUBNET%/subnets/*}"`
+
 function Snippet({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid min-w-0 gap-1">
@@ -599,7 +687,15 @@ function SetupGuide({ draft, settings }: { draft: Draft; settings: Settings }) {
   return (
     <details className="capacity-guide grid gap-3" open={!draft.editing}>
       <summary className="cursor-pointer text-sm font-medium">
-        Set up {draft.cloud === 'aws' ? 'your AWS account' : 'your Google Cloud project'} first
+        Set up{' '}
+        {
+          {
+            aws: 'your AWS account',
+            gcp: 'your Google Cloud project',
+            azure: 'your Azure subscription',
+          }[draft.cloud]
+        }{' '}
+        first
       </summary>
       {draft.cloud === 'aws' ? (
         <ol className="mt-3 grid gap-4">
@@ -669,6 +765,52 @@ function SetupGuide({ draft, settings }: { draft: Draft; settings: Settings }) {
             </p>
           </Step>
         </ol>
+      ) : draft.cloud === 'azure' ? (
+        <ol className="mt-3 grid gap-4">
+          <Step n={1} title="Find Hakopod's own Azure identity">
+            <p className="muted-text">
+              Hakopod calls Azure as the identity it runs as; nothing is stored per capacity. On an
+              Azure VM that is its managed identity, on AKS its workload identity. Anywhere else,
+              such as EC2, create an app registration and give Hakopod its client ID, secret and
+              tenant. Note the principal ID for step 3.
+            </p>
+            <Snippet label="Identity commands" value={azureIdentity} />
+          </Step>
+          <Step n={2} title="Create the custom role">
+            <p className="muted-text">
+              Save this as <code>hakopod-role.json</code>. Hakopod can create, read and delete VMs
+              with their NICs, public IPs and disks, join the subnet and read the network for Test.
+              Runner VMs get no identity, so a job holds no Azure credential.
+            </p>
+            <Snippet
+              label="Custom role"
+              value={azureRole(draft.subscription_id || 'SUBSCRIPTION_ID')}
+            />
+          </Step>
+          <Step n={3} title="Create the resource group and network, and assign the role">
+            <p className="muted-text">
+              Hakopod only touches VMs tagged{' '}
+              <code>hakopod-installation={settings.installation_id}</code>, but the role covers the
+              whole resource group, so give runners a resource group of their own. Skip the VNet
+              commands if you have a subnet in the region; it needs no NSG rules.
+            </p>
+            <Snippet
+              label="az commands"
+              value={azureSetup(
+                draft.subscription_id || '',
+                draft.resource_group || '',
+                draft.region,
+              )}
+            />
+          </Step>
+          <Step n={4} title="Fill in the form below, save, then Test">
+            <p className="muted-text">
+              Test reads the resource group, checks that the subnet is in the region and warns about
+              NSG rules open to the internet. Test with launch also starts and deletes one
+              Standard_B1s or Standard_B2pts_v2, which takes a minute or two on Azure.
+            </p>
+          </Step>
+        </ol>
       ) : (
         <ol className="mt-3 grid gap-4">
           <Step n={1} title="Create a service account and a custom role">
@@ -722,6 +864,7 @@ function CapacitySheet({
 }) {
   const formId = useId()
   const aws = draft.cloud === 'aws'
+  const azure = draft.cloud === 'azure'
   const field = (
     key: keyof Draft,
     label: string,
@@ -774,7 +917,7 @@ function CapacitySheet({
           {field(
             'name',
             'Name',
-            aws ? 'aws-spot' : 'gcp-spot',
+            `${draft.cloud}-spot`,
             'Pools refer to it as capacity = "name". Lowercase letters, digits and hyphens.',
           )}
           <label className="grid min-w-0 gap-1">
@@ -789,6 +932,7 @@ function CapacitySheet({
               options={[
                 { value: 'aws', label: 'AWS EC2' },
                 { value: 'gcp', label: 'Google Compute Engine' },
+                { value: 'azure', label: 'Microsoft Azure' },
               ]}
             />
             <small className="text-xs muted-text">Cannot be changed after saving.</small>
@@ -832,6 +976,44 @@ function CapacitySheet({
                 )}
               </div>
             </>
+          ) : azure ? (
+            <>
+              <div className="form-grid-two">
+                {field(
+                  'subscription_id',
+                  'Subscription ID',
+                  '00000000-0000-0000-0000-000000000000',
+                  'The subscription runners launch in: az account show --query id.',
+                )}
+                {field(
+                  'resource_group',
+                  'Resource group',
+                  'hakopod-runners',
+                  "Runners launch here. Hakopod's identity needs the role from step 2 on it.",
+                )}
+              </div>
+              <div className="form-grid-two">
+                {field(
+                  'region',
+                  'Region',
+                  'eastus',
+                  'The Azure location, as az account list-locations names it.',
+                )}
+                {field(
+                  'zones',
+                  'Zones',
+                  '1, 2, 3',
+                  'Optional. Availability zones to try, in order; empty launches without a zone.',
+                  false,
+                )}
+              </div>
+              {field(
+                'subnet_ids',
+                'Subnet resource ID',
+                '/subscriptions/…/resourceGroups/…/providers/Microsoft.Network/virtualNetworks/…/subnets/runners',
+                'One subnet in the region. Each runner gets a Standard public IP, which admits nothing inbound.',
+              )}
+            </>
           ) : (
             <>
               <div className="form-grid-two">
@@ -861,9 +1043,9 @@ function CapacitySheet({
           <legend className="mb-2 text-sm font-medium">Machines</legend>
           {field(
             'instance_types',
-            aws ? 'Instance types' : 'Machine types',
-            aws ? 'c7i.xlarge, c6i.xlarge, m7i.xlarge' : 'n2d-standard-4, e2-standard-4',
-            'Comma-separated, tried in order. List several so a launch finds spot capacity. All must match the architecture.',
+            { aws: 'Instance types', gcp: 'Machine types', azure: 'VM sizes' }[draft.cloud],
+            defaultTypes[draft.cloud],
+            `Comma-separated, tried in order${aws ? '' : ', each in every zone'}. List several so a launch finds spot capacity. All must match the architecture.`,
           )}
           <div className="form-grid-two">
             <label className="grid min-w-0 gap-1">
@@ -876,7 +1058,14 @@ function CapacitySheet({
                 }
                 options={[
                   { value: 'amd64', label: 'amd64 (x86)' },
-                  { value: 'arm64', label: aws ? 'arm64 (Graviton)' : 'arm64 (Tau T2A, Axion)' },
+                  {
+                    value: 'arm64',
+                    label: {
+                      aws: 'arm64 (Graviton)',
+                      gcp: 'arm64 (Tau T2A, Axion)',
+                      azure: 'arm64 (Ampere, Cobalt)',
+                    }[draft.cloud],
+                  },
                 ]}
               />
               <small className="text-xs muted-text">
@@ -886,10 +1075,13 @@ function CapacitySheet({
             {field(
               'image',
               'Image',
-              aws ? 'runs-on-full' : 'hakopod-minimal',
-              aws
-                ? 'runs-on-full: GitHub-compatible Ubuntu 24.04 image from RunsOn. hakopod-minimal: built in your account. Or an AMI ID.'
-                : 'hakopod-minimal is built in your project. Or projects/…/global/images/[family/]NAME.',
+              defaultImage[draft.cloud],
+              {
+                aws: 'runs-on-full: GitHub-compatible Ubuntu 24.04 image from RunsOn. hakopod-minimal: built in your account. Or an AMI ID.',
+                gcp: 'hakopod-minimal is built in your project. Or projects/…/global/images/[family/]NAME.',
+                azure:
+                  "ubuntu-24.04: Canonical's image; Docker and the runner install at boot. Or a publisher:offer:sku:version URN or an image resource ID.",
+              }[draft.cloud],
               false,
             )}
           </div>
@@ -898,7 +1090,9 @@ function CapacitySheet({
               'disk_gib',
               'Disk (GiB)',
               '100',
-              'Encrypted root volume. runs-on-full needs 30 or more.',
+              azure
+                ? 'Standard SSD OS disk, encrypted at rest.'
+                : 'Encrypted root volume. runs-on-full needs 30 or more.',
             )}
             <label className="grid min-w-0 gap-1">
               Pricing
@@ -927,11 +1121,21 @@ function CapacitySheet({
               '10',
               'Hard ceiling across every pool on this capacity, standbys included. Pools wait at the limit.',
             )}
-            {field(
-              'warm_pool',
-              'Warm standbys',
-              '0',
-              'Stopped on-demand VMs kept ready so jobs start faster. You pay for their disks.',
+            {azure ? (
+              <div className="grid min-w-0 gap-1">
+                Warm standbys
+                <small className="text-xs muted-text">
+                  Not on Azure yet: each job launches a fresh VM, which installs Docker and the
+                  runner at boot.
+                </small>
+              </div>
+            ) : (
+              field(
+                'warm_pool',
+                'Warm standbys',
+                '0',
+                'Stopped on-demand VMs kept ready so jobs start faster. You pay for their disks.',
+              )
             )}
           </div>
           {field(
