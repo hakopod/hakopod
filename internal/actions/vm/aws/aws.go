@@ -198,13 +198,15 @@ func lifecycle(l string) string {
 }
 
 type ec2Instance struct {
-	ID         string    `xml:"instanceId"`
-	Type       string    `xml:"instanceType"`
-	Lifecycle  string    `xml:"instanceLifecycle"`
-	State      string    `xml:"instanceState>name"`
-	Reason     string    `xml:"stateReason>code"`
-	LaunchTime time.Time `xml:"launchTime"`
-	Tags       []struct {
+	ID        string `xml:"instanceId"`
+	Type      string `xml:"instanceType"`
+	Lifecycle string `xml:"instanceLifecycle"`
+	State     string `xml:"instanceState>name"`
+	Reason    string `xml:"stateReason>code"`
+	// SpotRequest is the spot request behind a spot instance.
+	SpotRequest string    `xml:"spotInstanceRequestId"`
+	LaunchTime  time.Time `xml:"launchTime"`
+	Tags        []struct {
 		Key   string `xml:"key"`
 		Value string `xml:"value"`
 	} `xml:"tagSet>item"`
@@ -233,12 +235,57 @@ func (c *Client) State(ctx context.Context, id string) (vm.Instance, error) {
 	if err != nil {
 		return vm.Instance{}, awsError("describe the instance", err)
 	}
+	if err = c.reclaimed(ctx, out.Instances); err != nil {
+		return vm.Instance{}, err
+	}
 	for _, i := range out.Instances {
 		if i.ID == id {
 			return instance(i), nil
 		}
 	}
 	return vm.Instance{}, vm.ErrNotFound
+}
+
+// reclaimed gives spot instances the spot service took back the reclaim
+// reason. An instance interrupted by AWS FIS reads as
+// Client.UserInitiatedShutdown, like one Hakopod terminated; only its spot
+// request tells them apart. Instances that powered themselves off are not
+// looked up.
+func (c *Client) reclaimed(ctx context.Context, found []ec2Instance) error {
+	p := url.Values{"Filter.1.Name": {"spot-instance-request-id"}}
+	n := 0
+	for _, i := range found {
+		if i.Lifecycle == "spot" && i.SpotRequest != "" && i.Reason == "Client.UserInitiatedShutdown" {
+			n++
+			p.Set(fmt.Sprintf("Filter.1.Value.%d", n), i.SpotRequest)
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	// ponytail: one page of requests; a sweep sees far fewer than EC2's page.
+	var out struct {
+		Requests []struct {
+			ID     string `xml:"spotInstanceRequestId"`
+			Status string `xml:"status>code"`
+		} `xml:"spotInstanceRequestSet>item"`
+	}
+	if err := c.call(ctx, "DescribeSpotInstanceRequests", p, &out); err != nil {
+		return awsError("read the spot requests", err)
+	}
+	taken := map[string]bool{}
+	for _, r := range out.Requests {
+		switch r.Status {
+		case "instance-terminated-by-price", "instance-terminated-no-capacity", "instance-terminated-capacity-oversubscribed", "instance-terminated-by-experiment":
+			taken[r.ID] = true
+		}
+	}
+	for n := range found {
+		if taken[found[n].SpotRequest] {
+			found[n].Reason = "Server.SpotInstanceTermination"
+		}
+	}
+	return nil
 }
 
 // List returns instances carrying every given tag and this installation's.
@@ -260,6 +307,9 @@ func (c *Client) List(ctx context.Context, tags map[string]string) ([]vm.Instanc
 		var result describeInstances
 		if err := c.call(ctx, "DescribeInstances", p, &result); err != nil {
 			return nil, awsError("list instances", err)
+		}
+		if err := c.reclaimed(ctx, result.Instances); err != nil {
+			return nil, err
 		}
 		for _, i := range result.Instances {
 			out = append(out, instance(i))
