@@ -400,14 +400,34 @@ export default function ActionsCapacitySettings() {
   )
 }
 
-const trustPolicy = (externalID: string) =>
+// The role Hakopod's own EC2 instance runs as. It may only assume the actions role.
+const controlPlanePolicy = (account: string) =>
   JSON.stringify(
     {
       Version: '2012-10-17',
       Statement: [
         {
           Effect: 'Allow',
-          Principal: { AWS: 'arn:aws:iam::ACCOUNT_ID:role/HAKOPOD_IDENTITY' },
+          Action: 'sts:AssumeRole',
+          Resource: `arn:aws:iam::${account}:role/hakopod-actions`,
+        },
+      ],
+    },
+    null,
+    2,
+  )
+
+const imdsRole = `TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/iam/security-credentials/`
+
+const trustPolicy = (externalID: string, account: string) =>
+  JSON.stringify(
+    {
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: { AWS: `arn:aws:iam::${account}:role/hakopod-control-plane` },
           Action: 'sts:AssumeRole',
           Condition: { StringEquals: { 'sts:ExternalId': externalID } },
         },
@@ -565,6 +585,8 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 
 function SetupGuide({ draft, settings }: { draft: Draft; settings: Settings }) {
   const externalID = draft.external_id || settings.external_id
+  // Fill the account in once IAM role ARN names it.
+  const account = /^arn:aws:iam::(\d{12}):/.exec(draft.role_arn || '')?.[1] || 'ACCOUNT_ID'
   return (
     <details className="capacity-guide grid gap-3" open={!draft.editing}>
       <summary className="cursor-pointer text-sm font-medium">
@@ -572,33 +594,60 @@ function SetupGuide({ draft, settings }: { draft: Draft; settings: Settings }) {
       </summary>
       {draft.cloud === 'aws' ? (
         <ol className="mt-3 grid gap-4">
-          <Step n={1} title="Create an IAM role for Hakopod">
+          <Step n={1} title="Give Hakopod its own AWS identity">
             <p className="muted-text">
-              Hakopod assumes this role; no access keys are stored. Replace the principal with the
-              AWS identity Hakopod runs as: its environment credentials, its EKS pod role, or its
-              EC2 instance role. The external ID is this installation's.
+              Hakopod calls AWS as the identity it runs as. On EC2 that is the instance role; no
+              access keys are stored. Run this on the Hakopod host: a role name means one is
+              attached, a 404 means none is.
             </p>
-            <Snippet label="Trust policy" value={trustPolicy(externalID)} />
-          </Step>
-          <Step n={2} title="Attach this permissions policy to the role">
+            <Snippet label="Check the instance role" value={imdsRole} />
             <p className="muted-text">
-              Hakopod can launch tagged instances, and start, change, image or terminate only
-              instances tagged <code>hakopod-installation={settings.installation_id}</code>. Runners
-              get no instance profile, so no <code>iam:PassRole</code>.
+              Without one, in the AWS console open <b>IAM → Roles → Create role</b>, choose{' '}
+              <b>AWS service</b> and <b>EC2</b>, and name it <code>hakopod-control-plane</code>.
+              Open the role, choose <b>Add permissions → Create inline policy → JSON</b> and paste
+              this. Then attach it under{' '}
+              <b>EC2 → Instances → the Hakopod host → Actions → Security → Modify IAM role</b>. If
+              Hakopod runs in a container on that host, set the instance metadata hop limit to 2.
+              ACCOUNT_ID is your 12-digit AWS account; the snippets fill it in once IAM role ARN
+              below is set.
+            </p>
+            <Snippet label="Control plane inline policy" value={controlPlanePolicy(account)} />
+            <p className="muted-text">
+              On EKS, use the pod role instead; elsewhere, Hakopod's <code>AWS_ACCESS_KEY_ID</code>{' '}
+              user. Put that ARN in the trust policy in step 3.
+            </p>
+          </Step>
+          <Step n={2} title="Create the permissions policy">
+            <p className="muted-text">
+              Open <b>IAM → Policies → Create policy → JSON</b>, paste this and name it{' '}
+              <code>hakopod-actions</code>. Hakopod can launch tagged instances, and start, change,
+              image or terminate only instances tagged{' '}
+              <code>hakopod-installation={settings.installation_id}</code>. Runners get no instance
+              profile, so no <code>iam:PassRole</code>.
             </p>
             <Snippet
               label="Permissions policy"
               value={permissionsPolicy(settings.installation_id)}
             />
           </Step>
-          <Step n={3} title="Pick the network">
+          <Step n={3} title="Create the role Hakopod assumes">
+            <p className="muted-text">
+              Open <b>IAM → Roles → Create role</b>, choose <b>Custom trust policy</b> and paste
+              this. It has a Principal, so it does not go in the policy editor of step 2. Attach the{' '}
+              <code>hakopod-actions</code> policy, name the role <code>hakopod-actions</code> and
+              put its ARN in IAM role ARN below. Create the step 1 role first: AWS rejects a trust
+              policy whose principal does not exist.
+            </p>
+            <Snippet label="Trust policy" value={trustPolicy(externalID, account)} />
+          </Step>
+          <Step n={4} title="Pick the network">
             <p className="muted-text">
               Use subnets with a route to the internet: private subnets behind a NAT gateway, or
               public subnets that assign public IPs. Create a security group with no inbound rules
               and outbound allowed; runners only call GitHub over HTTPS.
             </p>
           </Step>
-          <Step n={4} title="Fill in the form below, save, then Test">
+          <Step n={5} title="Fill in the form below, save, then Test">
             <p className="muted-text">
               Test assumes the role and reads the subnets and security groups. Test with launch also
               starts and terminates one t3.micro or t4g.micro.
