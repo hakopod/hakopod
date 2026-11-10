@@ -38,6 +38,8 @@ func (c *Client) sandboxPod(t Target, r sandbox.Record, s spec.Service, b Runtim
 	if s.Session.EgressProxy != "" {
 		guard = []string{sessionguard.Path, "run", "--allow-ip-sockets", "--"}
 		url := sandboxEgressProxyURL(t, s.Session.EgressProxy)
+		// Session DNS stays at 127.0.0.1; the proxy name resolves only here.
+		p.HostAliases = []corev1.HostAlias{{IP: t.sessionProxyIP, Hostnames: []string{sandboxEgressProxyHost(t, s.Session.EgressProxy)}}}
 		proxyEnv := map[string]string{"HAKOPOD_EGRESS_PROXY": url, "HTTP_PROXY": url, "HTTPS_PROXY": url, "http_proxy": url, "https_proxy": url, "NO_PROXY": "", "no_proxy": ""}
 		env := app.Env[:0:0]
 		for _, e := range app.Env {
@@ -129,7 +131,7 @@ func (c *Client) validateSandboxPod(t Target, r sandbox.Record, s spec.Service, 
 	if a.RestartPolicy != corev1.RestartPolicyNever || a.HostNetwork || a.HostPID || a.HostIPC || len(a.EphemeralContainers) > 0 || !apiequality.Semantic.DeepEqual(a.ImagePullSecrets, e.ImagePullSecrets) || a.ServiceAccountName != "" && a.ServiceAccountName != "default" || a.AutomountServiceAccountToken == nil || *a.AutomountServiceAccountToken || a.ShareProcessNamespace == nil || *a.ShareProcessNamespace || a.EnableServiceLinks == nil || *a.EnableServiceLinks {
 		return fmt.Errorf("session Pod isolation changed")
 	}
-	if !apiequality.Semantic.DeepEqual(a.Overhead, e.Overhead) || !apiequality.Semantic.DeepEqual(a.RuntimeClassName, e.RuntimeClassName) || !apiequality.Semantic.DeepEqual(a.SecurityContext, e.SecurityContext) || !apiequality.Semantic.DeepEqual(a.Containers, e.Containers) || !apiequality.Semantic.DeepEqual(a.InitContainers, e.InitContainers) || !apiequality.Semantic.DeepEqual(a.Volumes, e.Volumes) || a.DNSPolicy != e.DNSPolicy || !apiequality.Semantic.DeepEqual(a.DNSConfig, e.DNSConfig) || !apiequality.Semantic.DeepEqual(a.TerminationGracePeriodSeconds, e.TerminationGracePeriodSeconds) {
+	if !apiequality.Semantic.DeepEqual(a.Overhead, e.Overhead) || !apiequality.Semantic.DeepEqual(a.RuntimeClassName, e.RuntimeClassName) || !apiequality.Semantic.DeepEqual(a.SecurityContext, e.SecurityContext) || !apiequality.Semantic.DeepEqual(a.Containers, e.Containers) || !apiequality.Semantic.DeepEqual(a.InitContainers, e.InitContainers) || !apiequality.Semantic.DeepEqual(a.Volumes, e.Volumes) || !apiequality.Semantic.DeepEqual(a.HostAliases, e.HostAliases) || a.DNSPolicy != e.DNSPolicy || !apiequality.Semantic.DeepEqual(a.DNSConfig, e.DNSConfig) || !apiequality.Semantic.DeepEqual(a.TerminationGracePeriodSeconds, e.TerminationGracePeriodSeconds) {
 		return fmt.Errorf("session Pod differs from its immutable template")
 	}
 	if a.ActiveDeadlineSeconds == nil || *a.ActiveDeadlineSeconds < 1 || *a.ActiveDeadlineSeconds > s.Session.LifetimeSeconds {
@@ -143,5 +145,8 @@ func (c *Client) validateSandboxPod(t Target, r sandbox.Record, s spec.Service, 
 
 // sandboxEgressProxyURL is the in-cluster address of the session's proxy service.
 func sandboxEgressProxyURL(t Target, proxy string) string {
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", proxy, Namespace(t.ApplicationID), t.Spec.Services[proxy].Port)
+	return fmt.Sprintf("http://%s:%d", sandboxEgressProxyHost(t, proxy), t.Spec.Services[proxy].Port)
+}
+func sandboxEgressProxyHost(t Target, proxy string) string {
+	return proxy + "." + Namespace(t.ApplicationID) + ".svc.cluster.local"
 }

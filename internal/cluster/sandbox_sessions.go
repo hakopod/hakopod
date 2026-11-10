@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"reflect"
 	"time"
@@ -87,6 +88,13 @@ func (c *Client) sandboxTemplate(ctx context.Context, r sandbox.Record) (Target,
 	}
 	if marker.Status != "configured" {
 		return t, s, RuntimeProfileBinding{}, fmt.Errorf("session template revision is not active")
+	}
+	if s.Session.EgressProxy != "" {
+		proxy, err := c.kube.CoreV1().Services(Namespace(t.ApplicationID)).Get(ctx, s.Session.EgressProxy, metav1.GetOptions{})
+		if err != nil || owned(proxy, t) != nil || net.ParseIP(proxy.Spec.ClusterIP).To4() == nil {
+			return t, s, RuntimeProfileBinding{}, fmt.Errorf("session egress proxy service is not ready")
+		}
+		t.sessionProxyIP = proxy.Spec.ClusterIP
 	}
 	binding, err := c.resolveRuntimeProfile(ctx, r.Project, r.Environment, t.Spec.Name, r.Service, s)
 	return t, s, binding, err
@@ -228,7 +236,8 @@ func sandboxPolicySpec(t Target, s spec.Service) networkingv1.NetworkPolicySpec 
 	tcp := corev1.ProtocolTCP
 	port := intstr.FromInt32(t.Spec.Services[s.Session.EgressProxy].Port)
 	p.Egress = []networkingv1.NetworkPolicyEgressRule{{
-		To:    []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": Namespace(t.ApplicationID)}}, PodSelector: ptr(selectorFor(t, s.Session.EgressProxy))}},
+		// The ipBlock covers CNIs that evaluate policy before Service DNAT.
+		To:    []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": Namespace(t.ApplicationID)}}, PodSelector: ptr(selectorFor(t, s.Session.EgressProxy))}, {IPBlock: &networkingv1.IPBlock{CIDR: t.sessionProxyIP + "/32"}}},
 		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
 	}}
 	return p
