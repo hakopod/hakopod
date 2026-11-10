@@ -13,15 +13,75 @@
     "baseline_sha256": "849bc20c6866de0d77fa027529c1c7036a1f5d480dfb549a1d44208a490545db",
     "changes": [
       {
+        "after": "c4022e07cb0f9693a721677eb176ab63f746ce5bc2c2202fb36285d12da7bc11",
+        "before": "01bb73dba4347d8db0b949243ca1d795315af451b8e1f133b35566c56f5f1a09",
+        "path": "api/contracts/actions_capacity.py",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
         "after": "b38267a38093da379f1c21e39caf45405ecf1a0fe3f5d9a0fb3d9ff9247a1faf",
         "before": "3ed33f2a5944c6a9d335e75815a824f8808dde9798a61af8c87771f1ad12f80b",
         "path": "api/contracts/zz_sandbox_sessions.py",
         "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
-        "after": "89163cc7f3669315c3263a9643a4e5a617440cdd2b9bf437435d29a4fb31d3de",
+        "after": "014807b7b842f522332fdac042ce67c00fa0be632238a12143b159d892b5dc98",
         "before": "460ec2ff4a66933943517ccbf6dd39b52c0d95c626e86ce0d410cc0ec7ff3853",
         "path": "api/openapi.json",
+        "reason": "Reviewed control-plane API schema change (session egress_proxy setting, and gcp Actions capacity fields for Compute Engine Spot VMs tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "e9bef6346275d8da99fbced27f0e8730e16b47c9303555a83fcee3cbd0e9da15",
+        "before": null,
+        "path": "internal/actions/vm/gcp/acceptance_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "4ec4c158c9ae9edf4b9d55e4ec66d13f6d2812dca26b1d2ef22d17a13336ee2a",
+        "before": null,
+        "path": "internal/actions/vm/gcp/auth.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "646ecab1838af250a8a06e94b0641aac75d2417058b5a419f6969cae90d44f76",
+        "before": null,
+        "path": "internal/actions/vm/gcp/gcp.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f34eb8a5850f163c65163e27f105f7bca922bb02b8b68e8535fbae52109667d2",
+        "before": null,
+        "path": "internal/actions/vm/gcp/gcp_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "69670b501785c67bf36d39b6490dff5116438f743f4392b61d30b6c3f10a8660",
+        "before": "aa6ecca96f946cc8f4629769a16ac329c489c248982d49550591abde71c1e699",
+        "path": "internal/actions/vm/userdata.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "5f83e397c9ac4288992a44ef732ee4c1c4d269d9d1c9282c06a13bf4383f405f",
+        "before": "7a00916cd39c5f291f17d38ed740b9d467b0b94beeaa30ec605af0456d74355d",
+        "path": "internal/api/actions_capacity.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "916a4bbfb0b7bd1ab4f99bd58cafa28dd576b3f99427b4dbec6f3eeeff4b3498",
+        "before": "b281271d7d18e25a907cb8b23cdde545ace2aef47f308122c0cc1782c886c608",
+        "path": "internal/api/actions_demand.go",
+        "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "8ef741ead7065e91cf83901b98bdb2ec0235ae594decdd53703e2f3f1661a650",
+        "before": "fdcf32a8a8df2132a1c7997adcbb813744c6d695accbc8d76e4abcc6aaca86fa",
+        "path": "internal/api/actions_vms.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "559c7c2bba7cc477749364a1f37fe7911fcfc52f266c6853a5d9a2b814415c4c",
+        "before": "daddd92ac5a201fae7620b9fa4257a9eb863d20f29bb50bd970e159c99019a2f",
+        "path": "internal/api/actions_vms_test.go",
         "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
@@ -109,13 +169,25 @@
         "reason": "Reviewed control-plane change (opt-in sandbox session egress through one proxy service resolved by a host alias, disk-backed session temporary mounts and the session guard --allow-ip-sockets flag, with tests); not a managed runtime binary, image, dependency or native harness input."
       },
       {
+        "after": "f116e90ddde7bfea68123864af74826eb8e7d535e9b8a82ca167ea5768492171",
+        "before": "3eda836675499c1add82f07cf09772947dc0807205749493cc5b8ff2e41f13db",
+        "path": "internal/store/actions_capacity.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "6d365f4562d7f62f94aafaafcab96145af44512d5cae6b8f55a7df91524ddcd8",
+        "before": "ce17491f1f48b0cd70e2572e6109248209da8477cc682e13b881114c4c3568ab",
+        "path": "internal/store/actions_capacity_test.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Compute Engine Spot VMs with impersonated service-account auth, preemption handling, stopped-runner reaping and gcp capacity settings, tested in https://github.com/hakopod/hakopod/actions/runs/42788468191); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
         "after": "edc3b7c73c77edf75187b77068210000a574a7ef621b0412d29ff7cc1aabe621",
         "before": "f11e0dee70f54953dcc6afae57d223394430af87b994f830b34b0812af78c1d3",
         "path": "release/runtime-source-compatibility.py",
         "reason": "Opens the alpha.86 chained review on the published alpha.85 records; verifier constants only, no change to what is verified."
       }
     ],
-    "current_sha256": "77e27b4e6f451d9aa875fcd1c124007abbeae1c54347a7a8e63ba40648c313cc"
+    "current_sha256": "39cccbda458188cc331813e33db73e9ad894cd504a7cf9c60ee433d3efdeb352"
   },
   "predecessor": {
     "commit": "d948e9b360eb2202df5228a565c987fd95dc3a02",
