@@ -18,7 +18,7 @@ func serviceResourceQuota(q *corev1.ResourceQuota, t Target) {
 	}
 	for _, app := range apps {
 		for name, s := range app.Services {
-			if s.Actions != nil && s.Actions.Capacity != "" {
+			if spec.OnVMCapacity(s) {
 				continue // runs on cloud VMs, not in this namespace
 			}
 			p := spec.PodResources(s)

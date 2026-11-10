@@ -75,6 +75,9 @@ func DatabaseStorageReservation(s database.Spec) int64 {
 func applicationMemoryReservation(s spec.Application) (int64, error) {
 	var total int64
 	for _, svc := range s.Services {
+		if spec.OnVMCapacity(svc) {
+			continue
+		}
 		profile, ok := spec.Profiles[svc.Size]
 		if !ok {
 			profile = spec.Profiles["small"]
@@ -111,6 +114,9 @@ func applicationMemoryReservation(s spec.Application) (int64, error) {
 func applicationCapacityReservation(s spec.Application) (managedplatform.Capacity, error) {
 	var total managedplatform.Capacity
 	for _, service := range s.Services {
+		if spec.OnVMCapacity(service) {
+			continue
+		}
 		resources := spec.PodResources(service)
 		cpu, err := resource.ParseQuantity(resources.CPURequest)
 		if err != nil || cpu.MilliValue() < 1 {

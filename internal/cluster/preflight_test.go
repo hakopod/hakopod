@@ -35,6 +35,23 @@ func TestPreflightAccountsForOtherWorkloadsAndJobPeak(t *testing.T) {
 	}
 }
 
+func TestPreflightReservesNothingForVMCapacityPools(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), corev1.ResourceMemory: resource.MustParse("1Gi")}}}
+	c := &Client{kube: fake.NewClientset(node)}
+	target := testTarget(t)
+	target.Spec.Services = map[string]spec.Service{
+		"runner": {Size: "compute", Replicas: 10, Actions: &spec.Actions{Capacity: "aws-spot"}},
+	}
+	report, err := c.Preflight(context.Background(), target)
+	if err != nil || report.Validate() != nil || report.CPURequestMillis != 0 || report.MemoryRequestBytes != 0 {
+		t.Fatal("a VM capacity pool reserved node capacity", report, err)
+	}
+	target.Spec.Services["runner"] = spec.Service{Size: "compute", Replicas: 10, Actions: &spec.Actions{}}
+	if report, err = c.Preflight(context.Background(), target); err != nil || report.Validate() == nil {
+		t.Fatal("a pod runner pool skipped the capacity check", report, err)
+	}
+}
+
 func TestPreflightAllowsStoppedServiceUpdatesButChecksResume(t *testing.T) {
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}, Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), corev1.ResourceMemory: resource.MustParse("1Gi")}}}
 	c := &Client{kube: fake.NewClientset(node)}

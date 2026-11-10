@@ -269,6 +269,12 @@ func normalizeActionsCapacity(s *Service, provider actions.Provider) error {
 	return nil
 }
 
+// OnVMCapacity reports an actions pool whose jobs run on cloud VMs of an
+// installation capacity; it reserves nothing on this installation's nodes.
+func OnVMCapacity(s Service) bool {
+	return s.Actions != nil && s.Actions.Capacity != ""
+}
+
 // ActionsWorkspaceGiB retains the existing default for saved pool revisions.
 func ActionsWorkspaceGiB(a *Actions) int64 {
 	if a == nil || a.WorkspaceSizeGiB == 0 {
