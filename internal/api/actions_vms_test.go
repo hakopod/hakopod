@@ -286,7 +286,9 @@ func TestActionsVMSpotRerun(t *testing.T) {
 	target := actionsTarget(p)
 	client, _ := s.actionsClient("")
 	fake := client.(jitFake)
-	evict := func(attempt int64) {
+	// swept says whether a sweep sees the interruption before the job's
+	// failure arrives; without one, the failure looks the VM up itself.
+	evict := func(attempt int64, swept bool) {
 		t.Helper()
 		if err := s.reconcileActionsPool(ctx, target, p); err != nil {
 			t.Fatal(err)
@@ -297,7 +299,9 @@ func TestActionsVMSpotRerun(t *testing.T) {
 		}
 		cloud.instances[slots[0].InstanceID].State = "terminated"
 		cloud.instances[slots[0].InstanceID].StateReason = "Server.SpotInstanceTermination"
-		_ = s.reconcileActionsPool(ctx, target, p)
+		if swept {
+			_ = s.reconcileActionsPool(ctx, target, p)
+		}
 		body := fmt.Sprintf(`{"action":"completed","workflow_job":{"id":%d,"labels":["hakopod"],"run_id":77,"run_attempt":%d,"conclusion":"failure","runner_name":"hakopod-%s"},"repository":{"full_name":"team/repo"}}`, attempt, attempt, slots[0].ID)
 		if err = s.recordActionsJob(ctx, defaultGitConnection("github"), []byte(body)); err != nil {
 			t.Fatal(err)
@@ -306,7 +310,7 @@ func TestActionsVMSpotRerun(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	evict(1)
+	evict(1, false)
 	if len(*fake.reruns) != 1 || (*fake.reruns)[0] != "team/repo#77" {
 		t.Fatal("interrupted job not rerun", *fake.reruns)
 	}
@@ -321,15 +325,15 @@ func TestActionsVMSpotRerun(t *testing.T) {
 		t.Fatal("rerun did not launch on-demand", len(cloud.launches))
 	}
 	*fake.refuse = true
-	evict(2)
+	evict(2, true)
 	evictions, err := s.Store.ActionsEvictions(ctx, p.ApplicationID, p.Service)
 	if err != nil || len(evictions) != 2 || !strings.Contains(evictions[0].RerunError, "Actions write permission") {
 		t.Fatal("refused rerun not recorded on the pool", evictions, err)
 	}
 	// A refused rerun does not count against the default two retries.
 	*fake.refuse = false
-	evict(3)
-	evict(4)
+	evict(3, true)
+	evict(4, true)
 	if len(*fake.reruns) != 2 {
 		t.Fatal("rerun beyond spot_retries", *fake.reruns)
 	}

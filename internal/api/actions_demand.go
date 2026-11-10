@@ -47,6 +47,7 @@ func (s *Server) recordActionsJob(ctx context.Context, connectionID string, body
 	// that runner's VM, attach the run so the reaper can rerun it.
 	job := payload.WorkflowJob
 	if slot, ok := strings.CutPrefix(job.RunnerName, "hakopod-"); ok && payload.Action == "completed" && job.Conclusion == "failure" && actionsSlotID.MatchString(slot) {
+		s.recordActionsInterruption(ctx, slot)
 		if err := s.Store.RecordActionsEvictedJob(ctx, slot, payload.Repository.FullName, job.RunID, job.RunAttempt, event.Project, event.Environment); err != nil {
 			return err
 		}

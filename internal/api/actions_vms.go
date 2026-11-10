@@ -359,6 +359,20 @@ func (r *vmActionsRuntime) ActionsPodPhase(ctx context.Context, t cluster.Target
 	return phase, nil
 }
 
+// recordActionsInterruption looks a failed job's VM up before its run is
+// attached: the failure can arrive before a sweep sees the interruption,
+// and a run is only attached to an eviction already on record. Pod slots
+// and lookup errors are left to the sweeps.
+func (s *Server) recordActionsInterruption(ctx context.Context, slot string) {
+	v, err := s.Store.ActionsSlot(ctx, slot)
+	if err != nil || v == nil || v.Config.Actions == nil || v.Config.Actions.Capacity == "" {
+		return
+	}
+	if _, err = (&vmActionsRuntime{s: s}).ActionsPodPhase(ctx, cluster.Target{}, slot); err != nil {
+		slog.Warn("Actions VM could not be checked for an interruption", "slot", slot, "error", err.Error())
+	}
+}
+
 // DeleteActionsPod terminates every instance of the slot and reports done once
 // none is left running.
 func (r *vmActionsRuntime) DeleteActionsPod(ctx context.Context, t cluster.Target, id string) (bool, error) {
