@@ -124,3 +124,40 @@ func TestSessionEgressProxyAndDiskScratch(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionEgressProxyMustBePlain(t *testing.T) {
+	for name, change := range map[string]func(*Application, *Service){
+		"container-daemon": func(_ *Application, p *Service) { p.ContainerDaemon = "daemon" },
+		"private-egress":   func(_ *Application, p *Service) { p.PrivateEgress = []string{"corp"} },
+		"managed-db": func(_ *Application, p *Service) {
+			p.Bindings = map[string]Binding{"DATABASE_URL": {ManagedDatabase: "db"}}
+		},
+		"public-tcp":       func(_ *Application, p *Service) { p.PublicTCP = []PublicTCPListener{{}} },
+		"http":             func(_ *Application, p *Service) { p.HTTP = map[string]HTTPEndpoint{"web": {}} },
+		"tls":              func(_ *Application, p *Service) { p.TLS = &TLSConfig{} },
+		"custom-hostnames": func(_ *Application, p *Service) { p.CustomHostnames = &CustomHostnames{} },
+		"kubernetes":       func(_ *Application, p *Service) { p.Kubernetes = &KubernetesPatches{} },
+		"serverless":       func(_ *Application, p *Service) { p.Serverless = &Serverless{} },
+		"actions":          func(_ *Application, p *Service) { p.Actions = &Actions{} },
+		"internal-network": func(a *Application, p *Service) {
+			a.Networks = map[string]Network{"back": {Internal: true}}
+			p.Networks = []string{"back"}
+		},
+		"virtual-network": func(a *Application, p *Service) {
+			a.Networks = map[string]Network{"vn": {VirtualNetwork: "corp", Segment: "a"}}
+			p.Networks = []string{"vn"}
+		},
+	} {
+		app := sessionSpecFixture()
+		proxy := Service{Image: "example/proxy:1", Port: 3128}
+		change(&app, &proxy)
+		if err := plainEgressProxy(app, proxy); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	app := sessionSpecFixture()
+	app.Networks = map[string]Network{"edge": {}}
+	if err := plainEgressProxy(app, Service{Image: "example/proxy:1", Port: 3128, Networks: []string{"edge"}}); err != nil {
+		t.Fatal("plain proxy rejected", err)
+	}
+}

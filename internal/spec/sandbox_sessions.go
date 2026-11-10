@@ -83,6 +83,9 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 		if !ok || proxy.Session != nil || proxy.Port == 0 || proxy.Public {
 			return fmt.Errorf("session egress_proxy must name a private non-session service with a port in the same application")
 		}
+		if err := plainEgressProxy(app, proxy); err != nil {
+			return err
+		}
 	}
 	var memoryMiB, diskMiB int64
 	for _, mount := range svc.TemporaryMounts {
@@ -113,6 +116,24 @@ func normalizeSandboxSession(app Application, svc *Service) error {
 	}
 	if !strings.Contains(svc.Image, "@sha256:") {
 		return fmt.Errorf("session requires a digest-pinned worker image")
+	}
+	return nil
+}
+
+// plainEgressProxy refuses proxies with private reach a session must not
+// inherit through forwarding: daemons, private egress, database bindings,
+// internal or virtual networks, extra listeners, routes or patches.
+func plainEgressProxy(app Application, proxy Service) error {
+	private := proxy.ContainerDaemon != "" || len(proxy.PrivateEgress) != 0 || proxy.Actions != nil || proxy.Serverless != nil || len(proxy.PublicTCP) != 0 || len(proxy.HTTP) != 0 || proxy.TLS != nil || proxy.CustomHostnames != nil || proxy.Kubernetes != nil
+	for _, b := range proxy.Bindings {
+		private = private || b.ManagedDatabase != "" || b.ExternalDatabase != ""
+	}
+	for _, name := range proxy.Networks {
+		network := app.Networks[name]
+		private = private || network.Internal || network.VirtualNetwork != ""
+	}
+	if private {
+		return fmt.Errorf("session egress_proxy service must be a plain private service: no container_daemon, private_egress, database bindings, actions, serverless, public_tcp, http routes, tls, custom_hostnames, kubernetes patches, internal or virtual networks")
 	}
 	return nil
 }
