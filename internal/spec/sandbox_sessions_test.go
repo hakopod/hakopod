@@ -35,7 +35,10 @@ func TestSessionSpecificationIsStableAndRejectsAmbientAuthority(t *testing.T) {
 		"root":               func(s *Service) { s.RunAsUser = 0 },
 		"ordinary-runtime":   func(s *Service) { s.RuntimeProfile = "" },
 		"reserved-env":       func(s *Service) { s.Env = map[string]string{"HAKOPOD_POD_UID": "other"} },
-		"disk-temporary":     func(s *Service) { s.TemporaryMounts = []TemporaryMount{{MountPath: "/workspace", SizeMiB: 32}} },
+		"disk-temporary-big": func(s *Service) { s.TemporaryMounts = []TemporaryMount{{MountPath: "/workspace", SizeMiB: 16385}} },
+		"memory-temporary-big": func(s *Service) {
+			s.TemporaryMounts = []TemporaryMount{{MountPath: "/a", SizeMiB: 100, Memory: true}, {MountPath: "/b", SizeMiB: 29, Memory: true}}
+		},
 		"guard-overlap": func(s *Service) {
 			s.TemporaryMounts = []TemporaryMount{{MountPath: "/run/hakopod-session", SizeMiB: 32, Memory: true}}
 		},
@@ -77,5 +80,47 @@ func TestSessionCallTimeoutIsBoundedByIdleDeadline(t *testing.T) {
 	got, err := Normalize(app)
 	if err != nil || got.Services["worker"].Session.CallTimeoutSeconds != 900 {
 		t.Fatal("call timeout at the idle limit rejected", err)
+	}
+}
+
+func TestSessionEgressProxyAndDiskScratch(t *testing.T) {
+	withProxy := func(proxy Service, name string) Application {
+		app := sessionSpecFixture()
+		app.Services["proxy"] = proxy
+		worker := app.Services["worker"]
+		session := *worker.Session
+		session.EgressProxy = name
+		worker.Session = &session
+		worker.TemporaryMounts = []TemporaryMount{{MountPath: "/workspace", SizeMiB: 16000}, {MountPath: "/tmp", SizeMiB: 128, Memory: true}}
+		app.Services["worker"] = worker
+		return app
+	}
+	proxy := Service{Image: "example/proxy:1", Port: 3128}
+	got, err := Normalize(withProxy(proxy, "proxy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Services["worker"].Session.EgressProxy != "proxy" {
+		t.Fatal("egress_proxy lost")
+	}
+	again, err := Normalize(got)
+	if err != nil || !reflect.DeepEqual(got, again) {
+		t.Fatal("egress_proxy is not stable", err)
+	}
+	session := sessionSpecFixture().Services["worker"]
+	for name, app := range map[string]Application{
+		"missing": withProxy(proxy, "nope"),
+		"session": withProxy(proxy, "worker"),
+		"public":  withProxy(Service{Image: "example/proxy:1", Port: 3128, Public: true}, "proxy"),
+		"no-port": withProxy(Service{Image: "example/proxy:1"}, "proxy"),
+		"other-session": func() Application {
+			a := withProxy(proxy, "proxy")
+			a.Services["proxy"] = session
+			return a
+		}(),
+	} {
+		if _, err := Normalize(app); err == nil || !strings.Contains(err.Error(), "egress_proxy") {
+			t.Errorf("%s: accepted or wrong error: %v", name, err)
+		}
 	}
 }

@@ -163,6 +163,17 @@ func policies(t Target) []*networkingv1.NetworkPolicy {
 				Ports: ports,
 			})
 		}
+		// Session namespaces of this application that name this service as
+		// their egress_proxy may reach it on its port.
+		for _, source := range spec.Names(t.Spec) {
+			if session := t.Spec.Services[source].Session; session != nil && session.EgressProxy == name && svc.Port != 0 {
+				port := intstr.FromInt32(svc.Port)
+				policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
+					From:  []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: labelsFor(t, source), MatchExpressions: []metav1.LabelSelectorRequirement{{Key: sandboxSessionLabel, Operator: metav1.LabelSelectorOpExists}}}, PodSelector: ptr(selectorFor(t, source))}},
+					Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}},
+				})
+			}
+		}
 		publicTCPPolicy(svc, policy)
 		virtualNetworkRules(t, svc, policy)
 		policies = append(policies, policy)

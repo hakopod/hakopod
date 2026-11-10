@@ -43,8 +43,29 @@ Namespace cleanup stops if it finds unexpected resources or cannot complete reso
 
 The guarded readiness command must confirm that the kernel can accept calls. A startup probe runs it until success or the two-minute startup deadline. The probe does not run notebook code.
 
-Temporary mounts require `memory=true` and share the container memory limit. Their combined configured capacity is at most 128 MiB. `/run/hakopod-session` is reserved for the read-only process guard.
+Temporary mounts with `memory=true` share the container memory limit; their combined configured capacity is at most 128 MiB. Mounts with `memory=false` are disk-backed scratch directories limited to their `size_mib`; their combined capacity is at most 16384 MiB. Each mount needs `size_mib` of at least 1. `/run/hakopod-session` is reserved for the read-only process guard.
 
-Before executing worker code, the guard permits only UNIX sockets and denies IP sockets and io_uring. Kubernetes network policy adds a second boundary. Helper input remains blocked until the trusted guard confirms the expected Pod UID and generation. Kubernetes exec has no atomic UID precondition; session namespaces therefore allow no tenant Kubernetes access.
+### Outbound traffic through a proxy service
+
+Sessions have no network access by default. Set `session.egress_proxy` to the name of another service in the same application to let the worker reach that one service:
+
+```toml
+[services.proxy]
+image = "your-registry/egress-proxy@sha256:..."
+port = 3128
+
+[services.worker.session]
+egress_proxy = "proxy"
+```
+
+The proxy service must have a `port`, must not be `public` and must not be a session itself. With `egress_proxy` set:
+
+- The worker process runs under the guard with IP sockets allowed. The helper command and the readiness probe stay offline.
+- The session network policy allows TCP to the proxy service's Pods on its `port` and nothing else. The proxy service admits this application's session Pods on that port.
+- Hakopod sets `HAKOPOD_EGRESS_PROXY`, `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy` and `https_proxy` to `http://<proxy>.<application namespace>.svc.cluster.local:<port>`, and `NO_PROXY` and `no_proxy` to an empty value. These replace any `env` values of the same names.
+
+What the proxy forwards, and to where, is the proxy service's own configuration. Without `egress_proxy`, sessions are unchanged.
+
+Before executing worker code, the guard permits only UNIX sockets and denies IP sockets and io_uring (unless `egress_proxy` is set, which allows IP sockets for the worker process only). Kubernetes network policy adds a second boundary. Helper input remains blocked until the trusted guard confirms the expected Pod UID and generation. Kubernetes exec has no atomic UID precondition; session namespaces therefore allow no tenant Kubernetes access.
 
 Validation covers the full Go suite, guarded binary streams, container identity, resource accounting and cleanup. The native TLS/HTTP gate passed in 88.02 seconds with two persistent Python kernels, file/variable retention, tenant isolation, replay rejection and cancellation. Both container records used `io.containerd.runsc.v1`; all fixture namespaces and volumes were removed. ARM64 native execution remains unverified.

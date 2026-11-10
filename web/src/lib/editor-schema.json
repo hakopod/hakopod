@@ -680,6 +680,9 @@
         "minimum": 10,
         "maximum": 900,
         "default": 150
+      },
+      "egress_proxy": {
+        "type": "string"
       }
     },
     "required": [
