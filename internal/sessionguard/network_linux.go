@@ -11,8 +11,10 @@ import (
 )
 
 // networkFilter blocks IP sockets before the worker or helper executes. UNIX
-// sockets remain available for communication with the session kernel.
-func networkFilter() ([]unix.SockFilter, error) {
+// sockets remain available for communication with the session kernel. With
+// allowIP, AF_INET and AF_INET6 are also allowed; Kubernetes network policy
+// then limits where they can reach.
+func networkFilter(allowIP bool) ([]unix.SockFilter, error) {
 	var arch uint32
 	switch runtime.GOARCH {
 	case "amd64":
@@ -29,7 +31,7 @@ func networkFilter() ([]unix.SockFilter, error) {
 		return unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: value, Jt: yes, Jf: no}
 	}
 	result := func(value uint32) unix.SockFilter { return unix.SockFilter{Code: unix.BPF_RET | unix.BPF_K, K: value} }
-	return []unix.SockFilter{
+	filter := []unix.SockFilter{
 		load(4),
 		equal(arch, 1, 0),
 		result(unix.SECCOMP_RET_KILL_PROCESS),
@@ -44,14 +46,17 @@ func networkFilter() ([]unix.SockFilter, error) {
 		equal(uint32(unix.SYS_SOCKETPAIR), 1, 0),
 		result(unix.SECCOMP_RET_ALLOW),
 		load(16),
-		equal(unix.AF_UNIX, 0, 1),
-		result(unix.SECCOMP_RET_ALLOW),
-		result(unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)),
-	}, nil
+	}
+	if allowIP {
+		filter = append(filter, equal(unix.AF_UNIX, 2, 0), equal(unix.AF_INET, 1, 0), equal(unix.AF_INET6, 0, 1))
+	} else {
+		filter = append(filter, equal(unix.AF_UNIX, 0, 1))
+	}
+	return append(filter, result(unix.SECCOMP_RET_ALLOW), result(unix.SECCOMP_RET_ERRNO|uint32(unix.EPERM))), nil
 }
 
-func restrictSockets() error {
-	filter, err := networkFilter()
+func restrictSockets(allowIP bool) error {
+	filter, err := networkFilter(allowIP)
 	if err != nil {
 		return err
 	}

@@ -32,7 +32,7 @@ func applyLimits() error {
 	}
 	return nil
 }
-func execute(args []string, readyToken string) error {
+func execute(args []string, readyToken string, allowIP bool) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if err := applyLimits(); err != nil {
@@ -42,7 +42,7 @@ func execute(args []string, readyToken string) error {
 	if err != nil {
 		return fmt.Errorf("fixed worker executable is unavailable")
 	}
-	if err = restrictSockets(); err != nil {
+	if err = restrictSockets(allowIP); err != nil {
 		return err
 	}
 	if readyToken != "" {
