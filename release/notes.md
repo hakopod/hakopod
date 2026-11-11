@@ -1,23 +1,21 @@
-Hakopod 0.1.0-alpha.89 runs Managed Actions jobs on Azure Spot VMs and stops VM runner pools from reserving node capacity.
+Hakopod 0.1.0-alpha.90 shows the cloud VMs of a Managed Actions pool on its Pods tab.
 
-- **Managed Actions on Azure Spot VMs (preview).** An Actions capacity can now set `cloud = "azure"` to run each job's single-use runner on a VM in your subscription and resource group, Spot by default. Hakopod uses its own Azure identity: the managed identity of the VM it runs on, AKS workload identity, or an app registration whose `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` are in Hakopod's environment. Nothing is stored per capacity, and runner VMs get no identity. Each runner gets a Standard public IP, which admits nothing inbound, and its NIC, IP and disk are deleted with it. A deallocated Spot VM counts as an interruption, and the runner stops taking work on a Preempt scheduled event. The image is stock Ubuntu 24.04 by default, or your own marketplace URN or image ID. Warm standbys and `hakopod-minimal` are not available on Azure yet. This has been tested against a fake Azure Resource Manager API only, not a real subscription: try it with a small `max_instances` first. Settings → Actions VM capacity walks through the `az` setup. See docs/managed-actions.md.
-- **VM runner pools reserve no node capacity.** A GitHub pool on an Actions capacity runs its jobs on cloud VMs, but the plan preflight, placement and the managed platform's reservations still counted pod-sized requests for every slot, so a release on a busy cluster was refused with "CPU short by…". These checks now skip such pools, and the runner pool form's summary no longer shows pod reservations, placement or a workspace quota for them.
-- **Clearer AWS setup in the capacity sheet.** The steps now name the exact console paths for the permissions policy and the role's custom trust policy, add the `hakopod-control-plane` instance role that Hakopod assumes from, and give `aws` commands that find the default VPC's public subnets and create an outbound-only security group.
+- **VM runners on the Pods tab.** A GitHub runner pool on an Actions VM capacity has no pods, so its Pods tab used to say "No pods observed" while jobs ran on cloud VMs. The tab now lists the pool's VM runners like pods: each VM's instance ID, its state (running a job, waiting for a job, shutting down), machine type, Spot or on-demand pricing and whether it came from a warm standby, its age and the runner it registered. Below them are the pool's Spot interruptions from the last 30 days, with the run each one hit and whether it was rerun. Refresh reloads the pool's status. Pools that run as pods are unchanged.
 
 Install this prerelease:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.89/installer.sh -o installer.sh &&
-sudo sh installer.sh --version 0.1.0-alpha.89
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.90/installer.sh -o installer.sh &&
+sudo sh installer.sh --version 0.1.0-alpha.90
 ```
 
-Upgrade an alpha.87 or alpha.88 installation:
+Upgrade an alpha.88 or alpha.89 installation:
 
 ```sh
 curl --fail --location \
-  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.89/installer.sh -o installer.sh &&
-sudo sh installer.sh --upgrade --version 0.1.0-alpha.89
+  https://github.com/hakopod/hakopod/releases/download/v0.1.0-alpha.90/installer.sh -o installer.sh &&
+sudo sh installer.sh --upgrade --version 0.1.0-alpha.90
 ```
 
 Older installations need a supported intermediate release. The upgrade backs up PostgreSQL and configuration before it restarts the management API and dashboard. Keep these backups. Replacing binaries does not reverse database migrations.
