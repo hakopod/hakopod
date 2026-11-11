@@ -740,30 +740,58 @@ export function ServiceDetail({
           <div className="section-toolbar">
             <div>
               <div className="hako-section-heading-title">
-                <h2>Pods and events</h2>
-                <HeadingHelp title="Pods and events">
-                  Container state, allocations, readiness conditions, and Kubernetes events.
-                </HeadingHelp>
+                {service.actions?.capacity ? (
+                  <>
+                    <h2>VM runners</h2>
+                    <HeadingHelp title="VM runners">
+                      Each job of this pool runs on its own cloud VM instead of a pod: its instance,
+                      machine type, spot or on-demand pricing, and the runner it registered. Spot
+                      interruptions are kept for 30 days.
+                    </HeadingHelp>
+                  </>
+                ) : (
+                  <>
+                    <h2>Pods and events</h2>
+                    <HeadingHelp title="Pods and events">
+                      Container state, allocations, readiness conditions, and Kubernetes events.
+                    </HeadingHelp>
+                  </>
+                )}
               </div>
             </div>
-            <Button size="sm" onClick={() => void runtime.refetch()}>
+            <Button
+              size="sm"
+              onClick={() =>
+                service.actions?.capacity
+                  ? void cache.invalidateQueries({ queryKey: ['managed-actions', application.id] })
+                  : void runtime.refetch()
+              }
+            >
               <Icon name="refresh" size={14} />
               Refresh
             </Button>
           </div>
-          <PodList
-            runtime={runtime.data}
-            loading={runtime.isPending}
-            error={runtime.error}
-            onConnect={
-              features.terminal && scope.can('deployments:write')
-                ? (pod) => {
-                    setTerminalPod(pod)
-                    setTab('terminal')
-                  }
-                : undefined
-            }
-          />
+          {service.actions?.capacity ? (
+            <VMRunnerList
+              applicationId={application.id}
+              service={serviceName}
+              capacity={service.actions.capacity}
+            />
+          ) : (
+            <PodList
+              runtime={runtime.data}
+              loading={runtime.isPending}
+              error={runtime.error}
+              onConnect={
+                features.terminal && scope.can('deployments:write')
+                  ? (pod) => {
+                      setTerminalPod(pod)
+                      setTab('terminal')
+                    }
+                  : undefined
+              }
+            />
+          )}
         </Tabs.Content>
         <Tabs.Content value="terminal" className="tab-content">
           <Suspense fallback={<Loading />}>
@@ -1296,6 +1324,153 @@ function ServiceStorage({
         </p>
       )}
     </section>
+  )
+}
+
+const vmPhase: Record<string, string> = {
+  busy: 'Running a job',
+  online: 'Waiting for a job',
+  cleanup: 'Shutting down',
+}
+
+// A pool on VM capacity has no pods: each slot is one cloud VM. They read
+// like pods here so the tab answers "what is running for this service".
+function VMRunnerList({
+  applicationId,
+  service,
+  capacity,
+}: {
+  applicationId: string
+  service: string
+  capacity: string
+}) {
+  const query = useQuery({
+    queryKey: ['managed-actions', applicationId],
+    queryFn: ({ signal }) =>
+      unwrap(
+        client.GET('/applications/{id}/actions', {
+          signal,
+          params: { path: { id: applicationId } },
+        }),
+      ),
+    refetchInterval: 10000,
+    refetchIntervalInBackground: false,
+    gcTime: 0,
+  })
+  if (query.isPending) return <Loading rows={2} />
+  if (query.error) return <ErrorState error={query.error} />
+  const item = query.data.items.find((entry) => entry.pool.service === service)
+  const slots = item?.slots ?? []
+  const evictions = item?.evictions ?? []
+  return (
+    <>
+      {slots.length ? (
+        <div className="table-container ops-table">
+          <table>
+            <thead>
+              <tr>
+                <th>VM / state</th>
+                <th>Type</th>
+                <th>Pricing</th>
+                <th>Age</th>
+                <th>Runner</th>
+              </tr>
+            </thead>
+            <tbody>
+              {slots.map((slot) => (
+                <tr key={slot.id}>
+                  <td>
+                    <div className="ops-object">
+                      <Status
+                        value={
+                          slot.phase === 'busy' || slot.phase === 'online' ? 'ready' : 'pending'
+                        }
+                        small
+                      />
+                      <span className="ops-object-name">
+                        <code>{slot.instance_id || 'Launching'}</code>
+                      </span>
+                    </div>
+                    <small className="ops-table-sub">{vmPhase[slot.phase] || 'Starting'}</small>
+                  </td>
+                  <td className="mono">{slot.instance_type || '—'}</td>
+                  <td>
+                    {slot.instance_lifecycle === 'spot'
+                      ? 'Spot'
+                      : slot.instance_lifecycle
+                        ? 'On-demand'
+                        : '—'}
+                    {slot.instance_source === 'standby' && (
+                      <small className="ops-table-sub">From a warm standby</small>
+                    )}
+                  </td>
+                  <td>
+                    <time dateTime={slot.created_at} title={slot.created_at}>
+                      {relative(slot.created_at)}
+                    </time>
+                  </td>
+                  <td>
+                    <code className="whitespace-nowrap">hakopod-{slot.id}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty
+          icon="server"
+          title="No VMs running"
+          description={`Jobs for this pool run on single-use VMs in ${capacity}. Each queued job starts one, and it is deleted when the job ends.`}
+        />
+      )}
+      {evictions.length > 0 && (
+        <section className="mt-8 grid gap-3" aria-labelledby="vm-interruptions">
+          <h3 id="vm-interruptions">Spot interruptions, last 30 days</h3>
+          <div className="table-container ops-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>VM</th>
+                  <th>Run</th>
+                  <th>Rerun</th>
+                  <th>When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evictions.map((eviction) => (
+                  <tr key={`${eviction.slot_id}/${eviction.instance_id}`}>
+                    <td>
+                      <code>{eviction.instance_id}</code>
+                      <small className="ops-table-sub">{eviction.instance_type}</small>
+                    </td>
+                    <td>
+                      {eviction.repository && eviction.run_id
+                        ? `${eviction.repository} #${eviction.run_id}${eviction.run_attempt ? ` attempt ${eviction.run_attempt}` : ''}`
+                        : 'Idle runner'}
+                    </td>
+                    <td title={eviction.rerun_error}>
+                      {eviction.rerun_error
+                        ? 'Not rerun'
+                        : eviction.rerun_at
+                          ? 'Rerun'
+                          : eviction.run_id
+                            ? 'Pending'
+                            : '—'}
+                    </td>
+                    <td>
+                      <time dateTime={eviction.evicted_at} title={eviction.evicted_at}>
+                        {relative(eviction.evicted_at)}
+                      </time>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
   )
 }
 
