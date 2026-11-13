@@ -38,7 +38,7 @@ export function parentNavigation(
   if (parts[0] === 'workspaces' && parts[1] && parts[2])
     return { to: `/workspaces/${parts[1]}`, label: 'Back to workspace' }
   if (parts[0] === 'applications' && parts[1]) {
-    if (['new', 'import'].includes(parts[1])) return applications
+    if (['new', 'import', 'migrate'].includes(parts[1])) return applications
     if (parts[2]) {
       if (parts[2] === 'source') return application(parts[1], 'source')
       const tab = ['domains', 'certificates'].includes(parts[2])
@@ -162,7 +162,7 @@ export function resourceApplicationID(
   deploymentApplication?: string,
 ) {
   const path = /^\/applications\/([^/]+)/.exec(pathname)?.[1]
-  if (path && !['new', 'import'].includes(path)) return path
+  if (path && !['new', 'import', 'migrate'].includes(path)) return path
   if (
     (pathname === '/builds/new' || /^\/templates(?:\/|$)/.test(pathname)) &&
     typeof search.application === 'string' &&

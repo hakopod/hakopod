@@ -450,6 +450,105 @@ test('the browser proxy forwards alarm reads and mutations with sealed session a
   }
 })
 
+test('platform migration routes forward scoped reads, tokens and idempotent starts with session authority', async (t) => {
+  const id = 'a'.repeat(32)
+  const cases = [
+    {
+      path: 'migrations/projects',
+      query: '',
+      method: 'POST',
+      body: { provider: 'railway', token: 'railway-token-fixture' },
+    },
+    {
+      path: 'migrations',
+      query: '',
+      method: 'POST',
+      body: { provider: 'vercel', token: 'vercel-token-fixture', source_project_id: 'prj_1' },
+    },
+    { path: 'migrations', query: '?project=demo&environment=production', method: 'GET' },
+    { path: `migrations/${id}`, query: '', method: 'GET' },
+    {
+      path: `migrations/${id}/variables`,
+      query: '',
+      method: 'PUT',
+      body: { values: { web: { STRIPE_KEY: 'value-fixture' } } },
+    },
+    { path: `migrations/${id}/start`, query: '', method: 'POST', key: 'start-key-fixture' },
+    { path: `migrations/${id}/cancel`, query: '', method: 'POST' },
+  ]
+  for (const item of cases) {
+    let calls = 0
+    const mock = t.mock.method(
+      globalThis,
+      'fetch',
+      async (url: unknown, init: RequestInit = {}) => {
+        calls++
+        assert.equal(new URL(String(url)).pathname, `/api/v1/${item.path}`)
+        assert.equal(new URL(String(url)).search, item.query)
+        assert.equal(init.method, item.method)
+        const headers = new Headers(init.headers)
+        assert.equal(headers.get('Authorization'), `Bearer ${token}`)
+        assert.equal(headers.has('Cookie'), false)
+        assert.equal(headers.get('Idempotency-Key'), item.key ?? null)
+        // A bodyless POST is forwarded as an empty JSON request.
+        assert.equal(
+          init.body,
+          item.body ? JSON.stringify(item.body) : item.method === 'GET' ? undefined : '',
+        )
+        return Response.json({ test: true })
+      },
+    )
+    const input = request(item.path + item.query, item.method, item.body)
+    if (item.key) input.headers.set('Idempotency-Key', item.key)
+    const response = await proxy({ request: input, params: { _splat: item.path } })
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('Cache-Control') || '', /no-store/)
+    assert.equal(calls, 1)
+    mock.mock.restore()
+  }
+  assert.equal(proxyTimeoutMilliseconds('migrations', 'POST'), 90000)
+  assert.equal(proxyTimeoutMilliseconds('migrations/projects', 'POST'), 90000)
+  assert.equal(proxyTimeoutMilliseconds('migrations', 'GET'), 30000)
+  assert.equal(proxyTimeoutMilliseconds(`migrations/${id}/start`, 'POST'), 30000)
+})
+
+test('platform migration proxy paths retain authentication, CSRF and exact endpoint boundaries', async (t) => {
+  const id = 'a'.repeat(32)
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++
+    return Response.json({})
+  })
+  for (const path of ['migrations', `migrations/${id}`]) {
+    const response = await proxy({
+      request: request(path, 'GET', undefined, false),
+      params: { _splat: path },
+    })
+    assert.equal(response.status, 401)
+  }
+  for (const path of [
+    'migrations/projects',
+    'migrations',
+    `migrations/${id}/start`,
+    `migrations/${id}/cancel`,
+  ]) {
+    const response = await proxy({
+      request: request(path, 'POST', {}, true, 'https://untrusted.invalid'),
+      params: { _splat: path },
+    })
+    assert.equal(response.status, 403)
+  }
+  for (const path of [
+    `migrations/${id}/token`,
+    `migrations/${id}/start/again`,
+    'migrations/../keys',
+  ]) {
+    const response = await proxy({ request: request(path), params: { _splat: path } })
+    assert.equal(response.status, 404)
+  }
+  assert.equal(calls, 0)
+})
+
 test('alarm proxy paths retain authentication, CSRF and exact endpoint boundaries', async (t) => {
   let calls = 0
   t.mock.method(globalThis, 'fetch', async () => {

@@ -56,7 +56,7 @@ const serviceSections = {
 } as const
 type ServiceSection = keyof typeof serviceSections
 
-type Source = 'repository' | 'image' | 'file'
+type Source = 'repository' | 'image' | 'file' | 'migrate'
 
 const kindIcon: Record<ServiceKind, string> = {
   web: 'globe',
@@ -510,6 +510,10 @@ export function DeploymentForm({
       void navigate({ to: buildConnection ? '/builds/new' : '/applications/import' })
       return
     }
+    if (chosenSource === 'migrate') {
+      void navigate({ to: '/applications/migrate' })
+      return
+    }
     setMode(chosenSource === 'file' ? fileFormat : 'form')
     setStep('configure')
     setError('')
@@ -520,11 +524,13 @@ export function DeploymentForm({
         ? buildConnection
           ? 'Choose repository'
           : 'Import repository configuration'
-        : chosenSource === 'file'
-          ? fileFormat === 'compose'
-            ? 'Import Compose file'
-            : 'Write hakopod.toml'
-          : 'Configure services'
+        : chosenSource === 'migrate'
+          ? 'Choose project'
+          : chosenSource === 'file'
+            ? fileFormat === 'compose'
+              ? 'Import Compose file'
+              : 'Write hakopod.toml'
+            : 'Configure services'
       : plan
         ? isNew
           ? `Create ${plural(reviewCount, 'service')}`
@@ -1121,6 +1127,13 @@ function SourceStep({
             description: 'Convert a Compose file, or paste a Hakopod configuration.',
             icon: <Icon name="code" size={18} />,
           },
+          {
+            value: 'migrate',
+            title: 'Migrate from Railway or Vercel',
+            description:
+              'Copy a project with its services, databases, variables and domains. The source is only read.',
+            icon: <Icon name="refresh" size={18} />,
+          },
         ]}
       />
       {source === 'repository' && (
@@ -1156,6 +1169,12 @@ function SourceStep({
             </>
           )}
         </div>
+      )}
+      {source === 'migrate' && (
+        <p className="field-help m-0">
+          Next you paste a Railway or Vercel token, pick a project and review what Hakopod will
+          create before anything starts.
+        </p>
       )}
       {source === 'image' && (
         <p className="field-help m-0">
