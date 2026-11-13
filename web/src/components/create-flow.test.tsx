@@ -134,8 +134,9 @@ function renderNew(props: { chooseSource?: boolean; builds?: boolean }) {
 
 test('new applications start with the source, recommending builds when a connection can run them', () => {
   const html = renderNew({ chooseSource: true, builds: true })
-  assert.equal(html.match(/type="radio"/g)?.length, 3)
+  assert.equal(html.match(/type="radio"/g)?.length, 4)
   assert.match(html, /Where does this application come from\?/)
+  assert.match(html, /value="migrate"[^]*Migrate from Railway or Vercel/)
   assert.match(html, /checked="" value="repository"/)
   assert.match(html, /Choose repository/)
   assert.doesNotMatch(html, /Container image<\/label>|Application name/)

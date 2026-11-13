@@ -180,7 +180,12 @@ test('project navigation returns to its URL scope and has a safe unscoped fallba
     to: '/',
     label: 'Back to projects',
   })
-  for (const path of ['/applications/example', '/applications/new', '/applications/import']) {
+  for (const path of [
+    '/applications/example',
+    '/applications/new',
+    '/applications/import',
+    '/applications/migrate',
+  ]) {
     assert.deepEqual(
       parentNavigation(path, {}, undefined, { project: 'team/a', environment: 'staging' }),
       {
@@ -261,6 +266,7 @@ test('runner setup and service navigation resolve the loaded application before 
     'pool-in-narstri',
   )
   assert.equal(resourceApplicationID('/applications/pool-in-narstri', {}), 'pool-in-narstri')
+  assert.equal(resourceApplicationID('/applications/migrate', { id: 'a'.repeat(32) }), undefined)
   assert.equal(
     resourceApplicationID('/applications/pool-in-narstri/configure', { application: 'wrong' }),
     'pool-in-narstri',

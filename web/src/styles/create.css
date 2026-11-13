@@ -638,3 +638,10 @@
     display: none;
   }
 }
+
+/* Migration rows carry no leading mark, so phone layouts keep metadata flush. */
+@media (max-width: 767px) {
+  .migration-flow .settings-row :is(.settings-row-meta, .settings-row-actions) {
+    @apply pl-0;
+  }
+}

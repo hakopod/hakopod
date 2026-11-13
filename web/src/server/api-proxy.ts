@@ -73,6 +73,7 @@ export const allowed = [
   /^applications\/[A-Za-z0-9_-]+\/security(?:\/(?:check|apply|policy))?$/,
   /^virtual-networks(?:\/[A-Za-z0-9_-]+(?:\/candidates)?)?$/,
   /^sources\/(?:plan|deploy)$/,
+  /^migrations(?:\/[A-Za-z0-9_-]+(?:\/(?:variables|start|cancel))?)?$/,
   /^showcase(?:\/remove)?$/,
   /^applications\/[A-Za-z0-9_-]+\/domains(?:\/[A-Za-z0-9_.-]+(?:\/verify)?)?$/,
   /^auth\/profile$/,
@@ -133,6 +134,8 @@ export function proxyTimeoutMilliseconds(path: string, method: string) {
     return 11 * 60 * 1000
   if (path.endsWith('/logs')) return 5 * 60 * 1000
   if (/^databases\/[a-f0-9]{32}\/restore-plan$/.test(path) && method === 'POST') return 90000
+  // Planning reads the whole Railway or Vercel project through the provider's API.
+  if (/^migrations(?:\/projects)?$/.test(path) && method === 'POST') return 90000
   if (/^databases\/[a-f0-9]{32}\/migration-lock-recovery-plan$/.test(path) && method === 'POST')
     return 45000
   return 30000

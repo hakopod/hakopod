@@ -28,6 +28,7 @@ import { Route as AlarmsSettingsRouteImport } from './routes/alarms.settings'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as ApplicationsApplicationIdRouteImport } from './routes/applications.$applicationId'
 import { Route as ApplicationsImportRouteImport } from './routes/applications.import'
+import { Route as ApplicationsMigrateRouteImport } from './routes/applications.migrate'
 import { Route as ApplicationsNewRouteImport } from './routes/applications.new'
 import { Route as BackupsJobIdRouteImport } from './routes/backups.$jobId'
 import { Route as BackupsNewRouteImport } from './routes/backups.new'
@@ -213,6 +214,11 @@ const ApplicationsApplicationIdRoute =
 const ApplicationsImportRoute = ApplicationsImportRouteImport.update({
   id: '/applications/import',
   path: '/applications/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsMigrateRoute = ApplicationsMigrateRouteImport.update({
+  id: '/applications/migrate',
+  path: '/applications/migrate',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
@@ -731,6 +737,7 @@ export interface FileRoutesByFullPath {
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
   '/applications/import': typeof ApplicationsImportRoute
+  '/applications/migrate': typeof ApplicationsMigrateRoute
   '/applications/new': typeof ApplicationsNewRoute
   '/backups/$jobId': typeof BackupsJobIdRoute
   '/backups/new': typeof BackupsNewRoute
@@ -842,6 +849,7 @@ export interface FileRoutesByTo {
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
   '/applications/import': typeof ApplicationsImportRoute
+  '/applications/migrate': typeof ApplicationsMigrateRoute
   '/applications/new': typeof ApplicationsNewRoute
   '/backups/$jobId': typeof BackupsJobIdRoute
   '/backups/new': typeof BackupsNewRoute
@@ -954,6 +962,7 @@ export interface FileRoutesById {
   '/api/$': typeof ApiSplatRoute
   '/applications/$applicationId': typeof ApplicationsApplicationIdRouteWithChildren
   '/applications/import': typeof ApplicationsImportRoute
+  '/applications/migrate': typeof ApplicationsMigrateRoute
   '/applications/new': typeof ApplicationsNewRoute
   '/backups/$jobId': typeof BackupsJobIdRoute
   '/backups/new': typeof BackupsNewRoute
@@ -1067,6 +1076,7 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/applications/$applicationId'
     | '/applications/import'
+    | '/applications/migrate'
     | '/applications/new'
     | '/backups/$jobId'
     | '/backups/new'
@@ -1178,6 +1188,7 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/applications/$applicationId'
     | '/applications/import'
+    | '/applications/migrate'
     | '/applications/new'
     | '/backups/$jobId'
     | '/backups/new'
@@ -1289,6 +1300,7 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/applications/$applicationId'
     | '/applications/import'
+    | '/applications/migrate'
     | '/applications/new'
     | '/backups/$jobId'
     | '/backups/new'
@@ -1400,6 +1412,7 @@ export interface RootRouteChildren {
   ApiSplatRoute: typeof ApiSplatRoute
   ApplicationsApplicationIdRoute: typeof ApplicationsApplicationIdRouteWithChildren
   ApplicationsImportRoute: typeof ApplicationsImportRoute
+  ApplicationsMigrateRoute: typeof ApplicationsMigrateRoute
   ApplicationsNewRoute: typeof ApplicationsNewRoute
   DeploymentsDeploymentIdRoute: typeof DeploymentsDeploymentIdRoute
   LoginAuthorizeRoute: typeof LoginAuthorizeRoute
@@ -1547,6 +1560,13 @@ declare module '@tanstack/react-router' {
       path: '/applications/import'
       fullPath: '/applications/import'
       preLoaderRoute: typeof ApplicationsImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/applications/migrate': {
+      id: '/applications/migrate'
+      path: '/applications/migrate'
+      fullPath: '/applications/migrate'
+      preLoaderRoute: typeof ApplicationsMigrateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/applications/new': {
@@ -2579,6 +2599,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSplatRoute: ApiSplatRoute,
   ApplicationsApplicationIdRoute: ApplicationsApplicationIdRouteWithChildren,
   ApplicationsImportRoute: ApplicationsImportRoute,
+  ApplicationsMigrateRoute: ApplicationsMigrateRoute,
   ApplicationsNewRoute: ApplicationsNewRoute,
   DeploymentsDeploymentIdRoute: DeploymentsDeploymentIdRoute,
   LoginAuthorizeRoute: LoginAuthorizeRoute,
