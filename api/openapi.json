@@ -17786,6 +17786,387 @@
         "summary": "Read retained application terminal output from the supplied cursor."
       }
     },
+    "/migrations/projects": {
+      "post": {
+        "operationId": "listMigrationSourceProjects",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MigrationSourceProject"
+                      }
+                    }
+                  },
+                  "required": [
+                    "projects"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationProjectsInput"
+              }
+            }
+          }
+        },
+        "summary": "List Railway or Vercel projects",
+        "description": "Lists the projects a Railway or Vercel token can read, with their environments. The token is used for this request only and is not stored. Requires deploy permission in some project.",
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/migrations": {
+      "post": {
+        "operationId": "createPlatformMigration",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformMigration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationInput"
+              }
+            }
+          }
+        },
+        "summary": "Plan a migration from Railway or Vercel",
+        "description": "Reads the source project with the token and returns a proposal: services, builds, databases, secret names, domains, variables the provider will not return, and warnings. Nothing is created yet. The token is sealed in the migration and erased when it ends or after 24 hours. The source project is only read.",
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        }
+      },
+      "get": {
+        "operationId": "listPlatformMigrations",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PlatformMigration"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List migrations",
+        "description": "Migrations into one project environment, newest first.",
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/migrations/{id}": {
+      "get": {
+        "operationId": "getPlatformMigration",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformMigration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get a migration",
+        "description": "The proposal, the status and the progress of each step. Never includes the source token, secret values or source database URLs.",
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/migrations/{id}/variables": {
+      "put": {
+        "operationId": "setPlatformMigrationVariables",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformMigration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationVariablesInput"
+              }
+            }
+          }
+        },
+        "summary": "Supply variables the provider will not return",
+        "description": "Values for variables marked missing in the proposal, keyed by Hakopod service then variable name. Sealed like the token; only while the migration is planned.",
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/migrations/{id}/start": {
+      "post": {
+        "operationId": "startPlatformMigration",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformMigration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start a migration",
+        "description": "Creates secrets and databases, copies PostgreSQL and Redis data, deploys the application, opens build pull requests for services built from GitHub, and adds domains as pending. Refused while any variable is missing. Repeating the call with the same Idempotency-Key returns the same migration.",
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
+    "/migrations/{id}/cancel": {
+      "post": {
+        "operationId": "cancelPlatformMigration",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformMigration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Cancel a migration",
+        "description": "Cancels a planned or queued migration and erases its token, or asks a running one to stop after its current step. Resources already created stay.",
+        "x-hakopod-agent": {
+          "category": "unclassified",
+          "boundary": "none",
+          "exposure": "unavailable",
+          "permissions": [],
+          "review": "none",
+          "sensitive_fields": []
+        }
+      }
+    },
     "/admin/private-egress-bindings": {
       "get": {
         "operationId": "listPrivateEgressBindings",
@@ -41679,6 +42060,466 @@
           "next_cursor",
           "truncated",
           "done"
+        ],
+        "additionalProperties": false
+      },
+      "MigrationSourceProject": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string",
+            "description": "Team or workspace name, when the provider has one."
+          },
+          "team_id": {
+            "type": "string"
+          },
+          "environments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "MigrationProjectsInput": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "railway",
+              "vercel"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 4096,
+            "writeOnly": true,
+            "description": "Railway account, workspace or project token, or Vercel access token. Used for this request or this migration only; never returned or logged, and erased when the migration ends or after 24 hours."
+          },
+          "team_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "token"
+        ],
+        "additionalProperties": false
+      },
+      "MigrationInput": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "railway",
+              "vercel"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 4096,
+            "writeOnly": true,
+            "description": "Railway account, workspace or project token, or Vercel access token. Used for this request or this migration only; never returned or logged, and erased when the migration ends or after 24 hours."
+          },
+          "source_project_id": {
+            "type": "string"
+          },
+          "source_environment_id": {
+            "type": "string"
+          },
+          "source_team_id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          },
+          "git_connection_id": {
+            "type": "string",
+            "description": "Hakopod Git connection used for the build pull requests of services built from GitHub."
+          }
+        },
+        "required": [
+          "provider",
+          "token",
+          "source_project_id",
+          "project",
+          "environment",
+          "application_name"
+        ],
+        "additionalProperties": false
+      },
+      "MigrationVariablesInput": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              }
+            }
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "MigrationStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "secrets",
+              "databases",
+              "data",
+              "deploy",
+              "builds",
+              "domains",
+              "finish"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "MigrationProposal": {
+        "type": "object",
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/Spec"
+          },
+          "builds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "connection_id": {
+                  "type": "string"
+                },
+                "repository": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "context_path": {
+                  "type": "string"
+                },
+                "mode": {
+                  "type": "string"
+                },
+                "preset": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "integer"
+                },
+                "public": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "service",
+                "repository",
+                "branch"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "databases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "engine": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                },
+                "copy_data": {
+                  "type": "boolean"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "engine",
+                "copy_data"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "variable": {
+                  "type": "string"
+                },
+                "database": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "service",
+                "variable",
+                "database"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "secret_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "domains": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "service": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "service",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "spec",
+          "builds",
+          "databases",
+          "secret_names",
+          "domains",
+          "missing",
+          "warnings"
+        ],
+        "additionalProperties": false
+      },
+      "PlatformMigration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "railway",
+              "vercel"
+            ]
+          },
+          "source_project_id": {
+            "type": "string"
+          },
+          "source_project_name": {
+            "type": "string"
+          },
+          "source_environment_id": {
+            "type": "string"
+          },
+          "source_team_id": {
+            "type": "string"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/MigrationProposal"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationStep"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "application_id": {
+            "type": "string"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "has_token": {
+            "type": "boolean",
+            "description": "False once the source token has been erased."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "environment",
+          "application_name",
+          "provider",
+          "source_project_id",
+          "proposal",
+          "status",
+          "steps",
+          "cancel_requested",
+          "has_token",
+          "created_at",
+          "expires_at"
         ],
         "additionalProperties": false
       },

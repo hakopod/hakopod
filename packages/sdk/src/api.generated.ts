@@ -4064,6 +4064,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/migrations/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * List Railway or Vercel projects
+         * @description Lists the projects a Railway or Vercel token can read, with their environments. The token is used for this request only and is not stored. Requires deploy permission in some project.
+         */
+        post: operations["listMigrationSourceProjects"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List migrations
+         * @description Migrations into one project environment, newest first.
+         */
+        get: operations["listPlatformMigrations"];
+        put?: never;
+        /**
+         * Plan a migration from Railway or Vercel
+         * @description Reads the source project with the token and returns a proposal: services, builds, databases, secret names, domains, variables the provider will not return, and warnings. Nothing is created yet. The token is sealed in the migration and erased when it ends or after 24 hours. The source project is only read.
+         */
+        post: operations["createPlatformMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migrations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a migration
+         * @description The proposal, the status and the progress of each step. Never includes the source token, secret values or source database URLs.
+         */
+        get: operations["getPlatformMigration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migrations/{id}/variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Supply variables the provider will not return
+         * @description Values for variables marked missing in the proposal, keyed by Hakopod service then variable name. Sealed like the token; only while the migration is planned.
+         */
+        put: operations["setPlatformMigrationVariables"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migrations/{id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a migration
+         * @description Creates secrets and databases, copies PostgreSQL and Redis data, deploys the application, opens build pull requests for services built from GitHub, and adds domains as pending. Refused while any variable is missing. Repeating the call with the same Idempotency-Key returns the same migration.
+         */
+        post: operations["startPlatformMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migrations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a migration
+         * @description Cancels a planned or queued migration and erases its token, or asks a running one to stop after its current step. Resources already created stay.
+         */
+        post: operations["cancelPlatformMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/private-egress-bindings": {
         parameters: {
             query?: never;
@@ -9703,6 +9827,127 @@ export interface components {
             next_cursor: string;
             truncated: boolean;
             done: boolean;
+        };
+        MigrationSourceProject: {
+            id: string;
+            name: string;
+            /** @description Team or workspace name, when the provider has one. */
+            team?: string;
+            team_id?: string;
+            environments?: {
+                id: string;
+                name: string;
+            }[];
+        };
+        MigrationProjectsInput: {
+            /** @enum {string} */
+            provider: "railway" | "vercel";
+            /** @description Railway account, workspace or project token, or Vercel access token. Used for this request or this migration only; never returned or logged, and erased when the migration ends or after 24 hours. */
+            token: string;
+            team_id?: string;
+        };
+        MigrationInput: {
+            /** @enum {string} */
+            provider: "railway" | "vercel";
+            /** @description Railway account, workspace or project token, or Vercel access token. Used for this request or this migration only; never returned or logged, and erased when the migration ends or after 24 hours. */
+            token: string;
+            source_project_id: string;
+            source_environment_id?: string;
+            source_team_id?: string;
+            project: string;
+            environment: string;
+            application_name: string;
+            /** @description Hakopod Git connection used for the build pull requests of services built from GitHub. */
+            git_connection_id?: string;
+        };
+        MigrationVariablesInput: {
+            values: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+        };
+        MigrationStep: {
+            /** @enum {string} */
+            name: "secrets" | "databases" | "data" | "deploy" | "builds" | "domains" | "finish";
+            /** @enum {string} */
+            status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+            message?: string;
+            items?: {
+                name: string;
+                status: string;
+                message?: string;
+            }[];
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
+        MigrationProposal: {
+            spec: components["schemas"]["Spec"];
+            builds: {
+                service: string;
+                provider?: string;
+                connection_id?: string;
+                repository: string;
+                branch: string;
+                context_path?: string;
+                mode?: string;
+                preset?: string;
+                port?: number;
+                public?: boolean;
+            }[];
+            databases: {
+                name: string;
+                source?: string;
+                engine: string;
+                version?: string;
+                copy_data: boolean;
+                reason?: string;
+            }[];
+            bindings?: {
+                service: string;
+                variable: string;
+                database: string;
+            }[];
+            secret_names: string[];
+            domains: {
+                [key: string]: string;
+            };
+            missing: {
+                service: string;
+                name: string;
+            }[];
+            warnings: string[];
+        };
+        PlatformMigration: {
+            id: string;
+            project: string;
+            environment: string;
+            application_name: string;
+            /** @enum {string} */
+            provider: "railway" | "vercel";
+            source_project_id: string;
+            source_project_name?: string;
+            source_environment_id?: string;
+            source_team_id?: string;
+            proposal: components["schemas"]["MigrationProposal"];
+            /** @enum {string} */
+            status: "planned" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            steps: components["schemas"]["MigrationStep"][];
+            error?: string;
+            application_id?: string;
+            cancel_requested: boolean;
+            /** @description False once the source token has been erased. */
+            has_token: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            /** Format: date-time */
+            expires_at: string;
         };
         PrivateEgressBinding: {
             name: string;
@@ -20735,6 +20980,238 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TerminalPoll"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listMigrationSourceProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrationProjectsInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        projects: components["schemas"]["MigrationSourceProject"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listPlatformMigrations: {
+        parameters: {
+            query: {
+                project: string;
+                environment: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PlatformMigration"][];
+                    };
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createPlatformMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrationInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformMigration"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getPlatformMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformMigration"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setPlatformMigrationVariables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrationVariablesInput"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformMigration"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    startPlatformMigration: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformMigration"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cancelPlatformMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformMigration"];
                 };
             };
             /** @description Error */
