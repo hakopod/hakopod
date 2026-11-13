@@ -1,0 +1,158 @@
+{
+  "bootstrap": {
+    "commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
+    "reviewed_release": "v0.1.0-alpha.89",
+    "tag": "v0.1.0-alpha.88",
+    "trust_anchor": "authenticated-git-review",
+    "trust_paths": [
+      "release/runtime-source-compatibility.py"
+    ]
+  },
+  "control_plane_commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
+  "delta": {
+    "baseline_sha256": "5abf3a6559caa520ab11ea007387c89a3ed9a54aa2493dae1826fd5e1399e851",
+    "changes": [
+      {
+        "after": "5d83822d7d8ae7575f69e99e03583f3b67e9b73aae4daea1bc7dc43685bec880",
+        "before": "c4022e07cb0f9693a721677eb176ab63f746ce5bc2c2202fb36285d12da7bc11",
+        "path": "api/contracts/actions_capacity.py",
+        "reason": "Reviewed control-plane API schema change (azure Actions capacity fields for Azure Spot VMs, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "d9aad7df0a94ce1fae6f98c46925ae6bc48832c708c2045fbfb9c52930d89497",
+        "before": "014807b7b842f522332fdac042ce67c00fa0be632238a12143b159d892b5dc98",
+        "path": "api/openapi.json",
+        "reason": "Reviewed control-plane API schema change (azure Actions capacity fields for Azure Spot VMs, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "56bcb154c34f506c5d3df49a466e24d016d8309ff7da0e144e782736983723a0",
+        "before": null,
+        "path": "internal/actions/vm/azure/acceptance_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "ccb44c748951b13980cc60fcfaace45018adabe1617a2958a742b62ce055bf62",
+        "before": null,
+        "path": "internal/actions/vm/azure/auth.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a46dd66d29ac8c2aadaba7cb4a4848d3e44066428f89a4173a50b2829a940ac9",
+        "before": null,
+        "path": "internal/actions/vm/azure/azure.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "65572cf43d85eadd3a3928f87ba2f06f0849f1673e622d065734d92c3d9e90e6",
+        "before": null,
+        "path": "internal/actions/vm/azure/azure_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "6b2b04972cd03d2022d1d5766014e4eb2d09cfaa0c5bdcced7e71d109efb763d",
+        "before": "69670b501785c67bf36d39b6490dff5116438f743f4392b61d30b6c3f10a8660",
+        "path": "internal/actions/vm/userdata.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "3f4b07ee298451e6c59b1f3772d7be2384fb891044c814e801b05a9aebe925b9",
+        "before": "8f7b19dc57f019afc549f838ec78df02541ec0ddf8b6b8bd90acf70a0d515f4d",
+        "path": "internal/actions/vm/userdata_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "f29e6969343b22c5ffb333ed628e66e3ec35c880775f897969be63870b046d36",
+        "before": "2f951ce145c562b937cefe9b5c8f7328714a5931f845958a294f70c8e172ac72",
+        "path": "internal/actions/vm/vm.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "27532fb7d0e1b57c3cca6cb99a81c3bb5be134eb0b3c2555ba2e43b74bfd4952",
+        "before": "5f83e397c9ac4288992a44ef732ee4c1c4d269d9d1c9282c06a13bf4383f405f",
+        "path": "internal/api/actions_capacity.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "159f672572acd068b78acfac8004445bb7e98218a688cbb969788bbecdadc893",
+        "before": "8ef741ead7065e91cf83901b98bdb2ec0235ae594decdd53703e2f3f1661a650",
+        "path": "internal/api/actions_vms.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "c71783feabd3f2b11033c14db41e23443d657d29fd8aaceae4c4a1c19c0487d2",
+        "before": "0b7c76e07f01ab3c66dc4c82e4b37401e18d9ee5d6c15ea27eac54c8f27b877f",
+        "path": "internal/cluster/preflight_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "5cf76265f571f304b49c969e81dea32a55bbd0e5bfd0795cd130795f65cfc59a",
+        "before": "5f0e9f01b52b478a6c507fd1618de72b0501114dc90346f1d4f4db11a149c7b8",
+        "path": "internal/cluster/resource_quota.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "a940b3f46727e39e2af90cc54d319a408bb5511c0ce70b3580f64f6d5b834063",
+        "before": "a81701ac36c2b7578b0e388eeab91038815664175ad1dc7b05a6cfebafd503ef",
+        "path": "internal/cluster/session_resources.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "6e91506c29dadf21d46884b4b0d9d064bc493deac1ca4b63ef68f17519d66900",
+        "before": "54bf156adfcb5912f74d6816a600b65e35e0bd6cda1e08743852e83bda7ee714",
+        "path": "internal/spec/actions.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "7a567e6bed541c08ad17313fb350c1cd410522d1df5a43b741951562c05301c1",
+        "before": "f116e90ddde7bfea68123864af74826eb8e7d535e9b8a82ca167ea5768492171",
+        "path": "internal/store/actions_capacity.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "aaf41d224729d36432994e915c58355f067da447719e491941deab8bfbf31c32",
+        "before": "6d365f4562d7f62f94aafaafcab96145af44512d5cae6b8f55a7df91524ddcd8",
+        "path": "internal/store/actions_capacity_test.go",
+        "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "467c7ee412a7573cc2709e6a8255014b110448d025741aeed440e8a083cd7621",
+        "before": "0a88a99f84094bd2e8d722e93db7c4a54995c06a87b68e3b4dc7213606608ba5",
+        "path": "internal/store/database_allocations.go",
+        "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+      },
+      {
+        "after": "399734afa962e7fbc42437b073b227c8cb1dda23a7ed2354c0b00b950f19a755",
+        "before": "edc3b7c73c77edf75187b77068210000a574a7ef621b0412d29ff7cc1aabe621",
+        "path": "release/runtime-source-compatibility.py",
+        "reason": "Chained review trust root for the alpha.89 runtime source review (alpha.86 review frozen as source-compatibility-alpha86.json); not a managed runtime binary, image, dependency or native harness input."
+      }
+    ],
+    "current_sha256": "b01a1c95c41bc83ab1a234d11aabd8ccc3f0a6b6549ba1ba7971118bf68311d8"
+  },
+  "predecessor": {
+    "commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
+    "review_sha256": "5a28a735561367a353ea91be045ae15e416de8d948bfc6412e68c34c76da904b",
+    "tag": "v0.1.0-alpha.88"
+  },
+  "qualified_release": {
+    "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
+    "manifest_sha256": "eb0b3414879f3b49b175b96eed80b3caf406231b0747576d20394f0d61455736",
+    "tag": "v0.1.0-alpha.58"
+  },
+  "regression_evidence": {
+    "tests": [
+      "TestLaunchFallsThroughAndBuildsSpotVM",
+      "TestStateListTerminateAndCheck",
+      "TestImageSettings",
+      "TestIdentitySources",
+      "TestActionsCapacityValidationAzure",
+      "TestRunnerUserData",
+      "TestImageUserData",
+      "TestPreflightReservesNothingForVMCapacityPools"
+    ],
+    "url": "https://github.com/hakopod/hakopod/actions/runs/42894693548"
+  },
+  "reviewed_release": "v0.1.0-alpha.89",
+  "runtime": "myduck",
+  "schema_version": 2
+}

@@ -1,19 +1,19 @@
 {
   "bootstrap": {
-    "commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
-    "reviewed_release": "v0.1.0-alpha.89",
-    "tag": "v0.1.0-alpha.88",
+    "commit": "aad30e4a71612588f241ddebbdad40f526bf66e0",
+    "reviewed_release": "v0.1.0-alpha.91",
+    "tag": "v0.1.0-alpha.90",
     "trust_anchor": "authenticated-git-review",
     "trust_paths": [
       "release/runtime-source-compatibility.py",
       "release/verify-vitess-runtime.py"
     ]
   },
-  "control_plane_commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
+  "control_plane_commit": "aad30e4a71612588f241ddebbdad40f526bf66e0",
   "predecessor": {
-    "commit": "7b5a789792179cee6e35270627a6ce88bac242e6",
-    "review_sha256": "2f1a5fee4a8e007178f33bd4b8a0d4c8b5cf5803c654f11b198402825424151b",
-    "tag": "v0.1.0-alpha.88"
+    "commit": "aad30e4a71612588f241ddebbdad40f526bf66e0",
+    "review_sha256": "0f6cb25ca26364fd838598adbb257220bc41f7b8d32f9a4343df51f8ff6cd054",
+    "tag": "v0.1.0-alpha.90"
   },
   "qualified_release": {
     "commit": "2040ac12564eb4d8d769463fb9cd3e5d989b2c48",
@@ -24,18 +24,23 @@
   },
   "regression_evidence": {
     "tests": [
-      "TestLaunchFallsThroughAndBuildsSpotVM",
-      "TestStateListTerminateAndCheck",
-      "TestImageSettings",
-      "TestIdentitySources",
-      "TestActionsCapacityValidationAzure",
-      "TestRunnerUserData",
-      "TestImageUserData",
-      "TestPreflightReservesNothingForVMCapacityPools"
+      "TestPlatformMigrationPlanStartAndRun",
+      "TestPlatformMigrationCancel",
+      "TestPlatformMigrationResumesWithoutDuplicates",
+      "TestPlatformMigrationLifecycleErasesSecrets",
+      "TestExpiredPlannedMigrationFailsAndForgetsToken",
+      "TestSealBindsToMigrationAndPurpose",
+      "TestConvert",
+      "TestStartDatabaseCopyPostgresShapes",
+      "TestStartDatabaseCopyRedisUpstash",
+      "TestStartDatabaseCopyRefusesPrivateSources",
+      "TestDatabaseCopyStatusRefusesForeignJob",
+      "TestAuthFailureNeverEchoesToken",
+      "TestAuthFailureIsClearAndHidesToken"
     ],
-    "url": "https://github.com/hakopod/hakopod/actions/runs/42894693548"
+    "url": "https://github.com/hakopod/hakopod/actions/runs/43378562082"
   },
-  "reviewed_release": "v0.1.0-alpha.89",
+  "reviewed_release": "v0.1.0-alpha.91",
   "runtime": "vitess",
   "schema_version": 3,
   "scopes": {
@@ -45,118 +50,166 @@
       "current_sha256": "275886a1ff7b000434bd3aae622c804e1fa68fd9485fd92091e3314b716434bb"
     },
     "runtime": {
-      "baseline_sha256": "5d732f1a8cfe9c55f3d02cf10d0c2c8f5a848a582a1d14652b99f22f2ce072e4",
+      "baseline_sha256": "fa4ecf73c75a78cf82e9353e5272d4cc2cf660eb626dc16bb3292d299216573e",
       "changes": [
         {
-          "after": "56bcb154c34f506c5d3df49a466e24d016d8309ff7da0e144e782736983723a0",
+          "after": "172635e25ad69354515c7c26cbe09644507f67a33dde66f93624437517c6b78a",
+          "before": "13d9f98b1d7e7ed67e3c61715a270448dbae2314605d290ec57570140938b8e1",
+          "path": "internal/api/api.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "5a8cd64aa8e6ed2c42381ad355e31b3f43319e50edd34db072acb4789ef1f48c",
+          "before": "2dbaddf7ddcf919c794b6f598384960a0f6acb06a23280b8c12669a6dd3e3fd2",
+          "path": "internal/api/build_deploy.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "1606ff5cf9b09e2b5490bf54ebc4f228889fcd28760f20969fe09219e7451b8b",
+          "before": "90a6c363a01390ae6979218d11f479bef82477e6138b1a26368020502b583676",
+          "path": "internal/api/builds.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "8fd13884a1db20bef314666a332021638a9270d867db7abbfd6e31e6c1fab5fd",
           "before": null,
-          "path": "internal/actions/vm/azure/acceptance_test.go",
-          "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+          "path": "internal/api/platform_migration_worker.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "ccb44c748951b13980cc60fcfaace45018adabe1617a2958a742b62ce055bf62",
+          "after": "f4528938563e09f4718d5fc7750a5d0cd289738ff14ed0a05adf40a3f79d41cd",
           "before": null,
-          "path": "internal/actions/vm/azure/auth.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "path": "internal/api/platform_migrations.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "a46dd66d29ac8c2aadaba7cb4a4848d3e44066428f89a4173a50b2829a940ac9",
+          "after": "91caf29b84085bf04307d682691c1bcb2e7c5d78022b8097c37035b436e6e415",
           "before": null,
-          "path": "internal/actions/vm/azure/azure.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "path": "internal/api/platform_migrations_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "65572cf43d85eadd3a3928f87ba2f06f0849f1673e622d065734d92c3d9e90e6",
+          "after": "5ba1ee7b6dac0825fedfad112bd202689961c6766bdcec56b9a6dabd4a32f85c",
+          "before": "240d7338266e38b96b248cd38cb8469f36564c03840614e9a951a4942fd1141e",
+          "path": "internal/backup/public_endpoint.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "6c6d9d270cf837625adffef644cb7642196480741dbfcb26725106fa986f5ae2",
+          "before": "1aff94d96123ebb09a119aed224e46a883f81e811d2ecd78633801f9c7b679bd",
+          "path": "internal/backup/public_endpoint_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "12cf87c376beb5d83a165db87a0808122d21c77e59ea7eeef9dd60cade50907a",
           "before": null,
-          "path": "internal/actions/vm/azure/azure_test.go",
-          "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+          "path": "internal/cluster/database_copy.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "6b2b04972cd03d2022d1d5766014e4eb2d09cfaa0c5bdcced7e71d109efb763d",
-          "before": "69670b501785c67bf36d39b6490dff5116438f743f4392b61d30b6c3f10a8660",
-          "path": "internal/actions/vm/userdata.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "a73d28f1309f458998532267b29c448565fdbd6ff18b36a98111ff34d9cf32d1",
+          "before": null,
+          "path": "internal/cluster/database_copy_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "3f4b07ee298451e6c59b1f3772d7be2384fb891044c814e801b05a9aebe925b9",
-          "before": "8f7b19dc57f019afc549f838ec78df02541ec0ddf8b6b8bd90acf70a0d515f4d",
-          "path": "internal/actions/vm/userdata_test.go",
-          "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+          "after": "9425cb6e04570af7ab246c35774aebe8783c6b79d08b4bdbedfb4449738d3732",
+          "before": "95dca0e41fff986925b04710a2a248637ada9fd9be35690f60b40ce6851396ab",
+          "path": "internal/management/runtime.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "f29e6969343b22c5ffb333ed628e66e3ec35c880775f897969be63870b046d36",
-          "before": "2f951ce145c562b937cefe9b5c8f7328714a5931f845958a294f70c8e172ac72",
-          "path": "internal/actions/vm/vm.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "af6bb858fae7a57e2465568f7b9ab6113252af9fc76b30a5acbd1d2998abef8b",
+          "before": null,
+          "path": "internal/migrate/convert.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "27532fb7d0e1b57c3cca6cb99a81c3bb5be134eb0b3c2555ba2e43b74bfd4952",
-          "before": "5f83e397c9ac4288992a44ef732ee4c1c4d269d9d1c9282c06a13bf4383f405f",
-          "path": "internal/api/actions_capacity.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "5d7d802a5c97ef2f0620d080c96f44bbacfe557f46e28dd814ca55acab465467",
+          "before": null,
+          "path": "internal/migrate/convert_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "159f672572acd068b78acfac8004445bb7e98218a688cbb969788bbecdadc893",
-          "before": "8ef741ead7065e91cf83901b98bdb2ec0235ae594decdd53703e2f3f1661a650",
-          "path": "internal/api/actions_vms.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "c0c1db60388548773d61bd2348ec95e42e453991bd5bd296b58c5ee992f31de2",
+          "before": null,
+          "path": "internal/migrate/inventory.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "c71783feabd3f2b11033c14db41e23443d657d29fd8aaceae4c4a1c19c0487d2",
-          "before": "0b7c76e07f01ab3c66dc4c82e4b37401e18d9ee5d6c15ea27eac54c8f27b877f",
-          "path": "internal/cluster/preflight_test.go",
-          "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+          "after": "e26e0aa12a360c27abcb1e0648f23ae700df5477b2405b3fe85153100019a225",
+          "before": null,
+          "path": "internal/migrate/railway/railway.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "5cf76265f571f304b49c969e81dea32a55bbd0e5bfd0795cd130795f65cfc59a",
-          "before": "5f0e9f01b52b478a6c507fd1618de72b0501114dc90346f1d4f4db11a149c7b8",
-          "path": "internal/cluster/resource_quota.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "54fe2d56506234a272c1bc3a38e756284e856fa9b5b2a8eb16d1dc34acae4ff4",
+          "before": null,
+          "path": "internal/migrate/railway/railway_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "a940b3f46727e39e2af90cc54d319a408bb5511c0ce70b3580f64f6d5b834063",
-          "before": "a81701ac36c2b7578b0e388eeab91038815664175ad1dc7b05a6cfebafd503ef",
-          "path": "internal/cluster/session_resources.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "c7f100d4e679502dd4c4f84ccd3eb1b78fe52f6ca05daf3f9ca885d67996dc40",
+          "before": null,
+          "path": "internal/migrate/seal.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "6e91506c29dadf21d46884b4b0d9d064bc493deac1ca4b63ef68f17519d66900",
-          "before": "54bf156adfcb5912f74d6816a600b65e35e0bd6cda1e08743852e83bda7ee714",
-          "path": "internal/spec/actions.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "773e50ce223c51ae6a08b2aa772e19513802ca28cf58280b1f38f0c20c74481b",
+          "before": null,
+          "path": "internal/migrate/seal_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "7a567e6bed541c08ad17313fb350c1cd410522d1df5a43b741951562c05301c1",
-          "before": "f116e90ddde7bfea68123864af74826eb8e7d535e9b8a82ca167ea5768492171",
-          "path": "internal/store/actions_capacity.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "99d1f7517654c345ce7a8fb205035b03bedfd6593b0d57cabb776616c3641716",
+          "before": null,
+          "path": "internal/migrate/vercel/vercel.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "aaf41d224729d36432994e915c58355f067da447719e491941deab8bfbf31c32",
-          "before": "6d365f4562d7f62f94aafaafcab96145af44512d5cae6b8f55a7df91524ddcd8",
-          "path": "internal/store/actions_capacity_test.go",
-          "reason": "Reviewed control-plane test change (Managed Actions VM capacity: Azure Spot VMs and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); not a managed runtime binary, image, dependency or native harness input."
+          "after": "f37d8ab0c8f56c3412919a5dc3148dedb5b73b42928f85c91c5c0b7875f2d1af",
+          "before": null,
+          "path": "internal/migrate/vercel/vercel_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "467c7ee412a7573cc2709e6a8255014b110448d025741aeed440e8a083cd7621",
-          "before": "0a88a99f84094bd2e8d722e93db7c4a54995c06a87b68e3b4dc7213606608ba5",
-          "path": "internal/store/database_allocations.go",
-          "reason": "Reviewed control-plane change (Managed Actions runners on Azure Spot VMs with Hakopod's own Azure identity, eviction handling and azure capacity settings, and no node reservations for VM capacity pools, tested in https://github.com/hakopod/hakopod/actions/runs/42894693548); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+          "after": "8da6e329f6b30821544a20e4917d0b26281b22f29e29379380ea2ec3dcc2d8d5",
+          "before": "b01477a1dad3e4419cd63afd4f1934a8b4c88d31cccfbacedb8b15da70ea85f2",
+          "path": "internal/spec/spec.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "399734afa962e7fbc42437b073b227c8cb1dda23a7ed2354c0b00b950f19a755",
-          "before": "edc3b7c73c77edf75187b77068210000a574a7ef621b0412d29ff7cc1aabe621",
+          "after": "f24acfa3c540acbe484262c7c90dedf78837c886a74991d1b68208192d7cd9b7",
+          "before": null,
+          "path": "internal/store/115_platform_migrations.sql",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "d9d082bdaf163e2c2c5685070d5c0e590044ddbf5ef6cafaba82579068456902",
+          "before": null,
+          "path": "internal/store/platform_migrations.go",
+          "reason": "Reviewed control-plane change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); go.mod unchanged; not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "1a6ecc2013ae5240ddd110c9be4f23ea78dd339df70b8368f8719b0c5b491aa8",
+          "before": null,
+          "path": "internal/store/platform_migrations_test.go",
+          "reason": "Reviewed control-plane test change (Railway and Vercel project migrations: read-only provider readers, the converter, sealed migration records, the migration worker and API, and PostgreSQL and Redis data copy jobs, tested in https://github.com/hakopod/hakopod/actions/runs/43378562082); not a managed runtime binary, image, dependency or native harness input."
+        },
+        {
+          "after": "809d6ffd1be4f9e76f6ac4f9781619eed580d128103b9b8c17b4d60e42a9132d",
+          "before": "399734afa962e7fbc42437b073b227c8cb1dda23a7ed2354c0b00b950f19a755",
           "path": "release/runtime-source-compatibility.py",
-          "reason": "Chained review trust root for the alpha.89 runtime source review (alpha.86 review frozen as source-compatibility-alpha86.json); not a managed runtime binary, image, dependency or native harness input."
+          "reason": "Chained review trust root for the alpha.91 runtime source review (alpha.89 review frozen as source-compatibility-alpha89.json); not a managed runtime binary, image, dependency or native harness input."
         },
         {
-          "after": "55b4af7bc595a67ecdee98079a58534bc3e9da60a9c92acf8c6a64f29db60461",
-          "before": "dca565d2cfbc5df49b5bb721edd674a985c29c8437dc43c9926ddf93e9647bad",
+          "after": "dca565d2cfbc5df49b5bb721edd674a985c29c8437dc43c9926ddf93e9647bad",
+          "before": "55b4af7bc595a67ecdee98079a58534bc3e9da60a9c92acf8c6a64f29db60461",
           "path": "release/verify-vitess-runtime.py",
-          "reason": "Chained review trust root for the alpha.89 runtime source review (alpha.86 review frozen as source-compatibility-alpha86.json); not a managed runtime binary, image, dependency or native harness input."
+          "reason": "Chained review trust root for the alpha.91 runtime source review (alpha.89 review frozen as source-compatibility-alpha89.json); not a managed runtime binary, image, dependency or native harness input."
         }
       ],
-      "current_sha256": "fa4ecf73c75a78cf82e9353e5272d4cc2cf660eb626dc16bb3292d299216573e"
+      "current_sha256": "738400e197e1c657ef73d8a3f896fe4941ff7513645f885cd2c21c1769f7489f"
     }
   }
 }
