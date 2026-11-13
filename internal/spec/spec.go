@@ -427,6 +427,10 @@ func Normalize(input Application) (Application, error) {
 var sensitiveEnvName = regexp.MustCompile(`(?i)(^|_)(SECRET_KEY|PRIVATE_KEY|API_KEY|CLIENT_SECRET)(_|$)`)
 var sensitiveEnvValue = regexp.MustCompile(`-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|^(?:gh[pousr]_|github_pat_|glpat-|sk-proj-)[A-Za-z0-9_-]{12,}|^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$`)
 
+// SensitiveEnv reports whether a variable looks like a secret by its name or
+// value, the same way environment imports decide it.
+func SensitiveEnv(key, value string) bool { return sensitiveEnv(key, value) }
+
 func sensitiveEnv(key, value string) bool {
 	upper := strings.ToUpper(key)
 	for _, suffix := range []string{"PASSWORD", "PASSWD", "PWD", "TOKEN", "SECRET", "API_KEY", "PRIVATE_KEY", "ACCESS_KEY", "ACCESS_KEY_ID", "SECRET_KEY", "CLIENT_SECRET", "SIGNING_KEY", "ENCRYPTION_KEY"} {
