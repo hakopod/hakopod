@@ -1,7 +1,6 @@
 # Migrate from Railway and Vercel: design
 
-Status: in progress. User-facing docs go in `docs/migrate-from-railway-vercel.md`
-once it ships.
+User-facing docs: `docs/migrate-from-railway-vercel.md`.
 
 ## Goal
 
