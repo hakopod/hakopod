@@ -53,11 +53,13 @@ The source project is only read. Nothing on Railway or Vercel changes.
      - the variables the user must fill in;
      - warnings.
    - It is pure and fully unit-tested.
-3. **Database copy** (`internal/cluster`). Runs a one-off pod in the
-   application's namespace that streams data from the source URL into the new
-   managed database:
-   - PostgreSQL: `pg_dump | pg_restore`;
-   - Redis: dump and restore.
+3. **Database copy** (`internal/cluster/database_copy.go`). Runs a one-off Job
+   in the new managed database's namespace that streams data from the source
+   URL into it. The target must be ready and empty (`DatabaseEmpty`) first.
+   - PostgreSQL: `pg_dump | pg_restore` in one transaction, with the target's
+     pinned PostgreSQL image (a source newer than the target is refused);
+   - Redis: key by key with `DUMP` and `RESTORE` through `redis-cli`, keeping
+     TTLs. Upstash has no `SYNC`, so `redis-cli --rdb` cannot be used.
 
    It reports progress and errors, and its egress is limited to the source host
    and the target database.
