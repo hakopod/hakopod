@@ -1072,6 +1072,13 @@ export const policyOperations = [
     "summary": "Read security settings for the organization."
   },
   {
+    "id": "getPlatformMigration",
+    "method": "GET",
+    "path": "/migrations/{id}",
+    "category": "read",
+    "summary": "Get a migration"
+  },
+  {
     "id": "getPreview",
     "method": "GET",
     "path": "/previews/{preview}",
@@ -1497,6 +1504,13 @@ export const policyOperations = [
     "path": "/placement/nodes",
     "category": "read",
     "summary": "List candidate nodes for workload placement."
+  },
+  {
+    "id": "listPlatformMigrations",
+    "method": "GET",
+    "path": "/migrations",
+    "category": "read",
+    "summary": "List migrations"
   },
   {
     "id": "listPrivateEgressBindings",
