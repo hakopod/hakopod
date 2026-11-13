@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hakopod/hakopod/internal/migrate"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
 	"github.com/jackc/pgx/v5"
@@ -67,6 +68,12 @@ func (s *Server) prepareBuildSpec(ctx context.Context, c buildConfig, run buildR
 			unchanged.Image = prior.Image
 			unchanged.RegistryCredential = prior.RegistryCredential
 			next.Services[name] = unchanged
+		}
+		// A migrated Git service waits, suspended, on the migration's
+		// placeholder image for its first build; that build starts it. The
+		// placeholder is the marker: once replaced, a later suspension sticks.
+		if service.Suspended && service.Image == migrate.PlaceholderImage {
+			service.Suspended = false
 		}
 		service.Image = run.Image
 		service.Architecture = c.Architecture
