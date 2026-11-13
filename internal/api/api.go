@@ -76,6 +76,9 @@ type Server struct {
 	actionsVMProviders             sync.Map
 	actionsNativeConfigured        bool
 	databaseResizeRetryTestRuntime databaseResizeRetryRuntime
+	migrationTestRuntime           migrationRuntime
+	// migrationSourceURLs points the Railway and Vercel readers at fakes.
+	migrationSourceURLs map[string]string
 	// Native provider configuration is trusted in-process input and remains nil
 	// until paired runtime qualification. Public provider selection stays gated.
 	actionsGitLabClient     func(context.Context, cluster.Target, spec.Service, string) (gitlabRunnerProvider, error)
@@ -167,6 +170,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerDeletionRoutes(routes)
 	s.registerVirtualNetworkRoutes(routes)
 	s.registerBuildRoutes(routes)
+	s.registerPlatformMigrationRoutes(routes)
 	s.registerRuntimeRoutes(routes)
 	s.registerInvocationRoutes(routes)
 	s.registerSessionRoutes(routes)

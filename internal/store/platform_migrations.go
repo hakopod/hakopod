@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"time"
@@ -51,14 +52,42 @@ func scanPlatformMigration(row scanner) (PlatformMigration, error) {
 	return m, err
 }
 
-// CreatePlatformMigration saves a planned migration with its sealed source token.
-func (s *Store) CreatePlatformMigration(ctx context.Context, m PlatformMigration, tokenSealed []byte) (PlatformMigration, error) {
+// A migration acts in the background as the identity that planned it, through
+// an integration key that shares the migration's ID (see KeyPrincipal). The
+// key carries only deployment permissions, in the migration's project and
+// environment, narrowed to the planner's own application scope, and is
+// revoked when the migration ends. It lives long enough for a migration that
+// starts near the end of its 24 hours and then copies large databases.
+const platformMigrationGrantTTL = 7 * 24 * time.Hour
+
+const revokePlatformMigrationGrant = "UPDATE api_keys SET revoked_at=now() WHERE id=$1 AND kind='integration' AND revoked_at IS NULL"
+
+// CreatePlatformMigration saves a planned migration with its sealed source
+// token, and its grant. application narrows the grant like the planner's key.
+func (s *Store) CreatePlatformMigration(ctx context.Context, m PlatformMigration, tokenSealed []byte, application ...string) (PlatformMigration, error) {
 	if m.ID == "" || m.IdentityID == "" || len(tokenSealed) == 0 || len(m.Proposal) == 0 {
 		return PlatformMigration{}, ErrInput
 	}
-	return scanPlatformMigration(s.Pool.QueryRow(ctx, "INSERT INTO platform_migrations(id,identity_id,project,environment,application_name,provider,source_project_id,source_project_name,source_environment_id,source_team_id,token_sealed,proposal,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING "+platformMigrationCols,
+	digest := make([]byte, 32)
+	if _, err := rand.Read(digest); err != nil {
+		return PlatformMigration{}, err
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return PlatformMigration{}, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, "INSERT INTO api_keys(id,identity_id,name,digest,prefix,project,environment,application,permissions,expires_at,kind) VALUES($1,$2,'Platform migration grant',$3,'internal',$4,$5,$6,ARRAY['deployments:read','deployments:write'],$7,'integration')",
+		m.ID, m.IdentityID, digest, m.Project, m.Environment, append(application, "")[0], time.Now().Add(platformMigrationGrantTTL)); err != nil {
+		return PlatformMigration{}, err
+	}
+	m, err = scanPlatformMigration(tx.QueryRow(ctx, "INSERT INTO platform_migrations(id,identity_id,project,environment,application_name,provider,source_project_id,source_project_name,source_environment_id,source_team_id,token_sealed,proposal,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING "+platformMigrationCols,
 		m.ID, m.IdentityID, m.Project, m.Environment, m.ApplicationName, m.Provider, m.SourceProjectID, m.SourceProjectName,
 		m.SourceEnvironmentID, m.SourceTeamID, tokenSealed, m.Proposal, time.Now().Add(PlatformMigrationTokenTTL)))
+	if err != nil {
+		return m, err
+	}
+	return m, tx.Commit(ctx)
 }
 
 func (s *Store) PlatformMigration(ctx context.Context, id string) (PlatformMigration, error) {
@@ -160,6 +189,9 @@ func (s *Store) FinishPlatformMigration(ctx context.Context, id, lease, status, 
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrConflict
 	}
+	if err == nil {
+		_, err = s.Pool.Exec(ctx, revokePlatformMigrationGrant, id)
+	}
 	return err
 }
 
@@ -167,6 +199,9 @@ func (s *Store) FinishPlatformMigration(ctx context.Context, id, lease, status, 
 // secrets, or asks a running one to stop at its next step.
 func (s *Store) CancelPlatformMigration(ctx context.Context, id string) (PlatformMigration, error) {
 	m, err := scanPlatformMigration(s.Pool.QueryRow(ctx, "UPDATE platform_migrations SET status='cancelled',finished_at=now(),token_sealed=NULL,variables_sealed=NULL WHERE id=$1 AND status IN ('planned','queued') RETURNING "+platformMigrationCols, id))
+	if err == nil {
+		_, err = s.Pool.Exec(ctx, revokePlatformMigrationGrant, id)
+	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return m, err
 	}
@@ -183,6 +218,9 @@ func (s *Store) ExpirePlatformMigrations(ctx context.Context) error {
 	if _, err := s.Pool.Exec(ctx, "UPDATE platform_migrations SET status='failed',error='The migration was not started within 24 hours. Start a new one.',finished_at=now(),token_sealed=NULL,variables_sealed=NULL WHERE status='planned' AND expires_at<now()"); err != nil {
 		return err
 	}
-	_, err := s.Pool.Exec(ctx, "UPDATE platform_migrations SET token_sealed=NULL,variables_sealed=NULL WHERE expires_at<now() AND status NOT IN ('queued','running') AND (token_sealed IS NOT NULL OR variables_sealed IS NOT NULL)")
+	if _, err := s.Pool.Exec(ctx, "UPDATE platform_migrations SET token_sealed=NULL,variables_sealed=NULL WHERE expires_at<now() AND status NOT IN ('queued','running') AND (token_sealed IS NOT NULL OR variables_sealed IS NOT NULL)"); err != nil {
+		return err
+	}
+	_, err := s.Pool.Exec(ctx, "UPDATE api_keys SET revoked_at=now() WHERE kind='integration' AND revoked_at IS NULL AND id IN (SELECT id FROM platform_migrations WHERE status IN ('succeeded','failed','cancelled'))")
 	return err
 }

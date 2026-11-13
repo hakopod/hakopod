@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hakopod/hakopod/internal/cluster"
 	"github.com/hakopod/hakopod/internal/framework"
 	"github.com/hakopod/hakopod/internal/spec"
 	"github.com/hakopod/hakopod/internal/store"
@@ -394,46 +395,49 @@ func (s *Server) createBuild(w http.ResponseWriter, r *http.Request) {
 		authFailure(w, err)
 		return
 	}
-	c.ID = store.NewID()
-	c.Revision = 1
-	if err = s.assignBuildRegistry(r.Context(), &c); err != nil {
-		authFailure(w, err)
-		return
-	}
-	tx, err := s.Store.Pool.Begin(r.Context())
-	if err != nil {
-		authFailure(w, err)
-		return
-	}
-	defer tx.Rollback(r.Context())
-	var env string
-	if err = tx.QueryRow(r.Context(), "SELECT name FROM environments WHERE project=$1 AND name=$2 FOR UPDATE", c.Project, c.Environment).Scan(&env); err != nil {
-		authFailure(w, err)
-		return
-	}
-	var count int
-	if err = tx.QueryRow(r.Context(), "SELECT count(*) FROM build_configs WHERE project=$1 AND environment=$2", c.Project, c.Environment).Scan(&count); err != nil {
-		authFailure(w, err)
-		return
-	}
-	if count >= 100 {
-		authFailure(w, store.ErrBusy)
-		return
-	}
-	c.GrantID, err = s.Store.NewSourceGrant(r.Context(), tx, who(r), c.Project, c.Environment, c.Name)
-	if err != nil {
-		authFailure(w, err)
-		return
-	}
-	if _, err = tx.Exec(r.Context(), "INSERT INTO build_configs(id,project,environment,name,service,application_id,config,created_by,grant_id) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9)", c.ID, c.Project, c.Environment, c.Name, c.Service, c.ApplicationID, store.JSON(c), who(r).ID, c.GrantID); err != nil {
+	if err = s.insertBuild(r.Context(), who(r), &c); errors.Is(err, errBuildExists) {
 		problem(w, 409, "build_conflict", "a build already exists for this application and service")
 		return
-	}
-	if err = tx.Commit(r.Context()); err != nil {
+	} else if err != nil {
 		authFailure(w, err)
 		return
 	}
 	write(w, 201, c)
+}
+
+var errBuildExists = errors.New("a build already exists for this application and service")
+
+// insertBuild saves a new, reviewed build configuration with its source grant.
+func (s *Server) insertBuild(ctx context.Context, p store.Principal, c *buildConfig) error {
+	c.ID = store.NewID()
+	c.Revision = 1
+	if err := s.assignBuildRegistry(ctx, c); err != nil {
+		return err
+	}
+	tx, err := s.Store.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var env string
+	if err = tx.QueryRow(ctx, "SELECT name FROM environments WHERE project=$1 AND name=$2 FOR UPDATE", c.Project, c.Environment).Scan(&env); err != nil {
+		return err
+	}
+	var count int
+	if err = tx.QueryRow(ctx, "SELECT count(*) FROM build_configs WHERE project=$1 AND environment=$2", c.Project, c.Environment).Scan(&count); err != nil {
+		return err
+	}
+	if count >= 100 {
+		return store.ErrBusy
+	}
+	c.GrantID, err = s.Store.NewSourceGrant(ctx, tx, p, c.Project, c.Environment, c.Name)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, "INSERT INTO build_configs(id,project,environment,name,service,application_id,config,created_by,grant_id) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9)", c.ID, c.Project, c.Environment, c.Name, c.Service, c.ApplicationID, store.JSON(*c), p.ID, c.GrantID); err != nil {
+		return errBuildExists
+	}
+	return tx.Commit(ctx)
 }
 func (s *Server) updateBuild(w http.ResponseWriter, r *http.Request) {
 	old, ok := s.authorizedBuild(w, r, "deployments:write")
@@ -546,6 +550,8 @@ func (s *Server) githubBuildRequest(ctx context.Context, method, endpoint string
 		permissions = map[string]string{"actions": level}
 	} else if method != "GET" && strings.Contains(endpoint, "/.github/workflows/") {
 		permissions["workflows"] = "write"
+	} else if strings.Contains(endpoint, "/pulls") {
+		permissions = map[string]string{"pull_requests": level}
 	}
 	data, err := s.connectionCredentials(ctx, "github", selectedGitConnection("github", connections...), githubEndpointRepository(endpoint), permissions)
 	if err != nil {
@@ -895,19 +901,24 @@ func (s *Server) resolveBuildArchitecture(ctx context.Context, c *buildConfig) e
 	if err != nil {
 		return fmt.Errorf("%w: select an explicit build architecture; node inspection is unavailable", store.ErrInput)
 	}
+	c.Architecture, err = nodeArchitecture(nodes)
+	return err
+}
+
+// nodeArchitecture is the one architecture every node shares.
+func nodeArchitecture(nodes []cluster.Node) (string, error) {
 	architecture := ""
 	for _, node := range nodes {
 		if node.Architecture == "" {
 			continue
 		}
 		if architecture != "" && architecture != node.Architecture {
-			return fmt.Errorf("%w: this cluster has mixed architectures; select amd64 or arm64", store.ErrInput)
+			return "", fmt.Errorf("%w: this cluster has mixed architectures; select amd64 or arm64", store.ErrInput)
 		}
 		architecture = node.Architecture
 	}
 	if architecture != "amd64" && architecture != "arm64" {
-		return fmt.Errorf("%w: select a supported build architecture", store.ErrInput)
+		return "", fmt.Errorf("%w: select a supported build architecture", store.ErrInput)
 	}
-	c.Architecture = architecture
-	return nil
+	return architecture, nil
 }
