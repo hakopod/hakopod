@@ -1310,6 +1310,20 @@ export const agentRoutes = [
     "boundary": "project"
   },
   {
+    "id": "listPlatformMigrations",
+    "method": "GET",
+    "path": "/migrations",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
+    "id": "getPlatformMigration",
+    "method": "GET",
+    "path": "/migrations/{id}",
+    "category": "read",
+    "boundary": "project"
+  },
+  {
     "id": "listPrivateEgressBindings",
     "method": "GET",
     "path": "/admin/private-egress-bindings",

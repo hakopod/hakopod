@@ -2756,6 +2756,12 @@ for operation in ['getCustomHostnameSettings','putCustomHostnameSettings']:
 for operation in ['getActionsCapacity','putActionsCapacity','testActionsCapacity','buildActionsCapacityImage']:
     POLICIES[operation] = {'boundary':'installation','category':'admin','exposure':'installation','permissions':['admin','agent:admin'],'prerequisite':'','review':'none' if operation.startswith('get') else 'canonical','sensitive_fields':[]}
 
+# Railway and Vercel migrations take a third-party token and secret values, so
+# agents may read them but only a person starts or changes one, in the dashboard.
+for operation in ('listPlatformMigrations', 'getPlatformMigration'):
+    POLICIES[operation] = {'boundary':'project','category':'read','exposure':'generic','permissions':['deployments:read'],'review':'none','prerequisite':'','sensitive_fields':[]}
+for operation, fields in (('listMigrationSourceProjects', ['token']), ('createPlatformMigration', ['token']), ('setPlatformMigrationVariables', ['values']), ('startPlatformMigration', []), ('cancelPlatformMigration', [])):
+    POLICIES[operation] = {'boundary':'project','category':'human','exposure':'prerequisite','permissions':['deployments:write'],'review':'canonical','prerequisite':'Use the dashboard migration flow under New application. It takes a Railway or Vercel token, which agents must not handle.','sensitive_fields':fields}
 for method_map in paths.values():
     for operation in method_map.values():
         if isinstance(operation, dict) and "operationId" in operation:

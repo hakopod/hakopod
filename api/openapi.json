@@ -17837,12 +17837,17 @@
         "summary": "List Railway or Vercel projects",
         "description": "Lists the projects a Railway or Vercel token can read, with their environments. The token is used for this request only and is not stored. Requires deploy permission in some project.",
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
-          "sensitive_fields": []
+          "boundary": "project",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the dashboard migration flow under New application. It takes a Railway or Vercel token, which agents must not handle.",
+          "sensitive_fields": [
+            "token"
+          ]
         }
       }
     },
@@ -17885,12 +17890,17 @@
         "summary": "Plan a migration from Railway or Vercel",
         "description": "Reads the source project with the token and returns a proposal: services, builds, databases, secret names, domains, variables the provider will not return, and warnings. Nothing is created yet. The token is sealed in the migration and erased when it ends or after 24 hours. The source project is only read.",
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
-          "sensitive_fields": []
+          "boundary": "project",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the dashboard migration flow under New application. It takes a Railway or Vercel token, which agents must not handle.",
+          "sensitive_fields": [
+            "token"
+          ]
         }
       },
       "get": {
@@ -17950,11 +17960,14 @@
         "summary": "List migrations",
         "description": "Migrations into one project environment, newest first.",
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
           "review": "none",
+          "prerequisite": "",
           "sensitive_fields": []
         }
       }
@@ -17997,11 +18010,14 @@
         "summary": "Get a migration",
         "description": "The proposal, the status and the progress of each step. Never includes the source token, secret values or source database URLs.",
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
+          "boundary": "project",
+          "category": "read",
+          "exposure": "generic",
+          "permissions": [
+            "deployments:read"
+          ],
           "review": "none",
+          "prerequisite": "",
           "sensitive_fields": []
         }
       }
@@ -18054,12 +18070,17 @@
         "summary": "Supply variables the provider will not return",
         "description": "Values for variables marked missing in the proposal, keyed by Hakopod service then variable name. Sealed like the token; only while the migration is planned.",
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
-          "sensitive_fields": []
+          "boundary": "project",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the dashboard migration flow under New application. It takes a Railway or Vercel token, which agents must not handle.",
+          "sensitive_fields": [
+            "values"
+          ]
         }
       }
     },
@@ -18111,11 +18132,14 @@
         "summary": "Start a migration",
         "description": "Creates secrets and databases, copies PostgreSQL and Redis data, deploys the application, opens build pull requests for services built from GitHub, and adds domains as pending. Refused while any variable is missing. Repeating the call with the same Idempotency-Key returns the same migration.",
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
+          "boundary": "project",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the dashboard migration flow under New application. It takes a Railway or Vercel token, which agents must not handle.",
           "sensitive_fields": []
         }
       }
@@ -18158,11 +18182,14 @@
         "summary": "Cancel a migration",
         "description": "Cancels a planned or queued migration and erases its token, or asks a running one to stop after its current step. Resources already created stay.",
         "x-hakopod-agent": {
-          "category": "unclassified",
-          "boundary": "none",
-          "exposure": "unavailable",
-          "permissions": [],
-          "review": "none",
+          "boundary": "project",
+          "category": "human",
+          "exposure": "prerequisite",
+          "permissions": [
+            "deployments:write"
+          ],
+          "review": "canonical",
+          "prerequisite": "Use the dashboard migration flow under New application. It takes a Railway or Vercel token, which agents must not handle.",
           "sensitive_fields": []
         }
       }
