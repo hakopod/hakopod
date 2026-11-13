@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -579,8 +580,7 @@ func (r *migrationRun) createBuilds(ctx context.Context, st *migrationStep) erro
 			continue
 		}
 		it.Status = "succeeded"
-		// The merge only adds the workflow, which its own path filter ignores.
-		it.Message = "Merge the pull request to build and start this service: " + link + ". The merge itself does not build; push to " + c.Branch + " or run the build from Builds afterwards."
+		it.Message = "Merge the pull request to build and start this service: " + link
 	}
 	return nil
 }
@@ -675,10 +675,22 @@ func (s *Server) openBuildPullRequest(ctx context.Context, c buildConfig) (strin
 	if out.Decode(&written) != nil || !commitPattern.MatchString(written.Commit.SHA) {
 		return "", errors.New("GitHub's commit response was invalid")
 	}
+	// The workflow ignores pushes that only change its own file, so a merge that
+	// adds only the workflow would not build. A short note beside it makes the
+	// merge itself start the first build; the workflow stays exactly as reviewed.
+	notePath := ".hakopod/builds/" + c.ID + ".md"
+	if _, status, err := call("GET", repoPath+"/contents/"+notePath+"?ref="+url.QueryEscape(branch), nil, 200, 404); err != nil {
+		return "", err
+	} else if status == 404 {
+		note := "# Hakopod build for " + c.Service + "\n\nAdded when this service was migrated to Hakopod, so that merging the pull request starts its first build. You can delete this file.\n"
+		if _, _, err = call("PUT", repoPath+"/contents/"+notePath, map[string]any{"message": "Note the Hakopod build for " + c.Service, "branch": branch, "content": base64.StdEncoding.EncodeToString([]byte(note))}, 201); err != nil {
+			return "", err
+		}
+	}
 	var pull struct {
 		URL string `json:"html_url"`
 	}
-	text := "Hakopod migrated this service from another platform. This adds the workflow that builds `" + c.Service + "` and publishes its image for Hakopod.\n\nAfter merging, push to `" + c.Branch + "` or run the build from Hakopod to build and start the service."
+	text := "Hakopod migrated this service from another platform. This adds the workflow that builds `" + c.Service + "` and publishes its image for Hakopod, and a short note so that merging starts the first build.\n\nMerge it to build `" + c.Service + "` and start it on Hakopod."
 	out, code, err := call("POST", repoPath+"/pulls", map[string]string{"title": "Build " + c.Service + " with Hakopod", "head": branch, "base": repo.DefaultBranch, "body": text}, 201, 422)
 	if err != nil {
 		return "", err

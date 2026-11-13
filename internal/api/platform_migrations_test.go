@@ -104,6 +104,7 @@ type migrationFixture struct {
 	key     string
 	cluster *migrationClusterFake
 	pulls   int
+	notes   int
 }
 
 func newMigrationFixture(t *testing.T) *migrationFixture {
@@ -143,6 +144,17 @@ func newMigrationFixture(t *testing.T) *migrationFixture {
 		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/repos/acme/shop/contents/.github/workflows/"):
 			w.WriteHeader(201)
 			w.Write([]byte(`{"commit":{"sha":"` + strings.Repeat("b", 40) + `"}}`))
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/repos/acme/shop/contents/.hakopod/builds/"):
+			if f.notes == 0 {
+				w.WriteHeader(404)
+				return
+			}
+			w.Write([]byte(`{}`))
+		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/repos/acme/shop/contents/.hakopod/builds/"):
+			// The note beside the workflow is what makes the merge start the first build.
+			f.notes++
+			w.WriteHeader(201)
+			w.Write([]byte(`{"commit":{"sha":"` + strings.Repeat("c", 40) + `"}}`))
 		case r.Method == "POST" && r.URL.Path == "/repos/acme/shop/pulls":
 			f.pulls++
 			w.WriteHeader(201)
@@ -302,8 +314,8 @@ func TestPlatformMigrationPlanStartAndRun(t *testing.T) {
 	if err != nil || app.Name != "shop" || !app.Spec.Services["shop"].Suspended || len(app.Spec.Services["shop"].Bindings) != 2 {
 		t.Fatal("application", app.Spec.Services["shop"], err)
 	}
-	if n := f.count("SELECT count(*) FROM build_configs WHERE application_id=$1 AND service='shop' AND installed_revision=revision", appID); n != 1 || f.pulls != 1 {
-		t.Fatal("build configs", n, f.pulls)
+	if n := f.count("SELECT count(*) FROM build_configs WHERE application_id=$1 AND service='shop' AND installed_revision=revision", appID); n != 1 || f.pulls != 1 || f.notes != 1 {
+		t.Fatal("build configs", n, f.pulls, f.notes)
 	}
 	if n := f.count("SELECT count(*) FROM domain_verifications WHERE application_id=$1", appID); n != 2 {
 		t.Fatal("domains", n)
