@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-func publicBackupIP(ip netip.Addr, blocked ...netip.Prefix) bool {
+// PublicIP reports whether ip is a routable public address: not private,
+// loopback, link-local, reserved, documentation, CGNAT or cloud metadata, and
+// outside blocked. Use it before connecting anywhere a user chose.
+func PublicIP(ip netip.Addr, blocked ...netip.Prefix) bool {
 	ip = ip.Unmap()
 	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 		return false
@@ -45,7 +48,7 @@ func publicBackupDial(blocked []netip.Prefix) func(context.Context, string, stri
 			return nil, fmt.Errorf("backup endpoint has no address")
 		}
 		for _, ip := range addresses {
-			if !publicBackupIP(ip, blocked...) {
+			if !PublicIP(ip, blocked...) {
 				return nil, fmt.Errorf("workspace backup storage must use public addresses")
 			}
 		}
